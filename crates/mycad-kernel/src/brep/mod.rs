@@ -1,3 +1,3 @@
 pub mod topology;
 
-pub use topology::{Solid, Shell, Face, Loop, Edge, HalfEdge, Vertex};
+pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};

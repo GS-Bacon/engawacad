@@ -1,4 +1,5 @@
 pub mod curve;
+pub mod math;
 pub mod surface;
 
 use nalgebra::{Point3, Vector3};

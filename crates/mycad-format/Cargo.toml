@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-mycad-kernel = { path = "../mycad-kernel" }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 schemars = { workspace = true }

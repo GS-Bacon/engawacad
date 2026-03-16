@@ -1,0 +1,26 @@
+version: "0.1.0"
+root_component:
+  name: "Simple Assembly"
+  children:
+    - name: "Base Plate"
+      features:
+        - type: create_box
+          id: plate_1
+          width: 100.0
+          height: 5.0
+          depth: 100.0
+    - name: "Pillar"
+      transform:
+        position: [0.0, 25.0, 0.0]
+        rotation: [0.0, 0.0, 0.0]
+      features:
+        - type: create_box
+          id: pillar_1
+          width: 10.0
+          height: 50.0
+          depth: 10.0
+    - name: "Bolt"
+      transform:
+        position: [20.0, 5.0, 20.0]
+        rotation: [0.0, 0.0, 0.0]
+      ref: "stdlib://fasteners/jis_b1176/M5x20"

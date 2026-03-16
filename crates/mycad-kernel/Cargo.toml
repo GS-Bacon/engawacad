@@ -13,3 +13,7 @@ indexmap = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
+
+[[bench]]
+name = "tessellation"
+harness = false
