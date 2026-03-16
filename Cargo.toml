@@ -1,0 +1,29 @@
+[workspace]
+members = [
+    "crates/mycad-kernel",
+    "crates/mycad-format",
+    "crates/mycad-viewer",
+    "crates/mycad-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Math
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+# Schema generation
+schemars = "0.8"
+# Testing
+approx = "0.5"
+# Error handling
+thiserror = "2"
+# Ordered collections (deterministic iteration)
+indexmap = { version = "2", features = ["serde"] }

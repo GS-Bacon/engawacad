@@ -1,0 +1,10 @@
+[package]
+name = "mycad-viewer"
+description = "Minimal 3D viewer for MyCad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mycad-kernel = { path = "../mycad-kernel" }
+mycad-format = { path = "../mycad-format" }
