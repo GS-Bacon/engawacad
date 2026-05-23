@@ -1,3 +1,6 @@
+pub mod stl;
+pub use stl::to_ascii_stl;
+
 use crate::brep::topology::Solid;
 use crate::geometry::Point;
 use serde::{Deserialize, Serialize};
