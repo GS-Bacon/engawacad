@@ -24,8 +24,11 @@ serde_yaml = "0.9"
 schemars = "0.8"
 # Testing
 approx = "0.5"
+tempfile = "3"
 # Error handling
 thiserror = "2"
+# CLI
+clap = { version = "4", features = ["derive"] }
 # Ordered collections (deterministic iteration)
 indexmap = { version = "2", features = ["serde"] }
 # Internal crates
