@@ -1,6 +1,8 @@
 use crate::component::Component;
+use crate::error::FormatError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// The top-level document representing a MyCad design file.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -29,12 +31,25 @@ impl Document {
     pub fn from_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
         serde_yaml::from_str(yaml)
     }
+
+    /// Load a Document from a `.mycad` file path.
+    pub fn from_path(path: &Path) -> Result<Self, FormatError> {
+        let ext = path.extension().and_then(|s| s.to_str());
+        if ext != Some("mycad") {
+            return Err(FormatError::InvalidExtension(ext.map(str::to_string)));
+        }
+        let content = std::fs::read_to_string(path)?;
+        let doc = Self::from_yaml(&content)?;
+        Ok(doc)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::FormatError;
     use crate::feature::Feature;
+    use std::path::Path;
 
     #[test]
     fn test_roundtrip_yaml() {
@@ -69,5 +84,31 @@ mod tests {
         let yaml1 = doc.to_yaml().unwrap();
         let yaml2 = doc.to_yaml().unwrap();
         assert_eq!(yaml1, yaml2, "YAML serialization must be deterministic");
+    }
+
+    #[test]
+    fn test_from_path_loads_simple_box() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join("simple_box.mycad");
+        let doc = Document::from_path(&path).unwrap();
+        assert_eq!(doc.version, "0.1.0");
+        assert_eq!(doc.root_component.name, "Simple Box");
+    }
+
+    #[test]
+    fn test_from_path_missing_file_returns_io_error() {
+        let path = Path::new("does_not_exist.mycad");
+        let err = Document::from_path(path).unwrap_err();
+        assert!(matches!(err, FormatError::Io(_)));
+    }
+
+    #[test]
+    fn test_from_path_invalid_extension() {
+        let path = Path::new("foo.txt");
+        let err = Document::from_path(path).unwrap_err();
+        assert!(matches!(err, FormatError::InvalidExtension(Some(ref e)) if e == "txt"));
     }
 }

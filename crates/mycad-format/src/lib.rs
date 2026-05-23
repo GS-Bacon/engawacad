@@ -1,7 +1,9 @@
-pub mod document;
-pub mod feature;
 pub mod component;
+pub mod document;
+pub mod error;
+pub mod feature;
 
-pub use document::Document;
-pub use feature::Feature;
 pub use component::Component;
+pub use document::Document;
+pub use error::FormatError;
+pub use feature::Feature;

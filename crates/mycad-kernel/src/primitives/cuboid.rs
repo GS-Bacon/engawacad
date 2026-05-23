@@ -95,10 +95,10 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
         // Front face (Z = -hz): vertices 0,1,3,2 — normal -Z
         FaceDef {
             half_edges: [
-                (0, true, 0),   // e0: 0->1
-                (1, true, 1),   // e1: 1->3
-                (2, true, 3),   // e2: 3->2
-                (3, true, 2),   // e3: 2->0
+                (0, true, 0), // e0: 0->1
+                (1, true, 1), // e1: 1->3
+                (2, true, 3), // e2: 3->2
+                (3, true, 2), // e3: 2->0
             ],
             surface: Surface::Plane {
                 origin: Point::new(0.0, 0.0, -hz),
@@ -111,10 +111,10 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
         // Back face (Z = +hz): vertices 5,4,6,7 — normal +Z
         FaceDef {
             half_edges: [
-                (4, false, 5),  // e4: 5->4
-                (7, false, 4),  // e7: 4->6
-                (6, false, 6),  // e6: 6->7
-                (5, false, 7),  // e5: 7->5
+                (4, false, 5), // e4: 5->4
+                (7, false, 4), // e7: 4->6
+                (6, false, 6), // e6: 6->7
+                (5, false, 7), // e5: 7->5
             ],
             surface: Surface::Plane {
                 origin: Point::new(0.0, 0.0, hz),
@@ -127,10 +127,10 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
         // Bottom face (Y = -hy): vertices 0,4,5,1 — normal -Y
         FaceDef {
             half_edges: [
-                (8, true, 0),   // e8: 0->4
-                (4, true, 4),   // e4: 4->5
-                (9, false, 5),  // e9: 5->1
-                (0, false, 1),  // e0: 1->0
+                (8, true, 0),  // e8: 0->4
+                (4, true, 4),  // e4: 4->5
+                (9, false, 5), // e9: 5->1
+                (0, false, 1), // e0: 1->0
             ],
             surface: Surface::Plane {
                 origin: Point::new(0.0, -hy, 0.0),
@@ -143,10 +143,10 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
         // Top face (Y = +hy): vertices 2,3,7,6 — normal +Y
         FaceDef {
             half_edges: [
-                (2, false, 2),   // e2: 2->3
-                (10, true, 3),   // e10: 3->7
-                (6, true, 7),    // e6: 7->6
-                (11, false, 6),  // e11: 6->2
+                (2, false, 2),  // e2: 2->3
+                (10, true, 3),  // e10: 3->7
+                (6, true, 7),   // e6: 7->6
+                (11, false, 6), // e11: 6->2
             ],
             surface: Surface::Plane {
                 origin: Point::new(0.0, hy, 0.0),
@@ -159,10 +159,10 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
         // Left face (X = -hx): vertices 0,2,6,4 — normal -X
         FaceDef {
             half_edges: [
-                (3, false, 0),   // e3: 0->2
-                (11, true, 2),   // e11: 2->6
-                (7, true, 6),    // e7: 6->4
-                (8, false, 4),   // e8: 4->0
+                (3, false, 0), // e3: 0->2
+                (11, true, 2), // e11: 2->6
+                (7, true, 6),  // e7: 6->4
+                (8, false, 4), // e8: 4->0
             ],
             surface: Surface::Plane {
                 origin: Point::new(-hx, 0.0, 0.0),
@@ -175,10 +175,10 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
         // Right face (X = +hx): vertices 1,5,7,3 — normal +X
         FaceDef {
             half_edges: [
-                (9, true, 1),    // e9: 1->5
-                (5, true, 5),    // e5: 5->7
-                (10, false, 7),  // e10: 7->3
-                (1, false, 3),   // e1: 3->1
+                (9, true, 1),   // e9: 1->5
+                (5, true, 5),   // e5: 5->7
+                (10, false, 7), // e10: 7->3
+                (1, false, 3),  // e1: 3->1
             ],
             surface: Surface::Plane {
                 origin: Point::new(hx, 0.0, 0.0),

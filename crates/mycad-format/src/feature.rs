@@ -33,10 +33,7 @@ pub enum Feature {
 
     /// Create a sphere primitive.
     #[serde(rename = "create_sphere")]
-    CreateSphere {
-        id: String,
-        radius: f64,
-    },
+    CreateSphere { id: String, radius: f64 },
 
     /// Extrude a sketch profile.
     #[serde(rename = "extrude")]

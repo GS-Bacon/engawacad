@@ -89,7 +89,6 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "indexmap",
- "mycad-kernel",
  "schemars",
  "serde",
  "serde_yaml",
@@ -399,6 +398,10 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
 
 [[package]]
 name = "zmij"

@@ -1,3 +1,4 @@
+use super::math::orthonormal_basis;
 use super::{Point, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -72,10 +73,7 @@ impl Surface {
         match self {
             Surface::Plane { normal, .. } => normal.normalize(),
 
-            Surface::Cylinder {
-                axis,
-                ..
-            } => {
+            Surface::Cylinder { axis, .. } => {
                 let (bu, bv) = orthonormal_basis(axis);
                 (u.cos() * bu + u.sin() * bv).normalize()
             }
@@ -103,17 +101,4 @@ impl Surface {
             }
         }
     }
-}
-
-/// Build an orthonormal basis (u, v) from a normal vector.
-fn orthonormal_basis(normal: &Vec3) -> (Vec3, Vec3) {
-    let n = normal.normalize();
-    let not_parallel = if n.x.abs() < 0.9 {
-        Vec3::x()
-    } else {
-        Vec3::y()
-    };
-    let u = n.cross(&not_parallel).normalize();
-    let v = n.cross(&u);
-    (u, v)
 }

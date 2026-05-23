@@ -4,6 +4,7 @@ members = [
     "crates/mycad-format",
     "crates/mycad-viewer",
     "crates/mycad-cli",
+    "crates/xtask",
 ]
 resolver = "2"
 

@@ -1,3 +1,4 @@
+use super::math::orthonormal_basis;
 use super::{Point, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -32,18 +33,4 @@ impl Curve {
             }
         }
     }
-}
-
-/// Build an orthonormal basis (u, v) from a normal vector.
-fn orthonormal_basis(normal: &Vec3) -> (Vec3, Vec3) {
-    let n = normal.normalize();
-    // Choose a vector not parallel to n
-    let not_parallel = if n.x.abs() < 0.9 {
-        Vec3::x()
-    } else {
-        Vec3::y()
-    };
-    let u = n.cross(&not_parallel).normalize();
-    let v = n.cross(&u);
-    (u, v)
 }

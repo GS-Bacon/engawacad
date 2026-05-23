@@ -191,6 +191,7 @@ impl IdGenerator {
         Self { next_id: start }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> EntityId {
         let id = self.next_id;
         self.next_id += 1;

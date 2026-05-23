@@ -1,0 +1,9 @@
+version: "0.1.0"
+root_component:
+  name: "Simple Box"
+  features:
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 20.0
+      depth: 30.0
