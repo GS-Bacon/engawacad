@@ -2,6 +2,12 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum KernelError {
-    #[error("unsupported feature variant: {0}")]
-    UnsupportedFeature(String),
+    #[error("empty feature list")]
+    EmptyFeatureList,
+
+    #[error("multiple features not yet supported (got {count})")]
+    MultipleFeatures { count: usize },
+
+    #[error("unsupported feature variant: {kind}")]
+    UnsupportedFeature { kind: &'static str },
 }

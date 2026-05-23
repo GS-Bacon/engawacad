@@ -8,15 +8,13 @@ pub fn build_solid_from_features(
     gen: &mut IdGenerator,
 ) -> Result<Solid, KernelError> {
     if features.is_empty() {
-        return Err(KernelError::UnsupportedFeature(
-            "empty feature list".to_string(),
-        ));
+        return Err(KernelError::EmptyFeatureList);
     }
 
     if features.len() > 1 {
-        return Err(KernelError::UnsupportedFeature(
-            "multiple features (composition not yet implemented)".to_string(),
-        ));
+        return Err(KernelError::MultipleFeatures {
+            count: features.len(),
+        });
     }
 
     match &features[0] {
@@ -26,16 +24,16 @@ pub fn build_solid_from_features(
             depth,
             ..
         } => Ok(make_cuboid(*width, *height, *depth, gen)),
-        Feature::CreateCylinder { .. } => {
-            Err(KernelError::UnsupportedFeature("create_cylinder".into()))
-        }
-        Feature::CreateSphere { .. } => {
-            Err(KernelError::UnsupportedFeature("create_sphere".into()))
-        }
-        Feature::Extrude { .. } => Err(KernelError::UnsupportedFeature("extrude".into())),
-        Feature::Cut { .. } => Err(KernelError::UnsupportedFeature("cut".into())),
-        Feature::Fuse { .. } => Err(KernelError::UnsupportedFeature("fuse".into())),
-        Feature::Intersect { .. } => Err(KernelError::UnsupportedFeature("intersect".into())),
+        Feature::CreateCylinder { .. } => Err(KernelError::UnsupportedFeature {
+            kind: "create_cylinder",
+        }),
+        Feature::CreateSphere { .. } => Err(KernelError::UnsupportedFeature {
+            kind: "create_sphere",
+        }),
+        Feature::Extrude { .. } => Err(KernelError::UnsupportedFeature { kind: "extrude" }),
+        Feature::Cut { .. } => Err(KernelError::UnsupportedFeature { kind: "cut" }),
+        Feature::Fuse { .. } => Err(KernelError::UnsupportedFeature { kind: "fuse" }),
+        Feature::Intersect { .. } => Err(KernelError::UnsupportedFeature { kind: "intersect" }),
     }
 }
 
@@ -78,15 +76,18 @@ mod tests {
         }];
         let mut g = IdGenerator::new(0);
         let err = build_solid_from_features(&features, &mut g).unwrap_err();
-        match err {
-            KernelError::UnsupportedFeature(name) => assert_eq!(name, "create_cylinder"),
-        }
+        assert!(matches!(
+            err,
+            KernelError::UnsupportedFeature {
+                kind: "create_cylinder"
+            }
+        ));
     }
 
     #[test]
     fn empty_features_returns_error() {
         let mut g = IdGenerator::new(0);
         let err = build_solid_from_features(&[], &mut g).unwrap_err();
-        assert!(matches!(err, KernelError::UnsupportedFeature(_)));
+        assert!(matches!(err, KernelError::EmptyFeatureList));
     }
 }
