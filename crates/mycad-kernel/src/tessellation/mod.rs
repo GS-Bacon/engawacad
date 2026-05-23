@@ -39,8 +39,13 @@ impl Default for TriangleMesh {
 
 /// Tessellate a B-rep solid into a triangle mesh.
 ///
-/// For now this handles planar faces only by triangulating each face's
-/// outer loop as a triangle fan from the first vertex.
+/// Each face's outer loop is triangulated as a fan from its first vertex.
+/// Normals are evaluated per vertex from the underlying surface, so curved
+/// faces get correct shading rather than a single per-face normal.
+///
+/// Not yet handled: interior subdivision of curved faces (uv sampling) — a
+/// curved face is still approximated by its boundary fan — and inner loops
+/// (holes). Both are deferred to the curved-primitive work (Phase 3).
 pub fn tessellate_solid(solid: &Solid) -> TriangleMesh {
     let mut mesh = TriangleMesh::new();
 
@@ -61,20 +66,20 @@ pub fn tessellate_solid(solid: &Solid) -> TriangleMesh {
             continue;
         }
 
-        // Compute face normal from the surface
-        let normal = face.surface.normal_at(0.0, 0.0);
-        let face_normal = if face.same_sense {
-            [normal.x, normal.y, normal.z]
-        } else {
-            [-normal.x, -normal.y, -normal.z]
-        };
-
-        // Add vertices and triangulate as a fan from vertex 0
+        // Add vertices and triangulate as a fan from vertex 0.
+        // Normals are evaluated per vertex from the surface so curved faces
+        // are shaded correctly (planar faces yield a constant normal).
         let base_idx = mesh.positions.len() as u32;
 
         for &v in &loop_vertices {
+            let normal = face.surface.normal_at_point(v);
+            let n = if face.same_sense {
+                [normal.x, normal.y, normal.z]
+            } else {
+                [-normal.x, -normal.y, -normal.z]
+            };
             mesh.positions.push([v.x, v.y, v.z]);
-            mesh.normals.push(face_normal);
+            mesh.normals.push(n);
         }
 
         for i in 1..(loop_vertices.len() as u32 - 1) {
