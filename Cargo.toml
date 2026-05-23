@@ -28,3 +28,5 @@ approx = "0.5"
 thiserror = "2"
 # Ordered collections (deterministic iteration)
 indexmap = { version = "2", features = ["serde"] }
+# Internal crates
+mycad-format = { path = "crates/mycad-format" }

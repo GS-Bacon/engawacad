@@ -10,9 +10,11 @@ nalgebra = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 indexmap = { workspace = true }
+mycad-format = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
+mycad-format = { workspace = true }
 
 [[bench]]
 name = "tessellation"
