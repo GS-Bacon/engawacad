@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
+use mycad_build::build_solid_from_features;
 use mycad_format::Document;
 use mycad_kernel::brep::topology::IdGenerator;
-use mycad_kernel::build_solid_from_features;
 use mycad_kernel::tessellation::{tessellate_solid, to_ascii_stl};
 use std::path::PathBuf;
 use std::process;

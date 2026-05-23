@@ -10,8 +10,9 @@ name = "mycad"
 path = "src/main.rs"
 
 [dependencies]
-mycad-kernel = { path = "../mycad-kernel" }
-mycad-format = { path = "../mycad-format" }
+mycad-kernel = { workspace = true }
+mycad-format = { workspace = true }
+mycad-build = { workspace = true }
 clap = { workspace = true }
 
 [dev-dependencies]

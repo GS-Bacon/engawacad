@@ -32,6 +32,7 @@ crates/
 │   ├── document.rs   Document (トップレベル)
 │   ├── feature.rs    Feature enum (操作履歴の1ステップ)
 │   └── component.rs  Component (設計階層)
+├── mycad-build/      Featureディスパッチャー (format → kernel の橋渡し)
 ├── mycad-cli/        CLIバイナリ (mycad)
 ├── mycad-viewer/     3Dビューア (未実装)
 └── xtask/            ビルド自動化タスク

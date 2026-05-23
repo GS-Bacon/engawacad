@@ -2,6 +2,7 @@
 members = [
     "crates/mycad-kernel",
     "crates/mycad-format",
+    "crates/mycad-build",
     "crates/mycad-viewer",
     "crates/mycad-cli",
     "crates/xtask",
@@ -33,3 +34,5 @@ clap = { version = "4", features = ["derive"] }
 indexmap = { version = "2", features = ["serde"] }
 # Internal crates
 mycad-format = { path = "crates/mycad-format" }
+mycad-kernel = { path = "crates/mycad-kernel" }
+mycad-build = { path = "crates/mycad-build" }

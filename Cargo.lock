@@ -276,10 +276,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "mycad-build"
+version = "0.1.0"
+dependencies = [
+ "mycad-format",
+ "mycad-kernel",
+]
+
+[[package]]
 name = "mycad-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "mycad-build",
  "mycad-format",
  "mycad-kernel",
  "tempfile",
@@ -303,7 +312,6 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "indexmap",
- "mycad-format",
  "nalgebra",
  "serde",
  "thiserror",
