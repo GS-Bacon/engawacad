@@ -11,8 +11,8 @@
 - `ROADMAP.md` を読み、現在の Phase と完了条件を把握する
 - `gh issue list --state open` で open issue を確認する
 - ユーザーが特定 Issue を指定しない場合は、現在 Phase の Milestone に紐づく未着手 Issue を提案する
-- Issue に着手する際は branch 命名規則 `claude/issue-<N>-<slug>` を使う
-- PR description に `Closes #N` を含めて Issue を自動 close 連結
+- Issue に着手する際は commit message に `Closes #N` を含めてメインブランチへ直接 push する (branch・PR は不要)
+- ただし PR を作る場合は作成直後にセルフマージしてブランチを削除する
 
 ## Project Overview
 
