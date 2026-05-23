@@ -10,4 +10,7 @@ pub enum FormatError {
 
     #[error("invalid file extension: expected .mycad, got {0:?}")]
     InvalidExtension(Option<String>),
+
+    #[error("invalid reference {value:?}: {reason}")]
+    InvalidReference { value: String, reason: &'static str },
 }

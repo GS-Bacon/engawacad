@@ -111,4 +111,32 @@ mod tests {
         let err = Document::from_path(path).unwrap_err();
         assert!(matches!(err, FormatError::InvalidExtension(Some(ref e)) if e == "txt"));
     }
+
+    #[test]
+    fn test_assembly_roundtrip() {
+        use crate::component::ComponentRef;
+
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join("assembly.mycad");
+        let doc = Document::from_path(&path).unwrap();
+
+        // Bolt child has a stdlib reference
+        let bolt = doc
+            .root_component
+            .children
+            .iter()
+            .find(|c| c.name == "Bolt")
+            .expect("Bolt component not found");
+        assert!(
+            matches!(&bolt.reference, Some(ComponentRef::StdLib(p)) if p == "fasteners/jis_b1176/M5x20")
+        );
+
+        // Roundtrip: serialize then deserialize yields the same YAML
+        let yaml = doc.to_yaml().unwrap();
+        let doc2 = Document::from_yaml(&yaml).unwrap();
+        assert_eq!(doc.to_yaml().unwrap(), doc2.to_yaml().unwrap());
+    }
 }
