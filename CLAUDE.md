@@ -6,6 +6,14 @@
 - プランモードではユーザーの許可があるまでプランファイルの作成を禁止。
 - プランモードではまず議論や壁打ちを行い、適宜質問や反論を通じて客観的な視点から議論すること。
 
+## セッション開始時のチェックリスト
+
+- `ROADMAP.md` を読み、現在の Phase と完了条件を把握する
+- `gh issue list --state open` で open issue を確認する
+- ユーザーが特定 Issue を指定しない場合は、現在 Phase の Milestone に紐づく未着手 Issue を提案する
+- Issue に着手する際は branch 命名規則 `claude/issue-<N>-<slug>` を使う
+- PR description に `Closes #N` を含めて Issue を自動 close 連結
+
 ## Project Overview
 
 MyCadはRust製のオープンソースB-rep (Boundary Representation) CADカーネル。
