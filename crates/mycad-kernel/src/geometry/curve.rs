@@ -33,4 +33,24 @@ impl Curve {
             }
         }
     }
+
+    /// Sample points along the curve from `t_start` (inclusive) toward `t_end` (exclusive).
+    ///
+    /// Returns a non-empty point sequence starting at `evaluate(t_start)`.
+    /// - `Line`: single point at `t_start` (linear interpolation between vertices handles the rest).
+    /// - `Circle`: `segments` equally-spaced points from `t_start` toward `t_end`.
+    pub fn sample_segment(&self, t_start: f64, t_end: f64, segments: usize) -> Vec<Point> {
+        match self {
+            Curve::Line { .. } => vec![self.evaluate(t_start)],
+            Curve::Circle { .. } => {
+                if segments == 0 {
+                    return vec![self.evaluate(t_start)];
+                }
+                let step = (t_end - t_start) / segments as f64;
+                (0..segments)
+                    .map(|i| self.evaluate(t_start + step * i as f64))
+                    .collect()
+            }
+        }
+    }
 }

@@ -10,4 +10,7 @@ pub enum KernelError {
 
     #[error("unsupported feature variant: {kind}")]
     UnsupportedFeature { kind: &'static str },
+
+    #[error("invalid parameter: {kind}")]
+    InvalidParameter { kind: &'static str },
 }

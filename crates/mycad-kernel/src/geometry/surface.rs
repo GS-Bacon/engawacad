@@ -2,6 +2,17 @@ use super::math::orthonormal_basis;
 use super::{Point, Vec3};
 use serde::{Deserialize, Serialize};
 
+/// Strategy for tessellating a face on a given surface type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TessellationStrategy {
+    /// Fan from first boundary vertex (convex planar face).
+    BoundaryFan,
+    /// Full UV grid patch (untrimmed periodic/rectangular face).
+    UvGridFullPatch,
+    /// Not yet supported by the tessellator.
+    Unsupported,
+}
+
 /// A geometric surface in 3D space.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Surface {
@@ -157,6 +168,15 @@ impl Surface {
     pub fn normal_at_point(&self, p: &Point) -> Vec3 {
         let (u, v) = self.uv_of(p);
         self.normal_at(u, v)
+    }
+
+    /// Return the tessellation strategy for this surface type.
+    pub fn tessellation_strategy(&self) -> TessellationStrategy {
+        match self {
+            Surface::Plane { .. } => TessellationStrategy::BoundaryFan,
+            Surface::Cylinder { .. } => TessellationStrategy::UvGridFullPatch,
+            Surface::Sphere { .. } | Surface::Cone { .. } => TessellationStrategy::Unsupported,
+        }
     }
 }
 

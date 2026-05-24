@@ -14,7 +14,7 @@ fn cuboid_to_mesh_pipeline() {
     assert_eq!(solid.faces.len(), 6);
 
     // Tessellate
-    let mesh = tessellate_solid(&solid);
+    let mesh = tessellate_solid(&solid).unwrap();
 
     // Verify mesh
     assert_eq!(mesh.triangle_count(), 12); // 6 faces * 2 triangles
@@ -29,7 +29,7 @@ fn cuboid_pipeline_is_deterministic() {
     let run = || {
         let mut id_gen = IdGenerator::new(42);
         let solid = make_cuboid(5.0, 10.0, 15.0, &mut id_gen);
-        tessellate_solid(&solid)
+        tessellate_solid(&solid).unwrap()
     };
 
     let mesh1 = run();

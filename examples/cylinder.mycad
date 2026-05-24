@@ -1,0 +1,8 @@
+version: "0.1.0"
+root_component:
+  name: "Simple Cylinder"
+  features:
+    - type: create_cylinder
+      id: cyl_1
+      radius: 5.0
+      height: 20.0

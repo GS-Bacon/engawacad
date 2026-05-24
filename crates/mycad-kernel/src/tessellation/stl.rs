@@ -56,7 +56,7 @@ mod tests {
     fn ascii_stl_cuboid_structure() {
         let mut g = IdGenerator::new(0);
         let solid = make_cuboid(1.0, 1.0, 1.0, &mut g);
-        let mesh = tessellate_solid(&solid);
+        let mesh = tessellate_solid(&solid).unwrap();
         let stl = to_ascii_stl(&mesh, "test_cube");
 
         assert!(stl.starts_with("solid test_cube\n"));
@@ -73,7 +73,7 @@ mod tests {
         let run = || {
             let mut g = IdGenerator::new(0);
             let s = make_cuboid(1.0, 1.0, 1.0, &mut g);
-            to_ascii_stl(&tessellate_solid(&s), "cube")
+            to_ascii_stl(&tessellate_solid(&s).unwrap(), "cube")
         };
         assert_eq!(run(), run());
     }
