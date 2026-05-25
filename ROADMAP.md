@@ -20,7 +20,7 @@
 
 ---
 
-## Phase 1: `.mycad` から STL を出力できる 🚧
+## Phase 1: `.mycad` から STL を出力できる ✅
 
 **外から見た成果**: コマンドラインから `.mycad` ファイルを STL に変換できる
 
@@ -34,6 +34,8 @@ mycad export examples/simple_box.mycad -o box.stl
 - `examples/simple_box.mycad` が変換できる (CreateBox のみ)
 
 **Issues**: [Milestone: Phase 1](https://github.com/GS-Bacon/mycad/milestone/2)
+
+**状態**: 完了 (2026-05-23)
 
 ---
 

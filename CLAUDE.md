@@ -9,6 +9,7 @@
 ## セッション開始時のチェックリスト
 
 - `ROADMAP.md` を読み、現在の Phase と完了条件を把握する
+- 現在 Phase の `type: feature` Issue が全 closed なら、ROADMAP 表記 (🚧→✅) とマイルストーン close が反映済みか突合し、漏れていれば ADR-002 の Phase 完了手続きに従って反映する
 - `gh issue list --state open` で open issue を確認する
 - ユーザーが特定 Issue を指定しない場合は、現在 Phase の Milestone に紐づく未着手 Issue を提案する
 - Issue に着手する際は commit message に `Closes #N` を含めてメインブランチへ直接 push する (branch・PR は不要)

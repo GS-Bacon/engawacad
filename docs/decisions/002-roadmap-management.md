@@ -82,3 +82,4 @@ solo 開発でも type 軸を設けた理由: 保守・設計・差し込み作�
 - PR description に `Closes #N` を含めて Issue を自動 close
 - viewer スタック選定 → ADR-003 として記録済み (003-viewer-and-app-architecture.md)
 - Phase 完了判定: 「その Phase の `type: feature` Issue が全て closed」。`type: refactor` / `type: foundation` / `bug` は判定に含めない
+- Phase 完了手続き: 完了判定が真になったら同一コミット内で (1) `ROADMAP.md` の当該 Phase ヘッダを `✅` にし `**状態**: 完了 (YYYY-MM-DD)` を末尾に追記、(2) 対応する GitHub マイルストーンを `gh api -X PATCH repos/.../milestones/<N> -f state=closed` で close する
