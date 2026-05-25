@@ -9,6 +9,14 @@ use axum::routing::get;
 use axum::Json;
 use axum::Router;
 
+fn is_allowed_host(host_base: &str) -> bool {
+    host_base.is_empty()
+        || host_base == "localhost"
+        || host_base
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == ':' || c == '[' || c == ']')
+}
+
 async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
     let host = req
         .headers()
@@ -16,7 +24,7 @@ async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCo
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let host_base = host.split(':').next().unwrap_or("");
-    if matches!(host_base, "127.0.0.1" | "localhost" | "") {
+    if is_allowed_host(host_base) {
         Ok(next.run(req).await)
     } else {
         Err(StatusCode::FORBIDDEN)

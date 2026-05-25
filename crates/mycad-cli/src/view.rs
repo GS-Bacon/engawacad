@@ -15,7 +15,7 @@ pub async fn bind_listener(start_port: u16) -> Result<(tokio::net::TcpListener, 
         let port = start_port
             .checked_add(i)
             .ok_or_else(|| format!("port overflow: {start_port} + {i} exceeds u16 range"))?;
-        match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+        match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
             Ok(listener) => return Ok((listener, port)),
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => continue,
             Err(e) => return Err(format!("failed to bind port {port}: {e}")),
@@ -38,7 +38,8 @@ pub fn run_view(input: &Path, port: u16) -> Result<(), String> {
 
         let _ = open::that(&url);
 
-        println!("MyCad viewer: {url}");
+        println!("MyCad viewer: {url}  (local)");
+        println!("              http://0.0.0.0:{actual_port}  listening on all interfaces");
         println!("Press Ctrl-C to stop.");
 
         axum::serve(listener, mycad_api::router::app())

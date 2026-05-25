@@ -100,3 +100,101 @@ async fn edge_empty_query_file() {
     // Empty string is a relative path → 400
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn edge_host_guard_tailscale_ip_allowed() {
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "10.13.1.1:7878")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn edge_host_guard_ipv4_no_port_allowed() {
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "192.168.1.100")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn edge_host_guard_ipv6_bracket_allowed() {
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "[::1]:7878")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn edge_host_guard_loopback_ip_allowed() {
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "127.0.0.1:7878")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn edge_host_guard_domain_still_blocked() {
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "evil.com")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn edge_host_guard_ip_with_subdomain_blocked() {
+    // "10.13.evil.com" — contains letters, should be blocked
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "10.13.evil.com")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn edge_host_guard_0_0_0_0_allowed() {
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "0.0.0.0:7878")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn edge_host_guard_bare_ip_allowed() {
+    // Port-less numeric IP (split gives the IP itself)
+    let app = app();
+    let req = Request::builder()
+        .uri("/")
+        .header("host", "10.0.0.1")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
