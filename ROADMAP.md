@@ -2,7 +2,7 @@
 
 このドキュメントはユーザーから見た機能単位でフェーズを定義する。技術選定の理由は [`docs/decisions/`](docs/decisions/) の ADR に記録する。
 
-各フェーズの実装タスクは [GitHub Issues](https://github.com/GS-Bacon/mycad/issues) で管理し、1 フェーズ = 1 Milestone に対応する。Issue は着手するフェーズのものだけを作成する (空想 Issue は作らない)。
+各フェーズの実装タスクは [GitHub Issues](https://github.com/GS-Bacon/mycad/issues) で管理し、1 フェーズ = 1 Milestone に対応する。Issue は着手するフェーズのものだけを作成する (空想 Issue は作らない)。マイルストーン運用ルール (type ラベル・Phase 完了判定・差し込み作業の扱い) は [ADR-002](docs/decisions/002-roadmap-management.md) を参照。
 
 ---
 
@@ -37,22 +37,31 @@ mycad export examples/simple_box.mycad -o box.stl
 
 ---
 
-## Phase 2: 3D Viewer で `.mycad` を確認できる
+## Phase 2: Web ベースビューア基盤 🚧
 
-**外から見た成果**: ウィンドウが開き、`.mycad` の形状を 3D でリアルタイム確認できる
+**前提 ADR**: [ADR-003](docs/decisions/003-viewer-and-app-architecture.md)
+
+**外から見た成果**: ブラウザで `.mycad` の形状を 3D でリアルタイム確認できる
 
 ```bash
-mycad view examples/simple_box.mycad
+mycad view examples/simple_box.mycad   # ローカルサーバを起動してブラウザを開く
 ```
 
 **完了条件**:
-- `mycad view <input.mycad>` でウィンドウが開く
-- box がマウスで回転・ズームできる
-- レンダリングスタック選定は ADR-003 で記録
+- `mycad view <input.mycad>` がローカルサーバを起動しブラウザを自動オープンする
+- ブラウザ上で box がマウスで回転・ズームできる
+- Rust API 層 (HTTP サーバ) と TS フロント (Three.js) の骨組みが動作する
+- Rust → TS 型自動生成パイプラインが確立している
+
+**備考**: Tauri によるネイティブデスクトップアプリ化・server モードでの self-hosted multi-user 利用は将来の発展。Issue 化は当該 Phase 着手時。
+
+**Issues**: [Milestone: Phase 2](https://github.com/GS-Bacon/mycad/milestone/3)
 
 ---
 
 ## Phase 3: 円柱・球・押し出しが作れる
+
+**前提 ADR**: [ADR-005](docs/decisions/005-topological-naming.md) — `Extrude` (スケッチ→ソリッド) 着手前に決定必須
 
 **外から見た成果**: box 以外の基本形状を `.mycad` で記述できる
 

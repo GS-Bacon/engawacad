@@ -39,7 +39,7 @@ Claude Code が「1セッション = 1 Issue = 1 PR」のループで動くこ�
 | 順序 | Phase | 理由 |
 |---|---|---|
 | Phase 1 | STL export | Feature → geometry パイプラインが初めて繋がる。CLI ツールとして動く最小構成 |
-| Phase 2 | Viewer | box 1個でも viewer ができれば、以降の primitive・Boolean を追加するたびに視覚確認できる。Viewer なしで primitive を増やすと確認に Blender が毎回必要で摩擦が大きい |
+| Phase 2 | Viewer (Web ベース) | box 1個でも viewer ができれば、以降の primitive・Boolean を追加するたびに視覚確認できる。Web ベースビューアを採用。詳細は [ADR-003](003-viewer-and-app-architecture.md) |
 | Phase 3 | Primitives | Viewer があるため実装 → 即視覚確認のループが回る |
 | Phase 4 | Boolean | B-rep 交差演算は難度が高いため primitives の後 |
 | Phase 5 | Assembly | 依存: Boolean が安定していること、部品ライブラリが存在すること |
@@ -55,15 +55,24 @@ STEP (ISO 10303-21) は CAD 業界標準で、B-rep を直接表現できるた�
 
 STL は三角メッシュの単純な ASCII/バイナリ形式で、`tessellate_solid` の出力をそのまま書き出せる。パイプライン確立後、Phase 6 で STEP に拡張する。
 
-### Label を 5 種に絞った理由
+### ラベル運用: 2 軸ラベル制
 
-`kernel` / `format` / `cli` / `viewer` / `docs`。
+**crate 軸** (どのコードに触るか): `kernel` / `format` / `cli` / `viewer` / `docs`
 
-solo 開発では「バグか機能か」の分類は Issue 本文で十分で、`bug` / `enhancement` ラベルのメンテコストに見合わない。着手時に crate 単位で分類できれば、Claude が適切なコードを探す際のヒントになる。
+**type 軸** (作業種別): `type: feature` / `type: refactor` / `type: foundation`
 
-### Phase 1 だけ Issue 化する理由
+- `type: feature` — ユーザから見た機能追加。**Phase 完了判定の対象**。
+- `type: refactor` — 内部リファクタ。完了判定に含めない。
+- `type: foundation` — 設計・横断的な土台作業。完了判定に含めない。
+- `bug` / `docs` ラベルは既存のものを流用。
 
-Phase 2 以降の実装詳細は今後の知見 (例: viewer スタックの選定結果、B-rep 演算ライブラリの成熟度) によって変わる。先に Issue を作っても陳腐化するだけなので、着手する Phase のものだけを作成する。
+solo 開発でも type 軸を設けた理由: 保守・設計・差し込み作業が機能 Milestone に混入すると Phase が偽 closed になる (Phase 2 Milestone がこれで崩れた)。type ラベルにより「Phase 完了 = その Phase の `type: feature` Issue が全 closed」と明確に定義できる。
+
+### 着手 Phase のみ Issue 化する理由
+
+先の Phase の実装詳細は知見が揃っていないため陳腐化する。**着手するフェーズの Issue のみを作成する** (空想 Issue 禁止)。現在は Phase 2/3 が active なので両 Phase の Issue を管理対象にする。
+
+差し込み作業 (保守・設計・リファクタ) は奉仕する Phase の Milestone に入れ `type:` ラベルで区別する。これにより作業の置き場に迷わず、かつ Phase 完了判定を汚さない。
 
 ## Implementation Details
 
@@ -71,4 +80,5 @@ Phase 2 以降の実装詳細は今後の知見 (例: viewer スタックの選�
 - Phase 0 Milestone は作成後すぐ close (完了済みの記録)
 - branch 命名規則: `claude/issue-<N>-<slug>`
 - PR description に `Closes #N` を含めて Issue を自動 close
-- viewer スタック選定は Phase 2 着手時に ADR-003 として別途記録する
+- viewer スタック選定 → ADR-003 として記録済み (003-viewer-and-app-architecture.md)
+- Phase 完了判定: 「その Phase の `type: feature` Issue が全て closed」。`type: refactor` / `type: foundation` / `bug` は判定に含めない
