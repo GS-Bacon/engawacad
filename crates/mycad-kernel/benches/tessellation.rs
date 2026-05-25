@@ -12,7 +12,7 @@ fn main() {
 
     for i in 0..iterations {
         let mut id_gen = IdGenerator::new(i as u64);
-        let solid = make_cuboid(10.0, 20.0, 30.0, &mut id_gen);
+        let solid = make_cuboid(10.0, 20.0, 30.0, &mut id_gen).unwrap();
         let _mesh = tessellate_solid(&solid).unwrap();
     }
 

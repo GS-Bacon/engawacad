@@ -23,7 +23,7 @@ pub fn build_solid_from_features(
             height,
             depth,
             ..
-        } => Ok(make_cuboid(*width, *height, *depth, gen)),
+        } => make_cuboid(*width, *height, *depth, gen),
         Feature::CreateCylinder { radius, height, .. } => make_cylinder(*radius, *height, gen),
         Feature::CreateSphere { .. } => Err(KernelError::UnsupportedFeature {
             kind: "create_sphere",

@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn ascii_stl_cuboid_structure() {
         let mut g = IdGenerator::new(0);
-        let solid = make_cuboid(1.0, 1.0, 1.0, &mut g);
+        let solid = make_cuboid(1.0, 1.0, 1.0, &mut g).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
         let stl = to_ascii_stl(&mesh, "test_cube");
 
@@ -72,7 +72,7 @@ mod tests {
     fn ascii_stl_deterministic() {
         let run = || {
             let mut g = IdGenerator::new(0);
-            let s = make_cuboid(1.0, 1.0, 1.0, &mut g);
+            let s = make_cuboid(1.0, 1.0, 1.0, &mut g).unwrap();
             to_ascii_stl(&tessellate_solid(&s).unwrap(), "cube")
         };
         assert_eq!(run(), run());

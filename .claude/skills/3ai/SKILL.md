@@ -15,6 +15,12 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 
 **`EnterPlanMode` を呼ぶ。** 以降 STEP 4 まではプランモード内で動作する。
 
+> **重要 — プランモード内でも STEP 1・STEP 3 の Bash dispatch は必ず実行する。**
+> harness のプランモードは「read-only except plan file」と指示するが、これが deny するのは Edit/Write 等のファイル変更ツールであって、**Bash サブプロセス起動は通る**。
+> `mkdir features/...`・`state.sh`・`dispatch-codex.sh`（Codex 設計レビュー）はすべて Bash であり、プランモード内でそのまま走る。
+> したがって **STEP 3 の Codex 設計レビューを「ExitPlanMode 後に回す」と後ろ倒ししてはならない。** プランファイル記述完了後、プランモード内で Codex レビューを回して Critical/High を潰し、その後で STEP 4 の `ExitPlanMode` を呼ぶ（STEP 3→4 の順序厳守）。
+> ファイル変更で deny されるのは `crates/**` への Edit/Write のみ（`guard-crates.sh` フック）。
+
 ---
 
 ## STEP 1: Issue 選択・作業ブランチ作成

@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn test_tessellate_cuboid_unchanged() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cuboid(1.0, 1.0, 1.0, &mut gen);
+        let solid = make_cuboid(1.0, 1.0, 1.0, &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         assert_eq!(mesh.triangle_count(), 12);
@@ -370,8 +370,8 @@ mod tests {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
 
-        let s1 = make_cuboid(1.0, 1.0, 1.0, &mut gen1);
-        let s2 = make_cuboid(1.0, 1.0, 1.0, &mut gen2);
+        let s1 = make_cuboid(1.0, 1.0, 1.0, &mut gen1).unwrap();
+        let s2 = make_cuboid(1.0, 1.0, 1.0, &mut gen2).unwrap();
 
         let m1 = tessellate_solid(&s1).unwrap();
         let m2 = tessellate_solid(&s2).unwrap();
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn test_tessellate_cuboid() {
         let mut id_gen = IdGenerator::new(0);
-        let solid = make_cuboid(1.0, 1.0, 1.0, &mut id_gen);
+        let solid = make_cuboid(1.0, 1.0, 1.0, &mut id_gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         assert_eq!(mesh.triangle_count(), 12);
@@ -511,8 +511,8 @@ mod tests {
         let mut id_gen1 = IdGenerator::new(0);
         let mut id_gen2 = IdGenerator::new(0);
 
-        let solid1 = make_cuboid(2.0, 3.0, 4.0, &mut id_gen1);
-        let solid2 = make_cuboid(2.0, 3.0, 4.0, &mut id_gen2);
+        let solid1 = make_cuboid(2.0, 3.0, 4.0, &mut id_gen1).unwrap();
+        let solid2 = make_cuboid(2.0, 3.0, 4.0, &mut id_gen2).unwrap();
 
         let mesh1 = tessellate_solid(&solid1).unwrap();
         let mesh2 = tessellate_solid(&solid2).unwrap();

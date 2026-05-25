@@ -1,4 +1,5 @@
 use crate::brep::topology::{IdGenerator, Solid};
+use crate::error::KernelError;
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::Surface;
 use crate::geometry::Point;
@@ -13,7 +14,21 @@ use crate::geometry::Vec3;
 /// - `id_gen`: deterministic ID generator
 ///
 /// The cuboid spans from (-dx/2, -dy/2, -dz/2) to (dx/2, dy/2, dz/2).
-pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid {
+pub fn make_cuboid(
+    dx: f64,
+    dy: f64,
+    dz: f64,
+    id_gen: &mut IdGenerator,
+) -> Result<Solid, KernelError> {
+    if !dx.is_finite() || dx <= 0.0 {
+        return Err(KernelError::InvalidParameter { kind: "width" });
+    }
+    if !dy.is_finite() || dy <= 0.0 {
+        return Err(KernelError::InvalidParameter { kind: "height" });
+    }
+    if !dz.is_finite() || dz <= 0.0 {
+        return Err(KernelError::InvalidParameter { kind: "depth" });
+    }
     let mut solid = Solid::new(id_gen.next());
 
     let hx = dx / 2.0;
@@ -214,18 +229,19 @@ pub fn make_cuboid(dx: f64, dy: f64, dz: f64, id_gen: &mut IdGenerator) -> Solid
 
     solid.add_shell(id_gen.next(), face_indices, true);
 
-    solid
+    Ok(solid)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::brep::topology::IdGenerator;
+    use crate::error::KernelError;
 
     #[test]
     fn test_cuboid_topology() {
         let mut id_gen = IdGenerator::new(0);
-        let solid = make_cuboid(10.0, 20.0, 30.0, &mut id_gen);
+        let solid = make_cuboid(10.0, 20.0, 30.0, &mut id_gen).unwrap();
 
         assert_eq!(solid.vertices.len(), 8, "cuboid should have 8 vertices");
         assert_eq!(solid.edges.len(), 12, "cuboid should have 12 edges");
@@ -245,7 +261,7 @@ mod tests {
     #[test]
     fn test_cuboid_vertex_positions() {
         let mut id_gen = IdGenerator::new(0);
-        let solid = make_cuboid(2.0, 4.0, 6.0, &mut id_gen);
+        let solid = make_cuboid(2.0, 4.0, 6.0, &mut id_gen).unwrap();
 
         // Check that all vertices are at the expected positions
         let expected = [
@@ -276,8 +292,8 @@ mod tests {
         let mut id_gen1 = IdGenerator::new(0);
         let mut id_gen2 = IdGenerator::new(0);
 
-        let solid1 = make_cuboid(10.0, 20.0, 30.0, &mut id_gen1);
-        let solid2 = make_cuboid(10.0, 20.0, 30.0, &mut id_gen2);
+        let solid1 = make_cuboid(10.0, 20.0, 30.0, &mut id_gen1).unwrap();
+        let solid2 = make_cuboid(10.0, 20.0, 30.0, &mut id_gen2).unwrap();
 
         assert_eq!(solid1.vertices.len(), solid2.vertices.len());
         for (v1, v2) in solid1.vertices.iter().zip(solid2.vertices.iter()) {
@@ -295,5 +311,92 @@ mod tests {
         for (f1, f2) in solid1.faces.iter().zip(solid2.faces.iter()) {
             assert_eq!(f1.id, f2.id);
         }
+    }
+
+    // K01: make_cuboid rejects zero, negative, NaN, Infinity dimensions
+    #[test]
+    fn test_make_cuboid_invalid_dimensions() {
+        let mut gen = IdGenerator::new(0);
+
+        // Zero
+        assert!(matches!(
+            make_cuboid(0.0, 1.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "width" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, 0.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "height" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, 1.0, 0.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+
+        // Negative
+        assert!(matches!(
+            make_cuboid(-1.0, 1.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "width" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, -1.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "height" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, 1.0, -1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+
+        // NaN
+        assert!(matches!(
+            make_cuboid(f64::NAN, 1.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "width" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, f64::NAN, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "height" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, 1.0, f64::NAN, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+
+        // Infinity
+        assert!(matches!(
+            make_cuboid(f64::INFINITY, 1.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "width" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, f64::INFINITY, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "height" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, 1.0, f64::INFINITY, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+
+        // Negative Infinity
+        assert!(matches!(
+            make_cuboid(f64::NEG_INFINITY, 1.0, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "width" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, f64::NEG_INFINITY, 1.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "height" })
+        ));
+        assert!(matches!(
+            make_cuboid(1.0, 1.0, f64::NEG_INFINITY, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    // K02: near-zero positive value is Ok (exact <= 0.0 policy)
+    #[test]
+    fn test_make_cuboid_near_zero_positive_ok() {
+        let mut gen = IdGenerator::new(0);
+        let result = make_cuboid(1e-9, 1.0, 1.0, &mut gen);
+        assert!(
+            result.is_ok(),
+            "near-zero positive should be Ok per exact <= 0.0 policy"
+        );
     }
 }

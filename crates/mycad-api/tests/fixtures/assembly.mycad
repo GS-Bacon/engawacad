@@ -1,0 +1,11 @@
+version: "0.1.0"
+root_component:
+  name: "Simple Assembly"
+  children:
+    - name: "Part"
+      features:
+        - type: create_box
+          id: box_1
+          width: 10.0
+          height: 10.0
+          depth: 10.0

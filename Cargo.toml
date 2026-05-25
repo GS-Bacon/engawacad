@@ -5,6 +5,7 @@ members = [
     "crates/mycad-build",
     "crates/mycad-viewer",
     "crates/mycad-cli",
+    "crates/mycad-api",
     "crates/xtask",
 ]
 resolver = "2"
@@ -32,7 +33,13 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 # Ordered collections (deterministic iteration)
 indexmap = { version = "2", features = ["serde"] }
+# HTTP / async
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde_json = "1"
+tower = "0.5"
 # Internal crates
 mycad-format = { path = "crates/mycad-format" }
 mycad-kernel = { path = "crates/mycad-kernel" }
 mycad-build = { path = "crates/mycad-build" }
+mycad-api = { path = "crates/mycad-api" }

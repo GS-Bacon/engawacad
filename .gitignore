@@ -4,3 +4,7 @@
 *~
 .DS_Store
 *.stl
+
+# /3ai フロー
+.env
+features/**/*.raw

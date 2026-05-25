@@ -1,0 +1,9 @@
+version: "0.1.0"
+root_component:
+  name: "Zero Box"
+  features:
+    - type: create_box
+      id: box_1
+      width: 0.0
+      height: 1.0
+      depth: 1.0
