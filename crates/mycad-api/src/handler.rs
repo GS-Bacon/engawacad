@@ -1,11 +1,11 @@
 use crate::error::ApiError;
+use crate::transport::MeshRequest;
 use axum::extract::Query;
 use axum::Json;
 use mycad_build::build_solid_from_features;
 use mycad_format::Document;
 use mycad_kernel::brep::topology::IdGenerator;
 use mycad_kernel::tessellation::{tessellate_solid_with, TessellationOptions, TriangleMesh};
-use serde::Deserialize;
 use std::path::Path;
 
 const V0_TESSELLATION: TessellationOptions = TessellationOptions {
@@ -13,12 +13,7 @@ const V0_TESSELLATION: TessellationOptions = TessellationOptions {
     axial_segments: 1,
 };
 
-#[derive(Deserialize)]
-pub(crate) struct MeshQuery {
-    pub file: String,
-}
-
-pub(crate) async fn get_mesh(Query(q): Query<MeshQuery>) -> Result<Json<TriangleMesh>, ApiError> {
+pub(crate) async fn get_mesh(Query(q): Query<MeshRequest>) -> Result<Json<TriangleMesh>, ApiError> {
     let path = Path::new(&q.file);
 
     if path.is_relative() {

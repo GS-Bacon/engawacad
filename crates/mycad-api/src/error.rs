@@ -1,9 +1,10 @@
+use crate::transport::ErrorResponse;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use mycad_format::error::FormatError;
 use mycad_kernel::error::KernelError;
 use mycad_kernel::tessellation::TessellationError;
-use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -52,7 +53,7 @@ impl IntoResponse for ApiError {
             ApiError::Unprocessable(_) => (StatusCode::UNPROCESSABLE_ENTITY, self.to_string()),
             ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
-        let body = json!({ "error": msg });
-        (status, axum::Json(body)).into_response()
+        let body = ErrorResponse { error: msg };
+        (status, Json(body)).into_response()
     }
 }

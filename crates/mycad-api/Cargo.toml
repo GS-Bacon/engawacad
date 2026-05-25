@@ -4,6 +4,7 @@ description = "HTTP API server for MyCad"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 axum = { workspace = true }
@@ -14,9 +15,11 @@ mycad-format = { workspace = true }
 mycad-kernel = { workspace = true }
 mycad-build = { workspace = true }
 thiserror = { workspace = true }
+ts-rs = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
+mycad-kernel = { workspace = true }
 
 [[bin]]
 name = "mycad-api"

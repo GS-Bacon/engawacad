@@ -40,11 +40,14 @@ case "$MODE" in
   design)
     [[ -z "$INPUT_FILE" ]] && { echo "ERROR: --input required for mode=design" >&2; exit 1; }
     echo "  input: $INPUT_FILE" >&2
+    # --output-last-message で最終メッセージ(verdict YAML)のみを結果ファイルに書く。
+    # 推論ログ・ファイル読み込み等の冗長出力は .log に退避し、結果ファイルへの混入を防ぐ。
     codex exec \
       -c sandbox_mode="read-only" \
+      --output-last-message "$RESULT_FILE" \
       "$INSTR" \
       < "$INPUT_FILE" \
-      > "$RESULT_FILE" 2>&1
+      > "$RESULT_FILE.log" 2>&1
     ;;
   review)
     [[ -z "$BASE_BRANCH" ]] && BASE_BRANCH="$(detect_base)"
@@ -52,8 +55,8 @@ case "$MODE" in
     echo "  base: $BASE_BRANCH" >&2
     REVIEW_EXIT=0
     git diff "$BASE_BRANCH"...HEAD \
-      | codex exec -c sandbox_mode="read-only" "$INSTR" \
-      > "$RESULT_FILE" 2>&1 || REVIEW_EXIT=$?
+      | codex exec -c sandbox_mode="read-only" --output-last-message "$RESULT_FILE" "$INSTR" \
+      > "$RESULT_FILE.log" 2>&1 || REVIEW_EXIT=$?
     python3 - "$RESULT_FILE" > "$RESULT_FILE.verdict.json" 2>/dev/null <<'PY' || echo '{"verdict":"unknown","blocking":-1}' > "$RESULT_FILE.verdict.json"
 import sys, re, json
 text = open(sys.argv[1], encoding="utf-8", errors="replace").read()

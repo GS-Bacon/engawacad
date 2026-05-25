@@ -1,6 +1,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use mycad_api::router::app;
+use mycad_kernel::tessellation::TriangleMesh;
 use serde::Deserialize;
 use tower::ServiceExt;
 
@@ -54,9 +55,12 @@ async fn t01_normal_box() {
     let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
     let (status, body) = send_mesh_request(&uri).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    let mesh: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(mesh["positions"].as_array().unwrap().len() > 0);
-    assert!(mesh["indices"].as_array().unwrap().len() % 3 == 0);
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    assert!(
+        mesh.indices.len() % 3 == 0,
+        "indices count must be multiple of 3"
+    );
 }
 
 // T02: normal cylinder
@@ -66,8 +70,12 @@ async fn t02_normal_cylinder() {
     let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
     let (status, body) = send_mesh_request(&uri).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    let mesh: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(mesh["positions"].as_array().unwrap().len() > 0);
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    assert!(
+        mesh.indices.len() % 3 == 0,
+        "indices count must be multiple of 3"
+    );
 }
 
 // T03: determinism
@@ -116,6 +124,14 @@ async fn t05_invalid_extension() {
     let uri = format!("/api/v0/mesh?file={}", urlencoding(&abs));
     let (status, body) = send_mesh_request(&uri).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty());
+    let lower = err.error.to_lowercase();
+    assert!(
+        lower.contains("extension") || lower.contains(".mycad") || lower.contains("invalid"),
+        "expected extension-related message, got: {}",
+        err.error
+    );
 }
 
 // T06: 403 Host header (DNS rebinding protection)
@@ -140,6 +156,8 @@ async fn t07_unsupported_feature() {
     let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
     let (status, body) = send_mesh_request(&uri).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
 }
 
 // T08: 422 degenerate dimension (zero-width box)
@@ -149,6 +167,8 @@ async fn t08_degenerate_dimension() {
     let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
     let (status, body) = send_mesh_request(&uri).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
 }
 
 // T09: 422 assembly unsupported

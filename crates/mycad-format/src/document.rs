@@ -3,9 +3,10 @@ use crate::error::FormatError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use ts_rs::TS;
 
 /// The top-level document representing a MyCad design file.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Document {
     /// Kernel version that created this document.
     pub version: String,
@@ -138,5 +139,42 @@ mod tests {
         let yaml = doc.to_yaml().unwrap();
         let doc2 = Document::from_yaml(&yaml).unwrap();
         assert_eq!(doc.to_yaml().unwrap(), doc2.to_yaml().unwrap());
+    }
+
+    /// T08: TS derive 追加後も .mycad fixture の YAML 表現が不変であること。
+    #[test]
+    fn test_ts_derive_backward_compat() {
+        let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples");
+
+        for entry in std::fs::read_dir(&examples_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().map_or(true, |e| e != "mycad") {
+                continue;
+            }
+
+            let doc = Document::from_path(&path)
+                .unwrap_or_else(|e| panic!("failed to load {:?}: {e}", path));
+            let yaml1 = doc.to_yaml().unwrap();
+            let doc2 = Document::from_yaml(&yaml1)
+                .unwrap_or_else(|e| panic!("failed to parse roundtrip YAML for {:?}: {e}", path));
+            let yaml2 = doc2.to_yaml().unwrap();
+            assert_eq!(
+                yaml1,
+                yaml2,
+                "YAML roundtrip mismatch for {}",
+                path.file_name().unwrap().to_string_lossy()
+            );
+        }
+
+        // Golden comparison: simple_box.mycad canonical YAML must be byte-identical
+        let simple_box_path = examples_dir.join("simple_box.mycad");
+        let doc = Document::from_path(&simple_box_path).unwrap();
+        let yaml = doc.to_yaml().unwrap();
+        let golden = "version: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
+        assert_eq!(yaml, golden, "simple_box.mycad golden YAML mismatch");
     }
 }

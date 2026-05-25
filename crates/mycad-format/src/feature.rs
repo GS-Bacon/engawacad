@@ -1,8 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// A reference to a topological entity (face, edge, vertex) on a feature's result.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 pub struct EntityRef {
     /// The feature that created this entity.
     pub feature_id: String,
@@ -11,7 +12,7 @@ pub struct EntityRef {
 }
 
 /// A feature — one step in the operation history.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type")]
 pub enum Feature {
     /// Create a box primitive.

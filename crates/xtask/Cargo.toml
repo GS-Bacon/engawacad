@@ -3,3 +3,13 @@ name = "xtask"
 version = "0.0.0"
 edition = "2021"
 publish = false
+rust-version.workspace = true
+
+[dependencies]
+ts-rs = { workspace = true }
+mycad-format = { workspace = true }
+mycad-kernel = { workspace = true }
+mycad-api = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

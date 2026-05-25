@@ -2,10 +2,12 @@ use crate::error::FormatError;
 use crate::feature::Feature;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::PathBuf;
 use std::str::FromStr;
+use ts_rs::{Config, TS};
 
 /// A transform in 3D space.
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, TS)]
 pub struct Transform {
     /// Position offset [x, y, z].
     pub position: [f64; 3],
@@ -90,10 +92,31 @@ impl schemars::JsonSchema for ComponentRef {
     }
 }
 
+impl TS for ComponentRef {
+    type WithoutGenerics = ComponentRef;
+    type OptionInnerType = Self;
+
+    fn name(_cfg: &Config) -> String {
+        "ComponentRef".to_owned()
+    }
+
+    fn inline(cfg: &Config) -> String {
+        <String as TS>::inline(cfg)
+    }
+
+    fn decl(cfg: &Config) -> String {
+        format!("type {} = {};", Self::name(cfg), Self::inline(cfg))
+    }
+
+    fn output_path() -> Option<PathBuf> {
+        Some(PathBuf::from("ComponentRef.ts"))
+    }
+}
+
 /// A component in the design hierarchy.
 /// Can contain features (inline part definition), children (sub-components),
 /// or be a reference to an external file/library.
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, TS)]
 pub struct Component {
     /// Human-readable name.
     pub name: String,

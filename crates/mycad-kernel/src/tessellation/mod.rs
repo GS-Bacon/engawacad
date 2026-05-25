@@ -8,13 +8,14 @@ use crate::geometry::Point;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 use thiserror::Error;
+use ts_rs::TS;
 
 /// Seam jump detection threshold: |Δu| > π indicates a parameter-space seam crossing.
 /// Minimum cross-product norm for a non-degenerate triangle.
 const AREA_EPS: f64 = 1e-14;
 
 /// A triangle mesh for rendering.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct TriangleMesh {
     /// Vertex positions (x, y, z).
     pub positions: Vec<[f64; 3]>,
