@@ -190,15 +190,25 @@ fn tessellate_face_uv_grid(
 
     let outer_loop = &solid.loops[face.outer_loop];
 
-    // Guard: reject non-canonical cylinder faces (trimmed in u, seam not at u=0).
-    // At least one Circle edge must span ≈ 2π to qualify as a full-revolution patch.
-    let has_full_revolution = outer_loop.half_edges.iter().any(|&he_idx| {
-        let he = &solid.half_edges[he_idx];
-        let edge = &solid.edges[he.edge];
-        matches!(edge.curve, Curve::Circle { .. })
-            && (edge.t_range[1] - edge.t_range[0]).abs() >= 2.0 * PI - 0.1
-    });
-    if !has_full_revolution {
+    // Guard: total Circle-edge span must be a positive integer multiple of 2π.
+    // Summing spans (rather than testing any single edge) accepts edge-split full cylinders
+    // (e.g. two π-arcs per cap) while still rejecting trimmed faces. 1e-9 tolerance is tight
+    // enough that floating-point noise never masks a genuine sub-degree trim.
+    let total_circle_span: f64 = outer_loop
+        .half_edges
+        .iter()
+        .filter_map(|&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            let edge = &solid.edges[he.edge];
+            if matches!(edge.curve, Curve::Circle { .. }) {
+                Some((edge.t_range[1] - edge.t_range[0]).abs())
+            } else {
+                None
+            }
+        })
+        .sum();
+    let full_rev_count = (total_circle_span / (2.0 * PI)).round() as i64;
+    if full_rev_count <= 0 || (total_circle_span - full_rev_count as f64 * 2.0 * PI).abs() >= 1e-9 {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
