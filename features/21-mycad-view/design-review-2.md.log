@@ -1,0 +1,2256 @@
+Reading additional input from stdin...
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: /home/bacon/mycad
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019e5eff-cd42-7c10-8ca4-dceb82711c09
+--------
+user
+# Codex 設計レビュアー（MyCad CAD カーネル専用）
+
+あなたは Rust 製 B-rep CAD カーネル「MyCad」の設計ドキュメントをレビューする専門家です。
+stdin に渡された設計・テスト計画ドキュメントを読み、以下の観点で問題を指摘してください。
+
+## レビュー観点
+
+### 1. 決定性（MyCad の核心）
+- `IdGenerator` を使った決定的 ID 生成になっているか
+- 同一入力で必ず同一出力（同一 ID・同一座標）が保証されているか
+- 非決定的要素（HashMap のイテレーション順、thread_rng など）が混入していないか
+
+### 2. B-rep トポロジー妥当性
+- Euler-Poincaré の公式 `V - E + F = 2(S - H)` が成立する設計か（S=殻の数, H=貫通穴）
+- HalfEdge の twin/next/prev ポインタ（インデックス）が正しく結ばれるか
+- Loop/Shell/Solid の入れ子構造が一貫しているか
+
+### 3. 退化幾何の扱い
+- ゼロ長エッジ、面積ゼロの Face、縮退した Loop の排除または明示的エラーの設計があるか
+- 数値的境界（浮動小数点の epsilon 比較）の方針が明記されているか
+
+### 4. API・型設計
+- `Debug, Clone, Serialize, Deserialize` が付与されているか（JsonSchema が必要な型は追記）
+- 新しい依存は `[workspace.dependencies]` + `{ workspace = true }` 規約に従っているか
+- ライブラリエラーには `thiserror` を使用しているか
+- カーネルにレンダリング依存が混入していないか（`TriangleMesh` 生成のみ可）
+
+### 5. テスト計画の充足性
+- 決定性反復テスト（T0x 系）があるか
+- Euler-Poincaré 検証テストがあるか
+- 退化入力エッジケースが十分にあるか
+- golden YAML ラウンドトリップテストがあるか
+
+### 6. アーキテクチャ整合性
+- Index-based topology（ポインタ不使用、フラット配列 + インデックス参照）を守っているか
+- Feature history = source of truth の原則と矛盾しないか
+- 1概念1ファイル、`mod.rs` から `pub use` で再エクスポートの規約に従っているか
+
+---
+
+## 出力フォーマット（厳守）
+
+```yaml
+issues:
+  - id: R01
+    severity: critical  # critical | high | medium | low
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使わず Uuid::new_v4() を使用している"
+    suggestion: "IdGenerator::next() に置き換えること"
+  - id: R02
+    severity: medium
+    ...
+
+verdict: pass  # pass | fail
+# fail = Critical または High が1件以上ある
+```
+
+`issues` が空の場合は `issues: []` と書く。
+**このフォーマット以外の出力は禁止。前置きや後置きの文章は書かない。**
+
+<stdin>
+# Issue #21: `mycad view` 再定義 — ローカルサーバ起動 + ブラウザ自動オープン
+
+## Context
+
+Phase 2「Web ベースビューア基盤」の完了条件となるコマンド。ADR-003 が定める二配備
+(Tauri ネイティブ / サーバモード self-hosted) のうち **サーバモードの最小入口**を作る。
+`mycad view <input.mycad>` で API サーバを起動し、ビルド済み TS フロント(`web/dist`)を
+同一サーバから配信し、ブラウザを自動で開いて box を 3D 表示する。
+
+依存 #18(mycad-api スケルトン)・#20(TS フロント骨組み)は両方 CLOSED 済み。
+現状フロント `web/src/main.ts` は URL の `?file=` を読み `/api/v0/mesh?file=` を叩く実装が
+**既に存在する**ため、フロント側コード変更は不要。
+
+確定済み方針(ユーザー合意):
+- フロント配信は **rust-embed によるバイナリ埋め込み**(ADR-003 の Tauri 配備との対称性)
+- API サーバは **in-process** 起動(CLI と同一プロセス、view 時のみ tokio runtime)
+
+## 実装対象
+
+### 影響クレート/ファイル
+
+**crates/mycad-api**(サーバモード = フロント静的配信を担う)
+- `Cargo.toml`: `rust-embed`・`mime_guess` を追加(`{ workspace = true }`)
+- `build.rs`(新規): コンパイル前に `../../web/dist/index.html` の存在を保証。
+  - 無ければ `web/dist/` を作成しスタブ `index.html` を生成。スタブ本文にセンチネル
+    文字列 `MYCAD frontend not built` を含める(後述テスト・実行時ガードの判定キー)。
+    外部コマンド/ネットワーク不使用の純ファイル操作 → clean checkout でも `cargo build` が通る。
+  - **release ガード(R01 対策)**: `PROFILE=release` かつ `index.html` がスタブ
+    (= センチネルを含む)/不在の場合は `panic!`(build 失敗)し
+    「run `cargo xtask web` (vite build) before release build」を表示。
+    → git 管理外 `web/dist` の事前状態に依存した「スタブ埋め込み binary」の配布を機械的に防止。
+- `src/static_assets.rs`(新規):
+  ```rust
+  #[derive(rust_embed::RustEmbed)]
+  #[folder = "$CARGO_MANIFEST_DIR/../../web/dist"]
+  struct WebAssets;
+
+  pub(crate) async fn static_handler(uri: axum::http::Uri) -> axum::response::Response;
+  ```
+  - `/` → `index.html` を返す
+  - `/assets/...` など → 該当ファイルを `mime_guess` で content-type 付与し返す
+  - 見つからなければ 404
+- `src/router.rs`: `app()` に `.fallback(static_handler)` を追加。`host_guard` layer は維持
+  (静的配信も 127.0.0.1/localhost のみ許可)。既存 `/api/v0/mesh` route はそのまま。
+- `src/lib.rs`: 必要なら `pub use router::app;`(CLI から呼ぶため)
+
+**crates/xtask**(R01 対策: ビルド順序の機械的強制)
+- `src/main.rs`: `ci()` の手順を **web ビルド先行**に変更。`npm ci → vitest → vite build` を
+  cargo 各ステップ(fmt/clippy/test/build)より**前**に実行する。
+  → cargo test/build 時に実 `web/dist` が存在 → embed が実アセットを対象にでき、
+    R03 の smoke テストも実アセットで成立。release ビルドも実アセットを埋め込める。
+  - 任意: `cargo xtask web` サブコマンド(vite build のみ)を追加し、release 前の
+    フロント生成を明示できるようにする。
+
+**crates/mycad-cli**(view オーケストレーション)
+- `Cargo.toml`: `mycad-api`・`tokio`・`open`・`urlencoding` を追加(`{ workspace = true }`)
+- `src/main.rs`: `Commands` に `View` を追加
+  ```rust
+  /// Start a local server and open the model in a browser
+  View {
+      input: PathBuf,
+      #[arg(long, default_value_t = 7878)]
+      port: u16,
+  }
+  ```
+  ディスパッチ先 `view::run_view(&input, port)`。`export` は同期のまま据え置き。
+- `src/view.rs`(新規):
+  - `pub fn run_view(input: &Path, port: u16) -> Result<(), String>`
+    1. `std::fs::canonicalize(input)` で絶対パス化(存在しなければエラー)
+    2. tokio `Runtime::new().block_on(async { ... })`:
+       - `bind_listener(port) -> (tokio::net::TcpListener, u16)`: `127.0.0.1:port` を試行、
+         `AddrInUse` なら `127.0.0.1:0`(エフェメラル)に fallback し実ポートを返す
+       - `let url = build_view_url(actual_port, &abs_path)`
+       - `open::that(&url)`(失敗しても続行、URL を stdout に表示)
+       - `println!` で URL と「Ctrl-C で停止」を案内
+       - `axum::serve(listener, mycad_api::router::app()).await`
+  - 純粋・テスト可能なヘルパ:
+    - `fn build_view_url(port: u16, abs_path: &Path) -> String`
+      → `format!("http://127.0.0.1:{port}/?file={}", urlencoding::encode(path_str))`
+    - `const DEFAULT_PORT: u16 = 7878;`
+
+### 新規 workspace.dependencies
+```toml
+rust-embed  = "8"
+mime_guess  = "2"
+open        = "5"
+urlencoding = "2"
+```
+(`tokio`・`mycad-api` は既存)
+
+## 設計方針
+
+- **決定性**: view は幾何 ID を生成しない(メッシュ生成は既存 kernel/api 経路、決定性は既存テスト済み)。
+  本 Issue で決定的であるべきは **URL 構築** → `build_view_url` は同一入力→同一出力。
+- **B-rep / Euler-Poincaré / 退化幾何**: 本 Issue は CLI + 静的配信のみで幾何を新規生成しない → **N/A**。
+- **derive 規約**: 新規公開シリアライズ型なし(`WebAssets` は private、`MeshRequest` 等は既存)。
+  → `JsonSchema`/`ts-rs` 追加不要。
+- **エラーハンドリング**: CLI は既存 `export` と同じく `Result<(), String>` + `eprintln!`/`process::exit(1)`。
+  静的配信側は axum `Response`(404/200)。新規 thiserror 型は導入しない(最小)。
+- **embed のビルド依存問題と対策**:
+  - `web/dist` は gitignore 対象 → clean checkout に存在しない。`build.rs` がスタブ生成して
+    rust-embed のコンパイルを常に成立させる(`cargo build --workspace` を壊さない)。
+  - debug ビルドの rust-embed は実行時にディスク読み(dynamic)。`cargo xtask ci` は
+    **web ビルド先行**(上記 xtask 変更)に修正するため、cargo test/build 時点で実 `web/dist` が存在する。
+  - release/配布: `build.rs` の release ガードが「スタブのみ」状態での release build を失敗させ、
+    `cargo xtask web`(vite build)を先に走らせることを強制 → 非決定的埋め込みを防ぐ。
+  - 実行時ガード: `static_handler` の `/` 応答がセンチネル `MYCAD frontend not built` を含む場合
+    でも 200 で案内ページを返す(`mycad view` 自体は起動し、案内を表示)。
+- **host_guard 整合**: 127.0.0.1:PORT で配信 → host_base = "127.0.0.1" で許可。静的配信も同 layer 下。
+- **workspace.dependencies 規約**: 新依存はルート `[workspace.dependencies]` に追加、各クレートは
+  `{ workspace = true }` 参照。
+
+## テスト計画(ID 付き)
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | `build_view_url` を同一入力で2回呼び一致 | `assert_eq!` |
+| T02 | 正常系 | `build_view_url` がスペース等を含むパスを正しく percent-encode | `?file=` が `%20` 等にエンコードされる |
+| T03 | 正常系/契約 | `GET /` → 200 / `text/html`。さらに body を分岐 assert(R03): センチネル `MYCAD frontend not built` を含めば stub 経路として許容、含まなければ実 viewer として `<script` 参照を含むこと | 200 / text/html + 分岐 assert |
+| T04 | 正常系 | `GET /assets/<実在しないファイル>` → 404 | `StatusCode::NOT_FOUND` |
+| T05 | 回帰 | `GET /api/v0/mesh?file=<fixture>` が従来通り動作(fallback 追加で壊れない) | 既存 `mesh_api.rs` 相当 200 |
+| T06 | エッジ | `bind_listener` でポート占有時に別ポートへ fallback | 占有ポート要求 → 異なる実ポートを返す |
+| T07 | エッジ | `run_view` に存在しない入力 → エラー終了 | `Err(...)` / 非0 exit |
+| T08 | セキュリティ/回帰 | 静的 fallback への `GET /`(および `/assets/...`)に `Host: evil.com` → 403(R02: 静的配信も host_guard 下) | `StatusCode::FORBIDDEN` |
+
+E2E(`mycad view examples/simple_box.mycad` でブラウザに box 表示)は手動検証。
+
+## 検証手順
+
+1. `cargo xtask ci`(fmt → clippy → test → build → vite build)が green。
+2. `cargo run -p mycad-cli -- view examples/simple_box.mycad`
+   → 7878 で待受、ブラウザが `http://127.0.0.1:7878/?file=<abs>` を開き box が回転表示。
+3. `--port 9000` 指定で当該ポート使用を確認。
+4. 7878 を別プロセスで占有 → fallback ポートで起動しブラウザがそのポートを開くことを確認。
+5. `web/dist` 未生成(スタブのみ)状態で `mycad view` → 「frontend not built」案内が出ることを確認。
+
+## 完了条件(Issue #21)
+- `mycad view examples/simple_box.mycad` が実行でき、ブラウザで box が表示される
+- `cargo xtask ci` 通過
+</stdin>
+codex
+設計案を実装対象のクレート構成と照合し、規約違反や回帰リスクがないか先に確認します。関連する `Cargo.toml`、`mycad-api`/`mycad-cli`/`xtask` の現状を読みます。
+exec
+/bin/bash -lc "rg --files Cargo.toml crates/mycad-api crates/mycad-cli crates/xtask web/src web/dist . | sed 's#"'^./##'"'" in /home/bacon/mycad
+ succeeded in 0ms:
+Cargo.toml
+Cargo.toml
+ARCHITECTURE.md
+README.md
+web/dist/index.html
+.cargo/config.toml
+web/dist/assets/index-B3P-dkto.js
+crates/xtask/Cargo.toml
+CLAUDE.md
+.git/description
+rust-toolchain.toml
+Cargo.lock
+.git/config
+.git/refs/remotes/origin/HEAD
+crates/mycad-api/Cargo.toml
+.git/ORIG_HEAD
+.git/index
+.git/packed-refs
+crates/xtask/src/main.rs
+crates/mycad-api/src/error.rs
+web/src/api.ts
+.claude/skills/3ai/SKILL.md
+web/src/viewer.ts
+.git/refs/remotes/origin/claude/add-claude-guidelines-BKKtD
+examples/cylinder.mycad
+examples/assembly.mycad
+examples/simple_box.mycad
+ROADMAP.md
+.claude/skills/3ai/agents/glm-implementer.md
+features/12-cylinder/design-review.md
+features/12-cylinder/design-review-2.md
+features/12-cylinder/final-review-2.md
+features/12-cylinder/final-review.md
+features/12-cylinder/design-review-3.md
+crates/mycad-cli/Cargo.toml
+.claude/skills/3ai/agents/codex-final-reviewer.md
+.claude/skills/3ai/agents/codex-design-reviewer.md
+.git/FETCH_HEAD
+.git/COMMIT_EDITMSG
+crates/mycad-api/tests/fixtures/empty_part.mycad
+web/src/generated/MeshRequest.ts
+features/20-ts-frontend-skeleton/design-review.md.log
+docs/file-format.md
+crates/mycad-api/tests/fixtures/assembly.mycad
+features/20-ts-frontend-skeleton/ci.log
+web/src/generated/TriangleMesh.ts
+features/20-ts-frontend-skeleton/design-review.md
+web/src/generated/Transform.ts
+web/src/generated/EntityRef.ts
+features/20-ts-frontend-skeleton/final-review.md.log
+web/src/generated/ComponentRef.ts
+crates/mycad-api/tests/fixtures/create_sphere.mycad
+features/20-ts-frontend-skeleton/glm-result-fix.json
+web/src/generated/Component.ts
+crates/mycad-api/tests/fixtures/zero_box.mycad
+features/20-ts-frontend-skeleton/final-review.md.verdict.json
+web/src/generated/Feature.ts
+web/src/generated/ErrorResponse.ts
+features/20-ts-frontend-skeleton/final-review-2.md.log
+web/src/generated/Document.ts
+crates/mycad-api/tests/mesh_api.rs
+features/20-ts-frontend-skeleton/final-review-2.md
+crates/mycad-api/src/transport/mod.rs
+features/20-ts-frontend-skeleton/glm-result.json
+features/20-ts-frontend-skeleton/final-review-2.md.verdict.json
+features/20-ts-frontend-skeleton/final-review.md
+crates/mycad-api/src/transport/mesh_request.rs
+features/20-ts-frontend-skeleton/state.json
+crates/mycad-api/src/transport/error_response.rs
+crates/mycad-api/src/lib.rs
+crates/mycad-api/src/handler.rs
+crates/mycad-api/src/router.rs
+crates/mycad-api/src/main.rs
+web/src/main.ts
+web/src/mesh.test.ts
+web/src/mesh.ts
+.git/info/exclude
+crates/mycad-cli/tests/export.rs
+crates/mycad-cli/src/main.rs
+.gitignore
+.claude/settings.json
+.claude/skills/3ai/scripts/state.sh
+.claude/skills/3ai/scripts/guard-crates.sh
+.claude/skills/3ai/scripts/dispatch-codex.sh
+.claude/skills/3ai/scripts/dispatch-glm.sh
+docs/decisions/004-freeform-geometry-commitment.md
+docs/decisions/002-roadmap-management.md
+docs/decisions/001-brep-representation.md
+docs/decisions/003-viewer-and-app-architecture.md
+.git/opencode
+.git/HEAD
+features/19-rust-to-ts-typegen/final-review.md
+features/19-rust-to-ts-typegen/fixup-final-review.md
+features/19-rust-to-ts-typegen/fixup-clippy.md
+features/19-rust-to-ts-typegen/fixup-drift.md
+features/19-rust-to-ts-typegen/state.json
+features/19-rust-to-ts-typegen/final-review.md.log
+features/19-rust-to-ts-typegen/final-review.md.verdict.json
+features/19-rust-to-ts-typegen/glm-result.json
+features/19-rust-to-ts-typegen/ci.log
+features/19-rust-to-ts-typegen/design-review.md
+features/19-rust-to-ts-typegen/design-review.md.log
+crates/mycad-format/Cargo.toml
+crates/mycad-viewer/Cargo.toml
+crates/mycad-build/Cargo.toml
+.git/hooks/update.sample
+.git/hooks/fsmonitor-watchman.sample
+.git/hooks/commit-msg.sample
+.git/hooks/push-to-checkout.sample
+.git/hooks/post-update.sample
+.git/refs/heads/claude/add-claude-guidelines-BKKtD
+.git/hooks/pre-receive.sample
+.git/hooks/pre-push.sample
+.git/hooks/prepare-commit-msg.sample
+features/18-api-skeleton/fix-plan.md
+.git/hooks/sendemail-validate.sample
+.git/hooks/applypatch-msg.sample
+features/18-api-skeleton/ci.log
+.git/hooks/pre-commit.sample
+features/18-api-skeleton/design-review.md
+.git/hooks/pre-applypatch.sample
+features/18-api-skeleton/glm-result-fix.json
+.git/hooks/pre-rebase.sample
+features/18-api-skeleton/final-review.md.verdict.json
+features/18-api-skeleton/design-review-2.md
+features/18-api-skeleton/final-review-2.md
+features/18-api-skeleton/plan.md
+features/18-api-skeleton/glm-result.json
+features/18-api-skeleton/final-review-2.md.verdict.json
+features/18-api-skeleton/final-review.md
+features/18-api-skeleton/design-review-3.md
+features/18-api-skeleton/state.json
+crates/mycad-api/Cargo.toml
+.git/logs/HEAD
+features/21-mycad-view/design-review-2.md.log
+features/21-mycad-view/state.json
+features/21-mycad-view/design-review.md
+features/21-mycad-view/design-review.md.log
+.git/hooks/pre-merge-commit.sample
+crates/xtask/Cargo.toml
+crates/mycad-viewer/src/lib.rs
+.git/objects/7c/83ec1f3c0e9ca44bad182fd228b8cbd82874dc
+crates/mycad-format/src/lib.rs
+crates/mycad-format/src/feature.rs
+crates/mycad-format/src/component.rs
+crates/mycad-format/src/error.rs
+crates/mycad-format/src/document.rs
+crates/mycad-format/CLAUDE.md
+.git/logs/refs/heads/claude/add-claude-guidelines-BKKtD
+crates/mycad-build/src/lib.rs
+crates/mycad-api/src/transport/mod.rs
+crates/mycad-api/src/transport/mesh_request.rs
+crates/mycad-api/src/transport/error_response.rs
+crates/mycad-api/src/lib.rs
+crates/mycad-api/src/handler.rs
+crates/mycad-api/src/router.rs
+crates/mycad-api/src/main.rs
+crates/mycad-api/src/error.rs
+.git/objects/53/5239c10a37c036dbaf6ab1d3f511e2b4f7856d
+crates/mycad-cli/Cargo.toml
+web/src/api.ts
+.git/objects/77/c341e2eed0356ff24674c7b86e5e8bd180a4be
+crates/xtask/src/main.rs
+.git/objects/dc/0fa2f60c73653e481da9a8197ef40e53b17e46
+.git/logs/refs/remotes/origin/HEAD
+web/index.html
+web/vite.config.ts
+web/package.json
+web/tsconfig.json
+web/package-lock.json
+web/src/main.ts
+web/src/mesh.test.ts
+web/src/mesh.ts
+web/src/viewer.ts
+crates/mycad-api/tests/mesh_api.rs
+crates/mycad-cli/src/main.rs
+.git/objects/b5/fc56c4b80bad66754bdaef1b2053abffd770f1
+.git/objects/c8/d0a83e7b6735cd5568cc39d28be1213d2f280b
+.git/objects/77/e4e4eaaf6bf0f53d804fc93d8b042e35b818c5
+.git/objects/55/5df07ff77bebd71c26c988ef82d1c4aa8f22bb
+.git/objects/32/6b630e5579772cacd0a6a71f732f2c7a0d6e14
+crates/mycad-build/tests/feature_dispatcher.rs
+crates/mycad-api/tests/fixtures/empty_part.mycad
+.git/objects/b5/adb8414f06985e70d682ca41dd7498a07f0616
+crates/mycad-cli/tests/export.rs
+.git/objects/e8/82c59b28fdda73b85127bd74cce6286129bf14
+crates/mycad-api/tests/fixtures/assembly.mycad
+crates/mycad-api/tests/fixtures/create_sphere.mycad
+crates/mycad-api/tests/fixtures/zero_box.mycad
+web/src/generated/MeshRequest.ts
+.git/objects/3b/9a6697582a7359e9077d779f27661bf47d3cd5
+.git/objects/d1/5d693d06f9f27af4eaad25db6d6a443b4d9b44
+.git/objects/d1/601f5f6683032ce11b281bb02762782e75ecec
+.git/logs/refs/remotes/origin/claude/add-claude-guidelines-BKKtD
+.git/objects/ed/edfa647da550de2e8b5ebcfb75482b165175d2
+.git/objects/a8/8b1887fd14932733480557824e50f1c6226bf9
+.git/objects/9e/b94cb3156d1894203baefe9f7f0d1b591e20d9
+.git/objects/93/416fcabe178a205ed6389e1aab1513f3a84624
+.git/objects/54/15a0964d76b39cec282b6746803866d0e40ee6
+.git/objects/a8/a6fe2a216b30b4a6519f336e390cc12a7749c2
+.git/objects/5e/44e212ad81548b5198b747289d03403caa104b
+.git/objects/5e/7649013330d81887d97513cfc6d13f5e47b16d
+.git/objects/67/93c94ceae51f8d025b6537d01640bd9263c0e8
+.git/objects/4a/c383279fa0680350f060af1af9e3b8f4ecdfa8
+.git/objects/9e/dca3ddaff8828eba48bfa5007b248221716ede
+.git/objects/5b/80e283c04cab6f8c9399a797733fb867713b7c
+.git/objects/5b/2a7b94a20c4573fae1fd94f905ae00a66f3296
+.git/objects/5b/f2f551288dc25718660b3321055b7084248244
+.git/objects/94/29877508b375ff41a3304575b861073d64cd83
+.git/objects/a0/b450e907425abb1a5c5864044a66588280c69c
+.git/objects/e3/f04758017c63d93adb7b325ba29769cfa70023
+.git/objects/e3/67d5288ed80eea015efdfb26c6d8a3505fc2e6
+.git/objects/e3/12b4ef0fa12ba71b7974d6049e67bba346c3b2
+.git/objects/0d/4e25162d94916438174c03612f0023b5a9016f
+.git/objects/0d/447b6e1f4f679b6604369c4033f6d8f5d4bc29
+.git/objects/0d/6dbf41128ccfeb7ee073bb2235b3b0ed53a769
+.git/objects/ec/1f95a5dfdf1d26465d8b260dfc08678ad38a4d
+.git/objects/28/d9e8d71b0b4c87717f39e8b34baf3d3c893725
+.git/objects/f7/f8311a4434d72d9953c2aa3f46ed7de12f771e
+web/src/generated/TriangleMesh.ts
+web/src/generated/Transform.ts
+web/src/generated/EntityRef.ts
+web/src/generated/ComponentRef.ts
+web/src/generated/Component.ts
+web/src/generated/Feature.ts
+web/src/generated/ErrorResponse.ts
+web/src/generated/Document.ts
+.git/objects/6a/96fd640fc3850f2086e19f737d51c3bffd9d46
+crates/mycad-kernel/Cargo.toml
+.git/objects/89/16da16d2556d5fea18e3df1b37bd18f8520060
+.git/objects/67/f5cf4c3d4b65703e62efb701f9ff72f118ce5a
+.git/objects/b7/caddebb669828c9282e8413bf326b98a7d42b9
+.git/objects/f2/550699a30ac247de8e86e42a7ed6ef0ec68f1f
+.git/objects/76/0c63ccd14c279fc91a408aa6906d978875bb5c
+.git/objects/f2/881b127c9eb44f655d6bd9be587059ab8fdca4
+.git/objects/57/2a245caa7428946206c816c36c75258dd4c7a2
+.git/objects/a0/851729e45eeb1cf5b58871b60e7443d29d60fe
+.git/objects/a0/20874ac157c5ad937bfb74324d7f445fb0e927
+.git/objects/a4/16a93868018961c64227d686db4a5a023afbb2
+.git/objects/4e/605f9465be8d5f435b3b2248c5f0d62c0a61df
+.git/objects/a4/af917f103530868e91b3b9bcfedf3902a3a3f1
+.git/objects/ff/677974e6c6e590e3909cf89ed028756419a31f
+.git/objects/dd/e130d4cabd8ca91b3d2207a7b1a2ae1d00d2db
+crates/mycad-kernel/src/lib.rs
+.git/objects/ea/c25d13cc45d7da37b3487cdee5277b8b4a4a05
+.git/objects/b3/a94f6696bae8e63a0f77338d183ed93e90e8fc
+.git/objects/49/c3b468feaf139d9c75a35c7d3a49a65a960a34
+.git/objects/49/60559358451ca3889257a7be1dd7d1143354be
+.git/objects/b3/a976022a943ba081d8034a7787860d9889bca4
+.git/objects/e6/a9a63fce84611088f59b9daa9a9f5b1da5c0ea
+.git/objects/e6/3f03657226775892748af8cc4e9e08a7576382
+.git/objects/4e/22430f743458caba1c7f4c391dc5c8be117d7c
+.git/objects/bd/eeaee53919c98a311e52a080b755656d07350e
+.git/objects/3c/e3331b1ca62783227769921f9b253a7c7f1ce6
+.git/objects/3c/b43d4f8ab6eceacd675a2a76c2b8935b959671
+.git/objects/4e/dbe09f32289798cf0432213d231a349515b2aa
+.git/objects/71/c7fdaa466bb5a8608fe5d55ed2d1afd795f7cc
+.git/objects/71/549770391352b9bc983bb99df4ad2659f43125
+.git/objects/cf/982685146d264c1dfb4c002800413b7a319cb6
+.git/objects/46/c30c6fb372efd7e4c74171134a6434f5ff687e
+.git/objects/89/53b9ec3de69622c78b5d2171bf424049e0f086
+.git/objects/6b/a0685089eda3bf1c2286077e23231cf3f80665
+.git/objects/6b/6931f0f959e25a6c7d175c65adb13e7fc5095f
+.git/objects/6b/4f560fa674ce568dd735d2298f816b7cdef3bb
+.git/objects/6b/c61f621bd872e08bbb90fc1b08c2542e5d0f18
+.git/objects/76/4858fe44801f48c1d08cea52079e8c88bd7117
+.git/objects/ea/e930341e4b91c9008f42c7d2cce0650ad0ecc2
+.git/objects/46/f6859090adf999f8ee26d83288efcc4ff100b8
+.git/objects/bd/1ff9d32758b4cf9dfb1be5991c89c426e66c6b
+crates/mycad-kernel/src/tessellation/mod.rs
+crates/mycad-kernel/src/tessellation/stl.rs
+.git/objects/7e/cfd05d37449d4c99db3a152c437a384006dd32
+.git/objects/d8/3a91bf0faf333faf49ae7889de4844e7960638
+.git/objects/01/1dc8083a61e1a4283681517e621edd80debe7e
+.git/objects/da/56d0901c48f54cba1e696480139ba8c64e7f7a
+.git/objects/da/932200f51fa54748bf59595a0942cae40e16d5
+.git/objects/35/37e8ffe05190fc64cb17ae4b5f708fa517b338
+.git/objects/35/c061be30b400d2244a13c6b01834880036d961
+.git/objects/35/057e4ac9116fbbfeae1a32508bbff56ccd13e5
+crates/mycad-kernel/src/geometry/surface.rs
+.git/objects/2f/9170d8518206f2f86745fc69f0d96ee7e653f8
+.git/objects/85/c7712d7caa02c603e9d3578a68e9718d2a2fc2
+.git/objects/85/bad72d071f01f6128ad62002522a27a49e17e8
+crates/mycad-kernel/src/geometry/mod.rs
+crates/mycad-kernel/src/geometry/curve.rs
+crates/mycad-kernel/src/geometry/math.rs
+.git/objects/f4/a7c52f36fb75473e39a27f024a760c53f1f74e
+.git/objects/38/76021c40eea6680c03d67aa21abba119c62f97
+.git/objects/1c/00df69cd1f2acb22e8b6067b418a07d051b47f
+.git/objects/07/d9f0998399fe96ad30657a5f33452ca73035da
+.git/objects/9f/4ac6ed6d6fa01ed94c0ff204efdc52d559a51d
+.git/objects/9f/d72bbdb9b9ee2423a192d48877cc646f512515
+.git/objects/0c/ef9200cd4f7e15079e5228ab981520b38590d0
+.git/objects/pack/pack-d9e6fa1e29ba2b801a71302390018bc93c757528.idx
+.git/objects/pack/pack-d9e6fa1e29ba2b801a71302390018bc93c757528.rev
+.git/objects/pack/pack-d9e6fa1e29ba2b801a71302390018bc93c757528.pack
+.git/objects/2f/0ee1a45db49b114bead115a5e6b655ef834596
+crates/mycad-kernel/src/brep/mod.rs
+crates/mycad-kernel/src/brep/topology.rs
+.git/objects/69/811c2cd2f31f63e7c1ddce855f0ec091d841da
+.git/objects/69/39a727b2f2612fefa62b33e9953f9ac7fd2699
+.git/objects/38/f345575ffcac2d803d57cefc5e397ab6eaeb90
+.git/objects/96/8c75683941bfe1301f6a4aad41aafd60f134df
+.git/objects/96/b7f38089a05605b9a9c92b57bf8a486bfc2658
+.git/objects/aa/f322a1b00ec5e5b66453450c0496d2119a6a42
+.git/objects/aa/f37b1230e71ba88d6a25848385c3cde072c558
+.git/objects/47/53440b69c142f83e649ca4ca49a843fe9b5710
+.git/objects/27/2970e35a608e9cbde6daef23f439fa7108a35d
+.git/objects/51/bf8ed0eb7b9b6cecf42c473fb5b19c714683ed
+.git/objects/fd/815ddc7a9eba7502c3e536ccb0582212869c2f
+.git/objects/8a/e80f785673178d92313fba5026600087772e06
+.git/objects/fd/25fd0d6c3cfb657b95273102cab52cce8db03c
+.git/objects/02/fc621ea7da109ef42846b74197f5775ece124c
+.git/objects/66/a042e7f1530332ae250db502808951de201a3c
+.git/objects/97/9e96bbb9f661991006e346c13183cc633da651
+crates/mycad-kernel/src/primitives/mod.rs
+.git/objects/97/f37e217a94d7a940fadd7cc184ab9043d3c351
+crates/mycad-kernel/src/primitives/cuboid.rs
+crates/mycad-kernel/src/primitives/cylinder.rs
+.git/objects/97/953774ddd8247225e7368643aa031cde3cced9
+.git/objects/8a/57aa85df9f51b6a7a30e6b5aea3f0250b1e8a2
+crates/mycad-kernel/src/error.rs
+.git/objects/c3/afc84d0b1991ed0859598c7b1b2bb6ed935ae1
+.git/objects/c3/9336eedae7858762394902e31fe47408e757e6
+.git/objects/fe/5cefc5fca934c4dbac4618bf359b6cb86da03e
+.git/objects/ce/0b324280cebfe29f0380d7f87eefed2142816c
+.git/objects/d5/baae471b3d9b2b5e1fd9a29fd230b7e715ed59
+.git/objects/d5/c98d61ad288b808f65a3953abf6575aa3ceb87
+.git/objects/df/6ca9c9d16cc7a8b0d28f5f56a7de4ca1e6803f
+crates/mycad-kernel/benches/tessellation.rs
+.git/objects/b2/df39b7bb20b7a2b77745d5c66ba5a300554bd5
+.git/objects/95/009fb44f4520f7b10757c36635438ed06577ae
+.git/objects/23/a907de7c1c457780c3393da0fbde5893b68de4
+.git/objects/23/634201cd4c0f8c7421c47c499d1c226c31b93c
+.git/objects/23/3f9680b284793945aceb22e3b63777d882d01b
+.git/objects/a6/82742a686d377c24bbc6423ba7e68a1d106e2b
+.git/objects/95/12066b9a38f0ae26303824d5691cba4e196ef8
+.git/objects/a6/e9b08a8d707cec51e2c83cebe8408a617776d3
+.git/objects/09/e4b0a14490917bcfa527d5a37ede29baf643ea
+.git/objects/c0/75ce3a3dfb33efdfa152fc3c413f3f7e4962b0
+.git/objects/ba/a8484b2f680873d29027fb865db0d37b5b15a1
+.git/objects/8b/b6564d5c91dd74f0851dabb7f03b7d267de5d0
+.git/objects/5d/c824c3982538c158b527e104a7403f0158c945
+.git/objects/09/079e3c84770ab3b076e78e892aab98a9f93020
+crates/mycad-kernel/tests/cuboid_roundtrip.rs
+.git/objects/14/0f766767eff6dca14ce6d7bf36e3843da17f4a
+.git/objects/f9/f86451736f06b8dce7ed37224df4d14eba12f4
+.git/objects/f9/b6ec43c9f3c690090a40ef702eb72eaa07fc4e
+.git/objects/f9/6b670d198384117e1167fd8a41bdd6c67a9d3c
+.git/objects/8b/182ebf45cf0e98ebe2ff1593f32803beedd360
+.git/objects/14/d6de8525c1e9ac82c117b56f9a5ff9b51cec4f
+.git/objects/25/12c83afafdb1badc6b1287c9d5f4f66e6594c6
+.git/objects/f3/26d2232c6469b3238890370a968f3fba8671e1
+.git/objects/24/9cc792902992428813b3dfcbcc97384955cd63
+.git/objects/75/2ac98646de4b09bad18047d96478c284161173
+.git/objects/e2/cf6c23ba07e271cd3ef28e5a8d9b0dcafb3b9c
+.git/objects/75/0fed59cd01a59ddcfc4e7e88f5155f19285708
+.git/objects/72/6345cf3747babdd713c6166294e6aaad133b47
+.git/objects/88/a701ef888392fd6d773d622ecc8f7e773a1962
+.git/objects/2e/5b485975551ba7b230e6e1d3f2369b4dd48aa6
+.git/objects/2e/40bb70bbaa01913d2e47e029eecb83fa05b2ee
+.git/objects/36/0f324d35e1753537b2c6325cb86fa5328eea78
+.git/objects/1e/07217906be44f3b4b885c09387daf9e5214911
+.git/objects/1e/c3145ed5b06aa728864e9e47243cc584c25873
+.git/objects/5d/e99235a63c1b46350ff4bcb03b865858124bb6
+.git/objects/5d/8e707c630dd18212d53fdd492894675b84df9d
+.git/objects/1f/dc306f992ef108ea05201bfc1e47738b8342ad
+.git/objects/c5/9218920b241f9e305255e8da85db4e79dac907
+.git/objects/4d/1527d3e485d3c9b2b396c972bcf82daa91e06e
+.git/objects/42/855fc4ee4f2e3aed6d109c467f0379cd127369
+.git/objects/9d/5fc00b354e1cbd094ef712ee2f7d7fcfe64b05
+.git/objects/b1/61dec0db8a4c75d0abbeaa72bd0b318a0e79be
+.git/objects/db/571a6766f13e29974490fb75f6d082ccee19f7
+.git/objects/72/7c6306d9784e19c94e78b0a33bcd73fe7e2aa8
+.git/objects/9d/07dabbd68b2edef93a5cd144b9db494ac25ba9
+.git/objects/72/10cd99ad1b4ae546ee4dfbaf356d9589cbc2b1
+.git/objects/86/558ceeaa000fb047a68dab9274a7e9e69b3ee6
+.git/objects/58/2c958a722be085c05de3f1d891c27f5ade6c24
+.git/objects/86/9b8a025c6a26a0d6baabcb7e60e506e8908e2c
+.git/objects/86/04dae66752d7eebc80950865e0f7f5862e71a4
+.git/objects/a2/e33b522bea20039f8fbc8570ba4597fab99ea8
+.git/objects/a2/2846ba5f8b0eb8423cf92a44c5944c96b2159c
+.git/objects/c5/954c871b0d1561c89ab7cff32b5d67774e5581
+.git/objects/13/c40d59ecb23cb13f6932fcc78b2f8c58f089b5
+.git/objects/09/119ffb097dfbe92fe8c8f299d8b547e07e9976
+crates/mycad-kernel/CLAUDE.md
+.git/objects/58/5f429fc31ec81a1148129c98725a51fbbeee34
+.git/objects/58/be96e2b5e41563a47bc86e3d5af7467858f791
+.git/objects/f0/380ebed06d63f62a5b9d40b608d50417f0f64b
+.git/objects/f1/87785f1ff1a4278e12a8a883aa5f954a3c92a9
+.git/objects/06/35cd062b0d7a1b77d02f2865e163196e19c4e9
+.git/objects/b8/b125139776fd7bbb0799362d61c563fff21fc6
+.git/objects/bf/00b60d437a41d550b642ba69b157314d3144e2
+.git/objects/bf/248d636a20fb99d441cc25e77ae7e5f99b989c
+.git/objects/bf/99a65e77a06a29065debb903f763c8bd5c23c7
+.git/objects/1b/5d8164078db844e5b5ac853ab23f60f50c4fe1
+.git/objects/ca/311a1cafc452ba91a75cd7f81dc174315fb8c4
+.git/objects/b0/bf5137b6fe2cfe348dfb308f9737b927e5235b
+.git/objects/8e/c04313da660cc39af5a372833dc2117e41edb2
+.git/objects/d6/c7dcfe5d6bceda27ab99215a3c7b1db45a33c3
+.git/objects/ef/0cb99a8f28ad32a978a13b43bf7337a8f03a82
+.git/objects/b8/ebb80c36118d38cd7debc39085b016f107cdcc
+.git/objects/ef/b74e4863dfdb6dd643023c6c6b4364bebe1dba
+.git/objects/b8/b22b880f8187eab9e3936a0c5ee3c62da99630
+.git/objects/16/39e244d83dc8e4f760a2042994568d4af8c77b
+.git/objects/16/6f24ec1c7c565d412dfd373b7f515e1165c35f
+.git/objects/bb/17846bf90b51441dba18669fa0bb95f4bbc931
+.git/objects/e0/80419364a7042f83a1723b94dfb2931c968247
+.git/objects/cd/e9f18477a427633616ef5385136f44c411ab14
+.git/objects/2b/0f13b1a64a5d396dde48d9eee4aa5c67577852
+.git/objects/2b/f230fa056889403412a9d8fe02608816c48f46
+.git/objects/b6/010273ed46f47ff4af3e7eca7437a79b279c13
+.git/objects/a1/828440cdcbf18c125d375b2d0d4c9cef2c4357
+.git/objects/19/0258c3792a66555774ffaa4d39091c65d65380
+.git/objects/a1/f5d6dafbd61645e841b4d9e5cfc7c341827eb1
+.git/objects/19/032be60748224982841286ef654905b77ffa21
+.git/objects/b6/fc451e00e56bff12edb5138b0508ed07cd5f2b
+.git/objects/30/5cef1873039c1af84cb54b093587d4582d9f21
+.git/objects/11/9bcc4290dd7e92f564599fa794ae6704cef980
+.git/objects/6f/dbe4db48e198ce05bff4dc2630ec139cfb1fda
+.git/objects/de/468928233217856f295bad1b8bbee9ec8827b6
+.git/objects/2a/10604b441bbbc51fba5b657d3f0bb169108e47
+.git/objects/2a/9347045996aff0cf34ae8d91694b0df74a1a54
+.git/objects/2a/233969062bfaa6d679231fcd91a770aafefcba
+.git/objects/30/1a0125cd0443fc6ac81ba6f4ba2fa070b5edc9
+.git/objects/30/d6d104529214a50d6f8caa618e38da19328f01
+.git/objects/ab/f81ef9c8c357b3119f8eab837a5c8e787eb773
+.git/objects/f5/c48a6c87abc2dcd1eb3ffdeb67993c4c024487
+.git/objects/ab/2958a325e99cd9402a18dcc4c55d816f8eb2ad
+.git/objects/ab/2e2d96924b9d1a6a4e028a01c69c0880306148
+.git/objects/ab/647dd198a1d32cbd6392e4788e012d517a5a24
+.git/objects/60/3de4eac92dc5aad7f7da5a88edd183c896d6a5
+.git/objects/22/48b7cc3b53c0768c82d8398bb03f9eecb7def6
+.git/objects/22/171e9d9704aaa397f026a61592b12149268722
+.git/objects/bc/8819adbb7f1bdc051b97067bf2bc11ff1d61b6
+.git/objects/80/0a5a55e47af0e783d167ef48b99cba7e540937
+.git/objects/40/daf94337fec045dc6e125f12fbf058775f417d
+.git/objects/40/8d3d65efaf30d74e9d9efb101882c88bd18617
+.git/objects/40/a258043ac34a0cb6729f9b54d8431aa30a6c5f
+.git/objects/de/6726a7708fa5153ff377528993bcab44fe6a46
+.git/objects/11/a1000fd898ef612b6c3bcf0fa8920decbfc8bc
+.git/objects/11/c52e4c4eccdd0ff995648e504790dea639bcec
+.git/objects/11/ed22c11b29675fbe585960171ded2dd1196c59
+.git/objects/f5/6dfe15f32f0d3c0e086eebda590a1ef1c259fd
+.git/objects/f5/bb0e1541a46dea2715800ba01377fc7f6605cb
+.git/objects/83/9d73bc0ab735b8a17ca1b8b92cd7fde13dd057
+.git/objects/83/2a2a7d09b6fd85bd894ff6526ceef9f51bea24
+.git/objects/9b/8305621dd30165edd93919fe5b1008064b69eb
+.git/objects/83/7a5277fd53eadf14d81742b554050b0771c857
+.git/objects/2c/46221afd4538207633cd7dc899e4fb46433b3f
+.git/objects/2c/6a1c7c44bcfd8821c4bfa42cb9f190e676378c
+.git/objects/9c/bd8bc8184b2830ad7e59824a59d802979299c9
+.git/objects/78/c97853cbe14a2952a90a3b8fa3f4171565fb2c
+.git/objects/68/148d267aa2e51a49c92b8bda2a81e59a6c7fe2
+.git/objects/0a/579062059d46927b170490912f8ae174dec896
+.git/objects/b9/60ad144e6fb14e970b43160a8e3daecde04a82
+.git/objects/5a/4ede982b95ddbbb4f328b26f1a59da6728531f
+.git/objects/34/cc84b90856957aa5485c7cd2baa206896115a7
+.git/objects/45/e4fbb91bc432be28c5b841783220c40749bb7e
+.git/objects/ee/ef02550dfde1f8e8d78e3bec225d30d2d3fc27
+.git/objects/45/64bccf398aa8778ad974eb408ca3efc3928453
+.git/objects/3d/a173752990b455d1dc691de79a172d0a64db9c
+.git/objects/be/c65f4b216eb675db283c406afad4b3393a95b1
+.git/objects/be/29f801f2ee44579563981a65b6a40c238f3d2c
+.git/objects/5f/90e6836c17a97979880fc0f5c073fb86b69a84
+.git/objects/c9/7b61c1963142b75205f9e2119acaed740527d2
+.git/objects/5f/a2fa2194d71d0465ed2c3f7130fda908e2d640
+.git/objects/c9/a87d0c5dc0cd3124752ecfc039e6913295288f
+.git/objects/5f/201cf7649fb3a6526c884897abfb35720ebb21
+.git/objects/44/6f93326a061e16debf8c2496789e5f4aa6aa70
+.git/objects/98/0a9a1af84f56775fb8679da21ec2ee1e2e4772
+.git/objects/e5/d8a79710c5efe7999fe0c1b0b5e7e6c72b441a
+.git/objects/e5/3883cae824143b7ce9875dce9dfe01ee21a0b3
+.git/objects/f8/64a521107573047b41945c039274a93edfd648
+.git/objects/f8/79a384e646d58e8ac33e12939f36ad4cfe1fd6
+.git/objects/8f/ebf46db7a41cfa0e85023e6e782931cf136a86
+.git/objects/8f/51012d6af41c4a2cd5b32127e87c859f1094e1
+.git/objects/8f/fb0eaaa7ebe7af45918aa4e7e61c1b2ff35632
+.git/objects/7a/fb609ddb92bfae7163864bff6377e341165e3d
+.git/objects/81/9a91ef3a8c09ecf5c367ae20ca282f0b1d7ef1
+.git/objects/70/09384b80fa2d0fe528b7fe1e309e5a001c104c
+.git/objects/d4/dd06cc242fe9953846597515fd93d436930a98
+.git/objects/03/9a116943cad3c819bae58daa5b9b6c646f6fb3
+.git/objects/90/ab1a319b4dff6bbddb070d6e93608037d2e7ee
+.git/objects/90/b3cc179b7a98a1bb41171f6598be7ff87440c3
+.git/objects/3f/01ea2678c5c4411bee7164e2f5abb82c106682
+.git/objects/3f/4edf95277dc469bfb215f085027923fe67af3c
+.git/objects/3f/74bb095cf5ada6e6f3dfe7d4b06d3572c24f61
+.git/objects/ac/b4fcdcbe5649e06c58c01d12598ddf8f7e8f68
+.git/objects/ac/7120bd720867f24b98b21423ae79b6fc9b13ab
+.git/objects/ac/03da2824aa7861feed52eaa2f9ccaa34117b6b
+.git/objects/3a/46e8bc1d82312c52a8156fe66f5221226a88ed
+.git/objects/29/c2803f5eb6197fe7210a9b73e8ea4e832f2134
+.git/objects/c7/f5aa92faf58c81aa8f6194eb3cda15d60422f3
+.git/objects/81/8d6005ff43bd1ed2653bf41d31235e4bafd95e
+.git/objects/29/e77e42d661d9d5939f83ecba22fab8e6bcdd64
+.git/objects/56/c5be59ce7658658e6730c229027eba28ab13f6
+.git/objects/0e/da9d3dccebc8894764f5126471bb3ce988c576
+.git/objects/0f/29608e5a12fc8bd8ad56808413387a25a56c1c
+.git/objects/af/eeaa7c36250f659f54fa44e0797888caae9f7e
+.git/objects/0f/b7024f063d10f634dffac3d30570a89d6aec5a
+.git/objects/fb/5d14f9c2e56b9fe39d9927475eaee0576a34ad
+.git/objects/fa/df4ef17b459d2b2d76dc2d10d4855880eebb5f
+.git/objects/61/225cddd5a30eaf149553b1cf37e1f1f4dd2357
+.git/objects/e1/a697847837eb888c3b56a2dce7e29e9e73301e
+.git/objects/e1/5e863879ad2f4644969db673dea75dd65d351a
+.git/objects/af/32de8aa0c209e31dc2159c88a2b83a7e67a34c
+.git/objects/0f/c322888c190eb4eda47b31e5a5c905948f1484
+.git/objects/fb/1d8898b8925cc508f64056dd976212f9581ff6
+.git/objects/0b/7f6dc8d75d94ed57aa82c28a769279194df81c
+.git/objects/0b/ad8252323ac183dca4052acbef5e0b1a092a99
+.git/objects/0b/8b10d660bada640047a3fe973908cf0687874a
+.git/objects/0b/700d643f2366503a944dd113f367613bb5690f
+.git/objects/10/285c12b3a8a1f4d9ca72a70647b0f82e586f4d
+.git/objects/e9/128c01d857359ec4cffe12e4a55f26341e3b97
+.git/objects/e9/271348b9924b586f799f4455fc5a5c9953817d
+.git/objects/d3/a47dfaf1633f4907ff4366398fbe58a2779a74
+.git/objects/26/9b350f53cfa0b68a104deb8569495666629ef2
+.git/objects/e7/4950aa277997e68ca83eb3bf3d08e7b3ee53ea
+.git/objects/6e/48c33009478e68b9c91d9f053ea74a336cbd81
+.git/objects/6e/df172beb62ca9d77ea98777113f8a00e43ddd1
+.git/objects/26/d07a2d1c1fcab90151d3134d5b2c00dec979f8
+.git/objects/6e/54923f857ef695760a2b6505dad7993e6acdae
+.git/objects/d3/b572e5310d926e803c088579eb11e4298b5e8c
+.git/objects/d3/1856523f4344e4b752c90a45d25ca60b450f04
+.git/objects/a7/28d02ba6acf594f794152fc4460d1993422983
+.git/objects/cc/6b3b92576331881e2ea5507f53433cb30a8d28
+.git/objects/a7/ae11631a5a7afb43171ad7cc73aa386ad65086
+.git/objects/a7/5c9773b9af0b4aa4d5920b0eccecdd10d66ef1
+.git/objects/6d/7e0381fa60c5ea2a9d8da0db629ca4640ffc3e
+.git/objects/6d/d598b12775ec59f72d8c4fa1ec4b5d1a2948f8
+.git/objects/eb/9900c5dad9aba8995a920b154559ea8a5d10a5
+.git/objects/eb/557acee53a52ebe94aafffd472aca1d730b58a
+.git/objects/eb/da7dbac33bd85891ac992f796a0edbf03f1f07
+.git/objects/cb/1707fe5a56f4c77710be400aec472ece60d632
+
+exec
+/bin/bash -lc "rg -n \"host_guard|fallback\\(|Router|mesh|View|export|workspace.dependencies|tokio|thiserror|JsonSchema|RustEmbed|mod.rs|pub use\" Cargo.toml crates/mycad-api crates/mycad-cli crates/xtask -g '"'!target'"'" in /home/bacon/mycad
+ succeeded in 0ms:
+Cargo.toml:19:[workspace.dependencies]
+Cargo.toml:31:thiserror = "2"
+Cargo.toml:38:tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+crates/xtask/src/main.rs:52:        ("Document", Box::new(Document::export_all)),
+crates/xtask/src/main.rs:53:        ("EntityRef", Box::new(EntityRef::export_all)),
+crates/xtask/src/main.rs:54:        ("TriangleMesh", Box::new(TriangleMesh::export_all)),
+crates/xtask/src/main.rs:55:        ("MeshRequest", Box::new(MeshRequest::export_all)),
+crates/xtask/src/main.rs:56:        ("ErrorResponse", Box::new(ErrorResponse::export_all)),
+crates/xtask/src/main.rs:59:    for (name, export_fn) in roots {
+crates/xtask/src/main.rs:61:        if let Err(e) = export_fn(&cfg) {
+crates/xtask/src/main.rs:62:            eprintln!("Failed to export {name}: {e}");
+crates/xtask/src/main.rs:67:    println!("TypeScript types exported to {}", out_dir.display());
+crates/xtask/src/main.rs:203:    fn export_to_temp_dir() -> PathBuf {
+crates/xtask/src/main.rs:216:        Document::export_all(&cfg).unwrap();
+crates/xtask/src/main.rs:217:        EntityRef::export_all(&cfg).unwrap();
+crates/xtask/src/main.rs:218:        TriangleMesh::export_all(&cfg).unwrap();
+crates/xtask/src/main.rs:219:        MeshRequest::export_all(&cfg).unwrap();
+crates/xtask/src/main.rs:220:        ErrorResponse::export_all(&cfg).unwrap();
+crates/xtask/src/main.rs:231:        let dir1 = export_to_temp_dir();
+crates/xtask/src/main.rs:232:        let dir2 = export_to_temp_dir();
+crates/xtask/src/main.rs:258:export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, } | { "type": "create_cylinder", id: string, radius: number, height: number, } | { "type": "create_sphere", id: string, radius: number, } | { "type": "extrude", id: string, sketch: string, depth: number, } | { "type": "cut", id: string, target: string, tool: string, } | { "type": "fuse", id: string, target: string, tool: string, } | { "type": "intersect", id: string, target: string, tool: string, };
+crates/xtask/src/main.rs:263:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:291:    static TRIANGLE_MESH_GOLDEN: &str = "// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.\n\n/**\n * A triangle mesh for rendering.\n */\nexport type TriangleMesh = { \n/**\n * Vertex positions (x, y, z).\n */\npositions: Array<[number, number, number]>, \n/**\n * Normal vectors per vertex.\n */\nnormals: Array<[number, number, number]>, \n/**\n * Triangle indices (every 3 indices form a triangle).\n */\nindices: Array<number>, };\n";
+crates/xtask/src/main.rs:294:    fn t03_triangle_mesh() {
+crates/xtask/src/main.rs:295:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:300:    static DOCUMENT_GOLDEN: &str = "// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.\nimport type { Component } from \"./Component\";\n\n/**\n * The top-level document representing a MyCad design file.\n */\nexport type Document = { \n/**\n * Kernel version that created this document.\n */\nversion: string, \n/**\n * The root component (assembly or single part).\n */\nroot_component: Component, };\n";
+crates/xtask/src/main.rs:302:    static COMPONENT_GOLDEN: &str = "// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.\nimport type { ComponentRef } from \"./ComponentRef\";\nimport type { Feature } from \"./Feature\";\nimport type { Transform } from \"./Transform\";\n\n/**\n * A component in the design hierarchy.\n * Can contain features (inline part definition), children (sub-components),\n * or be a reference to an external file/library.\n */\nexport type Component = { \n/**\n * Human-readable name.\n */\nname: string, \n/**\n * Transform relative to the parent component.\n */\ntransform?: Transform, \n/**\n * External reference (if this component is not defined inline).\n */\nref?: ComponentRef | null, \n/**\n * Ordered list of features (the operation history).\n */\nfeatures?: Array<Feature>, \n/**\n * Child components.\n */\nchildren?: Array<Component>, };\n";
+crates/xtask/src/main.rs:306:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:324:export type ComponentRef = string;
+crates/xtask/src/main.rs:329:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:336:export type MeshRequest = { file: string, };
+crates/xtask/src/main.rs:341:export type ErrorResponse = { error: string, };
+crates/xtask/src/main.rs:346:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:347:        let mesh_req = read_generated(&dir, "MeshRequest.ts");
+crates/xtask/src/main.rs:348:        assert_eq!(mesh_req, MESH_REQUEST_GOLDEN);
+crates/xtask/src/main.rs:354:    static ENTITY_REF_GOLDEN: &str = "// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.\n\n/**\n * A reference to a topological entity (face, edge, vertex) on a feature's result.\n */\nexport type EntityRef = { \n/**\n * The feature that created this entity.\n */\nfeature_id: string, \n/**\n * The role of this entity in the feature (e.g., \"top_face\", \"side_edge_0\").\n */\nrole: string, };\n";
+crates/xtask/src/main.rs:358:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:365:        let dir = export_to_temp_dir();
+crates/xtask/src/main.rs:387:        let dir1 = export_to_temp_dir();
+crates/xtask/src/main.rs:404:            let dir = export_to_temp_dir();
+crates/mycad-api/Cargo.toml:11:tokio = { workspace = true }
+crates/mycad-api/Cargo.toml:17:thiserror = { workspace = true }
+crates/mycad-cli/tests/export.rs:5:fn export_simple_box_produces_12_facets() {
+crates/mycad-cli/tests/export.rs:16:        .arg("export")
+crates/mycad-cli/tests/export.rs:21:        .expect("run mycad export");
+crates/mycad-cli/tests/export.rs:22:    assert!(status.success(), "export should succeed");
+crates/mycad-api/src/error.rs:9:#[derive(Debug, thiserror::Error)]
+crates/mycad-cli/src/main.rs:39:            if let Err(msg) = run_export(&input, &output, segments) {
+crates/mycad-cli/src/main.rs:47:fn run_export(
+crates/mycad-cli/src/main.rs:61:    let mesh =
+crates/mycad-cli/src/main.rs:63:    let stl = to_ascii_stl(&mesh, "model");
+crates/mycad-api/src/router.rs:1:use crate::handler::get_mesh;
+crates/mycad-api/src/router.rs:7:use axum::Router;
+crates/mycad-api/src/router.rs:9:async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+crates/mycad-api/src/router.rs:23:pub fn app() -> Router {
+crates/mycad-api/src/router.rs:24:    Router::new()
+crates/mycad-api/src/router.rs:25:        .nest("/api/v0", Router::new().route("/mesh", get(get_mesh)))
+crates/mycad-api/src/router.rs:26:        .layer(middleware::from_fn(host_guard))
+crates/mycad-api/src/transport/mod.rs:2:pub mod mesh_request;
+crates/mycad-api/src/transport/mod.rs:4:pub use error_response::ErrorResponse;
+crates/mycad-api/src/transport/mod.rs:5:pub use mesh_request::MeshRequest;
+crates/mycad-api/src/main.rs:3:#[tokio::main]
+crates/mycad-api/src/main.rs:5:    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+crates/mycad-api/src/handler.rs:16:pub(crate) async fn get_mesh(Query(q): Query<MeshRequest>) -> Result<Json<TriangleMesh>, ApiError> {
+crates/mycad-api/src/handler.rs:48:    let mesh = tessellate_solid_with(&solid, &V0_TESSELLATION)?;
+crates/mycad-api/src/handler.rs:49:    Ok(Json(mesh))
+crates/mycad-api/src/lib.rs:6:pub use transport::{ErrorResponse, MeshRequest};
+crates/mycad-api/tests/mesh_api.rs:40:async fn send_mesh_request(uri: &str) -> (StatusCode, String) {
+crates/mycad-api/tests/mesh_api.rs:52:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:55:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:56:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:58:    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+crates/mycad-api/tests/mesh_api.rs:59:    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+crates/mycad-api/tests/mesh_api.rs:61:        mesh.indices.len() % 3 == 0,
+crates/mycad-api/tests/mesh_api.rs:67:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:70:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:71:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:73:    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+crates/mycad-api/tests/mesh_api.rs:74:    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+crates/mycad-api/tests/mesh_api.rs:76:        mesh.indices.len() % 3 == 0,
+crates/mycad-api/tests/mesh_api.rs:82:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:85:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:87:    let (_, body1) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:88:    let (_, body2) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:89:    assert_eq!(body1, body2, "mesh responses must be deterministic");
+crates/mycad-api/tests/mesh_api.rs:92:    let uri2 = format!("/api/v0/mesh?file={}", urlencoding(&file2));
+crates/mycad-api/tests/mesh_api.rs:93:    let (_, body3) = send_mesh_request(&uri2).await;
+crates/mycad-api/tests/mesh_api.rs:94:    let (_, body4) = send_mesh_request(&uri2).await;
+crates/mycad-api/tests/mesh_api.rs:97:        "cylinder mesh responses must be deterministic"
+crates/mycad-api/tests/mesh_api.rs:102:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:104:    let uri = "/api/v0/mesh?file=/tmp/absolutely_nonexistent_file.mycad";
+crates/mycad-api/tests/mesh_api.rs:105:    let (status, body) = send_mesh_request(uri).await;
+crates/mycad-api/tests/mesh_api.rs:112:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:124:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&abs));
+crates/mycad-api/tests/mesh_api.rs:125:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:138:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:141:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:153:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:156:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:157:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:164:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:167:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:168:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:175:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:178:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:179:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:190:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:193:    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+crates/mycad-api/tests/mesh_api.rs:194:    let (status, body) = send_mesh_request(&uri).await;
+crates/mycad-api/tests/mesh_api.rs:205:#[tokio::test]
+crates/mycad-api/tests/mesh_api.rs:207:    let uri = "/api/v0/mesh?file=examples/simple_box.mycad";
+crates/mycad-api/tests/mesh_api.rs:208:    let (status, body) = send_mesh_request(uri).await;
+
+codex
+現状の規約とテスト順序を確認できたので、次に具体的な API/CLI 実装を読みます。特に `host_guard` の適用範囲、`xtask ci` の並び、CLI のエラーハンドリング形を見ます。
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/src/router.rs" in /home/bacon/mycad
+exec
+/bin/bash -lc "sed -n '1,220p' Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+use crate::handler::get_mesh;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::get;
+use axum::Router;
+
+async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let host_base = host.split(':').next().unwrap_or("");
+    if matches!(host_base, "127.0.0.1" | "localhost" | "") {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+pub fn app() -> Router {
+    Router::new()
+        .nest("/api/v0", Router::new().route("/mesh", get(get_mesh)))
+        .layer(middleware::from_fn(host_guard))
+}
+
+ succeeded in 0ms:
+[workspace]
+members = [
+    "crates/mycad-kernel",
+    "crates/mycad-format",
+    "crates/mycad-build",
+    "crates/mycad-viewer",
+    "crates/mycad-cli",
+    "crates/mycad-api",
+    "crates/xtask",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# Math
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+# Schema generation
+schemars = "0.8"
+# Testing
+approx = "0.5"
+tempfile = "3"
+# Error handling
+thiserror = "2"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Ordered collections (deterministic iteration)
+indexmap = { version = "2", features = ["serde"] }
+# HTTP / async
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde_json = "1"
+tower = "0.5"
+# TypeScript type generation
+ts-rs = { version = "=12.0.1", features = ["serde-compat"] }
+# Internal crates
+mycad-format = { path = "crates/mycad-format" }
+mycad-kernel = { path = "crates/mycad-kernel" }
+mycad-build = { path = "crates/mycad-build" }
+mycad-api = { path = "crates/mycad-api" }
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/src/lib.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+pub mod error;
+pub mod handler;
+pub mod router;
+pub mod transport;
+
+pub use transport::{ErrorResponse, MeshRequest};
+
+exec
+/bin/bash -lc "sed -n '1,280p' crates/xtask/src/main.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use std::path::PathBuf;
+use std::process::{Command, ExitCode};
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let task = args.first().map(|s| s.as_str()).unwrap_or("help");
+
+    match task {
+        "ci" => ci(),
+        "gen-ts" => gen_ts(),
+        "help" | "--help" | "-h" => {
+            println!("Usage: cargo xtask <TASK>");
+            println!();
+            println!("Tasks:");
+            println!("  ci      Run fmt check, clippy, tests, build, and TS drift detection");
+            println!("  gen-ts  Generate TypeScript types to web/src/generated/");
+            ExitCode::SUCCESS
+        }
+        other => {
+            eprintln!("Unknown task: {other}");
+            eprintln!("Run `cargo xtask help` for available tasks.");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn gen_ts() -> ExitCode {
+    use mycad_api::{ErrorResponse, MeshRequest};
+    use mycad_format::feature::EntityRef;
+    use mycad_format::Document;
+    use mycad_kernel::tessellation::TriangleMesh;
+    use ts_rs::TS;
+
+    let out_dir = workspace_root().join("web/src/generated");
+
+    if out_dir.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&out_dir) {
+            eprintln!("Failed to clean output directory: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    if let Err(e) = std::fs::create_dir_all(&out_dir) {
+        eprintln!("Failed to create output directory: {e}");
+        return ExitCode::FAILURE;
+    }
+
+    std::env::set_var("TS_RS_EXPORT_DIR", &out_dir);
+    let cfg = ts_rs::Config::from_env();
+
+    type ExportFn = Box<dyn FnOnce(&ts_rs::Config) -> Result<(), ts_rs::ExportError>>;
+    let roots: Vec<(&str, ExportFn)> = vec![
+        ("Document", Box::new(Document::export_all)),
+        ("EntityRef", Box::new(EntityRef::export_all)),
+        ("TriangleMesh", Box::new(TriangleMesh::export_all)),
+        ("MeshRequest", Box::new(MeshRequest::export_all)),
+        ("ErrorResponse", Box::new(ErrorResponse::export_all)),
+    ];
+
+    for (name, export_fn) in roots {
+        println!("Exporting {name}...");
+        if let Err(e) = export_fn(&cfg) {
+            eprintln!("Failed to export {name}: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("TypeScript types exported to {}", out_dir.display());
+    ExitCode::SUCCESS
+}
+
+fn ci() -> ExitCode {
+    let steps: &[(&str, &[&str])] = &[
+        (
+            "Checking formatting",
+            &["cargo", "fmt", "--all", "--", "--check"],
+        ),
+        (
+            "Running clippy",
+            &["cargo", "clippy", "--workspace", "--", "-D", "warnings"],
+        ),
+        ("Running tests", &["cargo", "test", "--workspace"]),
+        ("Building", &["cargo", "build", "--workspace"]),
+    ];
+
+    for (label, cmd) in steps {
+        println!("\n=== {label} ===");
+        let status = Command::new(cmd[0])
+            .args(&cmd[1..])
+            .status()
+            .expect("failed to execute command");
+
+        if !status.success() {
+            eprintln!("FAILED: {label}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("\n=== Generating TypeScript types ===");
+    if gen_ts() != ExitCode::SUCCESS {
+        eprintln!("FAILED: TypeScript type generation");
+        return ExitCode::FAILURE;
+    }
+
+    println!("\n=== Checking TS drift ===");
+    let tracked = Command::new("git")
+        .args(["ls-files", "web/src/generated/"])
+        .output()
+        .expect("failed to run git ls-files");
+    if tracked.stdout.is_empty() {
+        println!("No committed TS files found — skipping drift check (run `cargo xtask gen-ts` and commit the results).");
+    } else {
+        let output = Command::new("git")
+            .args([
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                "web/src/generated/",
+            ])
+            .output()
+            .expect("failed to run git status");
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            eprintln!("FAILED: TypeScript types are out of sync with committed versions");
+            eprintln!("Run `cargo xtask gen-ts` and commit the results.");
+            eprintln!("Drift detected:\n{stdout}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("\n=== Web frontend checks ===");
+    if let Some(node_path) = which("node") {
+        println!("Found node at: {}", node_path.display());
+
+        let web_dir = workspace_root().join("web");
+
+        let lockfile = web_dir.join("package-lock.json");
+        if !lockfile.exists() {
+            eprintln!("FAILED: package-lock.json not found in web/");
+            return ExitCode::FAILURE;
+        }
+
+        let npm_steps: &[(&str, &[&str])] = &[
+            ("Installing web dependencies", &["npm", "ci"]),
+            ("TypeScript type check", &["npx", "tsc", "--noEmit"]),
+            ("Running vitest", &["npx", "vitest", "run"]),
+            ("Building web frontend", &["npx", "vite", "build"]),
+        ];
+
+        for (label, cmd) in npm_steps {
+            println!("\n  --- {label} ---");
+            let status = Command::new(cmd[0])
+                .args(&cmd[1..])
+                .current_dir(&web_dir)
+                .status()
+                .expect("failed to execute command");
+
+            if !status.success() {
+                eprintln!("FAILED: {label}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        eprintln!("FAILED: Node.js (>=20) and npm are required for web checks.");
+        eprintln!("Install from https://nodejs.org/ or via nvm, then re-run `cargo xtask ci`.");
+        return ExitCode::FAILURE;
+    }
+
+    println!("\n=== All CI checks passed ===");
+    ExitCode::SUCCESS
+}
+
+fn workspace_root() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    PathBuf::from(manifest_dir)
+        .parent()
+        .expect("no parent")
+        .parent()
+        .expect("no grandparent")
+        .to_owned()
+}
+
+fn which(name: &str) -> Option<PathBuf> {
+    let paths = std::env::var("PATH").ok()?;
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::{Mutex, OnceLock};
+
+    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn export_to_temp_dir() -> PathBuf {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+        use mycad_api::{ErrorResponse, MeshRequest};
+        use mycad_format::feature::EntityRef;
+        use mycad_format::Document;
+        use mycad_kernel::tessellation::TriangleMesh;
+        use ts_rs::TS;
+
+        let dir = tempfile::tempdir().unwrap().keep();
+        std::env::set_var("TS_RS_EXPORT_DIR", &dir);
+        let cfg = ts_rs::Config::from_env();
+
+        Document::export_all(&cfg).unwrap();
+        EntityRef::export_all(&cfg).unwrap();
+        TriangleMesh::export_all(&cfg).unwrap();
+        MeshRequest::export_all(&cfg).unwrap();
+        ErrorResponse::export_all(&cfg).unwrap();
+
+        dir
+    }
+
+    fn read_generated(dir: &std::path::Path, name: &str) -> String {
+        fs::read_to_string(dir.join(name)).unwrap_or_else(|e| panic!("failed to read {name}: {e}"))
+    }
+
+    #[test]
+    fn t01_determinism() {
+        let dir1 = export_to_temp_dir();
+        let dir2 = export_to_temp_dir();
+
+        let files = [
+            "Document.ts",
+            "Component.ts",
+            "Feature.ts",
+            "Transform.ts",
+            "ComponentRef.ts",
+            "EntityRef.ts",
+            "TriangleMesh.ts",
+            "MeshRequest.ts",
+            "ErrorResponse.ts",
+        ];
+
+        for name in &files {
+            let c1 = read_generated(&dir1, name);
+            let c2 = read_generated(&dir2, name);
+            assert_eq!(c1, c2, "{name} differs between runs");
+        }
+    }
+
+    static FEATURE_GOLDEN: &str = r#"// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+
+/**
+ * A feature — one step in the operation history.
+ */
+export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, } | { "type": "create_cylinder", id: string, radius: number, height: number, } | { "type": "create_sphere", id: string, radius: number, } | { "type": "extrude", id: string, sketch: string, depth: number, } | { "type": "cut", id: string, target: string, tool: string, } | { "type": "fuse", id: string, target: string, tool: string, } | { "type": "intersect", id: string, target: string, tool: string, };
+"#;
+
+    #[test]
+    fn t02_feature_tagged_union() {
+        let dir = export_to_temp_dir();
+        let actual = read_generated(&dir, "Feature.ts");
+        assert_eq!(actual, FEATURE_GOLDEN);
+
+        assert!(
+            actual.contains(r#""type": "create_box""#),
+            "missing create_box tag"
+        );
+        assert!(
+            actual.contains(r#""type": "create_cylinder""#),
+            "missing create_cylinder tag"
+        );
+        assert!(
+            actual.contains(r#""type": "create_sphere""#),
+            "missing create_sphere tag"
+        );
+        assert!(
+            actual.contains(r#""type": "extrude""#),
+
+exec
+/bin/bash -lc "sed -n '1,260p' crates/mycad-cli/src/main.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use clap::{Parser, Subcommand};
+use mycad_build::build_solid_from_features;
+use mycad_format::Document;
+use mycad_kernel::brep::topology::IdGenerator;
+use mycad_kernel::tessellation::{tessellate_solid_with, to_ascii_stl, TessellationOptions};
+use std::path::PathBuf;
+use std::process;
+
+#[derive(Parser)]
+#[command(name = "mycad", version, about = "MyCad CAD kernel CLI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Convert a .mycad file to STL
+    Export {
+        /// Input .mycad file
+        input: PathBuf,
+        /// Output STL file
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Number of angular segments for curved surfaces (default: 32)
+        #[arg(long)]
+        segments: Option<usize>,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Export {
+            input,
+            output,
+            segments,
+        } => {
+            if let Err(msg) = run_export(&input, &output, segments) {
+                eprintln!("error: {msg}");
+                process::exit(1);
+            }
+        }
+    }
+}
+
+fn run_export(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    segments: Option<usize>,
+) -> Result<(), String> {
+    let doc = Document::from_path(input)
+        .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+    let mut gen = IdGenerator::new(0);
+    let solid = build_solid_from_features(&doc.root_component.features, &mut gen)
+        .map_err(|e| format!("failed to build solid: {e}"))?;
+    let opts = match segments {
+        Some(n) => TessellationOptions::new(n, 1),
+        None => TessellationOptions::default(),
+    };
+    let mesh =
+        tessellate_solid_with(&solid, &opts).map_err(|e| format!("failed to tessellate: {e}"))?;
+    let stl = to_ascii_stl(&mesh, "model");
+    std::fs::write(output, stl)
+        .map_err(|e| format!("failed to write {}: {e}", output.display()))?;
+    Ok(())
+}
+
+codex
+コード規約の根拠を拾います。設計案自体は CLI/HTTP の話ですが、判定基準にある「feature history」「index-based topology」「1概念1ファイル」の明文化を確認します。
+exec
+/bin/bash -lc "sed -n '1,260p' ARCHITECTURE.md" in /home/bacon/mycad
+ succeeded in 0ms:
+# MyCad Architecture
+
+## Overview
+
+MyCad は Feature-based parametric CAD システム。ユーザーの操作履歴（Feature 列）を真実の源とし、B-rep 形状はそこから再生成される。
+
+## Layer Structure
+
+```
+┌─────────────────────┐
+│     mycad-cli       │  CLI / UI 層
+├─────────────────────┤
+│    mycad-viewer     │  可視化層（テッセレーション結果を描画）
+├─────────────────────┤
+│    mycad-format     │  永続化層（YAML <-> Document/Feature/Component）
+├─────────────────────┤
+│    mycad-kernel     │  コア層（B-rep, geometry, primitives, tessellation）
+└─────────────────────┘
+```
+
+## Key Design Decisions
+
+### B-rep (Boundary Representation)
+
+形状を「境界面の集合」として表現する。CSG (Constructive Solid Geometry) より複雑だが、エッジ・フェイスへの直接アクセスが可能で、フィレット・面取り等の操作に適している。
+
+### Index-based Topology
+
+`Solid` 内のトポロジーエンティティ（Vertex, Edge, Face 等）はフラット配列に格納し、ポインタではなくインデックスで相互参照する。
+
+**理由:**
+- シリアライズが容易
+- 決定性の保証が簡単
+- メモリレイアウトがキャッシュフレンドリー
+- 所有権問題（循環参照）を回避
+
+### Feature History as Source of Truth
+
+`.mycad` ファイルに保存される Feature 列が設計の唯一の源。B-rep 形状は Feature 列から毎回再生成可能。これにより:
+- パラメータ変更時の再生成が可能
+- undo/redo が自然に実装できる
+- ファイルサイズが小さい（形状データではなく操作手順のみ）
+
+### YAML Format
+
+設計ファイルに YAML を採用。
+
+**理由:**
+- 人間が読み書きできる
+- git diff でレビューできる
+- スキーマバリデーション可能（schemars で JSON Schema 生成）
+- 拡張子: `.mycad`
+
+### Kernel の Rendering 非依存
+
+`mycad-kernel` はレンダリングライブラリに一切依存しない。テッセレーション結果（`TriangleMesh`）を生成するのみ。ビューアがそれを消費する。
+
+## Data Flow
+
+```
+.mycad file → Document → Feature列 → Kernel (B-rep Solid) → Tessellation → TriangleMesh → Viewer
+```
+
+exec
+/bin/bash -lc "rg -n \"feature history|source of truth|index-based|flat array|HalfEdge|Euler|1 concept|1概念|mod.rs|pub use\" ARCHITECTURE.md README.md crates/mycad-kernel crates/mycad-format crates/mycad-api crates/mycad-cli docs -g '"'!target'"'" in /home/bacon/mycad
+ succeeded in 0ms:
+docs/decisions/001-brep-representation.md:28:- トポロジーエンティティはフラット配列に格納（index-based）
+docs/decisions/001-brep-representation.md:29:- `Solid` が最上位エンティティ、内部に Shell → Face → Loop → HalfEdge → Vertex の階層
+crates/mycad-kernel/src/lib.rs:7:pub use brep::topology;
+crates/mycad-kernel/src/lib.rs:8:pub use error::KernelError;
+crates/mycad-format/src/lib.rs:6:pub use component::Component;
+crates/mycad-format/src/lib.rs:7:pub use document::Document;
+crates/mycad-format/src/lib.rs:8:pub use error::FormatError;
+crates/mycad-format/src/lib.rs:9:pub use feature::Feature;
+crates/mycad-kernel/CLAUDE.md:14:- すべてのEdgeは正確に2つのHalfEdgeを持つ
+crates/mycad-kernel/CLAUDE.md:16:- HalfEdge/Edgeのvertexインデックスは親Solidのvertex配列を参照
+crates/mycad-kernel/CLAUDE.md:17:- Loopは閉じたHalfEdge列（最後のHalfEdgeの終点 = 最初のHalfEdgeの始点）
+crates/mycad-kernel/CLAUDE.md:24:3. `primitives/mod.rs` に `mod` と `pub use` を追加
+crates/mycad-kernel/src/brep/mod.rs:3:pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
+crates/mycad-format/src/component.rs:14:    /// Rotation as Euler angles in degrees [rx, ry, rz].
+crates/mycad-kernel/src/tessellation/mod.rs:2:pub use stl::to_ascii_stl;
+crates/mycad-kernel/src/primitives/mod.rs:4:pub use cuboid::make_cuboid;
+crates/mycad-kernel/src/primitives/mod.rs:5:pub use cylinder::make_cylinder;
+crates/mycad-kernel/src/brep/topology.rs:21:pub struct HalfEdge {
+crates/mycad-kernel/src/brep/topology.rs:78:/// Contains all topological entities in flat arrays for deterministic ordering.
+crates/mycad-kernel/src/brep/topology.rs:83:    pub half_edges: Vec<HalfEdge>,
+crates/mycad-kernel/src/brep/topology.rs:138:        self.half_edges.push(HalfEdge {
+crates/mycad-api/src/lib.rs:6:pub use transport::{ErrorResponse, MeshRequest};
+crates/mycad-api/src/transport/mod.rs:4:pub use error_response::ErrorResponse;
+crates/mycad-api/src/transport/mod.rs:5:pub use mesh_request::MeshRequest;
+crates/mycad-kernel/src/primitives/cylinder.rs:180:    /// T03: Euler–Poincaré formula V - E + F = 2(S - H), S=1, H=0 → 2.
+crates/mycad-kernel/src/primitives/cylinder.rs:195:            "Euler-Poincaré V-E+F = 2(S-H), S={shells}, H=0"
+
+exec
+/bin/bash -lc "find crates/mycad-kernel/src -maxdepth 3 -type f | sort | sed -n '1,260p'" in /home/bacon/mycad
+ succeeded in 0ms:
+crates/mycad-kernel/src/brep/mod.rs
+crates/mycad-kernel/src/brep/topology.rs
+crates/mycad-kernel/src/error.rs
+crates/mycad-kernel/src/geometry/curve.rs
+crates/mycad-kernel/src/geometry/math.rs
+crates/mycad-kernel/src/geometry/mod.rs
+crates/mycad-kernel/src/geometry/surface.rs
+crates/mycad-kernel/src/lib.rs
+crates/mycad-kernel/src/primitives/cuboid.rs
+crates/mycad-kernel/src/primitives/cylinder.rs
+crates/mycad-kernel/src/primitives/mod.rs
+crates/mycad-kernel/src/tessellation/mod.rs
+crates/mycad-kernel/src/tessellation/stl.rs
+
+codex
+トポロジーとモジュール規約の原文も見ます。`N/A` として切るべき領域か、それとも最低限の回帰テストを要求すべきかを判断するためです。
+exec
+/bin/bash -lc "sed -n '1,220p' docs/decisions/001-brep-representation.md" in /home/bacon/mycad
+ succeeded in 0ms:
+# ADR-001: B-rep (Boundary Representation) の採用
+
+## Status
+
+Accepted
+
+## Context
+
+3D CAD カーネルの形状表現方式を選択する必要がある。主な候補:
+
+1. **CSG (Constructive Solid Geometry)**: ブーリアン演算のツリーとして形状を表現
+2. **B-rep (Boundary Representation)**: 面・辺・頂点で境界を表現
+3. **Voxel / Implicit**: 暗黙的な距離関数で表現
+
+## Decision
+
+B-rep を採用する。
+
+## Rationale
+
+- **エッジ・フェイスへの直接アクセス**: フィレット、面取り、面選択等の操作に必要
+- **業界標準**: STEP, IGES 等の標準フォーマットが B-rep ベース
+- **テッセレーションが直接的**: 面を直接メッシュ化できる
+- **CSG との併用可能**: ブーリアン演算の結果を B-rep として保持
+
+## Implementation Details
+
+- トポロジーエンティティはフラット配列に格納（index-based）
+- `Solid` が最上位エンティティ、内部に Shell → Face → Loop → HalfEdge → Vertex の階層
+- 各エンティティは `EntityId` を持ち、Feature からの参照に使用
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-kernel/CLAUDE.md" in /home/bacon/mycad
+ succeeded in 0ms:
+# mycad-kernel — B-rep 幾何カーネル
+
+## Module Dependency Graph
+
+```
+primitives → brep, geometry
+tessellation → brep, geometry
+brep → geometry
+geometry → (nalgebra)
+```
+
+## Key Invariants
+
+- すべてのEdgeは正確に2つのHalfEdgeを持つ
+- 閉じたShellはwatertight（水密）
+- HalfEdge/Edgeのvertexインデックスは親Solidのvertex配列を参照
+- Loopは閉じたHalfEdge列（最後のHalfEdgeの終点 = 最初のHalfEdgeの始点）
+- EntityIDは `IdGenerator` で決定的に生成される
+
+## How to Add a New Primitive
+
+1. `src/primitives/` に新ファイルを作成（`cuboid.rs` をテンプレートとして使用）
+2. 関数シグネチャ: `pub fn make_xxx(params..., id_gen: &mut IdGenerator) -> Solid`
+3. `primitives/mod.rs` に `mod` と `pub use` を追加
+4. 決定性テストを必ず書く（同じ `IdGenerator` 初期値で2回生成し、結果が同一であることを確認）
+
+## How to Add a New Surface Type
+
+1. `geometry/surface.rs` の `Surface` enumに新しいバリアントを追加
+2. `evaluate(u, v) -> Point` を実装
+3. `normal_at(u, v) -> Vec3` を実装
+4. 共有数学関数は `geometry/math.rs` に配置
+
+## How to Add a New Curve Type
+
+1. `geometry/curve.rs` の `Curve` enumに新しいバリアントを追加
+2. `evaluate(t) -> Point` を実装
+3. 共有数学関数は `geometry/math.rs` に配置
+
+exec
+/bin/bash -lc "sed -n '1,260p' crates/mycad-api/tests/mesh_api.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use mycad_api::router::app;
+use mycad_kernel::tessellation::TriangleMesh;
+use serde::Deserialize;
+use tower::ServiceExt;
+
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+fn fixture_path(name: &str) -> String {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let path = std::path::Path::new(&dir)
+        .join("tests")
+        .join("fixtures")
+        .join(name);
+    std::fs::canonicalize(&path)
+        .unwrap_or_else(|_| panic!("fixture not found: {:?}", path))
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+fn example_path(name: &str) -> String {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let path = std::path::Path::new(&dir)
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join(name);
+    std::fs::canonicalize(&path)
+        .unwrap_or_else(|_| panic!("example not found: {:?}", path))
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+async fn send_mesh_request(uri: &str) -> (StatusCode, String) {
+    let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    let app = app();
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, String::from_utf8(body.to_vec()).unwrap())
+}
+
+// T01: normal box
+#[tokio::test]
+async fn t01_normal_box() {
+    let file = example_path("simple_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    assert!(
+        mesh.indices.len() % 3 == 0,
+        "indices count must be multiple of 3"
+    );
+}
+
+// T02: normal cylinder
+#[tokio::test]
+async fn t02_normal_cylinder() {
+    let file = example_path("cylinder.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    assert!(
+        mesh.indices.len() % 3 == 0,
+        "indices count must be multiple of 3"
+    );
+}
+
+// T03: determinism
+#[tokio::test]
+async fn t03_determinism() {
+    let file = example_path("simple_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+
+    let (_, body1) = send_mesh_request(&uri).await;
+    let (_, body2) = send_mesh_request(&uri).await;
+    assert_eq!(body1, body2, "mesh responses must be deterministic");
+
+    let file2 = example_path("cylinder.mycad");
+    let uri2 = format!("/api/v0/mesh?file={}", urlencoding(&file2));
+    let (_, body3) = send_mesh_request(&uri2).await;
+    let (_, body4) = send_mesh_request(&uri2).await;
+    assert_eq!(
+        body3, body4,
+        "cylinder mesh responses must be deterministic"
+    );
+}
+
+// T04: 404 not found
+#[tokio::test]
+async fn t04_not_found() {
+    let uri = "/api/v0/mesh?file=/tmp/absolutely_nonexistent_file.mycad";
+    let (status, body) = send_mesh_request(uri).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty());
+}
+
+// T05: 400 non-.mycad extension
+#[tokio::test]
+async fn t05_invalid_extension() {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let path = std::path::Path::new(&dir)
+        .join("..")
+        .join("..")
+        .join("Cargo.toml");
+    let abs = std::fs::canonicalize(&path)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&abs));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty());
+    let lower = err.error.to_lowercase();
+    assert!(
+        lower.contains("extension") || lower.contains(".mycad") || lower.contains("invalid"),
+        "expected extension-related message, got: {}",
+        err.error
+    );
+}
+
+// T06: 403 Host header (DNS rebinding protection)
+#[tokio::test]
+async fn t06_host_header_rebinding() {
+    let file = example_path("simple_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let req = Request::builder()
+        .uri(&uri)
+        .header("Host", "evil.com")
+        .body(Body::empty())
+        .unwrap();
+    let app = app();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// T07: 422 unsupported feature (sphere)
+#[tokio::test]
+async fn t07_unsupported_feature() {
+    let file = fixture_path("create_sphere.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
+}
+
+// T08: 422 degenerate dimension (zero-width box)
+#[tokio::test]
+async fn t08_degenerate_dimension() {
+    let file = fixture_path("zero_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
+}
+
+// T09: 422 assembly unsupported
+#[tokio::test]
+async fn t09_assembly_unsupported() {
+    let file = fixture_path("assembly.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(
+        err.error.contains("assembly") || err.error.contains("reference"),
+        "expected assembly/reference message, got: {}",
+        err.error
+    );
+}
+
+// T10: 422 empty part
+#[tokio::test]
+async fn t10_empty_part() {
+    let file = fixture_path("empty_part.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(
+        err.error.contains("empty part") || err.error.contains("no features"),
+        "expected empty part message, got: {}",
+        err.error
+    );
+}
+
+// T11: 400 relative path rejected
+#[tokio::test]
+async fn t11_relative_path_rejected() {
+    let uri = "/api/v0/mesh?file=examples/simple_box.mycad";
+    let (status, body) = send_mesh_request(uri).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(
+        err.error.contains("relative"),
+        "expected relative path error, got: {}",
+        err.error
+    );
+}
+
+fn urlencoding(s: &str) -> String {
+    s.replace('/', "%2F")
+}
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/src/transport/mesh_request.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct MeshRequest {
+    pub file: String,
+}
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/src/transport/error_response.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ErrorResponse {
+    pub error: String,
+}
+
+codex
+依存追加の設計がワークスペース規約に沿うかを詰めます。各クレートの `Cargo.toml` と API バイナリの現状も確認します。
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[package]
+name = "mycad-api"
+description = "HTTP API server for MyCad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+mycad-format = { workspace = true }
+mycad-kernel = { workspace = true }
+mycad-build = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+mycad-kernel = { workspace = true }
+
+[[bin]]
+name = "mycad-api"
+path = "src/main.rs"
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-cli/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[package]
+name = "mycad-cli"
+description = "Command-line interface for MyCad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "mycad"
+path = "src/main.rs"
+
+[dependencies]
+mycad-kernel = { workspace = true }
+mycad-format = { workspace = true }
+mycad-build = { workspace = true }
+clap = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/xtask/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+rust-version.workspace = true
+
+[dependencies]
+ts-rs = { workspace = true }
+mycad-format = { workspace = true }
+mycad-kernel = { workspace = true }
+mycad-api = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/src/main.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use mycad_api::router::app;
+
+#[tokio::main]
+async fn main() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .expect("failed to bind to 127.0.0.1:3000");
+    axum::serve(listener, app()).await.expect("server error");
+}
+
+exec
+/bin/bash -lc "find crates/mycad-api/src -maxdepth 2 -type f | sort | sed -n '1,200p'" in /home/bacon/mycad
+ succeeded in 0ms:
+crates/mycad-api/src/error.rs
+crates/mycad-api/src/handler.rs
+crates/mycad-api/src/lib.rs
+crates/mycad-api/src/main.rs
+crates/mycad-api/src/router.rs
+crates/mycad-api/src/transport/error_response.rs
+crates/mycad-api/src/transport/mesh_request.rs
+crates/mycad-api/src/transport/mod.rs
+
+codex
+CLI 側のテスト流儀も見ます。`run_view` の単体/E2E どこまで求めるべきか、既存の `export` テストの粒度と比較します。
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-cli/tests/export.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use std::path::PathBuf;
+use std::process::Command;
+
+#[test]
+fn export_simple_box_produces_12_facets() {
+    let bin = env!("CARGO_BIN_EXE_mycad");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join("simple_box.mycad");
+    let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
+    let output = tmp.path();
+
+    let status = Command::new(bin)
+        .arg("export")
+        .arg(&input)
+        .arg("-o")
+        .arg(output)
+        .status()
+        .expect("run mycad export");
+    assert!(status.success(), "export should succeed");
+
+    let stl = std::fs::read_to_string(output).expect("read stl");
+    let facet_count = stl.matches("facet normal").count();
+    assert_eq!(
+        facet_count, 12,
+        "cuboid should produce 12 facets (6 faces * 2 triangles)"
+    );
+}
+
+exec
+/bin/bash -lc "sed -n '1,220p' web/src/main.ts" in /home/bacon/mycad
+ succeeded in 0ms:
+import { fetchMesh } from "./api";
+import { initViewer } from "./viewer";
+
+const app = document.getElementById("app")!;
+const errorEl = document.getElementById("error")!;
+const infoEl = document.getElementById("info")!;
+
+function showError(msg: string): void {
+  errorEl.textContent = msg;
+  errorEl.style.display = "block";
+}
+
+function showInfo(msg: string): void {
+  infoEl.textContent = msg;
+  infoEl.style.display = "block";
+}
+
+async function main(): Promise<void> {
+  const params = new URLSearchParams(window.location.search);
+  const file = params.get("file");
+
+  if (!file) {
+    showInfo("Usage: ?file=<absolute-path-to-.mycad>");
+    return;
+  }
+
+  try {
+    const mesh = await fetchMesh(file);
+    initViewer(app, mesh);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    showError(message);
+  }
+}
+
+main();
+
+exec
+/bin/bash -lc "find crates/mycad-cli -maxdepth 3 -type f | sort | sed -n '1,200p'" in /home/bacon/mycad
+ succeeded in 0ms:
+crates/mycad-cli/Cargo.toml
+crates/mycad-cli/src/main.rs
+crates/mycad-cli/tests/export.rs
+
+codex
+型派生の規約が実際にどこまで使われているかだけ最後に確認します。ここが満たされていれば、残りは主に回帰リスクとビルド再現性の問題です。
+exec
+/bin/bash -lc "sed -n '1,220p' crates/mycad-api/src/error.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use crate::transport::ErrorResponse;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::Json;
+use mycad_format::error::FormatError;
+use mycad_kernel::error::KernelError;
+use mycad_kernel::tessellation::TessellationError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ApiError {
+    #[error("{0}")]
+    BadRequest(String),
+    #[error("{0}")]
+    NotFound(String),
+    #[error("{0}")]
+    Unprocessable(String),
+    #[error("{0}")]
+    Internal(String),
+}
+
+impl From<FormatError> for ApiError {
+    fn from(err: FormatError) -> Self {
+        match &err {
+            FormatError::InvalidExtension(_) | FormatError::Yaml(_) => {
+                ApiError::BadRequest(err.to_string())
+            }
+            FormatError::Io(io_err) => match io_err.kind() {
+                std::io::ErrorKind::NotFound => ApiError::NotFound(err.to_string()),
+                _ => ApiError::Internal(err.to_string()),
+            },
+            FormatError::InvalidReference { .. } => ApiError::Unprocessable(err.to_string()),
+        }
+    }
+}
+
+impl From<KernelError> for ApiError {
+    fn from(err: KernelError) -> Self {
+        ApiError::Unprocessable(err.to_string())
+    }
+}
+
+impl From<TessellationError> for ApiError {
+    fn from(err: TessellationError) -> Self {
+        ApiError::Unprocessable(err.to_string())
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, msg) = match &self {
+            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            ApiError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            ApiError::Unprocessable(_) => (StatusCode::UNPROCESSABLE_ENTITY, self.to_string()),
+            ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+        };
+        let body = ErrorResponse { error: msg };
+        (status, Json(body)).into_response()
+    }
+}
+
+exec
+/bin/bash -lc "rg -n \"derive\\(.*JsonSchema|schemars::JsonSchema|derive\\(.*TS|Serialize, Deserialize\" crates/mycad-format crates/mycad-kernel crates/mycad-api -g '"'!target'"'" in /home/bacon/mycad
+ succeeded in 0ms:
+crates/mycad-kernel/src/tessellation/mod.rs:18:#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+crates/mycad-kernel/src/tessellation/mod.rs:50:#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+crates/mycad-format/src/feature.rs:1:use schemars::JsonSchema;
+crates/mycad-format/src/feature.rs:6:#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+crates/mycad-format/src/feature.rs:15:#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+crates/mycad-format/src/component.rs:10:#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, TS)]
+crates/mycad-format/src/component.rs:85:impl schemars::JsonSchema for ComponentRef {
+crates/mycad-format/src/component.rs:91:        <String as schemars::JsonSchema>::json_schema(gen)
+crates/mycad-format/src/component.rs:119:#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, TS)]
+crates/mycad-api/src/transport/mesh_request.rs:4:#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+crates/mycad-api/src/transport/error_response.rs:4:#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+crates/mycad-format/src/document.rs:3:use schemars::JsonSchema;
+crates/mycad-format/src/document.rs:9:#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+crates/mycad-kernel/src/geometry/surface.rs:17:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/geometry/curve.rs:6:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/geometry/mod.rs:15:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:11:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:20:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:33:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:45:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:54:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:68:#[derive(Debug, Clone, Serialize, Deserialize)]
+crates/mycad-kernel/src/brep/topology.rs:79:#[derive(Debug, Clone, Serialize, Deserialize)]
+
+exec
+/bin/bash -lc "sed -n '1,240p' crates/mycad-api/src/handler.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use crate::error::ApiError;
+use crate::transport::MeshRequest;
+use axum::extract::Query;
+use axum::Json;
+use mycad_build::build_solid_from_features;
+use mycad_format::Document;
+use mycad_kernel::brep::topology::IdGenerator;
+use mycad_kernel::tessellation::{tessellate_solid_with, TessellationOptions, TriangleMesh};
+use std::path::Path;
+
+const V0_TESSELLATION: TessellationOptions = TessellationOptions {
+    angular_segments: 32,
+    axial_segments: 1,
+};
+
+pub(crate) async fn get_mesh(Query(q): Query<MeshRequest>) -> Result<Json<TriangleMesh>, ApiError> {
+    let path = Path::new(&q.file);
+
+    if path.is_relative() {
+        return Err(ApiError::BadRequest(
+            "relative path not allowed: file must be an absolute path".to_string(),
+        ));
+    }
+
+    let canonical = std::fs::canonicalize(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => {
+            ApiError::NotFound(format!("file not found: {}", path.display()))
+        }
+        _ => ApiError::BadRequest(format!("invalid path: {}", path.display())),
+    })?;
+
+    let doc = Document::from_path(&canonical)?;
+
+    let root = &doc.root_component;
+    if root.reference.is_some() || !root.children.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "assembly/reference documents are not supported in v0".to_string(),
+        ));
+    }
+    if root.features.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "empty part: document has no features".to_string(),
+        ));
+    }
+
+    let mut gen = IdGenerator::new(0);
+    let solid = build_solid_from_features(&root.features, &mut gen)?;
+    let mesh = tessellate_solid_with(&solid, &V0_TESSELLATION)?;
+    Ok(Json(mesh))
+}
+
+codex
+実アセット側の形も一度だけ見ます。`T03` の分岐条件が十分か、`/assets/...` 成功テストが組めるかを判断するためです。
+exec
+/bin/bash -lc "sed -n '1,160p' web/dist/index.html" in /home/bacon/mycad
+ succeeded in 0ms:
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MyCad Viewer</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; }
+      #app { width: 100%; height: 100%; position: relative; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #error {
+        display: none;
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        background: #c0392b;
+        color: white;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        max-width: 80%;
+        z-index: 10;
+      }
+      #info {
+        display: none;
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        background: #2980b9;
+        color: white;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        max-width: 80%;
+        z-index: 10;
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-B3P-dkto.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div id="error"></div>
+      <div id="info"></div>
+    </div>
+  </body>
+</html>
+
+exec
+/bin/bash -lc "find web/dist -maxdepth 2 -type f | sort | sed -n '1,120p'" in /home/bacon/mycad
+ succeeded in 0ms:
+web/dist/assets/index-B3P-dkto.js
+web/dist/index.html
+
+codex
+既存レビューの粒度だけ一つ見ます。重大度の付け方を合わせるためです。
+exec
+/bin/bash -lc "sed -n '1,220p' features/20-ts-frontend-skeleton/final-review.md" in /home/bacon/mycad
+ succeeded in 0ms:
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/xtask/src/main.rs"
+    line_hint: 138
+    finding: "`ci()` が `web/package-lock.json` を必須化し、その後 `npm ci` / `vitest` / `vite build` まで実行するようになっているが、現時点の差分には `web/package.json`・`web/package-lock.json`・`web/index.html`・`web/src/main.ts`・`web/tsconfig.json`・`web/vite.config.ts` が含まれていない（untracked）。この diff だけを適用すると、Node が入っている環境では `cargo xtask ci` が必ず壊れる。"
+    suggestion: "フロントの最小一式を同じ差分に含めるか、この変更から web チェックを外して #20 側でまとめて導入する。"
+  - id: F02
+    severity: high
+    file: "crates/xtask/src/main.rs"
+    line_hint: 133
+    finding: "`which(\"node\")` の結果で web チェック全体を丸ごと skip しており、同じコミットでも `node` が PATH にある環境では失敗し、無い環境では成功する。`xtask ci` の検証内容がホスト依存になっており、決定的な CI ゲートになっていない。"
+    suggestion: "Node/npm/npx を `xtask ci` の前提として明示し、欠けていれば fail-fast するか、web チェックを別タスクに分離して条件付き skip をやめる。"
+  - id: F03
+    severity: medium
+    file: "crates/mycad-format/src/document.rs"
+    line_hint: 173
+    finding: "`test_ts_derive_backward_compat` は `examples/*.mycad` 全体を roundtrip (`yaml1 == yaml2`) で見るだけで、exact golden 比較は `simple_box.mycad` にしか無い。設計時に合意した T08 の『examples/*.mycad の wire YAML を固定する』要件を満たしておらず、`cylinder.mycad` や `assembly.mycad` の serialize 回帰を取りこぼす。"
+    suggestion: "各 example ごとに `to_yaml()` を fixture 本文または個別 golden と `assert_eq!` し、roundtrip ではなく byte-identical を固定する。"
+  - id: F04
+    severity: medium
+    file: "crates/xtask/src/main.rs"
+    line_hint: 362
+    finding: "`t06_gen_ts_produces_all_files` は `export_to_temp_dir()` を直接呼ぶだけで、実際の `gen_ts()` / `cargo xtask gen-ts` 経路を通していない。`workspace_root()` の解決、`web/src/generated/` の掃除、実出力先への書き込みが壊れても T06 は green のままになる。"
+    suggestion: "`gen_ts()` の出力先を注入可能にして本体を直接テストするか、`xtask gen-ts` を実行する統合テストを追加する。"
+
+verdict: fail
+exec
+/bin/bash -lc "sed -n '1,220p' features/20-ts-frontend-skeleton/design-review.md" in /home/bacon/mycad
+ succeeded in 0ms:
+issues:
+  - id: R01
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "`normals` 欠落時に `geometry.computeVertexNormals()` をクライアントで実行しており、『API レスポンスをそのまま BufferGeometry 化し、独自の幾何生成はしない』方針と矛盾している"
+    suggestion: "法線は Rust/API 側で常に生成して返すか、欠落時は viewer で再計算せず明示的エラーにすること"
+  - id: R02
+    severity: medium
+    section: "設計方針 > CI 統合"
+    finding: "`xtask ci()` で lockfile 不在時に `npm install` へフォールバックすると依存解決が時点依存になり、`package-lock.json` による版固定と整合しない"
+    suggestion: "`web/package-lock.json` を必須にし、欠落時は `npm ci` を失敗させて CI を赤にすること"
+  - id: R03
+    severity: medium
+    section: "テスト計画"
+    finding: "決定性反復テスト（T0x 系）が無く、同一 `TriangleMesh` 入力から同一 `BufferGeometry` 変換結果が得られることを自動検証していない"
+    suggestion: "固定 mesh fixture に対する `TriangleMesh -> BufferGeometry` の反復比較テストを追加し、少なくとも attribute 長・index 内容・bbox を繰り返し検証すること"
+  - id: R04
+    severity: medium
+    section: "テスト計画 > 退化/エッジ"
+    finding: "退化・不正入力の扱いが `indices` 空と file エラーに偏っており、`normals` 長さ不一致、index 範囲外、NaN/inf 座標など malformed `TriangleMesh` の方針と自動検証が不足している"
+    suggestion: "viewer 初期化前に mesh の長さ整合・index 範囲・有限値を検証し、異常系テストを追加すること"
+
+verdict: pass
+codex
+issues:
+  - id: R01
+    severity: high
+    section: "設計方針 > embed のビルド依存問題と対策"
+    finding: "`build.rs` の説明に `cargo:rerun-if-changed` が無く、埋め込み元の `web/dist` が crate 外にあるため、フロント資産を更新しても `mycad-api`/`mycad-cli` の再コンパイルが走らず、release バイナリへ古いアセットや初回スタブを埋め込む恐れがある"
+    suggestion: "`build.rs` で `web/dist/` を明示的に `rerun-if-changed` 対象にし、可能なら埋め込み対象を `OUT_DIR` にコピーして Cargo 依存を明確化すること"
+  - id: R02
+    severity: high
+    section: "テスト計画"
+    finding: "提案された `cargo xtask ci` は debug の `cargo build --workspace` までしか通さず、`PROFILE=release` 分岐の build guard と release 時の `rust-embed` 実埋め込み経路を自動検証していない。R01 対策の成否を CI で保証できない"
+    suggestion: "`cargo xtask ci` か別タスクで `cargo xtask web` の後に `cargo build -p mycad-cli --release` を必須化し、release 経路で `GET /` が実アセットを返す smoke テストも追加すること"
+  - id: R03
+    severity: medium
+    section: "テスト計画 > 正常系"
+    finding: "`T03` は `/` の `index.html` しか見ておらず、viewer 起動に必須な `/assets/...` の実在ファイル配信成功を自動検証していない。`static_handler` のパス解決や MIME 設定を誤っても CI で見逃す"
+    suggestion: "`index.html` から実際の `script src` を抽出して `GET` し、200 と妥当な JavaScript content-type を確認するテストを追加すること"
+  - id: R04
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "`bind_listener` が `AddrInUse` 時に `127.0.0.1:0` へフォールバックするため、`mycad view <same file>` の公開 URL は同一入力でも実行ごとに変わりうる。設計文は決定性を `build_view_url` 単体に限定しており、コマンド全体の非決定的挙動を見落としている"
+    suggestion: "決定性を重視するなら既定動作はポート競合をエラーにするか、固定順序のポート探索にすること。少なくとも『ポート占有時は URL が非決定になる』ことを設計上明記すること"
+
+verdict: fail
+tokens used
+53,267
+issues:
+  - id: R01
+    severity: high
+    section: "設計方針 > embed のビルド依存問題と対策"
+    finding: "`build.rs` の説明に `cargo:rerun-if-changed` が無く、埋め込み元の `web/dist` が crate 外にあるため、フロント資産を更新しても `mycad-api`/`mycad-cli` の再コンパイルが走らず、release バイナリへ古いアセットや初回スタブを埋め込む恐れがある"
+    suggestion: "`build.rs` で `web/dist/` を明示的に `rerun-if-changed` 対象にし、可能なら埋め込み対象を `OUT_DIR` にコピーして Cargo 依存を明確化すること"
+  - id: R02
+    severity: high
+    section: "テスト計画"
+    finding: "提案された `cargo xtask ci` は debug の `cargo build --workspace` までしか通さず、`PROFILE=release` 分岐の build guard と release 時の `rust-embed` 実埋め込み経路を自動検証していない。R01 対策の成否を CI で保証できない"
+    suggestion: "`cargo xtask ci` か別タスクで `cargo xtask web` の後に `cargo build -p mycad-cli --release` を必須化し、release 経路で `GET /` が実アセットを返す smoke テストも追加すること"
+  - id: R03
+    severity: medium
+    section: "テスト計画 > 正常系"
+    finding: "`T03` は `/` の `index.html` しか見ておらず、viewer 起動に必須な `/assets/...` の実在ファイル配信成功を自動検証していない。`static_handler` のパス解決や MIME 設定を誤っても CI で見逃す"
+    suggestion: "`index.html` から実際の `script src` を抽出して `GET` し、200 と妥当な JavaScript content-type を確認するテストを追加すること"
+  - id: R04
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "`bind_listener` が `AddrInUse` 時に `127.0.0.1:0` へフォールバックするため、`mycad view <same file>` の公開 URL は同一入力でも実行ごとに変わりうる。設計文は決定性を `build_view_url` 単体に限定しており、コマンド全体の非決定的挙動を見落としている"
+    suggestion: "決定性を重視するなら既定動作はポート競合をエラーにするか、固定順序のポート探索にすること。少なくとも『ポート占有時は URL が非決定になる』ことを設計上明記すること"
+
+verdict: fail

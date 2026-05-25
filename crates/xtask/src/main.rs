@@ -7,12 +7,14 @@ fn main() -> ExitCode {
 
     match task {
         "ci" => ci(),
+        "web" => web(),
         "gen-ts" => gen_ts(),
         "help" | "--help" | "-h" => {
             println!("Usage: cargo xtask <TASK>");
             println!();
             println!("Tasks:");
-            println!("  ci      Run fmt check, clippy, tests, build, and TS drift detection");
+            println!("  ci      Run web build, then fmt check, clippy, tests, build, TS drift, web checks, release verification");
+            println!("  web     Generate TS types and build web frontend (vite build)");
             println!("  gen-ts  Generate TypeScript types to web/src/generated/");
             ExitCode::SUCCESS
         }
@@ -22,6 +24,49 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn web() -> ExitCode {
+    let web_dir = workspace_root().join("web");
+
+    println!("=== Generating TypeScript types ===");
+    if gen_ts() != ExitCode::SUCCESS {
+        eprintln!("FAILED: TypeScript type generation");
+        return ExitCode::FAILURE;
+    }
+
+    let lockfile = web_dir.join("package-lock.json");
+    if !lockfile.exists() {
+        eprintln!("FAILED: package-lock.json not found in web/");
+        return ExitCode::FAILURE;
+    }
+
+    let npm_steps: &[(&str, &[&str])] = &[
+        ("Installing web dependencies", &["npm", "ci"]),
+        ("TypeScript type check", &["npx", "tsc", "--noEmit"]),
+        ("Running vitest", &["npx", "vitest", "run"]),
+        (
+            "Building web frontend (vite build)",
+            &["npx", "vite", "build"],
+        ),
+    ];
+
+    for (label, cmd) in npm_steps {
+        println!("\n--- {label} ---");
+        let status = Command::new(cmd[0])
+            .args(&cmd[1..])
+            .current_dir(&web_dir)
+            .status()
+            .expect("failed to execute command");
+
+        if !status.success() {
+            eprintln!("FAILED: {label}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("\n=== Web build complete ===");
+    ExitCode::SUCCESS
 }
 
 fn gen_ts() -> ExitCode {
@@ -69,7 +114,20 @@ fn gen_ts() -> ExitCode {
 }
 
 fn ci() -> ExitCode {
-    let steps: &[(&str, &[&str])] = &[
+    let Some(_node) = which("node") else {
+        eprintln!("FAILED: Node.js (>=20) and npm are required for CI.");
+        eprintln!("Install from https://nodejs.org/ or via nvm, then re-run `cargo xtask ci`.");
+        return ExitCode::FAILURE;
+    };
+
+    // Web build first so cargo steps embed real assets
+    println!("\n=== Building web frontend ===");
+    if web() != ExitCode::SUCCESS {
+        eprintln!("FAILED: Web frontend build");
+        return ExitCode::FAILURE;
+    }
+
+    let cargo_steps: &[(&str, &[&str])] = &[
         (
             "Checking formatting",
             &["cargo", "fmt", "--all", "--", "--check"],
@@ -82,7 +140,7 @@ fn ci() -> ExitCode {
         ("Building", &["cargo", "build", "--workspace"]),
     ];
 
-    for (label, cmd) in steps {
+    for (label, cmd) in cargo_steps {
         println!("\n=== {label} ===");
         let status = Command::new(cmd[0])
             .args(&cmd[1..])
@@ -93,12 +151,6 @@ fn ci() -> ExitCode {
             eprintln!("FAILED: {label}");
             return ExitCode::FAILURE;
         }
-    }
-
-    println!("\n=== Generating TypeScript types ===");
-    if gen_ts() != ExitCode::SUCCESS {
-        eprintln!("FAILED: TypeScript type generation");
-        return ExitCode::FAILURE;
     }
 
     println!("\n=== Checking TS drift ===");
@@ -129,41 +181,25 @@ fn ci() -> ExitCode {
         }
     }
 
-    println!("\n=== Web frontend checks ===");
-    if let Some(node_path) = which("node") {
-        println!("Found node at: {}", node_path.display());
+    // Release verification: ensure release build embeds real assets
+    println!("\n=== Release verification ===");
+    println!("Building release binary...");
+    let status = Command::new("cargo")
+        .args(["build", "-p", "mycad-cli", "--release"])
+        .status()
+        .expect("failed to execute cargo build --release");
+    if !status.success() {
+        eprintln!("FAILED: Release build");
+        return ExitCode::FAILURE;
+    }
 
-        let web_dir = workspace_root().join("web");
-
-        let lockfile = web_dir.join("package-lock.json");
-        if !lockfile.exists() {
-            eprintln!("FAILED: package-lock.json not found in web/");
-            return ExitCode::FAILURE;
-        }
-
-        let npm_steps: &[(&str, &[&str])] = &[
-            ("Installing web dependencies", &["npm", "ci"]),
-            ("TypeScript type check", &["npx", "tsc", "--noEmit"]),
-            ("Running vitest", &["npx", "vitest", "run"]),
-            ("Building web frontend", &["npx", "vite", "build"]),
-        ];
-
-        for (label, cmd) in npm_steps {
-            println!("\n  --- {label} ---");
-            let status = Command::new(cmd[0])
-                .args(&cmd[1..])
-                .current_dir(&web_dir)
-                .status()
-                .expect("failed to execute command");
-
-            if !status.success() {
-                eprintln!("FAILED: {label}");
-                return ExitCode::FAILURE;
-            }
-        }
-    } else {
-        eprintln!("FAILED: Node.js (>=20) and npm are required for web checks.");
-        eprintln!("Install from https://nodejs.org/ or via nvm, then re-run `cargo xtask ci`.");
+    println!("Running release smoke test...");
+    let status = Command::new("cargo")
+        .args(["test", "-p", "mycad-api", "--release", "static_assets"])
+        .status()
+        .expect("failed to execute release smoke test");
+    if !status.success() {
+        eprintln!("FAILED: Release smoke test");
         return ExitCode::FAILURE;
     }
 

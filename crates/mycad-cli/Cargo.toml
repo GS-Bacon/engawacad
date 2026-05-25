@@ -14,7 +14,12 @@ path = "src/main.rs"
 mycad-kernel = { workspace = true }
 mycad-format = { workspace = true }
 mycad-build = { workspace = true }
+mycad-api = { workspace = true }
 clap = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+open = { workspace = true }
+urlencoding = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

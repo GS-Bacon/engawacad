@@ -1,3 +1,5 @@
+mod view;
+
 use clap::{Parser, Subcommand};
 use mycad_build::build_solid_from_features;
 use mycad_format::Document;
@@ -26,6 +28,14 @@ enum Commands {
         #[arg(long)]
         segments: Option<usize>,
     },
+    /// Start a local server and open the model in a browser
+    View {
+        /// Input .mycad file
+        input: PathBuf,
+        /// Port to listen on (default: 7878)
+        #[arg(long, default_value_t = view::DEFAULT_PORT)]
+        port: u16,
+    },
 }
 
 fn main() {
@@ -37,6 +47,12 @@ fn main() {
             segments,
         } => {
             if let Err(msg) = run_export(&input, &output, segments) {
+                eprintln!("error: {msg}");
+                process::exit(1);
+            }
+        }
+        Commands::View { input, port } => {
+            if let Err(msg) = view::run_view(&input, port) {
                 eprintln!("error: {msg}");
                 process::exit(1);
             }

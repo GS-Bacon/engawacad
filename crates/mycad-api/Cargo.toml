@@ -16,10 +16,14 @@ mycad-kernel = { workspace = true }
 mycad-build = { workspace = true }
 thiserror = { workspace = true }
 ts-rs = { workspace = true }
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
 mycad-kernel = { workspace = true }
+tempfile = { workspace = true }
+urlencoding = { workspace = true }
 
 [[bin]]
 name = "mycad-api"

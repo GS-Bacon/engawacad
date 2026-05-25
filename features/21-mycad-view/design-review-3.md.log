@@ -1,0 +1,1159 @@
+Reading additional input from stdin...
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: /home/bacon/mycad
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019e5f04-7b25-70f0-a72e-cd48ad64ad62
+--------
+user
+# Codex 設計レビュアー（MyCad CAD カーネル専用）
+
+あなたは Rust 製 B-rep CAD カーネル「MyCad」の設計ドキュメントをレビューする専門家です。
+stdin に渡された設計・テスト計画ドキュメントを読み、以下の観点で問題を指摘してください。
+
+## レビュー観点
+
+### 1. 決定性（MyCad の核心）
+- `IdGenerator` を使った決定的 ID 生成になっているか
+- 同一入力で必ず同一出力（同一 ID・同一座標）が保証されているか
+- 非決定的要素（HashMap のイテレーション順、thread_rng など）が混入していないか
+
+### 2. B-rep トポロジー妥当性
+- Euler-Poincaré の公式 `V - E + F = 2(S - H)` が成立する設計か（S=殻の数, H=貫通穴）
+- HalfEdge の twin/next/prev ポインタ（インデックス）が正しく結ばれるか
+- Loop/Shell/Solid の入れ子構造が一貫しているか
+
+### 3. 退化幾何の扱い
+- ゼロ長エッジ、面積ゼロの Face、縮退した Loop の排除または明示的エラーの設計があるか
+- 数値的境界（浮動小数点の epsilon 比較）の方針が明記されているか
+
+### 4. API・型設計
+- `Debug, Clone, Serialize, Deserialize` が付与されているか（JsonSchema が必要な型は追記）
+- 新しい依存は `[workspace.dependencies]` + `{ workspace = true }` 規約に従っているか
+- ライブラリエラーには `thiserror` を使用しているか
+- カーネルにレンダリング依存が混入していないか（`TriangleMesh` 生成のみ可）
+
+### 5. テスト計画の充足性
+- 決定性反復テスト（T0x 系）があるか
+- Euler-Poincaré 検証テストがあるか
+- 退化入力エッジケースが十分にあるか
+- golden YAML ラウンドトリップテストがあるか
+
+### 6. アーキテクチャ整合性
+- Index-based topology（ポインタ不使用、フラット配列 + インデックス参照）を守っているか
+- Feature history = source of truth の原則と矛盾しないか
+- 1概念1ファイル、`mod.rs` から `pub use` で再エクスポートの規約に従っているか
+
+---
+
+## 出力フォーマット（厳守）
+
+```yaml
+issues:
+  - id: R01
+    severity: critical  # critical | high | medium | low
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使わず Uuid::new_v4() を使用している"
+    suggestion: "IdGenerator::next() に置き換えること"
+  - id: R02
+    severity: medium
+    ...
+
+verdict: pass  # pass | fail
+# fail = Critical または High が1件以上ある
+```
+
+`issues` が空の場合は `issues: []` と書く。
+**このフォーマット以外の出力は禁止。前置きや後置きの文章は書かない。**
+
+<stdin>
+# Issue #21: `mycad view` 再定義 — ローカルサーバ起動 + ブラウザ自動オープン
+
+## Context
+
+Phase 2「Web ベースビューア基盤」の完了条件となるコマンド。ADR-003 が定める二配備
+(Tauri ネイティブ / サーバモード self-hosted) のうち **サーバモードの最小入口**を作る。
+`mycad view <input.mycad>` で API サーバを起動し、ビルド済み TS フロント(`web/dist`)を
+同一サーバから配信し、ブラウザを自動で開いて box を 3D 表示する。
+
+依存 #18(mycad-api スケルトン)・#20(TS フロント骨組み)は両方 CLOSED 済み。
+現状フロント `web/src/main.ts` は URL の `?file=` を読み `/api/v0/mesh?file=` を叩く実装が
+**既に存在する**ため、フロント側コード変更は不要。
+
+確定済み方針(ユーザー合意):
+- フロント配信は **rust-embed によるバイナリ埋め込み**(ADR-003 の Tauri 配備との対称性)
+- API サーバは **in-process** 起動(CLI と同一プロセス、view 時のみ tokio runtime)
+
+## 実装対象
+
+### 影響クレート/ファイル
+
+**crates/mycad-api**(サーバモード = フロント静的配信を担う)
+- `Cargo.toml`: `rust-embed`・`mime_guess` を追加(`{ workspace = true }`)
+- `build.rs`(新規): コンパイル前に `../../web/dist/index.html` の存在を保証。
+  - 無ければ `web/dist/` を作成しスタブ `index.html` を生成。スタブ本文にセンチネル
+    文字列 `MYCAD frontend not built` を含める(後述テスト・実行時ガードの判定キー)。
+    外部コマンド/ネットワーク不使用の純ファイル操作 → clean checkout でも `cargo build` が通る。
+  - **release ガード(R01 対策)**: `PROFILE=release` かつ `index.html` がスタブ
+    (= センチネルを含む)/不在の場合は `panic!`(build 失敗)し
+    「run `cargo xtask web` (vite build) before release build」を表示。
+    → git 管理外 `web/dist` の事前状態に依存した「スタブ埋め込み binary」の配布を機械的に防止。
+  - **再ビルドトリガ(R01 対策)**: `web/dist` は crate 外のため、`build.rs` で
+    `println!("cargo:rerun-if-changed=../../web/dist");`(及び `index.html`)を emit し、
+    フロント資産更新時に `mycad-api` が確実に再コンパイル → 古いアセット/初回スタブの
+    埋め込み残留を防ぐ。
+- `src/static_assets.rs`(新規):
+  ```rust
+  #[derive(rust_embed::RustEmbed)]
+  #[folder = "$CARGO_MANIFEST_DIR/../../web/dist"]
+  struct WebAssets;
+
+  pub(crate) async fn static_handler(uri: axum::http::Uri) -> axum::response::Response;
+  ```
+  - `/` → `index.html` を返す
+  - `/assets/...` など → 該当ファイルを `mime_guess` で content-type 付与し返す
+  - 見つからなければ 404
+- `src/router.rs`: `app()` に `.fallback(static_handler)` を追加。`host_guard` layer は維持
+  (静的配信も 127.0.0.1/localhost のみ許可)。既存 `/api/v0/mesh` route はそのまま。
+- `src/lib.rs`: 必要なら `pub use router::app;`(CLI から呼ぶため)
+
+**crates/xtask**(R01 対策: ビルド順序の機械的強制)
+- `src/main.rs`: `ci()` の手順を **web ビルド先行**に変更。`npm ci → vitest → vite build` を
+  cargo 各ステップ(fmt/clippy/test/build)より**前**に実行する。
+  → cargo test/build 時に実 `web/dist` が存在 → embed が実アセットを対象にでき、
+    R03/R09 の smoke テストも実アセットで成立。
+  - `cargo xtask web` サブコマンド(vite build のみ)を追加。
+  - **release 経路検証(R02 対策)**: web ビルド後の ci 末尾で
+    `cargo build -p mycad-cli --release`(build.rs release ガードと実埋め込み経路を発火)
+    + `cargo test -p mycad-api --release static_assets`(release バイナリで `GET /` が
+    実アセットを返す smoke を検証)を実行する。
+
+**crates/mycad-cli**(view オーケストレーション)
+- `Cargo.toml`: `mycad-api`・`tokio`・`open`・`urlencoding` を追加(`{ workspace = true }`)
+- `src/main.rs`: `Commands` に `View` を追加
+  ```rust
+  /// Start a local server and open the model in a browser
+  View {
+      input: PathBuf,
+      #[arg(long, default_value_t = 7878)]
+      port: u16,
+  }
+  ```
+  ディスパッチ先 `view::run_view(&input, port)`。`export` は同期のまま据え置き。
+- `src/view.rs`(新規):
+  - `pub fn run_view(input: &Path, port: u16) -> Result<(), String>`
+    1. `std::fs::canonicalize(input)` で絶対パス化(存在しなければエラー)
+    2. tokio `Runtime::new().block_on(async { ... })`:
+       - `bind_listener(port) -> Result<(tokio::net::TcpListener, u16), String>`(R04 対策):
+         `127.0.0.1:port` から **固定順次スキャン** `port, port+1, …, port+15` を試行し、
+         最初に空いたポートを返す。全て `AddrInUse` ならエラー終了
+         (エフェメラル :0 ランダム割当は使わない → 同一環境・同一占有状況なら URL が決定的)。
+       - `let url = build_view_url(actual_port, &abs_path)`
+       - `open::that(&url)`(失敗しても続行、URL を stdout に表示)
+       - `println!` で URL と「Ctrl-C で停止」を案内
+       - `axum::serve(listener, mycad_api::router::app()).await`
+  - 純粋・テスト可能なヘルパ:
+    - `fn build_view_url(port: u16, abs_path: &Path) -> String`
+      → `format!("http://127.0.0.1:{port}/?file={}", urlencoding::encode(path_str))`
+    - `const DEFAULT_PORT: u16 = 7878;`
+
+### 新規 workspace.dependencies
+```toml
+rust-embed  = "8"
+mime_guess  = "2"
+open        = "5"
+urlencoding = "2"
+```
+(`tokio`・`mycad-api` は既存)
+
+## 設計方針
+
+- **決定性**: view は幾何 ID を生成しない(メッシュ生成は既存 kernel/api 経路、決定性は既存テスト済み)。
+  本 Issue で決定的であるべきは **URL 構築** → `build_view_url` は同一入力→同一出力。
+  ポート選択も **固定順次スキャン**(上記 `bind_listener`)とし、同一環境・同一占有状況下では
+  公開 URL が決定的(R04)。ただしポート空き状況は環境依存である旨を明記する。
+- **B-rep / Euler-Poincaré / 退化幾何**: 本 Issue は CLI + 静的配信のみで幾何を新規生成しない → **N/A**。
+- **derive 規約**: 新規公開シリアライズ型なし(`WebAssets` は private、`MeshRequest` 等は既存)。
+  → `JsonSchema`/`ts-rs` 追加不要。
+- **エラーハンドリング**: CLI は既存 `export` と同じく `Result<(), String>` + `eprintln!`/`process::exit(1)`。
+  静的配信側は axum `Response`(404/200)。新規 thiserror 型は導入しない(最小)。
+- **embed のビルド依存問題と対策**:
+  - `web/dist` は gitignore 対象 → clean checkout に存在しない。`build.rs` がスタブ生成して
+    rust-embed のコンパイルを常に成立させる(`cargo build --workspace` を壊さない)。
+  - debug ビルドの rust-embed は実行時にディスク読み(dynamic)。`cargo xtask ci` は
+    **web ビルド先行**(上記 xtask 変更)に修正するため、cargo test/build 時点で実 `web/dist` が存在する。
+  - release/配布: `build.rs` の release ガードが「スタブのみ」状態での release build を失敗させ、
+    `cargo xtask web`(vite build)を先に走らせることを強制 → 非決定的埋め込みを防ぐ。
+  - 実行時ガード: `static_handler` の `/` 応答がセンチネル `MYCAD frontend not built` を含む場合
+    でも 200 で案内ページを返す(`mycad view` 自体は起動し、案内を表示)。
+- **host_guard 整合**: 127.0.0.1:PORT で配信 → host_base = "127.0.0.1" で許可。静的配信も同 layer 下。
+- **workspace.dependencies 規約**: 新依存はルート `[workspace.dependencies]` に追加、各クレートは
+  `{ workspace = true }` 参照。
+
+## テスト計画(ID 付き)
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | `build_view_url` を同一入力で2回呼び一致 | `assert_eq!` |
+| T02 | 正常系 | `build_view_url` がスペース等を含むパスを正しく percent-encode | `?file=` が `%20` 等にエンコードされる |
+| T03 | 正常系/契約 | `GET /` → 200 / `text/html`。さらに body を分岐 assert(R03): センチネル `MYCAD frontend not built` を含めば stub 経路として許容、含まなければ実 viewer として `<script` 参照を含むこと | 200 / text/html + 分岐 assert |
+| T04 | 正常系 | `GET /assets/<実在しないファイル>` → 404 | `StatusCode::NOT_FOUND` |
+| T05 | 回帰 | `GET /api/v0/mesh?file=<fixture>` が従来通り動作(fallback 追加で壊れない) | 既存 `mesh_api.rs` 相当 200 |
+| T06 | エッジ | `bind_listener` で要求ポート占有時に `port+1` へ順次 fallback | 占有ポート要求 → `port+1` 等の決定的な次ポートを返す |
+| T07 | エッジ | `run_view` に存在しない入力 → エラー終了 | `Err(...)` / 非0 exit |
+| T08 | セキュリティ/回帰 | 静的 fallback への `GET /`(および `/assets/...`)に `Host: evil.com` → 403(R02: 静的配信も host_guard 下) | `StatusCode::FORBIDDEN` |
+| T09 | 正常系/契約 | 実 viewer 経路(非 stub)で `index.html` から `script src`(`/assets/...`)を抽出し `GET` → 200 かつ JS 系 content-type(R03: パス解決・MIME 検証)。stub 経路では skip | 200 / `application/javascript` 等 |
+
+E2E(`mycad view examples/simple_box.mycad` でブラウザに box 表示)は手動検証。
+
+## 検証手順
+
+1. `cargo xtask ci`(fmt → clippy → test → build → vite build)が green。
+2. `cargo run -p mycad-cli -- view examples/simple_box.mycad`
+   → 7878 で待受、ブラウザが `http://127.0.0.1:7878/?file=<abs>` を開き box が回転表示。
+3. `--port 9000` 指定で当該ポート使用を確認。
+4. 7878 を別プロセスで占有 → fallback ポートで起動しブラウザがそのポートを開くことを確認。
+5. `web/dist` 未生成(スタブのみ)状態で `mycad view` → 「frontend not built」案内が出ることを確認。
+
+## 完了条件(Issue #21)
+- `mycad view examples/simple_box.mycad` が実行でき、ブラウザで box が表示される
+- `cargo xtask ci` 通過
+</stdin>
+codex
+設計案をレビュー観点ごとに照合し、必要なら現行コードの構成も確認して、重大度付きの指摘だけを YAML で返します.
+exec
+/bin/bash -lc "find /home/bacon/mycad/crates -maxdepth 2 -type f \\( -name 'Cargo.toml' -o -name 'main.rs' -o -name 'lib.rs' -o -name 'router.rs' -o -name 'mesh_api.rs' -o -name 'mod.rs' \\) | sort" in /home/bacon/mycad
+ succeeded in 0ms:
+/home/bacon/mycad/crates/mycad-api/Cargo.toml
+/home/bacon/mycad/crates/mycad-build/Cargo.toml
+/home/bacon/mycad/crates/mycad-cli/Cargo.toml
+/home/bacon/mycad/crates/mycad-format/Cargo.toml
+/home/bacon/mycad/crates/mycad-kernel/Cargo.toml
+/home/bacon/mycad/crates/mycad-viewer/Cargo.toml
+/home/bacon/mycad/crates/xtask/Cargo.toml
+
+exec
+/bin/bash -lc "rg --files /home/bacon/mycad | rg '("'^|/)(Cargo.toml|main.rs|lib.rs|router.rs|mesh_api.rs|host_guard|mod.rs)$'"'" in /home/bacon/mycad
+ succeeded in 0ms:
+/home/bacon/mycad/Cargo.toml
+/home/bacon/mycad/crates/mycad-format/Cargo.toml
+/home/bacon/mycad/crates/mycad-format/src/lib.rs
+/home/bacon/mycad/crates/mycad-api/Cargo.toml
+/home/bacon/mycad/crates/mycad-api/src/transport/mod.rs
+/home/bacon/mycad/crates/mycad-api/src/lib.rs
+/home/bacon/mycad/crates/mycad-api/src/router.rs
+/home/bacon/mycad/crates/mycad-api/src/main.rs
+/home/bacon/mycad/crates/mycad-cli/Cargo.toml
+/home/bacon/mycad/crates/mycad-build/Cargo.toml
+/home/bacon/mycad/crates/mycad-cli/src/main.rs
+/home/bacon/mycad/crates/mycad-api/tests/mesh_api.rs
+/home/bacon/mycad/crates/mycad-build/src/lib.rs
+/home/bacon/mycad/crates/mycad-kernel/Cargo.toml
+/home/bacon/mycad/crates/xtask/Cargo.toml
+/home/bacon/mycad/crates/xtask/src/main.rs
+/home/bacon/mycad/crates/mycad-kernel/src/lib.rs
+/home/bacon/mycad/crates/mycad-viewer/Cargo.toml
+/home/bacon/mycad/crates/mycad-kernel/src/primitives/mod.rs
+/home/bacon/mycad/crates/mycad-kernel/src/brep/mod.rs
+/home/bacon/mycad/crates/mycad-kernel/src/tessellation/mod.rs
+/home/bacon/mycad/crates/mycad-kernel/src/geometry/mod.rs
+/home/bacon/mycad/crates/mycad-viewer/src/lib.rs
+
+codex
+現行の `mycad-api` / `mycad-cli` / `xtask` の公開境界と CI 手順を確認します. 設計書だけでは曖昧な箇所があるので、そこで実装破綻しそうな点を拾います.
+exec
+/bin/bash -lc "sed -n '1,220p' /home/bacon/mycad/crates/mycad-api/src/lib.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+pub mod error;
+pub mod handler;
+pub mod router;
+pub mod transport;
+
+pub use transport::{ErrorResponse, MeshRequest};
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/bacon/mycad/crates/mycad-api/src/router.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use crate::handler::get_mesh;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::get;
+use axum::Router;
+
+async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let host_base = host.split(':').next().unwrap_or("");
+    if matches!(host_base, "127.0.0.1" | "localhost" | "") {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+pub fn app() -> Router {
+    Router::new()
+        .nest("/api/v0", Router::new().route("/mesh", get(get_mesh)))
+        .layer(middleware::from_fn(host_guard))
+}
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/bacon/mycad/crates/mycad-cli/src/main.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use clap::{Parser, Subcommand};
+use mycad_build::build_solid_from_features;
+use mycad_format::Document;
+use mycad_kernel::brep::topology::IdGenerator;
+use mycad_kernel::tessellation::{tessellate_solid_with, to_ascii_stl, TessellationOptions};
+use std::path::PathBuf;
+use std::process;
+
+#[derive(Parser)]
+#[command(name = "mycad", version, about = "MyCad CAD kernel CLI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Convert a .mycad file to STL
+    Export {
+        /// Input .mycad file
+        input: PathBuf,
+        /// Output STL file
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Number of angular segments for curved surfaces (default: 32)
+        #[arg(long)]
+        segments: Option<usize>,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Export {
+            input,
+            output,
+            segments,
+        } => {
+            if let Err(msg) = run_export(&input, &output, segments) {
+                eprintln!("error: {msg}");
+                process::exit(1);
+            }
+        }
+    }
+}
+
+fn run_export(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    segments: Option<usize>,
+) -> Result<(), String> {
+    let doc = Document::from_path(input)
+        .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+    let mut gen = IdGenerator::new(0);
+    let solid = build_solid_from_features(&doc.root_component.features, &mut gen)
+        .map_err(|e| format!("failed to build solid: {e}"))?;
+    let opts = match segments {
+        Some(n) => TessellationOptions::new(n, 1),
+        None => TessellationOptions::default(),
+    };
+    let mesh =
+        tessellate_solid_with(&solid, &opts).map_err(|e| format!("failed to tessellate: {e}"))?;
+    let stl = to_ascii_stl(&mesh, "model");
+    std::fs::write(output, stl)
+        .map_err(|e| format!("failed to write {}: {e}", output.display()))?;
+    Ok(())
+}
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/bacon/mycad/crates/xtask/src/main.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use std::path::PathBuf;
+use std::process::{Command, ExitCode};
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let task = args.first().map(|s| s.as_str()).unwrap_or("help");
+
+    match task {
+        "ci" => ci(),
+        "gen-ts" => gen_ts(),
+        "help" | "--help" | "-h" => {
+            println!("Usage: cargo xtask <TASK>");
+            println!();
+            println!("Tasks:");
+            println!("  ci      Run fmt check, clippy, tests, build, and TS drift detection");
+            println!("  gen-ts  Generate TypeScript types to web/src/generated/");
+            ExitCode::SUCCESS
+        }
+        other => {
+            eprintln!("Unknown task: {other}");
+            eprintln!("Run `cargo xtask help` for available tasks.");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn gen_ts() -> ExitCode {
+    use mycad_api::{ErrorResponse, MeshRequest};
+    use mycad_format::feature::EntityRef;
+    use mycad_format::Document;
+    use mycad_kernel::tessellation::TriangleMesh;
+    use ts_rs::TS;
+
+    let out_dir = workspace_root().join("web/src/generated");
+
+    if out_dir.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&out_dir) {
+            eprintln!("Failed to clean output directory: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    if let Err(e) = std::fs::create_dir_all(&out_dir) {
+        eprintln!("Failed to create output directory: {e}");
+        return ExitCode::FAILURE;
+    }
+
+    std::env::set_var("TS_RS_EXPORT_DIR", &out_dir);
+    let cfg = ts_rs::Config::from_env();
+
+    type ExportFn = Box<dyn FnOnce(&ts_rs::Config) -> Result<(), ts_rs::ExportError>>;
+    let roots: Vec<(&str, ExportFn)> = vec![
+        ("Document", Box::new(Document::export_all)),
+        ("EntityRef", Box::new(EntityRef::export_all)),
+        ("TriangleMesh", Box::new(TriangleMesh::export_all)),
+        ("MeshRequest", Box::new(MeshRequest::export_all)),
+        ("ErrorResponse", Box::new(ErrorResponse::export_all)),
+    ];
+
+    for (name, export_fn) in roots {
+        println!("Exporting {name}...");
+        if let Err(e) = export_fn(&cfg) {
+            eprintln!("Failed to export {name}: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("TypeScript types exported to {}", out_dir.display());
+    ExitCode::SUCCESS
+}
+
+fn ci() -> ExitCode {
+    let steps: &[(&str, &[&str])] = &[
+        (
+            "Checking formatting",
+            &["cargo", "fmt", "--all", "--", "--check"],
+        ),
+        (
+            "Running clippy",
+            &["cargo", "clippy", "--workspace", "--", "-D", "warnings"],
+        ),
+        ("Running tests", &["cargo", "test", "--workspace"]),
+        ("Building", &["cargo", "build", "--workspace"]),
+    ];
+
+    for (label, cmd) in steps {
+        println!("\n=== {label} ===");
+        let status = Command::new(cmd[0])
+            .args(&cmd[1..])
+            .status()
+            .expect("failed to execute command");
+
+        if !status.success() {
+            eprintln!("FAILED: {label}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("\n=== Generating TypeScript types ===");
+    if gen_ts() != ExitCode::SUCCESS {
+        eprintln!("FAILED: TypeScript type generation");
+        return ExitCode::FAILURE;
+    }
+
+    println!("\n=== Checking TS drift ===");
+    let tracked = Command::new("git")
+        .args(["ls-files", "web/src/generated/"])
+        .output()
+        .expect("failed to run git ls-files");
+    if tracked.stdout.is_empty() {
+        println!("No committed TS files found — skipping drift check (run `cargo xtask gen-ts` and commit the results).");
+    } else {
+        let output = Command::new("git")
+            .args([
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                "web/src/generated/",
+            ])
+            .output()
+            .expect("failed to run git status");
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            eprintln!("FAILED: TypeScript types are out of sync with committed versions");
+            eprintln!("Run `cargo xtask gen-ts` and commit the results.");
+            eprintln!("Drift detected:\n{stdout}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("\n=== Web frontend checks ===");
+    if let Some(node_path) = which("node") {
+        println!("Found node at: {}", node_path.display());
+
+        let web_dir = workspace_root().join("web");
+
+        let lockfile = web_dir.join("package-lock.json");
+        if !lockfile.exists() {
+            eprintln!("FAILED: package-lock.json not found in web/");
+            return ExitCode::FAILURE;
+        }
+
+        let npm_steps: &[(&str, &[&str])] = &[
+            ("Installing web dependencies", &["npm", "ci"]),
+            ("TypeScript type check", &["npx", "tsc", "--noEmit"]),
+            ("Running vitest", &["npx", "vitest", "run"]),
+            ("Building web frontend", &["npx", "vite", "build"]),
+        ];
+
+        for (label, cmd) in npm_steps {
+            println!("\n  --- {label} ---");
+            let status = Command::new(cmd[0])
+                .args(&cmd[1..])
+                .current_dir(&web_dir)
+                .status()
+                .expect("failed to execute command");
+
+            if !status.success() {
+                eprintln!("FAILED: {label}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        eprintln!("FAILED: Node.js (>=20) and npm are required for web checks.");
+        eprintln!("Install from https://nodejs.org/ or via nvm, then re-run `cargo xtask ci`.");
+        return ExitCode::FAILURE;
+    }
+
+    println!("\n=== All CI checks passed ===");
+    ExitCode::SUCCESS
+}
+
+fn workspace_root() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    PathBuf::from(manifest_dir)
+        .parent()
+        .expect("no parent")
+        .parent()
+        .expect("no grandparent")
+        .to_owned()
+}
+
+fn which(name: &str) -> Option<PathBuf> {
+    let paths = std::env::var("PATH").ok()?;
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::{Mutex, OnceLock};
+
+    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn export_to_temp_dir() -> PathBuf {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+        use mycad_api::{ErrorResponse, MeshRequest};
+        use mycad_format::feature::EntityRef;
+        use mycad_format::Document;
+        use mycad_kernel::tessellation::TriangleMesh;
+        use ts_rs::TS;
+
+        let dir = tempfile::tempdir().unwrap().keep();
+        std::env::set_var("TS_RS_EXPORT_DIR", &dir);
+        let cfg = ts_rs::Config::from_env();
+
+        Document::export_all(&cfg).unwrap();
+        EntityRef::export_all(&cfg).unwrap();
+        TriangleMesh::export_all(&cfg).unwrap();
+        MeshRequest::export_all(&cfg).unwrap();
+        ErrorResponse::export_all(&cfg).unwrap();
+
+        dir
+    }
+
+    fn read_generated(dir: &std::path::Path, name: &str) -> String {
+        fs::read_to_string(dir.join(name)).unwrap_or_else(|e| panic!("failed to read {name}: {e}"))
+    }
+
+    #[test]
+    fn t01_determinism() {
+        let dir1 = export_to_temp_dir();
+        let dir2 = export_to_temp_dir();
+
+        let files = [
+            "Document.ts",
+            "Component.ts",
+            "Feature.ts",
+            "Transform.ts",
+            "ComponentRef.ts",
+            "EntityRef.ts",
+            "TriangleMesh.ts",
+            "MeshRequest.ts",
+            "ErrorResponse.ts",
+        ];
+
+        for name in &files {
+            let c1 = read_generated(&dir1, name);
+            let c2 = read_generated(&dir2, name);
+            assert_eq!(c1, c2, "{name} differs between runs");
+        }
+    }
+
+    static FEATURE_GOLDEN: &str = r#"// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+
+/**
+ * A feature — one step in the operation history.
+ */
+export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, } | { "type": "create_cylinder", id: string, radius: number, height: number, } | { "type": "create_sphere", id: string, radius: number, } | { "type": "extrude", id: string, sketch: string, depth: number, } | { "type": "cut", id: string, target: string, tool: string, } | { "type": "fuse", id: string, target: string, tool: string, } | { "type": "intersect", id: string, target: string, tool: string, };
+"#;
+
+
+exec
+/bin/bash -lc "sed -n '1,220p' /home/bacon/mycad/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[workspace]
+members = [
+    "crates/mycad-kernel",
+    "crates/mycad-format",
+    "crates/mycad-build",
+    "crates/mycad-viewer",
+    "crates/mycad-cli",
+    "crates/mycad-api",
+    "crates/xtask",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# Math
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+# Schema generation
+schemars = "0.8"
+# Testing
+approx = "0.5"
+tempfile = "3"
+# Error handling
+thiserror = "2"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Ordered collections (deterministic iteration)
+indexmap = { version = "2", features = ["serde"] }
+# HTTP / async
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde_json = "1"
+tower = "0.5"
+# TypeScript type generation
+ts-rs = { version = "=12.0.1", features = ["serde-compat"] }
+# Internal crates
+mycad-format = { path = "crates/mycad-format" }
+mycad-kernel = { path = "crates/mycad-kernel" }
+mycad-build = { path = "crates/mycad-build" }
+mycad-api = { path = "crates/mycad-api" }
+
+codex
+既存 API は `router::app()` を公開済みで、CLI からの参照方法や `xtask` 手順との整合に確認ポイントがあります. もう少しだけ周辺を見て、設計書上の抜けを切ります.
+exec
+/bin/bash -lc "sed -n '1,220p' /home/bacon/mycad/crates/mycad-api/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[package]
+name = "mycad-api"
+description = "HTTP API server for MyCad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+mycad-format = { workspace = true }
+mycad-kernel = { workspace = true }
+mycad-build = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+mycad-kernel = { workspace = true }
+
+[[bin]]
+name = "mycad-api"
+path = "src/main.rs"
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/bacon/mycad/crates/mycad-api/tests/mesh_api.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use mycad_api::router::app;
+use mycad_kernel::tessellation::TriangleMesh;
+use serde::Deserialize;
+use tower::ServiceExt;
+
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+fn fixture_path(name: &str) -> String {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let path = std::path::Path::new(&dir)
+        .join("tests")
+        .join("fixtures")
+        .join(name);
+    std::fs::canonicalize(&path)
+        .unwrap_or_else(|_| panic!("fixture not found: {:?}", path))
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+fn example_path(name: &str) -> String {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let path = std::path::Path::new(&dir)
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join(name);
+    std::fs::canonicalize(&path)
+        .unwrap_or_else(|_| panic!("example not found: {:?}", path))
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+async fn send_mesh_request(uri: &str) -> (StatusCode, String) {
+    let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    let app = app();
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, String::from_utf8(body.to_vec()).unwrap())
+}
+
+// T01: normal box
+#[tokio::test]
+async fn t01_normal_box() {
+    let file = example_path("simple_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    assert!(
+        mesh.indices.len() % 3 == 0,
+        "indices count must be multiple of 3"
+    );
+}
+
+// T02: normal cylinder
+#[tokio::test]
+async fn t02_normal_cylinder() {
+    let file = example_path("cylinder.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    assert!(
+        mesh.indices.len() % 3 == 0,
+        "indices count must be multiple of 3"
+    );
+}
+
+// T03: determinism
+#[tokio::test]
+async fn t03_determinism() {
+    let file = example_path("simple_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+
+    let (_, body1) = send_mesh_request(&uri).await;
+    let (_, body2) = send_mesh_request(&uri).await;
+    assert_eq!(body1, body2, "mesh responses must be deterministic");
+
+    let file2 = example_path("cylinder.mycad");
+    let uri2 = format!("/api/v0/mesh?file={}", urlencoding(&file2));
+    let (_, body3) = send_mesh_request(&uri2).await;
+    let (_, body4) = send_mesh_request(&uri2).await;
+    assert_eq!(
+        body3, body4,
+        "cylinder mesh responses must be deterministic"
+    );
+}
+
+// T04: 404 not found
+#[tokio::test]
+async fn t04_not_found() {
+    let uri = "/api/v0/mesh?file=/tmp/absolutely_nonexistent_file.mycad";
+    let (status, body) = send_mesh_request(uri).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty());
+}
+
+// T05: 400 non-.mycad extension
+#[tokio::test]
+async fn t05_invalid_extension() {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let path = std::path::Path::new(&dir)
+        .join("..")
+        .join("..")
+        .join("Cargo.toml");
+    let abs = std::fs::canonicalize(&path)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&abs));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty());
+    let lower = err.error.to_lowercase();
+    assert!(
+        lower.contains("extension") || lower.contains(".mycad") || lower.contains("invalid"),
+        "expected extension-related message, got: {}",
+        err.error
+    );
+}
+
+// T06: 403 Host header (DNS rebinding protection)
+#[tokio::test]
+async fn t06_host_header_rebinding() {
+    let file = example_path("simple_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let req = Request::builder()
+        .uri(&uri)
+        .header("Host", "evil.com")
+        .body(Body::empty())
+        .unwrap();
+    let app = app();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// T07: 422 unsupported feature (sphere)
+#[tokio::test]
+async fn t07_unsupported_feature() {
+    let file = fixture_path("create_sphere.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
+}
+
+// T08: 422 degenerate dimension (zero-width box)
+#[tokio::test]
+async fn t08_degenerate_dimension() {
+    let file = fixture_path("zero_box.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
+}
+
+// T09: 422 assembly unsupported
+#[tokio::test]
+async fn t09_assembly_unsupported() {
+    let file = fixture_path("assembly.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(
+        err.error.contains("assembly") || err.error.contains("reference"),
+        "expected assembly/reference message, got: {}",
+        err.error
+    );
+}
+
+// T10: 422 empty part
+#[tokio::test]
+async fn t10_empty_part() {
+    let file = fixture_path("empty_part.mycad");
+    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
+    let (status, body) = send_mesh_request(&uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(
+        err.error.contains("empty part") || err.error.contains("no features"),
+        "expected empty part message, got: {}",
+        err.error
+    );
+}
+
+// T11: 400 relative path rejected
+#[tokio::test]
+async fn t11_relative_path_rejected() {
+    let uri = "/api/v0/mesh?file=examples/simple_box.mycad";
+    let (status, body) = send_mesh_request(uri).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(
+        err.error.contains("relative"),
+        "expected relative path error, got: {}",
+        err.error
+    );
+}
+
+fn urlencoding(s: &str) -> String {
+    s.replace('/', "%2F")
+}
+
+exec
+/bin/bash -lc "sed -n '1,220p' /home/bacon/mycad/crates/mycad-api/src/main.rs" in /home/bacon/mycad
+ succeeded in 0ms:
+use mycad_api::router::app;
+
+#[tokio::main]
+async fn main() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .expect("failed to bind to 127.0.0.1:3000");
+    axum::serve(listener, app()).await.expect("server error");
+}
+
+exec
+/bin/bash -lc "sed -n '1,220p' /home/bacon/mycad/crates/mycad-cli/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[package]
+name = "mycad-cli"
+description = "Command-line interface for MyCad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "mycad"
+path = "src/main.rs"
+
+[dependencies]
+mycad-kernel = { workspace = true }
+mycad-format = { workspace = true }
+mycad-build = { workspace = true }
+clap = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+exec
+/bin/bash -lc "sed -n '1,220p' /home/bacon/mycad/crates/xtask/Cargo.toml" in /home/bacon/mycad
+ succeeded in 0ms:
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+rust-version.workspace = true
+
+[dependencies]
+ts-rs = { workspace = true }
+mycad-format = { workspace = true }
+mycad-kernel = { workspace = true }
+mycad-api = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+codex
+`xtask ci` の順序変更は、既存の TS 生成フローとぶつかる可能性があります. フロントビルドが何に依存しているかだけ確認します.
+exec
+/bin/bash -lc "sed -n '1,240p' /home/bacon/mycad/web/src/main.ts" in /home/bacon/mycad
+ succeeded in 0ms:
+import { fetchMesh } from "./api";
+import { initViewer } from "./viewer";
+
+const app = document.getElementById("app")!;
+const errorEl = document.getElementById("error")!;
+const infoEl = document.getElementById("info")!;
+
+function showError(msg: string): void {
+  errorEl.textContent = msg;
+  errorEl.style.display = "block";
+}
+
+function showInfo(msg: string): void {
+  infoEl.textContent = msg;
+  infoEl.style.display = "block";
+}
+
+async function main(): Promise<void> {
+  const params = new URLSearchParams(window.location.search);
+  const file = params.get("file");
+
+  if (!file) {
+    showInfo("Usage: ?file=<absolute-path-to-.mycad>");
+    return;
+  }
+
+  try {
+    const mesh = await fetchMesh(file);
+    initViewer(app, mesh);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    showError(message);
+  }
+}
+
+main();
+
+exec
+/bin/bash -lc "rg -n \"generated|MeshRequest|TriangleMesh|ErrorResponse\" /home/bacon/mycad/web/src /home/bacon/mycad/web -g '"'!web/dist'"'" in /home/bacon/mycad
+ succeeded in 0ms:
+/home/bacon/mycad/web/src/api.ts:1:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/api.ts:2:import type { ErrorResponse } from "./generated/ErrorResponse";
+/home/bacon/mycad/web/src/api.ts:4:export async function fetchMesh(file: string): Promise<TriangleMesh> {
+/home/bacon/mycad/web/src/api.ts:10:      const body = (await res.json()) as ErrorResponse;
+/home/bacon/mycad/web/src/api.ts:17:  return (await res.json()) as TriangleMesh;
+/home/bacon/mycad/web/src/viewer.ts:1:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/viewer.ts:17:export function initViewer(container: HTMLElement, mesh: TriangleMesh): void {
+/home/bacon/mycad/web/src/api.ts:1:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/api.ts:2:import type { ErrorResponse } from "./generated/ErrorResponse";
+/home/bacon/mycad/web/src/api.ts:4:export async function fetchMesh(file: string): Promise<TriangleMesh> {
+/home/bacon/mycad/web/src/api.ts:10:      const body = (await res.json()) as ErrorResponse;
+/home/bacon/mycad/web/src/api.ts:17:  return (await res.json()) as TriangleMesh;
+/home/bacon/mycad/web/src/mesh.ts:1:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/mesh.ts:11:export function validateMesh(mesh: TriangleMesh): void {
+/home/bacon/mycad/web/src/mesh.ts:48:export function meshToGeometry(mesh: TriangleMesh): BufferGeometry {
+/home/bacon/mycad/web/src/viewer.ts:1:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/viewer.ts:17:export function initViewer(container: HTMLElement, mesh: TriangleMesh): void {
+/home/bacon/mycad/web/src/generated/MeshRequest.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/MeshRequest.ts:3:export type MeshRequest = { file: string, };
+/home/bacon/mycad/web/src/generated/Component.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/mesh.test.ts:7:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/mesh.test.ts:10:  overrides: Partial<TriangleMesh> = {},
+/home/bacon/mycad/web/src/mesh.test.ts:11:): TriangleMesh {
+/home/bacon/mycad/web/src/mesh.test.ts:283:    const mesh: TriangleMesh = {
+/home/bacon/mycad/web/src/generated/Feature.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/mesh.test.ts:7:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/mesh.test.ts:10:  overrides: Partial<TriangleMesh> = {},
+/home/bacon/mycad/web/src/mesh.test.ts:11:): TriangleMesh {
+/home/bacon/mycad/web/src/mesh.test.ts:283:    const mesh: TriangleMesh = {
+/home/bacon/mycad/web/src/generated/TriangleMesh.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/TriangleMesh.ts:6:export type TriangleMesh = { 
+/home/bacon/mycad/web/src/generated/ErrorResponse.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/ErrorResponse.ts:3:export type ErrorResponse = { error: string, };
+/home/bacon/mycad/web/src/generated/EntityRef.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/ComponentRef.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/Document.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/Transform.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/Document.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/ErrorResponse.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/ErrorResponse.ts:3:export type ErrorResponse = { error: string, };
+/home/bacon/mycad/web/src/generated/Component.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/Feature.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/Transform.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/mesh.ts:1:import type { TriangleMesh } from "./generated/TriangleMesh";
+/home/bacon/mycad/web/src/mesh.ts:11:export function validateMesh(mesh: TriangleMesh): void {
+/home/bacon/mycad/web/src/mesh.ts:48:export function meshToGeometry(mesh: TriangleMesh): BufferGeometry {
+/home/bacon/mycad/web/src/generated/TriangleMesh.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/TriangleMesh.ts:6:export type TriangleMesh = { 
+/home/bacon/mycad/web/src/generated/MeshRequest.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/MeshRequest.ts:3:export type MeshRequest = { file: string, };
+/home/bacon/mycad/web/src/generated/ComponentRef.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+/home/bacon/mycad/web/src/generated/EntityRef.ts:1:// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+
+exec
+/bin/bash -lc "find /home/bacon/mycad/web/src/generated -maxdepth 1 -type f | sed -n '1,40p'" in /home/bacon/mycad
+ succeeded in 0ms:
+/home/bacon/mycad/web/src/generated/Document.ts
+/home/bacon/mycad/web/src/generated/ErrorResponse.ts
+/home/bacon/mycad/web/src/generated/Feature.ts
+/home/bacon/mycad/web/src/generated/Component.ts
+/home/bacon/mycad/web/src/generated/ComponentRef.ts
+/home/bacon/mycad/web/src/generated/EntityRef.ts
+/home/bacon/mycad/web/src/generated/Transform.ts
+/home/bacon/mycad/web/src/generated/TriangleMesh.ts
+/home/bacon/mycad/web/src/generated/MeshRequest.ts
+
+codex
+重大度が上がるのは 2 点です。1 つはポート走査の上限未定義、もう 1 つは `web/dist` だけを見た埋め込み保証で、フロント変更や TS 生成との差分を取り逃がす点です.
+codex
+issues:
+  - id: R01
+    severity: high
+    section: "設計方針 > 決定性"
+    finding: "`bind_listener` の固定順次スキャンが `u16` 上限を考慮しておらず、`--port 65535` 近傍で `port+1` 以降の計算が debug では panic、release では wrap になり得る。公開 URL が profile 依存になり、同一入力で同一出力を壊す"
+    suggestion: "`checked_add` で探索範囲を計算し、65535 を超える場合は明示エラーにする。`65535` 近傍と 16 ポート全占有のテストを追加する"
+  - id: R02
+    severity: high
+    section: "実装対象 > crates/xtask"
+    finding: "`cargo xtask web` を『vite build のみ』にすると、Rust 側の型変更後でも `web/src/generated` を再生成せずに `dist` を作れてしまう。設計書が release 前提コマンドとして案内している経路自体が stale な API 契約を埋め込める"
+    suggestion: "`cargo xtask web` は少なくとも `gen-ts` を先行実行し、生成物に差分があれば fail させた上で `vite build` を行う"
+  - id: R03
+    severity: medium
+    section: "設計方針 > embed のビルド依存問題と対策"
+    finding: "`build.rs` の release ガードは『stub かどうか』しか見ておらず、`web/src`・`web/public`・`vite.config.*` 変更後に古い `web/dist` が残っているケースは検出できない。`rerun-if-changed=../../web/dist` だけでは release artifact とソースツリーの整合が保証されない"
+    suggestion: "`cargo xtask web` が build stamp/manifest を出力し `build.rs` でそれを検証するか、少なくとも frontend source/config/generated を freshness 判定に含めて stale `dist` を release で拒否する"
+
+verdict: fail
+tokens used
+102,052
+issues:
+  - id: R01
+    severity: high
+    section: "設計方針 > 決定性"
+    finding: "`bind_listener` の固定順次スキャンが `u16` 上限を考慮しておらず、`--port 65535` 近傍で `port+1` 以降の計算が debug では panic、release では wrap になり得る。公開 URL が profile 依存になり、同一入力で同一出力を壊す"
+    suggestion: "`checked_add` で探索範囲を計算し、65535 を超える場合は明示エラーにする。`65535` 近傍と 16 ポート全占有のテストを追加する"
+  - id: R02
+    severity: high
+    section: "実装対象 > crates/xtask"
+    finding: "`cargo xtask web` を『vite build のみ』にすると、Rust 側の型変更後でも `web/src/generated` を再生成せずに `dist` を作れてしまう。設計書が release 前提コマンドとして案内している経路自体が stale な API 契約を埋め込める"
+    suggestion: "`cargo xtask web` は少なくとも `gen-ts` を先行実行し、生成物に差分があれば fail させた上で `vite build` を行う"
+  - id: R03
+    severity: medium
+    section: "設計方針 > embed のビルド依存問題と対策"
+    finding: "`build.rs` の release ガードは『stub かどうか』しか見ておらず、`web/src`・`web/public`・`vite.config.*` 変更後に古い `web/dist` が残っているケースは検出できない。`rerun-if-changed=../../web/dist` だけでは release artifact とソースツリーの整合が保証されない"
+    suggestion: "`cargo xtask web` が build stamp/manifest を出力し `build.rs` でそれを検証するか、少なくとも frontend source/config/generated を freshness 判定に含めて stale `dist` を release で拒否する"
+
+verdict: fail

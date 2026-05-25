@@ -1,9 +1,12 @@
 use crate::handler::get_mesh;
+use crate::static_assets::static_handler;
+use crate::transport::ErrorResponse;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::get;
+use axum::Json;
 use axum::Router;
 
 async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
@@ -20,8 +23,22 @@ async fn host_guard(req: Request<Body>, next: Next) -> Result<Response, StatusCo
     }
 }
 
+async fn api_not_found() -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: "not found".to_string(),
+        }),
+    )
+}
+
 pub fn app() -> Router {
+    let api = Router::new()
+        .route("/mesh", get(get_mesh))
+        .fallback(api_not_found);
+
     Router::new()
-        .nest("/api/v0", Router::new().route("/mesh", get(get_mesh)))
+        .nest("/api/v0", api)
+        .fallback(static_handler)
         .layer(middleware::from_fn(host_guard))
 }
