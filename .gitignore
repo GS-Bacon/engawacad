@@ -4,6 +4,8 @@
 *~
 .DS_Store
 *.stl
+web/node_modules/
+web/dist/
 
 # /3ai フロー
 .env

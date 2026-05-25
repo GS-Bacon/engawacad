@@ -129,6 +129,44 @@ fn ci() -> ExitCode {
         }
     }
 
+    println!("\n=== Web frontend checks ===");
+    if let Some(node_path) = which("node") {
+        println!("Found node at: {}", node_path.display());
+
+        let web_dir = workspace_root().join("web");
+
+        let lockfile = web_dir.join("package-lock.json");
+        if !lockfile.exists() {
+            eprintln!("FAILED: package-lock.json not found in web/");
+            return ExitCode::FAILURE;
+        }
+
+        let npm_steps: &[(&str, &[&str])] = &[
+            ("Installing web dependencies", &["npm", "ci"]),
+            ("TypeScript type check", &["npx", "tsc", "--noEmit"]),
+            ("Running vitest", &["npx", "vitest", "run"]),
+            ("Building web frontend", &["npx", "vite", "build"]),
+        ];
+
+        for (label, cmd) in npm_steps {
+            println!("\n  --- {label} ---");
+            let status = Command::new(cmd[0])
+                .args(&cmd[1..])
+                .current_dir(&web_dir)
+                .status()
+                .expect("failed to execute command");
+
+            if !status.success() {
+                eprintln!("FAILED: {label}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        eprintln!("FAILED: Node.js (>=20) and npm are required for web checks.");
+        eprintln!("Install from https://nodejs.org/ or via nvm, then re-run `cargo xtask ci`.");
+        return ExitCode::FAILURE;
+    }
+
     println!("\n=== All CI checks passed ===");
     ExitCode::SUCCESS
 }
@@ -141,6 +179,17 @@ fn workspace_root() -> PathBuf {
         .parent()
         .expect("no grandparent")
         .to_owned()
+}
+
+fn which(name: &str) -> Option<PathBuf> {
+    let paths = std::env::var("PATH").ok()?;
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

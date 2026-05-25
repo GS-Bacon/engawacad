@@ -87,7 +87,7 @@ echo "  model:   $MODEL" >&2
 STATUS=0
 claude -p "$PROMPT" \
   --append-system-prompt-file "$AGENT_FILE" \
-  --allowedTools "Read,Edit,Write,Bash(cargo *),Bash(mkdir *),Bash(cat *),Bash(ls *),Glob,Grep" \
+  --allowedTools "Read,Edit,Write,Bash(cargo *),Bash(npm *),Bash(npx *),Bash(node *),Bash(mkdir *),Bash(cat *),Bash(ls *),Bash(find *),Glob,Grep" \
   --max-turns "$MAX_TURNS" \
   --output-format json \
   > "$RESULT_FILE.raw" 2>&1 || STATUS=$?

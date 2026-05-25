@@ -1,0 +1,233 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running `/mnt/build/cargo-target/debug/xtask ci`
+
+=== Checking formatting ===
+
+=== Running clippy ===
+    Checking mycad-viewer v0.1.0 (/home/bacon/mycad/crates/mycad-viewer)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+
+=== Running tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_api-6b5a34928ee1843b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/mnt/build/cargo-target/debug/deps/mycad_api-a5c884a62c25dec9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mesh_api.rs (/mnt/build/cargo-target/debug/deps/mesh_api-2c3e786c37c2d996)
+
+running 11 tests
+test t04_not_found ... ok
+test t06_host_header_rebinding ... ok
+test t05_invalid_extension ... ok
+test t07_unsupported_feature ... ok
+test t08_degenerate_dimension ... ok
+test t10_empty_part ... ok
+test t01_normal_box ... ok
+test t09_assembly_unsupported ... ok
+test t11_relative_path_rejected ... ok
+test t02_normal_cylinder ... ok
+test t03_determinism ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_build-bc13acd310c6ca85)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/feature_dispatcher.rs (/mnt/build/cargo-target/debug/deps/feature_dispatcher-5f3a17aef13b54c9)
+
+running 1 test
+test simple_box_mycad_builds_solid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/mnt/build/cargo-target/debug/deps/mycad-3efb1a71e890c9fb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/export.rs (/mnt/build/cargo-target/debug/deps/export-0a6efe8480359c78)
+
+running 1 test
+test export_simple_box_produces_12_facets ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_format-b2f4cae3f7a5c0f4)
+
+running 9 tests
+test document::tests::test_from_path_invalid_extension ... ok
+test document::tests::test_from_path_missing_file_returns_io_error ... ok
+test document::tests::test_from_path_loads_simple_box ... ok
+test document::tests::test_roundtrip_yaml ... ok
+test document::tests::test_yaml_is_deterministic ... ok
+test feature::tests::test_entity_ref_serialization ... ok
+test feature::tests::test_feature_serialization ... ok
+test document::tests::test_assembly_roundtrip ... ok
+test document::tests::test_ts_derive_backward_compat ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_kernel-e7811ad43713114a)
+
+running 36 tests
+test brep::topology::tests::test_id_generator_is_deterministic ... ok
+test brep::topology::tests::test_solid_add_vertex ... ok
+test geometry::math::tests::test_orthonormal_basis_z_axis ... ok
+test geometry::math::tests::test_orthonormal_basis_x_axis ... ok
+test geometry::surface::tests::test_plane_normal_constant_per_point ... ok
+test geometry::surface::tests::test_sphere_normal_varies_per_point ... ok
+test geometry::surface::tests::test_uv_of_roundtrip_cone ... ok
+test geometry::surface::tests::test_uv_of_roundtrip_plane ... ok
+test geometry::surface::tests::test_uv_of_roundtrip_cylinder ... ok
+test geometry::surface::tests::test_uv_of_roundtrip_sphere ... ok
+test primitives::cuboid::tests::test_cuboid_deterministic ... ok
+test primitives::cuboid::tests::test_cuboid_topology ... ok
+test primitives::cuboid::tests::test_cuboid_vertex_positions ... ok
+test primitives::cuboid::tests::test_make_cuboid_invalid_dimensions ... ok
+test primitives::cuboid::tests::test_make_cuboid_near_zero_positive_ok ... ok
+test primitives::cylinder::tests::test_cylinder_degenerate_inputs ... ok
+test primitives::cylinder::tests::test_cylinder_deterministic ... ok
+test primitives::cylinder::tests::test_cylinder_euler ... ok
+test primitives::cylinder::tests::test_cylinder_geometry ... ok
+test primitives::cylinder::tests::test_cylinder_manifold_and_loop_closure ... ok
+test primitives::cylinder::tests::test_cylinder_surface_tessellation_strategy ... ok
+test primitives::cylinder::tests::test_cylinder_topology ... ok
+test tessellation::stl::tests::ascii_stl_cuboid_structure ... ok
+test tessellation::tests::test_cuboid_positions_indices_snapshot ... ok
+test tessellation::tests::test_partial_revolution_cylinder_face_errors ... ok
+test tessellation::stl::tests::ascii_stl_deterministic ... ok
+test tessellation::tests::test_tessellate_cuboid_unchanged ... ok
+test tessellation::tests::test_tessellate_cuboid ... ok
+test tessellation::tests::test_tessellation_options_clamp ... ok
+test tessellation::tests::test_unsupported_surface_error ... ok
+test tessellation::tests::test_tessellation_deterministic ... ok
+test tessellation::tests::test_zero_segments_clamped_at_use ... ok
+test tessellation::tests::test_cylinder_outward_normals ... ok
+test tessellation::tests::test_tessellate_cylinder_triangle_count ... ok
+test tessellation::tests::test_tessellation_cylinder_deterministic ... ok
+test tessellation::tests::test_different_resolution_different_count ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/cuboid_roundtrip.rs (/mnt/build/cargo-target/debug/deps/cuboid_roundtrip-428c7fc4c98c09ec)
+
+running 2 tests
+test cuboid_to_mesh_pipeline ... ok
+test cuboid_pipeline_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_viewer-28d36ab3da0c1484)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/mnt/build/cargo-target/debug/deps/xtask-6ba3398c6f9c9999)
+
+running 9 tests
+test tests::t01_determinism ... ok
+test tests::t02_feature_tagged_union ... ok
+test tests::t03_triangle_mesh ... ok
+test tests::t04_document_and_component ... ok
+test tests::t05_component_ref_is_string ... ok
+test tests::t09_api_transport_dto ... ok
+test tests::t06_gen_ts_produces_all_files ... ok
+test tests::t10_entity_ref_explicit_root ... ok
+test tests::t01_determinism_100_runs ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 59.66s
+
+   Doc-tests mycad_api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mycad_build
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mycad_format
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mycad_kernel
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mycad_viewer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+=== Building ===
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
+
+=== Generating TypeScript types ===
+Exporting Document...
+Exporting EntityRef...
+Exporting TriangleMesh...
+Exporting MeshRequest...
+Exporting ErrorResponse...
+TypeScript types exported to /home/bacon/mycad/web/src/generated
+
+=== Checking TS drift ===
+
+=== Web frontend checks ===
+Found node at: /home/bacon/.nvm/versions/node/v22.21.1/bin/node
+
+  --- Installing web dependencies ---
+
+added 60 packages, and audited 61 packages in 2s
+
+15 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+  --- TypeScript type check ---
+
+  --- Running vitest ---
+
+ RUN  v3.2.4 /home/bacon/mycad/web
+
+ ✓ src/mesh.test.ts (23 tests) 36ms
+
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+   Start at  10:04:58
+   Duration  1.95s (transform 441ms, setup 0ms, collect 515ms, tests 36ms, environment 1ms, prepare 703ms)
+
+
+  --- Building web frontend ---
+vite v6.4.2 building for production...
+transforming...
+✓ 10 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                  1.31 kB │ gzip:   0.52 kB
+dist/assets/index-B3P-dkto.js  489.50 kB │ gzip: 122.57 kB
+✓ built in 2.37s
+
+=== All CI checks passed ===

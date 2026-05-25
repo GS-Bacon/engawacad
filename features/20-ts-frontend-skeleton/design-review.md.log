@@ -1,0 +1,192 @@
+Reading additional input from stdin...
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: /home/bacon/mycad
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019e5e55-bd98-7202-ba43-97548e8fc44f
+--------
+user
+# Codex 設計レビュアー（MyCad CAD カーネル専用）
+
+あなたは Rust 製 B-rep CAD カーネル「MyCad」の設計ドキュメントをレビューする専門家です。
+stdin に渡された設計・テスト計画ドキュメントを読み、以下の観点で問題を指摘してください。
+
+## レビュー観点
+
+### 1. 決定性（MyCad の核心）
+- `IdGenerator` を使った決定的 ID 生成になっているか
+- 同一入力で必ず同一出力（同一 ID・同一座標）が保証されているか
+- 非決定的要素（HashMap のイテレーション順、thread_rng など）が混入していないか
+
+### 2. B-rep トポロジー妥当性
+- Euler-Poincaré の公式 `V - E + F = 2(S - H)` が成立する設計か（S=殻の数, H=貫通穴）
+- HalfEdge の twin/next/prev ポインタ（インデックス）が正しく結ばれるか
+- Loop/Shell/Solid の入れ子構造が一貫しているか
+
+### 3. 退化幾何の扱い
+- ゼロ長エッジ、面積ゼロの Face、縮退した Loop の排除または明示的エラーの設計があるか
+- 数値的境界（浮動小数点の epsilon 比較）の方針が明記されているか
+
+### 4. API・型設計
+- `Debug, Clone, Serialize, Deserialize` が付与されているか（JsonSchema が必要な型は追記）
+- 新しい依存は `[workspace.dependencies]` + `{ workspace = true }` 規約に従っているか
+- ライブラリエラーには `thiserror` を使用しているか
+- カーネルにレンダリング依存が混入していないか（`TriangleMesh` 生成のみ可）
+
+### 5. テスト計画の充足性
+- 決定性反復テスト（T0x 系）があるか
+- Euler-Poincaré 検証テストがあるか
+- 退化入力エッジケースが十分にあるか
+- golden YAML ラウンドトリップテストがあるか
+
+### 6. アーキテクチャ整合性
+- Index-based topology（ポインタ不使用、フラット配列 + インデックス参照）を守っているか
+- Feature history = source of truth の原則と矛盾しないか
+- 1概念1ファイル、`mod.rs` から `pub use` で再エクスポートの規約に従っているか
+
+---
+
+## 出力フォーマット（厳守）
+
+```yaml
+issues:
+  - id: R01
+    severity: critical  # critical | high | medium | low
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使わず Uuid::new_v4() を使用している"
+    suggestion: "IdGenerator::next() に置き換えること"
+  - id: R02
+    severity: medium
+    ...
+
+verdict: pass  # pass | fail
+# fail = Critical または High が1件以上ある
+```
+
+`issues` が空の場合は `issues: []` と書く。
+**このフォーマット以外の出力は禁止。前置きや後置きの文章は書かない。**
+
+<stdin>
+# Plan — Issue #20: TS フロント骨組み (ブラウザで mesh を orbit 表示)
+
+## Context
+
+Phase 2 (Web ベースビューア基盤) の中核 feature。ADR-003 で「Rust core + Rust API + 単一 TS フロント（型は Rust から自動生成）+ Tauri/server 二配備」が決定済み。
+
+前提は完了済み:
+- **#18 API スケルトン**: `GET /api/v0/mesh?file=<絶対パス>` が `TriangleMesh` JSON を返す。バイナリ `mycad-api` は現在 `127.0.0.1:3000` にバインド (`crates/mycad-api/src/main.rs:5`)。host guard は host が 127.0.0.1/localhost/空 のみ許可 (`router.rs`)。
+- **#19 ts-rs 型生成**: `web/src/generated/*.ts` に `TriangleMesh`/`MeshRequest`/`ErrorResponse`/`Document` 等を生成。`cargo xtask ci` が毎回 `web/src/generated` を wipe→再生成し、git drift を検出する (`xtask/src/main.rs:99-130`)。
+
+本 Issue では `web/` に Vite + TypeScript + Three.js の最小フロントを構築し、API から mesh を取得して orbit 表示する。後続 #21 (`mycad view` = サーバ起動 + ブラウザ自動オープン) がこのフロントを静的配信する。
+
+## 実装対象
+
+- Issue: **#20** (`viewer`, `type: feature`、Milestone: Phase 2)
+- 影響範囲:
+  - **新規 `web/` フロント** (アプリコードは `web/src/generated/` の**外**に置く — generated は xtask が wipe する):
+    - `web/package.json` + `web/package-lock.json` (PM = **npm**)
+    - `web/tsconfig.json` (strict, `noEmit` 可)
+    - `web/vite.config.ts` — dev proxy `/api` → `http://127.0.0.1:3000` (env `VITE_API_TARGET` で上書き可、`changeOrigin: true` で Host を target に書換え host guard を通す)、`build.outDir = "dist"`、`base: "./"`
+    - `web/index.html` — `<canvas>`/mount + `src/main.ts` 読込
+    - `web/src/main.ts` — エントリ: URL から file 取得 → mesh fetch → viewer 初期化
+    - `web/src/api.ts` — 型付き fetch (`MeshRequest`/`TriangleMesh`/`ErrorResponse` を `./generated/` から import)
+    - `web/src/viewer.ts` — Three.js scene/camera/renderer/`OrbitControls`、`TriangleMesh`→`BufferGeometry`、bbox フレーミング、ライト、リサイズ対応
+  - **`crates/xtask/src/main.rs`** — `ci()` の Rust ステップ後に web 検証ステップを追加 (下記 CI 統合)。**この crates/ 変更は GLM が行う (Claude は編集しない)**
+  - **ルート `.gitignore`** — `web/node_modules/`, `web/dist/` を追加
+
+- npm 依存 (バージョンは lockfile に固定): `three`、dev: `typescript`、`vite`、`@types/three`
+
+## 設計方針
+
+- **決定性**: フロントはレンダリングのみ。mesh の決定性は kernel/API 側が担保（既存・据置）。フロントは API レスポンスをそのまま `BufferGeometry` 化し、独自の幾何生成はしない。
+- **型の真実源**: 手書き API 型を作らず `web/src/generated/` の生成型を import する。`TriangleMesh` = `{ positions: [number,number,number][], normals: [...][], indices: number[] }`。`MeshRequest = { file: string }`、`ErrorResponse = { error: string }`。
+- **file 指定**: ブラウザ URL の `?file=<絶対パス>` を `URLSearchParams` で読み、`/api/v0/mesh?file=...` を叩く。未指定なら画面に案内表示（エラーにしない）。#21 がこのクエリを注入する形で接続。
+- **fetch/エラー**: 非 2xx は `ErrorResponse.error` を画面表示。ネットワークエラーも握って表示。
+- **Three.js**: `positions`→`Float32Array` で `position` 属性、`normals` があれば `normal` 属性、無ければ `geometry.computeVertexNormals()`。`indices` を `setIndex`。`OrbitControls` で回転/ズーム/パン。bbox 中心へ controls.target、半径からカメラ距離を算出。ambient + directional ライト。`resize` 対応。
+- **CI 統合 (決定: A + node 無し skip)**: `xtask ci()` の Rust ステップ + TS gen/drift の後に、`web/` で node 検出 → 有れば `npm ci`(lockfile, 無ければ `npm install`) → `npx tsc --noEmit` → `npx vite build`。`node`/`npm` が PATH に無ければ警告して skip し従来通り pass。web ステップは `web/src/generated` を変更しない（drift 維持）。
+- **退化/エッジ**: 空 mesh (`indices` 空) は描画ゼロだがエラーにしない。`normals` 空は `computeVertexNormals` フォールバック。不正/未指定 file はエラー UI。
+- **derive/thiserror/workspace.dependencies**: 本 Issue は Rust 型追加なし（xtask のロジック追加のみ）。新規 Rust 依存は無し。
+
+## テスト計画
+
+TS 骨組みのため自動テストは型/ビルド検証中心、orbit 操作は手動目視。
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | ビルド | `npx tsc --noEmit` (strict) | exit 0 |
+| T02 | ビルド | `npx vite build` で `web/dist` 生成 | exit 0 |
+| T03 | 型整合 | `api.ts` が生成型を import し型エラー無し | tsc 0 |
+| T04 | xtask | `cargo xtask ci` が web ステップ込みで green | exit 0 |
+| T05 | drift | ci 実行後 `web/src/generated` に git 差分が出ない | drift 無し |
+| T06 | xtask skip | PATH から node を外すと web ステップを警告 skip し pass | exit 0 |
+| T07 (手動) | orbit | ブラウザで `simple_box` が回転/ズーム/パン | 目視 |
+| T08 (手動) | エラー UI | file 未指定 / 不正パスで `error` 表示 | 目視 |
+
+## Verification
+
+1. `cargo xtask ci` を実行 → web ステップ込みで全 green、drift 無し。
+2. 手動 (リモートはポート 5173 と 3000 を転送):
+   - terminal1: `cargo run -p mycad-api` (→ 127.0.0.1:3000)
+   - terminal2: `cd web && npm install && npm run dev` (→ 5173)
+   - ブラウザ `http://localhost:5173/?file=<絶対パス>/examples/simple_box.mycad` → box が表示され回転/ズーム/パン可。
+3. `?file=` 未指定・不正パスでエラー/案内 UI を確認。
+
+## 禁止/制約 (3ai)
+
+- Claude は `crates/**` を直接編集しない（`guard-crates.sh` が deny）。xtask 変更含め実装は GLM が行う。
+- 実装は GLM、設計レビュー/最終レビューは Codex。Anthropic claude -p ワーカーは spawn しない。
+</stdin>
+codex
+issues:
+  - id: R01
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "`normals` 欠落時に `geometry.computeVertexNormals()` をクライアントで実行しており、『API レスポンスをそのまま BufferGeometry 化し、独自の幾何生成はしない』方針と矛盾している"
+    suggestion: "法線は Rust/API 側で常に生成して返すか、欠落時は viewer で再計算せず明示的エラーにすること"
+  - id: R02
+    severity: medium
+    section: "設計方針 > CI 統合"
+    finding: "`xtask ci()` で lockfile 不在時に `npm install` へフォールバックすると依存解決が時点依存になり、`package-lock.json` による版固定と整合しない"
+    suggestion: "`web/package-lock.json` を必須にし、欠落時は `npm ci` を失敗させて CI を赤にすること"
+  - id: R03
+    severity: medium
+    section: "テスト計画"
+    finding: "決定性反復テスト（T0x 系）が無く、同一 `TriangleMesh` 入力から同一 `BufferGeometry` 変換結果が得られることを自動検証していない"
+    suggestion: "固定 mesh fixture に対する `TriangleMesh -> BufferGeometry` の反復比較テストを追加し、少なくとも attribute 長・index 内容・bbox を繰り返し検証すること"
+  - id: R04
+    severity: medium
+    section: "テスト計画 > 退化/エッジ"
+    finding: "退化・不正入力の扱いが `indices` 空と file エラーに偏っており、`normals` 長さ不一致、index 範囲外、NaN/inf 座標など malformed `TriangleMesh` の方針と自動検証が不足している"
+    suggestion: "viewer 初期化前に mesh の長さ整合・index 範囲・有限値を検証し、異常系テストを追加すること"
+
+verdict: pass
+tokens used
+18,594
+issues:
+  - id: R01
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "`normals` 欠落時に `geometry.computeVertexNormals()` をクライアントで実行しており、『API レスポンスをそのまま BufferGeometry 化し、独自の幾何生成はしない』方針と矛盾している"
+    suggestion: "法線は Rust/API 側で常に生成して返すか、欠落時は viewer で再計算せず明示的エラーにすること"
+  - id: R02
+    severity: medium
+    section: "設計方針 > CI 統合"
+    finding: "`xtask ci()` で lockfile 不在時に `npm install` へフォールバックすると依存解決が時点依存になり、`package-lock.json` による版固定と整合しない"
+    suggestion: "`web/package-lock.json` を必須にし、欠落時は `npm ci` を失敗させて CI を赤にすること"
+  - id: R03
+    severity: medium
+    section: "テスト計画"
+    finding: "決定性反復テスト（T0x 系）が無く、同一 `TriangleMesh` 入力から同一 `BufferGeometry` 変換結果が得られることを自動検証していない"
+    suggestion: "固定 mesh fixture に対する `TriangleMesh -> BufferGeometry` の反復比較テストを追加し、少なくとも attribute 長・index 内容・bbox を繰り返し検証すること"
+  - id: R04
+    severity: medium
+    section: "テスト計画 > 退化/エッジ"
+    finding: "退化・不正入力の扱いが `indices` 空と file エラーに偏っており、`normals` 長さ不一致、index 範囲外、NaN/inf 座標など malformed `TriangleMesh` の方針と自動検証が不足している"
+    suggestion: "viewer 初期化前に mesh の長さ整合・index 範囲・有限値を検証し、異常系テストを追加すること"
+
+verdict: pass
