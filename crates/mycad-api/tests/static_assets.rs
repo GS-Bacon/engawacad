@@ -1,11 +1,17 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use mycad_api::router::app;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tower::ServiceExt;
+
+fn test_app() -> axum::Router {
+    app(Arc::new(PathBuf::from("/dev/null")))
+}
 
 #[tokio::test]
 async fn t03_root_returns_html() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "127.0.0.1:7878")
@@ -39,7 +45,7 @@ async fn t03_root_returns_html() {
 
 #[tokio::test]
 async fn t04_missing_asset_falls_back() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/assets/nonexistent-file-xyz.js")
         .header("host", "127.0.0.1:7878")
@@ -54,12 +60,10 @@ async fn t04_missing_asset_falls_back() {
 async fn t05_mesh_api_still_works() {
     let fixture = std::path::PathBuf::from("../../examples/simple_box.mycad");
     let canonical = std::fs::canonicalize(&fixture).unwrap();
-    let path_str = canonical.to_string_lossy().into_owned();
-    let file_param = urlencoding::encode(&path_str);
 
-    let app = app();
+    let app = app(Arc::new(canonical));
     let req = Request::builder()
-        .uri(format!("/api/v0/mesh?file={file_param}"))
+        .uri("/api/v0/mesh")
         .header("host", "127.0.0.1:7878")
         .body(Body::empty())
         .unwrap();
@@ -69,7 +73,7 @@ async fn t05_mesh_api_still_works() {
 
 #[tokio::test]
 async fn t08_static_assets_host_guard_root() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "evil.com")
@@ -81,7 +85,7 @@ async fn t08_static_assets_host_guard_root() {
 
 #[tokio::test]
 async fn t08_static_assets_host_guard_assets() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/assets/test.js")
         .header("host", "evil.com")
@@ -93,7 +97,7 @@ async fn t08_static_assets_host_guard_assets() {
 
 #[tokio::test]
 async fn t09_real_viewer_asset_served() {
-    let app1 = app();
+    let app1 = test_app();
 
     let req = Request::builder()
         .uri("/")
@@ -114,7 +118,7 @@ async fn t09_real_viewer_asset_served() {
     assert!(!script_src.is_empty(), "no script src found in index.html");
 
     let asset_path = script_src.trim_start_matches("./");
-    let app2 = app();
+    let app2 = test_app();
     let req = Request::builder()
         .uri(&format!("/{asset_path}"))
         .header("host", "127.0.0.1:7878")

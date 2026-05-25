@@ -2,7 +2,13 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use mycad_api::router::app;
 use serde::Deserialize;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tower::ServiceExt;
+
+fn test_app() -> axum::Router {
+    app(Arc::new(PathBuf::from("/dev/null")))
+}
 
 #[derive(Deserialize)]
 struct ErrorResponse {
@@ -12,7 +18,7 @@ struct ErrorResponse {
 
 async fn send_get(uri: &str) -> (StatusCode, String, String) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
-    let app = app();
+    let app = test_app();
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let ct = resp
@@ -33,7 +39,7 @@ async fn send_method(method: &str, uri: &str) -> (StatusCode, String, String) {
         .uri(uri)
         .body(Body::empty())
         .unwrap();
-    let app = app();
+    let app = test_app();
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let ct = resp

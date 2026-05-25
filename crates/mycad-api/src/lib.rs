@@ -4,4 +4,4 @@ pub mod router;
 pub mod static_assets;
 pub mod transport;
 
-pub use transport::{ErrorResponse, MeshRequest};
+pub use transport::ErrorResponse;

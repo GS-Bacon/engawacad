@@ -1,11 +1,17 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use mycad_api::router::app;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tower::ServiceExt;
+
+fn test_app() -> axum::Router {
+    app(Arc::new(PathBuf::from("/dev/null")))
+}
 
 #[tokio::test]
 async fn edge_root_no_host_header() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder().uri("/").body(Body::empty()).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     // empty host is allowed by host_guard
@@ -14,7 +20,7 @@ async fn edge_root_no_host_header() {
 
 #[tokio::test]
 async fn edge_localhost_host_allowed() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "localhost:7878")
@@ -26,7 +32,7 @@ async fn edge_localhost_host_allowed() {
 
 #[tokio::test]
 async fn edge_traversal_path_serves_index() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/../../../etc/passwd")
         .header("host", "127.0.0.1:7878")
@@ -39,10 +45,9 @@ async fn edge_traversal_path_serves_index() {
 
 #[tokio::test]
 async fn edge_api_mesh_missing_file() {
-    let app = app();
-    let file_param = urlencoding::encode("/nonexistent/path.mycad");
+    let app = app(Arc::new(PathBuf::from("/nonexistent/path.mycad")));
     let req = Request::builder()
-        .uri(format!("/api/v0/mesh?file={file_param}"))
+        .uri("/api/v0/mesh")
         .header("host", "127.0.0.1:7878")
         .body(Body::empty())
         .unwrap();
@@ -52,7 +57,7 @@ async fn edge_api_mesh_missing_file() {
 
 #[tokio::test]
 async fn edge_api_mesh_relative_path_rejected() {
-    let app = app();
+    let app = test_app();
     let file_param = urlencoding::encode("relative/path.mycad");
     let req = Request::builder()
         .uri(format!("/api/v0/mesh?file={file_param}"))
@@ -73,13 +78,13 @@ async fn edge_deterministic_index_html() {
             .unwrap()
     };
 
-    let app1 = app();
+    let app1 = test_app();
     let resp1 = app1.oneshot(make_req()).await.unwrap();
     let body1 = axum::body::to_bytes(resp1.into_body(), usize::MAX)
         .await
         .unwrap();
 
-    let app2 = app();
+    let app2 = test_app();
     let resp2 = app2.oneshot(make_req()).await.unwrap();
     let body2 = axum::body::to_bytes(resp2.into_body(), usize::MAX)
         .await
@@ -90,7 +95,7 @@ async fn edge_deterministic_index_html() {
 
 #[tokio::test]
 async fn edge_empty_query_file() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/api/v0/mesh?file=")
         .header("host", "127.0.0.1:7878")
@@ -103,7 +108,7 @@ async fn edge_empty_query_file() {
 
 #[tokio::test]
 async fn edge_host_guard_tailscale_ip_allowed() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "10.13.1.1:7878")
@@ -115,7 +120,7 @@ async fn edge_host_guard_tailscale_ip_allowed() {
 
 #[tokio::test]
 async fn edge_host_guard_ipv4_no_port_allowed() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "192.168.1.100")
@@ -127,7 +132,7 @@ async fn edge_host_guard_ipv4_no_port_allowed() {
 
 #[tokio::test]
 async fn edge_host_guard_ipv6_bracket_allowed() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "[::1]:7878")
@@ -139,7 +144,7 @@ async fn edge_host_guard_ipv6_bracket_allowed() {
 
 #[tokio::test]
 async fn edge_host_guard_loopback_ip_allowed() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "127.0.0.1:7878")
@@ -151,7 +156,7 @@ async fn edge_host_guard_loopback_ip_allowed() {
 
 #[tokio::test]
 async fn edge_host_guard_domain_still_blocked() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "evil.com")
@@ -164,7 +169,7 @@ async fn edge_host_guard_domain_still_blocked() {
 #[tokio::test]
 async fn edge_host_guard_ip_with_subdomain_blocked() {
     // "10.13.evil.com" — contains letters, should be blocked
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "10.13.evil.com")
@@ -176,7 +181,7 @@ async fn edge_host_guard_ip_with_subdomain_blocked() {
 
 #[tokio::test]
 async fn edge_host_guard_0_0_0_0_allowed() {
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "0.0.0.0:7878")
@@ -189,7 +194,7 @@ async fn edge_host_guard_0_0_0_0_allowed() {
 #[tokio::test]
 async fn edge_host_guard_bare_ip_allowed() {
     // Port-less numeric IP (split gives the IP itself)
-    let app = app();
+    let app = test_app();
     let req = Request::builder()
         .uri("/")
         .header("host", "10.0.0.1")

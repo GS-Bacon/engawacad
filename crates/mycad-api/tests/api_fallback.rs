@@ -2,6 +2,8 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use mycad_api::router::app;
 use serde::Deserialize;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 #[derive(Deserialize)]
@@ -9,9 +11,14 @@ struct ErrorResponse {
     error: String,
 }
 
+fn make_app() -> axum::Router {
+    // Fallback tests don't hit /mesh, so a placeholder path is fine
+    app(Arc::new(PathBuf::from("/dev/null")))
+}
+
 async fn send_request(uri: &str) -> (StatusCode, String, String) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
-    let app = app();
+    let app = make_app();
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let ct = resp

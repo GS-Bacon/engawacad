@@ -8,6 +8,8 @@ use axum::response::Response;
 use axum::routing::get;
 use axum::Json;
 use axum::Router;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 fn is_allowed_host(host_base: &str) -> bool {
     host_base.is_empty()
@@ -40,10 +42,11 @@ async fn api_not_found() -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
-pub fn app() -> Router {
+pub fn app(file: Arc<PathBuf>) -> Router {
     let api = Router::new()
         .route("/mesh", get(get_mesh))
-        .fallback(api_not_found);
+        .fallback(api_not_found)
+        .with_state(file);
 
     Router::new()
         .nest("/api/v0", api)

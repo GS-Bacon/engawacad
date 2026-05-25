@@ -1,4 +1,4 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.53s
      Running `/mnt/build/cargo-target/debug/xtask ci`
 
 === Building web frontend ===
@@ -6,13 +6,12 @@
 Exporting Document...
 Exporting EntityRef...
 Exporting TriangleMesh...
-Exporting MeshRequest...
 Exporting ErrorResponse...
 TypeScript types exported to /home/bacon/mycad/web/src/generated
 
 --- Installing web dependencies ---
 
-added 60 packages, and audited 61 packages in 2s
+added 60 packages, and audited 61 packages in 3s
 
 15 packages are looking for funding
   run `npm fund` for details
@@ -25,12 +24,12 @@ found 0 vulnerabilities
 
  RUN  v3.2.4 /home/bacon/mycad/web
 
- ✓ src/mesh.test.ts (23 tests) 33ms
+ ✓ src/mesh.test.ts (23 tests) 36ms
 
  Test Files  1 passed (1)
       Tests  23 passed (23)
-   Start at  13:26:54
-   Duration  820ms (transform 109ms, setup 0ms, collect 166ms, tests 33ms, environment 0ms, prepare 126ms)
+   Start at  14:17:46
+   Duration  947ms (transform 165ms, setup 0ms, collect 181ms, tests 36ms, environment 0ms, prepare 217ms)
 
 
 --- Building web frontend (vite build) ---
@@ -39,9 +38,9 @@ transforming...
 ✓ 10 modules transformed.
 rendering chunks...
 computing gzip size...
-dist/index.html                  1.31 kB │ gzip:   0.52 kB
-dist/assets/index-B3P-dkto.js  489.50 kB │ gzip: 122.57 kB
-✓ built in 2.47s
+dist/index.html                  1.31 kB │ gzip:   0.53 kB
+dist/assets/index-CECFxNRF.js  489.28 kB │ gzip: 122.47 kB
+✓ built in 2.37s
 
 === Web build complete ===
 
@@ -50,15 +49,15 @@ dist/assets/index-B3P-dkto.js  489.50 kB │ gzip: 122.57 kB
 === Running clippy ===
    Compiling mycad-api v0.1.0 (/home/bacon/mycad/crates/mycad-api)
     Checking mycad-viewer v0.1.0 (/home/bacon/mycad/crates/mycad-viewer)
-    Checking xtask v0.0.0 (/home/bacon/mycad/crates/xtask)
     Checking mycad-cli v0.1.0 (/home/bacon/mycad/crates/mycad-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.83s
+    Checking xtask v0.0.0 (/home/bacon/mycad/crates/xtask)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.85s
 
 === Running tests ===
    Compiling mycad-api v0.1.0 (/home/bacon/mycad/crates/mycad-api)
-   Compiling xtask v0.0.0 (/home/bacon/mycad/crates/xtask)
    Compiling mycad-cli v0.1.0 (/home/bacon/mycad/crates/mycad-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.00s
+   Compiling xtask v0.0.0 (/home/bacon/mycad/crates/xtask)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.43s
      Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_api-c6622b129b34b45c)
 
 running 0 tests
@@ -82,44 +81,43 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/api_fallback_edge.rs (/mnt/build/cargo-target/debug/deps/api_fallback_edge-6236ffd58819936c)
 
 running 11 tests
-test e02_unknown_with_query ... ok
-test e01_deeply_nested_unknown ... ok
 test e05_delete_unknown_api_path ... ok
+test e01_deeply_nested_unknown ... ok
+test e02_unknown_with_query ... ok
 test e03_post_unknown_api_path ... ok
 test e04_put_unknown_api_path ... ok
 test e06_api_v0_root ... ok
 test e07_api_v0_root_trailing_slash_is_static ... ok
 test e08_mesh_no_query_not_static ... ok
-test e10_static_assets_still_serve ... ok
 test e09_special_chars_unknown ... ok
+test e10_static_assets_still_serve ... ok
 test e11_api_without_v0_not_json_404 ... ok
 
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running tests/mesh_api.rs (/mnt/build/cargo-target/debug/deps/mesh_api-178e298b03ea9442)
 
-running 11 tests
-test t06_host_header_rebinding ... ok
-test t04_not_found ... ok
+running 10 tests
 test t05_invalid_extension ... ok
-test t07_unsupported_feature ... ok
-test t08_degenerate_dimension ... ok
-test t09_assembly_unsupported ... ok
-test t11_relative_path_rejected ... ok
+test t04_not_found ... ok
+test t06_host_header_rebinding ... ok
 test t01_normal_box ... ok
+test t08_degenerate_dimension ... ok
+test t07_unsupported_feature ... ok
 test t10_empty_part ... ok
+test t09_assembly_unsupported ... ok
 test t02_normal_cylinder ... ok
 test t03_determinism ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/static_assets.rs (/mnt/build/cargo-target/debug/deps/static_assets-4daf3925ff807a84)
 
 running 6 tests
 test t08_static_assets_host_guard_assets ... ok
 test t08_static_assets_host_guard_root ... ok
-test t04_missing_asset_falls_back ... ok
 test t03_root_returns_html ... ok
+test t04_missing_asset_falls_back ... ok
 test t05_mesh_api_still_works ... ok
 test t09_real_viewer_asset_served ... ok
 
@@ -127,16 +125,24 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
      Running tests/static_assets_edge.rs (/mnt/build/cargo-target/debug/deps/static_assets_edge-bee844cce142daa9)
 
-running 7 tests
+running 15 tests
+test edge_api_mesh_missing_file ... ok
 test edge_api_mesh_relative_path_rejected ... ok
 test edge_empty_query_file ... ok
-test edge_api_mesh_missing_file ... ok
-test edge_root_no_host_header ... ok
-test edge_localhost_host_allowed ... ok
+test edge_host_guard_0_0_0_0_allowed ... ok
+test edge_host_guard_domain_still_blocked ... ok
+test edge_host_guard_bare_ip_allowed ... ok
+test edge_host_guard_ip_with_subdomain_blocked ... ok
 test edge_deterministic_index_html ... ok
+test edge_host_guard_ipv6_bracket_allowed ... ok
+test edge_host_guard_ipv4_no_port_allowed ... ok
+test edge_host_guard_loopback_ip_allowed ... ok
+test edge_host_guard_tailscale_ip_allowed ... ok
+test edge_localhost_host_allowed ... ok
+test edge_root_no_host_header ... ok
 test edge_traversal_path_serves_index ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_build-bc13acd310c6ca85)
 
@@ -153,40 +159,37 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
      Running unittests src/main.rs (/mnt/build/cargo-target/debug/deps/mycad-6bb2adeb54af015e)
 
-running 15 tests
+running 12 tests
 test view::tests::default_port_value ... ok
-test view::tests::edge_build_view_url_empty_path ... ok
 test view::tests::edge_build_view_url_deterministic_100_runs ... ok
-test view::tests::edge_build_view_url_percent_chars ... ok
+test view::tests::edge_build_view_url_no_file_param ... ok
 test view::tests::edge_build_view_url_port_max ... ok
 test view::tests::edge_build_view_url_port_zero ... ok
 test view::tests::t01_build_view_url_deterministic ... ok
-test view::tests::t01_build_view_url_simple_path ... ok
-test view::tests::t02_build_view_url_encodes_spaces ... ok
-test view::tests::t02_build_view_url_encodes_special_chars ... ok
+test view::tests::t02_build_view_url_format ... ok
 test view::tests::t07_run_view_missing_file ... ok
 test view::tests::edge_bind_listener_all_ports_in_use ... ok
 test view::tests::t10_bind_listener_max_port_wrap ... ok
-test view::tests::t06_bind_listener_fallback ... ok
 test view::tests::t10_bind_listener_port_overflow ... ok
+test view::tests::t06_bind_listener_fallback ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
      Running tests/export.rs (/mnt/build/cargo-target/debug/deps/export-01b7ecf9e805f310)
 
 running 1 test
 test export_simple_box_produces_12_facets ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
      Running unittests src/lib.rs (/mnt/build/cargo-target/debug/deps/mycad_format-b2f4cae3f7a5c0f4)
 
 running 9 tests
 test document::tests::test_from_path_invalid_extension ... ok
-test document::tests::test_from_path_loads_simple_box ... ok
 test document::tests::test_from_path_missing_file_returns_io_error ... ok
-test document::tests::test_roundtrip_yaml ... ok
 test document::tests::test_yaml_is_deterministic ... ok
+test document::tests::test_from_path_loads_simple_box ... ok
+test document::tests::test_roundtrip_yaml ... ok
 test feature::tests::test_entity_ref_serialization ... ok
 test feature::tests::test_feature_serialization ... ok
 test document::tests::test_assembly_roundtrip ... ok
@@ -198,10 +201,10 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 36 tests
 test brep::topology::tests::test_id_generator_is_deterministic ... ok
-test brep::topology::tests::test_solid_add_vertex ... ok
-test geometry::math::tests::test_orthonormal_basis_x_axis ... ok
 test geometry::math::tests::test_orthonormal_basis_z_axis ... ok
+test brep::topology::tests::test_solid_add_vertex ... ok
 test geometry::surface::tests::test_plane_normal_constant_per_point ... ok
+test geometry::math::tests::test_orthonormal_basis_x_axis ... ok
 test geometry::surface::tests::test_sphere_normal_varies_per_point ... ok
 test geometry::surface::tests::test_uv_of_roundtrip_cone ... ok
 test geometry::surface::tests::test_uv_of_roundtrip_cylinder ... ok
@@ -209,20 +212,20 @@ test geometry::surface::tests::test_uv_of_roundtrip_plane ... ok
 test geometry::surface::tests::test_uv_of_roundtrip_sphere ... ok
 test primitives::cuboid::tests::test_cuboid_deterministic ... ok
 test primitives::cuboid::tests::test_cuboid_topology ... ok
-test primitives::cuboid::tests::test_make_cuboid_invalid_dimensions ... ok
 test primitives::cuboid::tests::test_cuboid_vertex_positions ... ok
+test primitives::cuboid::tests::test_make_cuboid_invalid_dimensions ... ok
 test primitives::cuboid::tests::test_make_cuboid_near_zero_positive_ok ... ok
 test primitives::cylinder::tests::test_cylinder_degenerate_inputs ... ok
 test primitives::cylinder::tests::test_cylinder_deterministic ... ok
-test primitives::cylinder::tests::test_cylinder_euler ... ok
 test primitives::cylinder::tests::test_cylinder_geometry ... ok
+test primitives::cylinder::tests::test_cylinder_euler ... ok
 test primitives::cylinder::tests::test_cylinder_manifold_and_loop_closure ... ok
 test primitives::cylinder::tests::test_cylinder_surface_tessellation_strategy ... ok
 test primitives::cylinder::tests::test_cylinder_topology ... ok
 test tessellation::stl::tests::ascii_stl_cuboid_structure ... ok
-test tessellation::stl::tests::ascii_stl_deterministic ... ok
-test tessellation::tests::test_cuboid_positions_indices_snapshot ... ok
 test tessellation::tests::test_partial_revolution_cylinder_face_errors ... ok
+test tessellation::tests::test_cuboid_positions_indices_snapshot ... ok
+test tessellation::stl::tests::ascii_stl_deterministic ... ok
 test tessellation::tests::test_tessellate_cuboid_unchanged ... ok
 test tessellation::tests::test_tessellate_cuboid ... ok
 test tessellation::tests::test_tessellation_options_clamp ... ok
@@ -254,17 +257,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 9 tests
 test tests::t01_determinism ... ok
-test tests::t04_document_and_component ... ok
+test tests::t02_feature_tagged_union ... ok
 test tests::t03_triangle_mesh ... ok
+test tests::t04_document_and_component ... ok
 test tests::t05_component_ref_is_string ... ok
 test tests::t06_gen_ts_produces_all_files ... ok
 test tests::t09_api_transport_dto ... ok
 test tests::t10_entity_ref_explicit_root ... ok
-test tests::t02_feature_tagged_union ... ok
-test tests::t01_determinism_100_runs has been running for over 60 seconds
 test tests::t01_determinism_100_runs ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 66.73s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 55.92s
 
    Doc-tests mycad_api
 
@@ -299,64 +301,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 === Building ===
    Compiling mycad-api v0.1.0 (/home/bacon/mycad/crates/mycad-api)
-   Compiling xtask v0.0.0 (/home/bacon/mycad/crates/xtask)
    Compiling mycad-cli v0.1.0 (/home/bacon/mycad/crates/mycad-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.19s
+   Compiling xtask v0.0.0 (/home/bacon/mycad/crates/xtask)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.42s
 
 === Checking TS drift ===
+FAILED: TypeScript types are out of sync with committed versions
+Run `cargo xtask gen-ts` and commit the results.
+Drift detected:
+ D web/src/generated/MeshRequest.ts
 
-=== Release verification ===
-Building release binary...
-   Compiling mycad-api v0.1.0 (/home/bacon/mycad/crates/mycad-api)
-   Compiling mycad-cli v0.1.0 (/home/bacon/mycad/crates/mycad-cli)
-    Finished `release` profile [optimized] target(s) in 2.07s
-Running release smoke test...
-   Compiling mycad-api v0.1.0 (/home/bacon/mycad/crates/mycad-api)
-    Finished `release` profile [optimized] target(s) in 1.73s
-     Running unittests src/lib.rs (/mnt/build/cargo-target/release/deps/mycad_api-09801602a84e0d6e)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-     Running unittests src/main.rs (/mnt/build/cargo-target/release/deps/mycad_api-e172891a2fd7fefb)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-     Running tests/api_fallback.rs (/mnt/build/cargo-target/release/deps/api_fallback-66287c42e80c0061)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
-
-     Running tests/api_fallback_edge.rs (/mnt/build/cargo-target/release/deps/api_fallback_edge-82e5c03ab5ee0eef)
-
-running 1 test
-test e10_static_assets_still_serve ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
-
-     Running tests/mesh_api.rs (/mnt/build/cargo-target/release/deps/mesh_api-8f7784d18082eb40)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
-
-     Running tests/static_assets.rs (/mnt/build/cargo-target/release/deps/static_assets-dd71fff00c4a65d6)
-
-running 2 tests
-test t08_static_assets_host_guard_assets ... ok
-test t08_static_assets_host_guard_root ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
-
-     Running tests/static_assets_edge.rs (/mnt/build/cargo-target/release/deps/static_assets_edge-f9a72895ef7bc600)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
-
-
-=== All CI checks passed ===

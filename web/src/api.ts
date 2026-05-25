@@ -1,9 +1,8 @@
 import type { TriangleMesh } from "./generated/TriangleMesh";
 import type { ErrorResponse } from "./generated/ErrorResponse";
 
-export async function fetchMesh(file: string): Promise<TriangleMesh> {
-  const url = `/api/v0/mesh?file=${encodeURIComponent(file)}`;
-  const res = await fetch(url);
+export async function fetchMesh(): Promise<TriangleMesh> {
+  const res = await fetch("/api/v0/mesh");
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {

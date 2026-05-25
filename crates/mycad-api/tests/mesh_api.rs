@@ -3,6 +3,8 @@ use axum::http::{Request, StatusCode};
 use mycad_api::router::app;
 use mycad_kernel::tessellation::TriangleMesh;
 use serde::Deserialize;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 #[derive(Deserialize)]
@@ -10,36 +12,35 @@ struct ErrorResponse {
     error: String,
 }
 
-fn fixture_path(name: &str) -> String {
+fn fixture_path(name: &str) -> PathBuf {
     let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let path = std::path::Path::new(&dir)
         .join("tests")
         .join("fixtures")
         .join(name);
-    std::fs::canonicalize(&path)
-        .unwrap_or_else(|_| panic!("fixture not found: {:?}", path))
-        .to_str()
-        .unwrap()
-        .to_string()
+    std::fs::canonicalize(&path).unwrap_or_else(|_| panic!("fixture not found: {:?}", path))
 }
 
-fn example_path(name: &str) -> String {
+fn example_path(name: &str) -> PathBuf {
     let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let path = std::path::Path::new(&dir)
         .join("..")
         .join("..")
         .join("examples")
         .join(name);
-    std::fs::canonicalize(&path)
-        .unwrap_or_else(|_| panic!("example not found: {:?}", path))
-        .to_str()
-        .unwrap()
-        .to_string()
+    std::fs::canonicalize(&path).unwrap_or_else(|_| panic!("example not found: {:?}", path))
 }
 
-async fn send_mesh_request(uri: &str) -> (StatusCode, String) {
-    let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
-    let app = app();
+fn make_app(file: PathBuf) -> axum::Router {
+    app(Arc::new(file))
+}
+
+async fn send_mesh_request(file: PathBuf) -> (StatusCode, String) {
+    let req = Request::builder()
+        .uri("/api/v0/mesh")
+        .body(Body::empty())
+        .unwrap();
+    let app = make_app(file);
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -52,8 +53,7 @@ async fn send_mesh_request(uri: &str) -> (StatusCode, String) {
 #[tokio::test]
 async fn t01_normal_box() {
     let file = example_path("simple_box.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-    let (status, body) = send_mesh_request(&uri).await;
+    let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
     assert!(!mesh.positions.is_empty(), "positions must not be empty");
@@ -67,8 +67,7 @@ async fn t01_normal_box() {
 #[tokio::test]
 async fn t02_normal_cylinder() {
     let file = example_path("cylinder.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-    let (status, body) = send_mesh_request(&uri).await;
+    let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
     assert!(!mesh.positions.is_empty(), "positions must not be empty");
@@ -82,27 +81,34 @@ async fn t02_normal_cylinder() {
 #[tokio::test]
 async fn t03_determinism() {
     let file = example_path("simple_box.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-
-    let (_, body1) = send_mesh_request(&uri).await;
-    let (_, body2) = send_mesh_request(&uri).await;
+    let (_, body1) = send_mesh_request(file.clone()).await;
+    let (_, body2) = send_mesh_request(file).await;
     assert_eq!(body1, body2, "mesh responses must be deterministic");
 
     let file2 = example_path("cylinder.mycad");
-    let uri2 = format!("/api/v0/mesh?file={}", urlencoding(&file2));
-    let (_, body3) = send_mesh_request(&uri2).await;
-    let (_, body4) = send_mesh_request(&uri2).await;
+    let (_, body3) = send_mesh_request(file2.clone()).await;
+    let (_, body4) = send_mesh_request(file2).await;
     assert_eq!(
         body3, body4,
         "cylinder mesh responses must be deterministic"
     );
 }
 
-// T04: 404 not found
+// T04: 404 not found — nonexistent file in State triggers error at load time
 #[tokio::test]
 async fn t04_not_found() {
-    let uri = "/api/v0/mesh?file=/tmp/absolutely_nonexistent_file.mycad";
-    let (status, body) = send_mesh_request(uri).await;
+    let file = PathBuf::from("/tmp/absolutely_nonexistent_file.mycad");
+    let req = Request::builder()
+        .uri("/api/v0/mesh")
+        .body(Body::empty())
+        .unwrap();
+    let app = app(Arc::new(file));
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
     assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(!err.error.is_empty());
@@ -116,13 +122,19 @@ async fn t05_invalid_extension() {
         .join("..")
         .join("..")
         .join("Cargo.toml");
-    let abs = std::fs::canonicalize(&path)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&abs));
-    let (status, body) = send_mesh_request(&uri).await;
+    let abs = std::fs::canonicalize(&path).unwrap();
+
+    let req = Request::builder()
+        .uri("/api/v0/mesh")
+        .body(Body::empty())
+        .unwrap();
+    let app = app(Arc::new(abs));
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(!err.error.is_empty());
@@ -138,14 +150,12 @@ async fn t05_invalid_extension() {
 #[tokio::test]
 async fn t06_host_header_rebinding() {
     let file = example_path("simple_box.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
     let req = Request::builder()
-        .uri(&uri)
+        .uri("/api/v0/mesh")
         .header("Host", "evil.com")
         .body(Body::empty())
         .unwrap();
-    let app = app();
-    let resp = app.oneshot(req).await.unwrap();
+    let resp = make_app(file).oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
@@ -153,8 +163,7 @@ async fn t06_host_header_rebinding() {
 #[tokio::test]
 async fn t07_unsupported_feature() {
     let file = fixture_path("create_sphere.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-    let (status, body) = send_mesh_request(&uri).await;
+    let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(!err.error.is_empty(), "error message must not be empty");
@@ -164,8 +173,7 @@ async fn t07_unsupported_feature() {
 #[tokio::test]
 async fn t08_degenerate_dimension() {
     let file = fixture_path("zero_box.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-    let (status, body) = send_mesh_request(&uri).await;
+    let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(!err.error.is_empty(), "error message must not be empty");
@@ -175,8 +183,7 @@ async fn t08_degenerate_dimension() {
 #[tokio::test]
 async fn t09_assembly_unsupported() {
     let file = fixture_path("assembly.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-    let (status, body) = send_mesh_request(&uri).await;
+    let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(
@@ -190,8 +197,7 @@ async fn t09_assembly_unsupported() {
 #[tokio::test]
 async fn t10_empty_part() {
     let file = fixture_path("empty_part.mycad");
-    let uri = format!("/api/v0/mesh?file={}", urlencoding(&file));
-    let (status, body) = send_mesh_request(&uri).await;
+    let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(
@@ -199,22 +205,4 @@ async fn t10_empty_part() {
         "expected empty part message, got: {}",
         err.error
     );
-}
-
-// T11: 400 relative path rejected
-#[tokio::test]
-async fn t11_relative_path_rejected() {
-    let uri = "/api/v0/mesh?file=examples/simple_box.mycad";
-    let (status, body) = send_mesh_request(uri).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
-    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
-    assert!(
-        err.error.contains("relative"),
-        "expected relative path error, got: {}",
-        err.error
-    );
-}
-
-fn urlencoding(s: &str) -> String {
-    s.replace('/', "%2F")
 }

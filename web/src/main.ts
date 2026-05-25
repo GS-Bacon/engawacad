@@ -16,16 +16,8 @@ function showInfo(msg: string): void {
 }
 
 async function main(): Promise<void> {
-  const params = new URLSearchParams(window.location.search);
-  const file = params.get("file");
-
-  if (!file) {
-    showInfo("Usage: ?file=<absolute-path-to-.mycad>");
-    return;
-  }
-
   try {
-    const mesh = await fetchMesh(file);
+    const mesh = await fetchMesh();
     initViewer(app, mesh);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
