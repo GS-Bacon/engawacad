@@ -2,6 +2,7 @@ pub mod stl;
 pub use stl::to_ascii_stl;
 
 use crate::brep::topology::Solid;
+use crate::geometry::curve::Curve;
 use crate::geometry::surface::{Surface, TessellationStrategy};
 use crate::geometry::Point;
 use serde::{Deserialize, Serialize};
@@ -121,7 +122,7 @@ fn tessellate_face_fan(
 ) -> Result<(), TessellationError> {
     let outer_loop = &solid.loops[face.outer_loop];
 
-    let loop_points = collect_loop_points(solid, outer_loop, opts.angular_segments)?;
+    let loop_points = collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
 
     if loop_points.len() < 3 {
         return Ok(());
@@ -187,10 +188,23 @@ fn tessellate_face_uv_grid(
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
+    let outer_loop = &solid.loops[face.outer_loop];
+
+    // Guard: reject non-canonical cylinder faces (trimmed in u, seam not at u=0).
+    // At least one Circle edge must span ≈ 2π to qualify as a full-revolution patch.
+    let has_full_revolution = outer_loop.half_edges.iter().any(|&he_idx| {
+        let he = &solid.half_edges[he_idx];
+        let edge = &solid.edges[he.edge];
+        matches!(edge.curve, Curve::Circle { .. })
+            && (edge.t_range[1] - edge.t_range[0]).abs() >= 2.0 * PI - 0.1
+    });
+    if !has_full_revolution {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
     // Determine v range from loop corner vertices (start_vertex of each HE).
     // UvGridFullPatch assumes a full 2π revolution in u starting at u=0;
     // we do not sample the circle arcs here — the grid covers [0,2π] directly.
-    let outer_loop = &solid.loops[face.outer_loop];
     let corner_uvs: Vec<(f64, f64)> = outer_loop
         .half_edges
         .iter()
@@ -204,8 +218,10 @@ fn tessellate_face_uv_grid(
     let v_max = corner_uvs.iter().map(|(_, v)| *v).fold(f64::MIN, f64::max);
     let u_min = 0.0_f64;
 
-    let n_u = opts.angular_segments;
-    let n_v = opts.axial_segments;
+    // Clamp at point of use — callers may bypass TessellationOptions::new() via public fields
+    // or deserialization, so we defensively enforce minimum viable values here.
+    let n_u = opts.angular_segments.max(3);
+    let n_v = opts.axial_segments.max(1);
 
     let base_idx = mesh.positions.len() as u32;
 
@@ -494,5 +510,62 @@ mod tests {
         assert_eq!(mesh1.positions, mesh2.positions);
         assert_eq!(mesh1.normals, mesh2.normals);
         assert_eq!(mesh1.indices, mesh2.indices);
+    }
+    /// Directly-constructed TessellationOptions with 0 segments should not produce NaN vertices
+    /// (public fields bypass new() clamping, so tessellate_solid_with must guard at point of use).
+    #[test]
+    fn test_zero_segments_clamped_at_use() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let opts = TessellationOptions {
+            angular_segments: 0,
+            axial_segments: 0,
+        };
+        let mesh = tessellate_solid_with(&solid, &opts).unwrap();
+        // Clamped to angular=3, axial=1: lateral=3*2=6, caps=(3-2)*2=2 → 8
+        assert_eq!(mesh.triangle_count(), 8);
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "mesh must not contain NaN/inf vertices"
+        );
+    }
+
+    /// Non-full-revolution cylinder face (arc < 2π) must return TrimmedFaceUnsupported.
+    #[test]
+    fn test_partial_revolution_cylinder_face_errors() {
+        use crate::brep::topology::Solid as S;
+        let mut s = S::new(0);
+        let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0));
+        let e0 = s.add_edge(
+            2,
+            [v0, v0],
+            Curve::Circle {
+                center: Point::origin(),
+                normal: Vec3::z(),
+                radius: 5.0,
+            },
+            [0.0, PI], // half revolution
+        );
+        let he0 = s.add_half_edge(3, v0, e0, true);
+        let lp = s.add_loop(4, vec![he0]);
+        s.add_face(
+            5,
+            Surface::Cylinder {
+                origin: Point::origin(),
+                axis: Vec3::z(),
+                radius: 5.0,
+            },
+            lp,
+            vec![],
+            true,
+        );
+        s.add_shell(6, vec![0], true);
+        let result = tessellate_solid(&s);
+        assert!(matches!(
+            result,
+            Err(TessellationError::TrimmedFaceUnsupported)
+        ));
     }
 }
