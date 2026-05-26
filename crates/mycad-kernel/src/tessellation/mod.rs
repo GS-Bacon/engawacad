@@ -4,14 +4,17 @@ pub use stl::to_ascii_stl;
 use crate::brep::topology::Solid;
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::{Surface, TessellationStrategy};
-use crate::geometry::Point;
+use crate::geometry::{
+    angle_near, length_near, point_near, point_near_scaled, Point, ANGLE_TOLERANCE,
+    LENGTH_TOLERANCE,
+};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 use thiserror::Error;
 use ts_rs::TS;
 
-/// Seam jump detection threshold: |Δu| > π indicates a parameter-space seam crossing.
-/// Minimum cross-product norm for a non-degenerate triangle.
+/// Minimum cross-product norm for a non-degenerate triangle (heuristic threshold
+/// for degenerate triangle removal — not a dimensioned tolerance).
 const AREA_EPS: f64 = 1e-14;
 
 /// A triangle mesh for rendering.
@@ -219,7 +222,9 @@ fn tessellate_face_uv_grid(
         })
         .sum();
     let full_rev_count = (total_circle_span / (2.0 * PI)).round() as i64;
-    if full_rev_count <= 0 || (total_circle_span - full_rev_count as f64 * 2.0 * PI).abs() >= 1e-9 {
+    if full_rev_count <= 0
+        || (total_circle_span - full_rev_count as f64 * 2.0 * PI).abs() >= ANGLE_TOLERANCE
+    {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
@@ -338,7 +343,6 @@ fn tessellate_face_sphere(
     }
 
     // Loop closure: last HE end = first HE start
-    let eps = 1e-9;
     let fwd_end = edge.vertices[1];
     let rev_end = edge.vertices[0];
     let loop_start = he_fwd.start_vertex;
@@ -347,7 +351,10 @@ fn tessellate_face_sphere(
     } else {
         edge.vertices[0]
     };
-    if (solid.vertices[loop_end].point - solid.vertices[loop_start].point).norm() > eps {
+    if !point_near(
+        &solid.vertices[loop_end].point,
+        &solid.vertices[loop_start].point,
+    ) {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
     let _ = (fwd_end, rev_end);
@@ -363,35 +370,36 @@ fn tessellate_face_sphere(
     // Verify poles: vertices[0] near south pole (v ≈ -π/2), vertices[1] near north pole (v ≈ +π/2)
     let (u0, v0) = face.surface.uv_of(&solid.vertices[edge.vertices[0]].point);
     let (_u1, v1) = face.surface.uv_of(&solid.vertices[edge.vertices[1]].point);
-    if (v0 - (-PI / 2.0)).abs() > eps || (v1 - (PI / 2.0)).abs() > eps {
+    if !angle_near(v0, -PI / 2.0) || !angle_near(v1, PI / 2.0) {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
     let _ = u0;
 
     // Seam geometry matches sphere
-    if (seam_center - sph_center).norm() > eps || (seam_radius - sph_radius).abs() > eps {
+    if !point_near(seam_center, sph_center) || !length_near(*seam_radius, *sph_radius) {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
     // Canonical seam orientation: normal == -Y
-    if (*seam_normal + crate::geometry::Vec3::y()).norm() > eps {
+    if (*seam_normal + crate::geometry::Vec3::y()).norm() > LENGTH_TOLERANCE {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
     // Verify curve.evaluate(t_range[0]) ≈ vertices[0] and evaluate(t_range[1]) ≈ vertices[1]
-    // Relative tolerance: sin(π) ≈ 1.2e-16, so r*1.2e-16 must pass; eps = r * 1e-9 gives ample margin.
-    let geom_eps = sph_radius * 1e-9_f64;
     let p_start = edge.curve.evaluate(edge.t_range[0]);
     let p_end = edge.curve.evaluate(edge.t_range[1]);
-    if (p_start - solid.vertices[edge.vertices[0]].point).norm() > geom_eps
-        || (p_end - solid.vertices[edge.vertices[1]].point).norm() > geom_eps
+    if !point_near_scaled(
+        &p_start,
+        &solid.vertices[edge.vertices[0]].point,
+        *sph_radius,
+    ) || !point_near_scaled(&p_end, &solid.vertices[edge.vertices[1]].point, *sph_radius)
     {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
     // T_range should be a half-circle (span = π)
     let span = (edge.t_range[1] - edge.t_range[0]).abs();
-    if (span - PI).abs() > eps {
+    if !angle_near(span, PI) {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
 
@@ -1309,5 +1317,113 @@ mod tests {
                 edge
             );
         }
+    }
+
+    // --- T06: Angle strict boundary (full-rev check rejects at == ANGLE_TOLERANCE) ---
+
+    #[test]
+    fn test_t06_full_revolution_rejects_at_angle_tolerance() {
+        use crate::brep::topology::Solid as S;
+        // Span = 2π + ANGLE_TOLERANCE (just above), should reject
+        let span = 2.0 * PI + ANGLE_TOLERANCE;
+        let mut s = S::new(0);
+        let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0));
+        let e0 = s.add_edge(
+            2,
+            [v0, v0],
+            Curve::Circle {
+                center: Point::origin(),
+                normal: Vec3::z(),
+                radius: 5.0,
+            },
+            [0.0, span],
+        );
+        let he0 = s.add_half_edge(3, v0, e0, true);
+        let lp = s.add_loop(4, vec![he0]);
+        s.add_face(
+            5,
+            Surface::Cylinder {
+                origin: Point::origin(),
+                axis: Vec3::z(),
+                radius: 5.0,
+            },
+            lp,
+            vec![],
+            true,
+        );
+        s.add_shell(6, vec![0], true);
+        let result = tessellate_solid(&s);
+        assert!(
+            matches!(result, Err(TessellationError::TrimmedFaceUnsupported)),
+            "span = 2π + ANGLE_TOLERANCE should be rejected"
+        );
+    }
+
+    // --- T09: Degenerate triangle regression ---
+
+    #[test]
+    fn test_t09_degenerate_triangle_not_added() {
+        let mut mesh = TriangleMesh::new();
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([1.0, 0.0, 0.0]);
+        mesh.positions.push([0.5, 0.0, 0.0]); // Collinear → degenerate
+        let before = mesh.indices.len();
+        push_triangle(&mut mesh, 0, 1, 2);
+        assert_eq!(
+            mesh.indices.len(),
+            before,
+            "degenerate triangle should not be added"
+        );
+    }
+
+    #[test]
+    fn test_t09_normal_triangle_added() {
+        let mut mesh = TriangleMesh::new();
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([1.0, 0.0, 0.0]);
+        mesh.positions.push([0.0, 1.0, 0.0]); // Non-degenerate
+        let before = mesh.indices.len();
+        push_triangle(&mut mesh, 0, 1, 2);
+        assert_eq!(
+            mesh.indices.len(),
+            before + 3,
+            "normal triangle should be added"
+        );
+    }
+
+    #[test]
+    fn test_t09_identical_points_triangle_not_added() {
+        let mut mesh = TriangleMesh::new();
+        mesh.positions.push([1.0, 2.0, 3.0]);
+        mesh.positions.push([1.0, 2.0, 3.0]);
+        mesh.positions.push([1.0, 2.0, 3.0]); // All same point
+        let before = mesh.indices.len();
+        push_triangle(&mut mesh, 0, 1, 2);
+        assert_eq!(
+            mesh.indices.len(),
+            before,
+            "identical-point triangle should not be added"
+        );
+    }
+
+    // --- T11 regression: existing tests pass (covered by existing tests above) ---
+    // The existing cuboid/cylinder/sphere tessellation tests serve as T11 regression.
+
+    // --- Edge-case: push_triangle with near-zero but non-zero area ---
+
+    #[test]
+    fn test_t09_near_degenerate_triangle_added() {
+        let mut mesh = TriangleMesh::new();
+        let tiny = AREA_EPS.sqrt() * 10.0; // cross_norm >> AREA_EPS² but still very small
+        mesh.positions.push([0.0, 0.0, 0.0]);
+        mesh.positions.push([tiny, 0.0, 0.0]);
+        mesh.positions.push([0.0, tiny, 0.0]);
+        let before = mesh.indices.len();
+        push_triangle(&mut mesh, 0, 1, 2);
+        assert_eq!(
+            mesh.indices.len(),
+            before + 3,
+            "near-degenerate but non-zero triangle should be added"
+        );
     }
 }

@@ -1,4 +1,47 @@
+use super::Point;
 use super::Vec3;
+
+// ---------------------------------------------------------------------------
+// Public tolerance constants (preliminary — Phase 4 will migrate to a
+// tolerant model per ADR-004 Decision 3).
+// ---------------------------------------------------------------------------
+
+/// Absolute tolerance for length / coordinate comparisons (mm).
+pub const LENGTH_TOLERANCE: f64 = 1e-9;
+
+/// Absolute tolerance for angle / parameter comparisons (rad).
+pub const ANGLE_TOLERANCE: f64 = 1e-9;
+
+/// Scale-proportional relative tolerance (dimensionless).
+pub const RELATIVE_TOLERANCE: f64 = 1e-9;
+
+// ---------------------------------------------------------------------------
+// Comparison helpers
+// ---------------------------------------------------------------------------
+
+/// True when two lengths differ by at most [`LENGTH_TOLERANCE`].
+pub fn length_near(a: f64, b: f64) -> bool {
+    (a - b).abs() <= LENGTH_TOLERANCE
+}
+
+/// True when two angles differ by at most [`ANGLE_TOLERANCE`].
+pub fn angle_near(a: f64, b: f64) -> bool {
+    (a - b).abs() <= ANGLE_TOLERANCE
+}
+
+/// True when two 3D points are within [`LENGTH_TOLERANCE`] Euclidean distance.
+pub fn point_near(a: &Point, b: &Point) -> bool {
+    (a - b).norm() <= LENGTH_TOLERANCE
+}
+
+/// True when two 3D points are within `scale * [`RELATIVE_TOLERANCE`]` Euclidean distance.
+pub fn point_near_scaled(a: &Point, b: &Point, scale: f64) -> bool {
+    (a - b).norm() <= scale * RELATIVE_TOLERANCE
+}
+
+// ---------------------------------------------------------------------------
+// Orthonormal basis
+// ---------------------------------------------------------------------------
 
 /// Build an orthonormal basis (u, v) from a normal vector.
 ///
@@ -22,6 +65,8 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
+    // --- Orthonormal basis tests (pre-existing) ---
+
     #[test]
     fn test_orthonormal_basis_z_axis() {
         let (u, v) = orthonormal_basis(&Vec3::z());
@@ -38,5 +83,123 @@ mod tests {
         assert_relative_eq!(v.norm(), 1.0, epsilon = 1e-12);
         assert_relative_eq!(u.dot(&v), 0.0, epsilon = 1e-12);
         assert_relative_eq!(u.dot(&Vec3::x()), 0.0, epsilon = 1e-12);
+    }
+
+    // --- T01: Constant values ---
+
+    #[test]
+    fn test_t01_constant_values() {
+        assert_eq!(LENGTH_TOLERANCE, 1e-9);
+        assert_eq!(ANGLE_TOLERANCE, 1e-9);
+        assert_eq!(RELATIVE_TOLERANCE, 1e-9);
+    }
+
+    // --- T02: Invariants (positive, small) ---
+
+    #[test]
+    fn test_t02_constants_are_small_positive() {
+        assert!(LENGTH_TOLERANCE > 0.0 && LENGTH_TOLERANCE < 1e-3);
+        assert!(ANGLE_TOLERANCE > 0.0 && ANGLE_TOLERANCE < 1e-3);
+        assert!(RELATIVE_TOLERANCE > 0.0 && RELATIVE_TOLERANCE < 1e-3);
+    }
+
+    // --- T03: Helper boundary (<= tol → true, just above → false) ---
+
+    #[test]
+    fn test_t03_length_near_boundary() {
+        assert!(length_near(0.0, LENGTH_TOLERANCE));
+        assert!(!length_near(0.0, LENGTH_TOLERANCE * 1.000_001));
+        // Symmetry
+        assert!(length_near(LENGTH_TOLERANCE, 0.0));
+    }
+
+    #[test]
+    fn test_t03_angle_near_boundary() {
+        assert!(angle_near(0.0, ANGLE_TOLERANCE));
+        assert!(!angle_near(0.0, ANGLE_TOLERANCE * 1.000_001));
+    }
+
+    #[test]
+    fn test_t03_point_near_boundary() {
+        let a = Point::origin();
+        let b = Point::new(LENGTH_TOLERANCE, 0.0, 0.0);
+        assert!(point_near(&a, &b));
+        let c = Point::new(LENGTH_TOLERANCE * 1.000_001, 0.0, 0.0);
+        assert!(!point_near(&a, &c));
+    }
+
+    // --- T04: Scaled boundary ---
+
+    #[test]
+    fn test_t04_point_near_scaled_boundary() {
+        let a = Point::origin();
+        let scale = 1000.0;
+        let threshold = scale * RELATIVE_TOLERANCE;
+
+        // Exactly at threshold → true (<=)
+        let b = Point::new(threshold, 0.0, 0.0);
+        assert!(point_near_scaled(&a, &b, scale));
+
+        // Just above threshold → false
+        let c = Point::new(threshold * 1.000_001, 0.0, 0.0);
+        assert!(!point_near_scaled(&a, &c, scale));
+    }
+
+    // --- T05: Re-export reachability (compile-time check) ---
+
+    #[test]
+    fn test_t05_crate_root_reexport() {
+        let _ = crate::LENGTH_TOLERANCE;
+        let _ = crate::ANGLE_TOLERANCE;
+        let _ = crate::RELATIVE_TOLERANCE;
+    }
+
+    // --- Edge-case tests (adversarial persona) ---
+
+    #[test]
+    fn test_length_near_identical() {
+        assert!(length_near(0.0, 0.0));
+        assert!(length_near(1e-30, 1e-30));
+    }
+
+    #[test]
+    fn test_angle_near_negative_values() {
+        assert!(angle_near(-ANGLE_TOLERANCE, 0.0));
+        assert!(angle_near(-1.0, -1.0 + ANGLE_TOLERANCE * 0.5));
+    }
+
+    #[test]
+    fn test_point_near_coincident() {
+        let p = Point::new(1.0, 2.0, 3.0);
+        assert!(point_near(&p, &p));
+    }
+
+    #[test]
+    fn test_point_near_scaled_zero_scale() {
+        let a = Point::origin();
+        let b = Point::new(0.0, 0.0, 0.0);
+        assert!(point_near_scaled(&a, &b, 0.0));
+        // Non-zero distance with zero scale → always false
+        let c = Point::new(1e-20, 0.0, 0.0);
+        assert!(!point_near_scaled(&a, &c, 0.0));
+    }
+
+    #[test]
+    fn test_length_near_large_values() {
+        let large = 1e15;
+        assert!(length_near(large, large));
+        assert!(!length_near(large, large + 1.0));
+    }
+
+    #[test]
+    fn test_determinism_100_runs() {
+        for _ in 0..100 {
+            assert!(length_near(0.0, LENGTH_TOLERANCE));
+            assert!(!length_near(0.0, LENGTH_TOLERANCE * 1.000_001));
+            assert!(point_near(
+                &Point::origin(),
+                &Point::new(LENGTH_TOLERANCE, 0.0, 0.0)
+            ));
+        }
     }
 }

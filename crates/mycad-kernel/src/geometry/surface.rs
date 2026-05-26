@@ -2,6 +2,11 @@ use super::math::orthonormal_basis;
 use super::{Point, Vec3};
 use serde::{Deserialize, Serialize};
 
+/// Cone apex singularity guard (internal implementation detail).
+/// Tighter than LENGTH_TOLERANCE because radial collapse at the apex is a
+/// structural degeneracy, not a generic distance threshold.
+pub(crate) const APEX_TOLERANCE: f64 = 1e-12;
+
 /// Strategy for tessellating a face on a given surface type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TessellationStrategy {
@@ -106,7 +111,7 @@ impl Surface {
                 let to_point = p - apex;
                 let along_axis = to_point.dot(&a) * a;
                 let radial = to_point - along_axis;
-                if radial.norm() < 1e-12 {
+                if radial.norm() < APEX_TOLERANCE {
                     return a;
                 }
                 let radial_n = radial.normalize();
@@ -263,5 +268,57 @@ mod tests {
         let n1 = surface.normal_at_point(&Point::new(5.0, -2.0, 0.0));
         let n2 = surface.normal_at_point(&Point::new(-3.0, 4.0, 0.0));
         assert_relative_eq!(n1.dot(&n2), 1.0, epsilon = 1e-12);
+    }
+
+    // --- APEX_TOLERANCE tests (T01, T10) ---
+
+    #[test]
+    fn test_t01_apex_tolerance_value() {
+        assert_eq!(APEX_TOLERANCE, 1e-12);
+    }
+
+    #[test]
+    fn test_t10_cone_normal_at_apex_below_threshold() {
+        let surface = Surface::Cone {
+            apex: Point::origin(),
+            axis: Vec3::z(),
+            half_angle: 0.5,
+        };
+        // v very close to 0 → radial.norm() < APEX_TOLERANCE → returns axis
+        let n = surface.normal_at(0.0, APEX_TOLERANCE * 0.1);
+        assert_relative_eq!(n.norm(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(n.dot(&Vec3::z()), 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_t10_cone_normal_at_apex_exactly_threshold() {
+        let surface = Surface::Cone {
+            apex: Point::origin(),
+            axis: Vec3::z(),
+            half_angle: 0.5,
+        };
+        // v chosen so radial.norm() ≈ APEX_TOLERANCE (still ≤, should return axis)
+        let v = APEX_TOLERANCE;
+        let n = surface.normal_at(0.0, v);
+        assert!(n.norm().is_finite());
+    }
+
+    #[test]
+    fn test_t10_cone_normal_at_apex_above_threshold() {
+        let surface = Surface::Cone {
+            apex: Point::origin(),
+            axis: Vec3::z(),
+            half_angle: 0.5,
+        };
+        // v large enough → radial.norm() > APEX_TOLERANCE → general formula
+        let n = surface.normal_at(0.0, 1.0);
+        assert_relative_eq!(n.norm(), 1.0, epsilon = 1e-12);
+        // Should not equal the axis direction
+        assert!(n.dot(&Vec3::z()).abs() < 0.99);
+    }
+
+    #[test]
+    fn test_apex_tolerance_is_smaller_than_length_tolerance() {
+        assert!(APEX_TOLERANCE < super::super::math::LENGTH_TOLERANCE);
     }
 }

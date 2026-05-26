@@ -29,6 +29,56 @@ Accepted
 2. **アルゴリズムは曲面・曲線の型に非依存**であること。平面・直線前提をアルゴリズムへ埋め込まない (例: 面法線は面ごとに 1 回でなく、点ごとに `Surface::normal_at_point` で評価する)。
 3. **数値モデル (トレラント方式 vs 厳密方式) は本 ADR では保留**し、曲面 Boolean を実装する Phase 4 着手時に決定する。自由曲面の交線は数値的近似になるため、業界カーネル (Parasolid / ACIS) はエンティティ毎に公差を持つトレラントモデルを採る。これを後から全エンティティ・全比較へ導入するのは大改修であり、Phase 4 で意思決定する論点として明示しておく。なお `CLAUDE.md` の **決定性** 原則とは両立可能 (アルゴリズム固定で再現できる) だが、数値ロバスト性の確保が決定性維持の難所になる点に留意する。
 
+## 単位系・グローバル公差 (暫定)
+
+### 内部標準単位
+
+| 次元 | 単位 | 備考 |
+|------|------|------|
+| 長さ | mm | カーネル内部幾何の標準 |
+| 角度 | rad | カーネル内部幾何の標準 |
+| 比率 | 無次元 | スケール比例の相対比較 |
+
+### deg/rad 境界
+
+`.mycad` フォーマットの `Transform.rotation` は既存どおり**度数法 (オイラー角, deg)** (`component.rs`・`docs/file-format.md` 参照)。カーネル内部幾何は rad。**deg↔rad 変換は format/build 層の責務**であり、カーネルは rad のみを扱う。
+
+### 公開公差定数
+
+`mycad-kernel` は以下の 3 定数を公開 (`geometry::math` モジュール / crate root から再エクスポート):
+
+| 定数 | 値 | 用途 |
+|------|-----|------|
+| `LENGTH_TOLERANCE` | `1e-9` (mm) | 距離・座標の絶対比較 |
+| `ANGLE_TOLERANCE` | `1e-9` (rad) | 角度・パラメータの絶対比較 |
+| `RELATIVE_TOLERANCE` | `1e-9` (無次元) | スケール比例の相対比較 |
+
+これらは暫定の単一スカラ値。Phase 4 でトレラントモデルへ移行する際、次元付き公差として差し替える。
+
+### 比較 helper 関数
+
+上記定数に基づく共通比較関数を `geometry::math` に集約:
+
+- `length_near(a, b) -> bool`
+- `angle_near(a, b) -> bool`
+- `point_near(a, b) -> bool`
+- `point_near_scaled(a, b, scale) -> bool`
+
+### 内部実装詳細
+
+- **Cone apex singularity guard**: `surface.rs` 内の `pub(crate) const APEX_TOLERANCE: f64 = 1e-12` は cone 頂点の特異点ガード。構造的退化検出のため `LENGTH_TOLERANCE` より厳しい。公開契約・crate root 再エクスポートには含めない。
+- **面積退化閾値 `AREA_EPS`**: tessellation 内の private 定数。退化三角形除去の heuristic 閾値 (次元付き公差ではない)。`push_triangle` 内の cross-product norm 計算式に既知の誤り (`.sqrt()` の適用位置) があり、[#29](https://github.com/GS-Bacon/mycad/issues/29) として別 Issue 化済み。Phase 4 着手前に修正する。
+
+### Document 単位フィールド
+
+`Document` に単位フィールドは追加しない。理由: (1) byte-exact golden YAML・TS/JsonSchema を壊さない、(2) 単位の消費者が不在 = YAGNI。将来のインポート/エクスポート機能で必要になれば追加する。
+
+### 拡張点
+
+質量 (g)・密度等の物理単位は本 Issue では扱わず、将来の質量特性/材料 feature 着手時に決定する。公差の次元別分離が `MASS_TOLERANCE` 等を加算的に足す継ぎ目になる。
+
+Phase 4 でのトレラントモデル移行については Decision 3 を参照のこと。
+
 ## Rationale
 
 - **要件確定だけ先に行う理由**: 後付けが致命的に痛い横断的決定 (上記 2・3) を「事故的に」決めてしまわないため。実装そのもの (NURBS 評価・Boolean アルゴリズム) は enum + Feature 再生成により安全に後回しでき、先回り実装はむしろ過剰設計になる。

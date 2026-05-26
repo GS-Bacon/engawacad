@@ -85,7 +85,7 @@ GUI / CLI / AI / スクリプトを問わず、**モデルを変える操作は�
 |---|---|
 | トポロジカル・ネーミング (生 index 参照禁止、Phase 3 前提) | **ADR-005** |
 | `schema_version` / kernel version スタンプ / migration | Issue I-2 |
-| 単位系・グローバル公差 | ADR-004 (一部)、Issue I-4 |
+| 単位系・グローバル公差 | ADR-004、[#17](https://github.com/GS-Bacon/mycad/issues/17) |
 | API 契約詳細 | 本 ADR の方針に基づき Phase 2 実装時に確定 |
 | 増分再生成 (Feature 純関数保証) | 変更モデルの必然的帰結。将来最適化フェーズで有効化 |
 | Tauri 包装・server 認証 | Issue 化は当該 Phase 着手時 (空想 Issue 作らない) |
