@@ -39,7 +39,7 @@ mycad export examples/simple_box.mycad -o box.stl
 
 ---
 
-## Phase 2: Web ベースビューア基盤 🚧
+## Phase 2: Web ベースビューア基盤 ✅
 
 **前提 ADR**: [ADR-003](docs/decisions/003-viewer-and-app-architecture.md)
 
@@ -58,6 +58,8 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 **備考**: Tauri によるネイティブデスクトップアプリ化・server モードでの self-hosted multi-user 利用は将来の発展。Issue 化は当該 Phase 着手時。
 
 **Issues**: [Milestone: Phase 2](https://github.com/GS-Bacon/mycad/milestone/3)
+
+**状態**: 完了 (2026-05-26)
 
 ---
 
