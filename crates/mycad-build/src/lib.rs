@@ -1,7 +1,7 @@
 use mycad_format::Feature;
 use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::error::KernelError;
-use mycad_kernel::primitives::{make_cuboid, make_cylinder};
+use mycad_kernel::primitives::{make_cuboid, make_cylinder, make_sphere};
 
 pub fn build_solid_from_features(
     features: &[Feature],
@@ -25,9 +25,7 @@ pub fn build_solid_from_features(
             ..
         } => make_cuboid(*width, *height, *depth, gen),
         Feature::CreateCylinder { radius, height, .. } => make_cylinder(*radius, *height, gen),
-        Feature::CreateSphere { .. } => Err(KernelError::UnsupportedFeature {
-            kind: "create_sphere",
-        }),
+        Feature::CreateSphere { radius, .. } => make_sphere(*radius, gen),
         Feature::Extrude { .. } => Err(KernelError::UnsupportedFeature { kind: "extrude" }),
         Feature::Cut { .. } => Err(KernelError::UnsupportedFeature { kind: "cut" }),
         Feature::Fuse { .. } => Err(KernelError::UnsupportedFeature { kind: "fuse" }),

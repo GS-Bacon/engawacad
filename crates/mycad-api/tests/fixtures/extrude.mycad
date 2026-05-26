@@ -1,0 +1,8 @@
+version: "0.1.0"
+root_component:
+  name: "Extrude Test"
+  features:
+    - type: extrude
+      id: ext_1
+      sketch: sketch_1
+      depth: 10.0

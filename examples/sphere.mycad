@@ -1,0 +1,7 @@
+version: "0.1.0"
+root_component:
+  name: "Simple Sphere"
+  features:
+    - type: create_sphere
+      id: sphere_1
+      radius: 5.0

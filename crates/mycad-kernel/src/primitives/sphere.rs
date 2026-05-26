@@ -1,0 +1,445 @@
+use crate::brep::topology::{IdGenerator, Solid};
+use crate::error::KernelError;
+use crate::geometry::curve::Curve;
+use crate::geometry::surface::Surface;
+use crate::geometry::{Point, Vec3};
+
+/// Create a sphere B-rep solid.
+///
+/// Center at origin, given radius. Seam on the +X meridian (XZ half-plane).
+/// Topology: 2 vertices (poles), 1 edge (seam half-circle), 2 half-edges,
+/// 1 loop, 1 face (self-adjacent periodic), 1 closed shell.
+pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, KernelError> {
+    if !radius.is_finite() || radius <= 0.0 {
+        return Err(KernelError::InvalidParameter { kind: "radius" });
+    }
+
+    let mut solid = Solid::new(id_gen.next());
+
+    let origin = Point::origin();
+
+    let v_south = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, -radius));
+    let v_north = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, radius));
+
+    // Seam edge: half-circle in XZ plane from south pole to north pole.
+    // Curve::Circle with normal=-Y => orthonormal_basis(-Y) = (+X, -Z) wait let me check...
+    // orthonormal_basis(-Y): n=(-Y), n.x=0 < 0.9 so not_parallel = X
+    //   u = (-Y) x X = (0,-1,0) x (1,0,0) = (0,0,1) = Z
+    //   v = (-Y) x Z = (0,-1,0) x (0,0,1) = (1,0,0) = X  (wait, cross product sign)
+    // Actually: cross(-Y, X) = (-1,0,0) x ... let me compute properly.
+    // n = (0,-1,0), not_parallel = (1,0,0)
+    // u = n.cross(not_parallel) = (0,-1,0) x (1,0,0) = ((-1)*0 - 0*0, 0*1 - 0*0, 0*0 - (-1)*1) = (0, 0, 1) = Z
+    // v = n.cross(u) = (0,-1,0) x (0,0,1) = ((-1)*1 - 0*0, 0*0 - 0*1, 0*0 - (-1)*0) = (-1, 0, 0) = -X
+    // So evaluate(t) = center + radius*(cos(t)*Z + sin(t)*(-X))
+    //   = center + radius*(-sin(t), 0, cos(t))
+    // At t=π: center + radius*(-sin(π), 0, cos(π)) = center + radius*(0, 0, -1) = (0,0,-radius) = south pole ✓
+    // At t=3π/2: center + radius*(-sin(3π/2), 0, cos(3π/2)) = center + radius*(1, 0, 0) = (radius, 0, 0) ✓
+    // At t=2π: center + radius*(-sin(2π), 0, cos(2π)) = center + radius*(0, 0, 1) = (0, 0, radius) = north pole ✓
+    let e_seam = solid.add_edge(
+        id_gen.next(),
+        [v_south, v_north],
+        Curve::Circle {
+            center: origin,
+            normal: -Vec3::y(),
+            radius,
+        },
+        [std::f64::consts::PI, 2.0 * std::f64::consts::PI],
+    );
+
+    let he_up = solid.add_half_edge(id_gen.next(), v_south, e_seam, true);
+    let he_down = solid.add_half_edge(id_gen.next(), v_north, e_seam, false);
+
+    let lp = solid.add_loop(id_gen.next(), vec![he_up, he_down]);
+
+    let f = solid.add_face(
+        id_gen.next(),
+        Surface::Sphere {
+            center: origin,
+            radius,
+        },
+        lp,
+        vec![],
+        true,
+    );
+
+    solid.add_shell(id_gen.next(), vec![f], true);
+
+    Ok(solid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::surface::TessellationStrategy;
+    use std::f64::consts::PI;
+
+    /// T01: Determinism — identical inputs produce identical solids.
+    #[test]
+    fn test_sphere_deterministic() {
+        let mut gen1 = IdGenerator::new(0);
+        let mut gen2 = IdGenerator::new(0);
+        let s1 = make_sphere(5.0, &mut gen1).unwrap();
+        let s2 = make_sphere(5.0, &mut gen2).unwrap();
+
+        assert_eq!(s1.vertices.len(), s2.vertices.len());
+        assert_eq!(s1.edges.len(), s2.edges.len());
+        assert_eq!(s1.faces.len(), s2.faces.len());
+        assert_eq!(s1.half_edges.len(), s2.half_edges.len());
+        assert_eq!(s1.loops.len(), s2.loops.len());
+        assert_eq!(s1.shells.len(), s2.shells.len());
+
+        for (v1, v2) in s1.vertices.iter().zip(s2.vertices.iter()) {
+            assert_eq!(v1.id, v2.id);
+            assert_eq!(v1.point, v2.point);
+        }
+        for (e1, e2) in s1.edges.iter().zip(s2.edges.iter()) {
+            assert_eq!(e1.id, e2.id);
+            assert_eq!(e1.vertices, e2.vertices);
+            assert_eq!(e1.t_range, e2.t_range);
+            // Curve variant and parameters
+            match (&e1.curve, &e2.curve) {
+                (
+                    Curve::Circle {
+                        center: c1,
+                        normal: n1,
+                        radius: r1,
+                    },
+                    Curve::Circle {
+                        center: c2,
+                        normal: n2,
+                        radius: r2,
+                    },
+                ) => {
+                    assert_eq!(c1, c2);
+                    assert_eq!(n1, n2);
+                    assert_eq!(r1, r2);
+                }
+                _ => panic!("curve variant mismatch"),
+            }
+        }
+        for (he1, he2) in s1.half_edges.iter().zip(s2.half_edges.iter()) {
+            assert_eq!(he1.id, he2.id);
+            assert_eq!(he1.edge, he2.edge);
+            assert_eq!(he1.forward, he2.forward);
+            assert_eq!(he1.start_vertex, he2.start_vertex);
+        }
+        for (l1, l2) in s1.loops.iter().zip(s2.loops.iter()) {
+            assert_eq!(l1.id, l2.id);
+            assert_eq!(l1.half_edges, l2.half_edges);
+        }
+        for (f1, f2) in s1.faces.iter().zip(s2.faces.iter()) {
+            assert_eq!(f1.id, f2.id);
+            assert_eq!(f1.outer_loop, f2.outer_loop);
+            assert_eq!(f1.inner_loops, f2.inner_loops);
+            assert_eq!(f1.same_sense, f2.same_sense);
+            // Surface variant
+            match (&f1.surface, &f2.surface) {
+                (
+                    Surface::Sphere {
+                        center: c1,
+                        radius: r1,
+                    },
+                    Surface::Sphere {
+                        center: c2,
+                        radius: r2,
+                    },
+                ) => {
+                    assert_eq!(c1, c2);
+                    assert_eq!(r1, r2);
+                }
+                _ => panic!("surface variant mismatch"),
+            }
+        }
+        for (sh1, sh2) in s1.shells.iter().zip(s2.shells.iter()) {
+            assert_eq!(sh1.id, sh2.id);
+            assert_eq!(sh1.faces, sh2.faces);
+            assert_eq!(sh1.closed, sh2.closed);
+        }
+    }
+
+    /// T02: Topology counts.
+    #[test]
+    fn test_sphere_topology() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(5.0, &mut gen).unwrap();
+
+        assert_eq!(s.vertices.len(), 2, "2 poles");
+        assert_eq!(s.edges.len(), 1, "1 seam edge");
+        assert_eq!(s.faces.len(), 1, "1 self-adjacent face");
+        assert_eq!(s.shells.len(), 1);
+        assert!(s.shells[0].closed);
+        assert_eq!(s.half_edges.len(), 2, "2 half-edges on seam");
+        assert_eq!(s.loops.len(), 1, "1 loop");
+    }
+
+    /// T03: Euler-Poincaré V - E + F = 2(S - H).
+    #[test]
+    fn test_sphere_euler() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(5.0, &mut gen).unwrap();
+
+        let v = s.vertices.len() as i64;
+        let e = s.edges.len() as i64;
+        let f = s.faces.len() as i64;
+        let shells = s.shells.len() as i64;
+        assert_eq!(v - e + f, 2 * shells, "Euler-Poincaré");
+    }
+
+    /// T04: Manifold/loop-closure — edge has 2 HEs with opposite orientation, loop closes.
+    #[test]
+    fn test_sphere_manifold_and_loop_closure() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(5.0, &mut gen).unwrap();
+        let eps = 1e-10;
+
+        let mut edge_he_count: std::collections::HashMap<usize, Vec<bool>> =
+            std::collections::HashMap::new();
+        for he in &s.half_edges {
+            edge_he_count.entry(he.edge).or_default().push(he.forward);
+        }
+        for (edge_idx, forwards) in &edge_he_count {
+            assert_eq!(forwards.len(), 2, "edge {edge_idx} must have 2 HEs");
+            assert_ne!(
+                forwards[0], forwards[1],
+                "edge {edge_idx} HEs must be opposite"
+            );
+        }
+
+        for (loop_idx, lp) in s.loops.iter().enumerate() {
+            assert!(
+                !lp.half_edges.is_empty(),
+                "loop {loop_idx} must not be empty"
+            );
+            for i in 0..lp.half_edges.len() {
+                let he_cur = &s.half_edges[lp.half_edges[i]];
+                let he_next = &s.half_edges[lp.half_edges[(i + 1) % lp.half_edges.len()]];
+
+                let cur_edge = &s.edges[he_cur.edge];
+                let end_v = if he_cur.forward {
+                    cur_edge.vertices[1]
+                } else {
+                    cur_edge.vertices[0]
+                };
+
+                let next_start = he_next.start_vertex;
+
+                assert!(
+                    (s.vertices[end_v].point - s.vertices[next_start].point).norm() < eps,
+                    "loop {loop_idx}: HE {} end ({:?}) != HE {} start ({:?})",
+                    i,
+                    s.vertices[end_v].point,
+                    (i + 1) % lp.half_edges.len(),
+                    s.vertices[next_start].point,
+                );
+            }
+        }
+    }
+
+    /// T05: Geometry — poles at center±(0,0,r), face surface is Sphere.
+    #[test]
+    fn test_sphere_geometry() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(5.0, &mut gen).unwrap();
+        let eps = 1e-10;
+
+        assert!((s.vertices[0].point - Point::new(0.0, 0.0, -5.0)).norm() < eps);
+        assert!((s.vertices[1].point - Point::new(0.0, 0.0, 5.0)).norm() < eps);
+
+        match &s.faces[0].surface {
+            Surface::Sphere { center, radius } => {
+                assert!((center - &Point::origin()).norm() < eps);
+                assert!((radius - 5.0).abs() < eps);
+            }
+            _ => panic!("face should be Sphere surface"),
+        }
+
+        // Seam curve verification
+        let edge = &s.edges[0];
+        match &edge.curve {
+            Curve::Circle {
+                center,
+                normal,
+                radius,
+            } => {
+                assert!((center - &Point::origin()).norm() < eps);
+                assert!(
+                    (*normal + Vec3::y()).norm() < eps,
+                    "seam normal should be -Y"
+                );
+                assert!((radius - 5.0).abs() < eps);
+                assert!((edge.t_range[0] - PI).abs() < eps);
+                assert!((edge.t_range[1] - 2.0 * PI).abs() < eps);
+            }
+            _ => panic!("seam should be Circle curve"),
+        }
+    }
+
+    /// T06: Degenerate inputs — non-finite/non-positive radius → InvalidParameter.
+    #[test]
+    fn test_sphere_degenerate_inputs() {
+        let mut gen = IdGenerator::new(0);
+
+        let err = make_sphere(0.0, &mut gen).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::InvalidParameter { kind: "radius" }
+        ));
+
+        let err = make_sphere(-5.0, &mut gen).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::InvalidParameter { kind: "radius" }
+        ));
+
+        let err = make_sphere(f64::NAN, &mut gen).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::InvalidParameter { kind: "radius" }
+        ));
+
+        let err = make_sphere(f64::INFINITY, &mut gen).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::InvalidParameter { kind: "radius" }
+        ));
+
+        let err = make_sphere(f64::NEG_INFINITY, &mut gen).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::InvalidParameter { kind: "radius" }
+        ));
+
+        let err = make_sphere(f64::MIN_POSITIVE, &mut gen);
+        assert!(err.is_ok(), "tiny but positive radius should succeed");
+    }
+
+    /// Verify sphere surface reports UvSphere tessellation strategy.
+    #[test]
+    fn test_sphere_surface_tessellation_strategy() {
+        let s = Surface::Sphere {
+            center: Point::origin(),
+            radius: 5.0,
+        };
+        assert_eq!(s.tessellation_strategy(), TessellationStrategy::UvSphere);
+    }
+
+    /// T16: Self-adjacent periodic face passes manifold validation.
+    #[test]
+    fn test_sphere_self_adjacent_validate_manifold() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(5.0, &mut gen).unwrap();
+        assert!(
+            s.validate_manifold().is_ok(),
+            "full sphere must pass manifold validation"
+        );
+    }
+
+    // --- Edge case / adversarial tests ---
+
+    /// Repeated determinism: 100 runs produce identical results.
+    #[test]
+    fn test_sphere_100_run_determinism() {
+        let first = {
+            let mut gen = IdGenerator::new(0);
+            make_sphere(3.0, &mut gen).unwrap()
+        };
+        for i in 1..100 {
+            let mut gen = IdGenerator::new(0);
+            let s = make_sphere(3.0, &mut gen).unwrap();
+            for (v1, v2) in first.vertices.iter().zip(s.vertices.iter()) {
+                assert_eq!(v1.id, v2.id, "run {i}: vertex id mismatch");
+                assert_eq!(v1.point, v2.point, "run {i}: vertex point mismatch");
+            }
+            for (e1, e2) in first.edges.iter().zip(s.edges.iter()) {
+                assert_eq!(e1.id, e2.id, "run {i}: edge id mismatch");
+                assert_eq!(e1.vertices, e2.vertices, "run {i}: edge vertices mismatch");
+            }
+            assert_eq!(first.faces.len(), s.faces.len(), "run {i}: face count");
+        }
+    }
+
+    /// Round-trip: build → serialize → deserialize → rebuild, compare IDs and topology.
+    #[test]
+    fn test_sphere_roundtrip_serde() {
+        let mut gen = IdGenerator::new(0);
+        let original = make_sphere(7.0, &mut gen).unwrap();
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: Solid = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.vertices.len(), restored.vertices.len());
+        assert_eq!(original.edges.len(), restored.edges.len());
+        assert_eq!(original.faces.len(), restored.faces.len());
+        assert_eq!(original.half_edges.len(), restored.half_edges.len());
+        assert_eq!(original.loops.len(), restored.loops.len());
+        assert_eq!(original.shells.len(), restored.shells.len());
+
+        for (v1, v2) in original.vertices.iter().zip(restored.vertices.iter()) {
+            assert_eq!(v1.id, v2.id);
+            assert_eq!(v1.point, v2.point);
+        }
+    }
+
+    /// Numerical boundary: very small positive radius succeeds.
+    #[test]
+    fn test_sphere_tiny_radius() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(1e-10, &mut gen).unwrap();
+        assert_eq!(s.vertices.len(), 2);
+    }
+
+    /// Numerical boundary: very large radius succeeds.
+    #[test]
+    fn test_sphere_large_radius() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(1e10, &mut gen).unwrap();
+        assert_eq!(s.vertices.len(), 2);
+    }
+
+    /// Negative zero radius is rejected.
+    #[test]
+    fn test_sphere_negative_zero_radius() {
+        let mut gen = IdGenerator::new(0);
+        let err = make_sphere(-0.0, &mut gen).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::InvalidParameter { kind: "radius" }
+        ));
+    }
+
+    /// Validate manifold fails for a hand-crafted broken solid.
+    #[test]
+    fn test_validate_manifold_detects_broken_loop() {
+        let mut s = Solid::new(0);
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
+        let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+        let e0 = s.add_edge(
+            3,
+            [v0, v1],
+            Curve::Circle {
+                center: Point::origin(),
+                normal: -Vec3::y(),
+                radius: 5.0,
+            },
+            [PI, 2.0 * PI],
+        );
+        // he0 forward: start=v0, end=v1. he1 backward but start=v0 (not v1) → loop gap
+        let he0 = s.add_half_edge(4, v0, e0, true);
+        let he1 = s.add_half_edge(5, v0, e0, false);
+        let lp = s.add_loop(6, vec![he0, he1]);
+        s.add_face(
+            7,
+            Surface::Sphere {
+                center: Point::origin(),
+                radius: 5.0,
+            },
+            lp,
+            vec![],
+            true,
+        );
+        s.add_shell(8, vec![0], true);
+        assert!(
+            s.validate_manifold().is_err(),
+            "broken loop should fail validation"
+        );
+    }
+}

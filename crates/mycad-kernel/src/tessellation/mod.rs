@@ -47,6 +47,13 @@ impl Default for TriangleMesh {
 }
 
 /// Controls the resolution of curved-surface tessellation.
+///
+/// Resolution contract per surface type:
+/// - **Plane**: `angular_segments` is used for boundary sampling.
+/// - **Cylinder**: `angular_segments` = longitude divisions, `axial_segments` = height divisions.
+/// - **Sphere**: `angular_segments` = longitude divisions (`n_u`). Latitude divisions (`n_v`) are
+///   derived as `(angular_segments / 2).max(2)`. `axial_segments` is **ignored**.
+/// - **Cone**: Unsupported.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TessellationOptions {
     pub angular_segments: usize,
@@ -102,6 +109,9 @@ pub fn tessellate_solid_with(
             }
             TessellationStrategy::UvGridFullPatch => {
                 tessellate_face_uv_grid(solid, face, opts, &mut mesh)?;
+            }
+            TessellationStrategy::UvSphere => {
+                tessellate_face_sphere(solid, face, opts, &mut mesh)?;
             }
             TessellationStrategy::Unsupported => {
                 return Err(TessellationError::UnsupportedSurface {
@@ -274,6 +284,219 @@ fn tessellate_face_uv_grid(
     Ok(())
 }
 
+/// Tessellate a canonical sphere face using UV sphere sampling.
+///
+/// Validates that the face is a canonical full sphere (2 HEs on 1 seam Circle edge,
+/// no inner loops, poles as vertices, seam geometry matches surface) and returns
+/// `TrimmedFaceUnsupported` for any non-canonical face.
+fn tessellate_face_sphere(
+    solid: &Solid,
+    face: &crate::brep::topology::Face,
+    opts: &TessellationOptions,
+    mesh: &mut TriangleMesh,
+) -> Result<(), TessellationError> {
+    if !face.inner_loops.is_empty() {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    let outer_loop = &solid.loops[face.outer_loop];
+
+    if outer_loop.half_edges.len() != 2 {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    let he0 = &solid.half_edges[outer_loop.half_edges[0]];
+    let he1 = &solid.half_edges[outer_loop.half_edges[1]];
+
+    // Both HEs must reference the same edge
+    if he0.edge != he1.edge {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    // Opposite orientations
+    if he0.forward == he1.forward {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    let edge = &solid.edges[he0.edge];
+
+    let Curve::Circle {
+        center: seam_center,
+        normal: seam_normal,
+        radius: seam_radius,
+    } = &edge.curve
+    else {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    };
+
+    // Determine which HE is forward, which is reversed
+    let (he_fwd, he_rev) = if he0.forward { (he0, he1) } else { (he1, he0) };
+
+    // Forward HE start_vertex should match edge.vertices[0]
+    if he_fwd.start_vertex != edge.vertices[0] || he_rev.start_vertex != edge.vertices[1] {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    // Loop closure: last HE end = first HE start
+    let eps = 1e-9;
+    let fwd_end = edge.vertices[1];
+    let rev_end = edge.vertices[0];
+    let loop_start = he_fwd.start_vertex;
+    let loop_end = if he_rev.forward {
+        edge.vertices[1]
+    } else {
+        edge.vertices[0]
+    };
+    if (solid.vertices[loop_end].point - solid.vertices[loop_start].point).norm() > eps {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+    let _ = (fwd_end, rev_end);
+
+    let Surface::Sphere {
+        center: sph_center,
+        radius: sph_radius,
+    } = &face.surface
+    else {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    };
+
+    // Verify poles: vertices[0] near south pole (v ≈ -π/2), vertices[1] near north pole (v ≈ +π/2)
+    let (u0, v0) = face.surface.uv_of(&solid.vertices[edge.vertices[0]].point);
+    let (_u1, v1) = face.surface.uv_of(&solid.vertices[edge.vertices[1]].point);
+    if (v0 - (-PI / 2.0)).abs() > eps || (v1 - (PI / 2.0)).abs() > eps {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+    let _ = u0;
+
+    // Seam geometry matches sphere
+    if (seam_center - sph_center).norm() > eps || (seam_radius - sph_radius).abs() > eps {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    // Canonical seam orientation: normal == -Y
+    if (*seam_normal + crate::geometry::Vec3::y()).norm() > eps {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    // Verify curve.evaluate(t_range[0]) ≈ vertices[0] and evaluate(t_range[1]) ≈ vertices[1]
+    // Relative tolerance: sin(π) ≈ 1.2e-16, so r*1.2e-16 must pass; eps = r * 1e-9 gives ample margin.
+    let geom_eps = sph_radius * 1e-9_f64;
+    let p_start = edge.curve.evaluate(edge.t_range[0]);
+    let p_end = edge.curve.evaluate(edge.t_range[1]);
+    if (p_start - solid.vertices[edge.vertices[0]].point).norm() > geom_eps
+        || (p_end - solid.vertices[edge.vertices[1]].point).norm() > geom_eps
+    {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    // T_range should be a half-circle (span = π)
+    let span = (edge.t_range[1] - edge.t_range[0]).abs();
+    if (span - PI).abs() > eps {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+
+    // --- Tessellation ---
+    let n_u = opts.angular_segments.max(3);
+    let n_v = (n_u / 2).max(2);
+
+    let center = *sph_center;
+    let radius = *sph_radius;
+
+    let south_pole = center + crate::geometry::Vec3::new(0.0, 0.0, -radius);
+    let north_pole = center + crate::geometry::Vec3::new(0.0, 0.0, radius);
+
+    let base_idx = mesh.positions.len() as u32;
+
+    // South pole vertex
+    {
+        let normal = face.surface.normal_at_point(&south_pole);
+        let n = normal_arr(&normal, face.same_sense);
+        mesh.positions
+            .push([south_pole.x, south_pole.y, south_pole.z]);
+        mesh.normals.push(n);
+    }
+
+    // Internal latitude rings: iv = 1..=n_v-1
+    // v = -π/2 + (π/n_v)*iv, each ring has n_u points
+    let du = 2.0 * PI / n_u as f64;
+    for iv in 1..n_v {
+        let v_lat = -PI / 2.0 + (PI / n_v as f64) * iv as f64;
+        for iu in 0..n_u {
+            let u = du * iu as f64;
+            let p = face.surface.evaluate(u, v_lat);
+            let normal = face.surface.normal_at(u, v_lat);
+            let n = normal_arr(&normal, face.same_sense);
+            mesh.positions.push([p.x, p.y, p.z]);
+            mesh.normals.push(n);
+        }
+    }
+
+    // North pole vertex
+    {
+        let normal = face.surface.normal_at_point(&north_pole);
+        let n = normal_arr(&normal, face.same_sense);
+        mesh.positions
+            .push([north_pole.x, north_pole.y, north_pole.z]);
+        mesh.normals.push(n);
+    }
+
+    let south_idx = base_idx;
+    let north_idx = base_idx + (1 + (n_v - 1) * n_u) as u32;
+
+    // South pole fan: south → bottom ring
+    let bottom_ring_start = base_idx + 1;
+    for iu in 0..n_u {
+        let cur = bottom_ring_start + iu as u32;
+        let next = bottom_ring_start + ((iu + 1) % n_u) as u32;
+        if face.same_sense {
+            push_triangle(mesh, south_idx, next, cur);
+        } else {
+            push_triangle(mesh, south_idx, cur, next);
+        }
+    }
+
+    // Middle bands
+    for iv in 0..(n_v - 2) {
+        let ring_a_start = base_idx + 1 + (iv * n_u) as u32;
+        let ring_b_start = base_idx + 1 + ((iv + 1) * n_u) as u32;
+        for iu in 0..n_u {
+            let a0 = ring_a_start + iu as u32;
+            let a1 = ring_a_start + ((iu + 1) % n_u) as u32;
+            let b0 = ring_b_start + iu as u32;
+            let b1 = ring_b_start + ((iu + 1) % n_u) as u32;
+            if face.same_sense {
+                push_triangle(mesh, a0, a1, b0);
+                push_triangle(mesh, a1, b1, b0);
+            } else {
+                push_triangle(mesh, a0, b0, a1);
+                push_triangle(mesh, a1, b0, b1);
+            }
+        }
+    }
+
+    // North pole fan: top ring → north
+    let top_ring_start = base_idx + 1 + ((n_v - 2) * n_u) as u32;
+    for iu in 0..n_u {
+        let cur = top_ring_start + iu as u32;
+        let next = top_ring_start + ((iu + 1) % n_u) as u32;
+        if face.same_sense {
+            push_triangle(mesh, cur, next, north_idx);
+        } else {
+            push_triangle(mesh, next, cur, north_idx);
+        }
+    }
+
+    Ok(())
+}
+
+fn normal_arr(normal: &crate::geometry::Vec3, same_sense: bool) -> [f64; 3] {
+    if same_sense {
+        [normal.x, normal.y, normal.z]
+    } else {
+        [-normal.x, -normal.y, -normal.z]
+    }
+}
+
 /// Push a triangle, but skip degenerate (zero-area) ones.
 fn push_triangle(mesh: &mut TriangleMesh, i0: u32, i1: u32, i2: u32) {
     let p0: [f64; 3] = mesh.positions[i0 as usize];
@@ -315,6 +538,7 @@ mod tests {
     use crate::geometry::Vec3;
     use crate::primitives::make_cuboid;
     use crate::primitives::make_cylinder;
+    use crate::primitives::make_sphere;
 
     /// T06: Normal tessellation — triangle count for cylinder with default 32 angular segments.
     #[test]
@@ -455,7 +679,7 @@ mod tests {
         assert_eq!(mesh_hi.triangle_count(), 64 * 2 * 2 + (64 - 2) * 2);
     }
 
-    /// T15: Unsupported surface type → error.
+    /// T13: Unsupported surface type (Cone) → error.
     #[test]
     fn test_unsupported_surface_error() {
         use crate::brep::topology::Solid as S;
@@ -477,9 +701,10 @@ mod tests {
         let lp = s.add_loop(5, vec![he0]);
         s.add_face(
             6,
-            Surface::Sphere {
-                center: Point::origin(),
-                radius: 1.0,
+            Surface::Cone {
+                apex: Point::origin(),
+                axis: Vec3::z(),
+                half_angle: 0.5,
             },
             lp,
             vec![],
@@ -490,7 +715,7 @@ mod tests {
         let result = tessellate_solid(&s);
         assert!(matches!(
             result,
-            Err(TessellationError::UnsupportedSurface { kind: "sphere" })
+            Err(TessellationError::UnsupportedSurface { kind: "cone" })
         ));
     }
 
@@ -578,5 +803,511 @@ mod tests {
             result,
             Err(TessellationError::TrimmedFaceUnsupported)
         ));
+    }
+
+    // --- Sphere tessellation tests ---
+
+    /// T07: Sphere mesh triangle count = 2*n_u*(n_v-1). Default (angular=32): 960.
+    #[test]
+    fn test_sphere_triangle_count() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+
+        let n_u = 32;
+        let n_v = (n_u / 2).max(2);
+        let expected = 2 * n_u * (n_v - 1);
+        assert_eq!(
+            mesh.triangle_count(),
+            expected,
+            "expected {expected} triangles, got {}",
+            mesh.triangle_count()
+        );
+    }
+
+    /// T08: Sphere tessellation determinism.
+    #[test]
+    fn test_sphere_tessellation_deterministic() {
+        let mut gen1 = IdGenerator::new(0);
+        let mut gen2 = IdGenerator::new(0);
+        let s1 = make_sphere(5.0, &mut gen1).unwrap();
+        let s2 = make_sphere(5.0, &mut gen2).unwrap();
+
+        let m1 = tessellate_solid(&s1).unwrap();
+        let m2 = tessellate_solid(&s2).unwrap();
+
+        assert_eq!(m1.positions, m2.positions);
+        assert_eq!(m1.normals, m2.normals);
+        assert_eq!(m1.indices, m2.indices);
+    }
+
+    /// T09: Watertight — every undirected edge is shared by exactly 2 triangles.
+    #[test]
+    fn test_sphere_watertight() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+
+        let mut edge_count: std::collections::HashMap<[u32; 2], usize> =
+            std::collections::HashMap::new();
+
+        for tri in 0..mesh.triangle_count() {
+            let i0 = mesh.indices[tri * 3];
+            let i1 = mesh.indices[tri * 3 + 1];
+            let i2 = mesh.indices[tri * 3 + 2];
+            for edge in &[[i0, i1], [i1, i2], [i2, i0]] {
+                let key = if edge[0] < edge[1] {
+                    [edge[0], edge[1]]
+                } else {
+                    [edge[1], edge[0]]
+                };
+                *edge_count.entry(key).or_insert(0) += 1;
+            }
+        }
+
+        for (edge, count) in &edge_count {
+            assert_eq!(
+                *count, 2,
+                "edge {:?} shared by {count} triangles (expected 2)",
+                edge
+            );
+        }
+    }
+
+    /// T10: Pole integrity — poles are exact single vertices, fan has n_u triangles.
+    #[test]
+    fn test_sphere_pole_integrity() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+
+        let eps = 1e-10;
+        let radius = 5.0;
+
+        // South pole at (0,0,-r)
+        let south = [0.0f64, 0.0, -radius];
+        let north = [0.0f64, 0.0, radius];
+
+        let south_count = mesh
+            .positions
+            .iter()
+            .filter(|p| {
+                (p[0] - south[0]).abs() < eps
+                    && (p[1] - south[1]).abs() < eps
+                    && (p[2] - south[2]).abs() < eps
+            })
+            .count();
+        let north_count = mesh
+            .positions
+            .iter()
+            .filter(|p| {
+                (p[0] - north[0]).abs() < eps
+                    && (p[1] - north[1]).abs() < eps
+                    && (p[2] - north[2]).abs() < eps
+            })
+            .count();
+
+        assert_eq!(south_count, 1, "south pole should be exactly 1 vertex");
+        assert_eq!(north_count, 1, "north pole should be exactly 1 vertex");
+
+        // Find the pole vertex indices
+        let south_idx = mesh
+            .positions
+            .iter()
+            .position(|p| {
+                (p[0] - south[0]).abs() < eps
+                    && (p[1] - south[1]).abs() < eps
+                    && (p[2] - south[2]).abs() < eps
+            })
+            .unwrap() as u32;
+        let north_idx = mesh
+            .positions
+            .iter()
+            .position(|p| {
+                (p[0] - north[0]).abs() < eps
+                    && (p[1] - north[1]).abs() < eps
+                    && (p[2] - north[2]).abs() < eps
+            })
+            .unwrap() as u32;
+
+        // Count fan triangles at each pole
+        let south_fan: usize = (0..mesh.triangle_count())
+            .filter(|&tri| {
+                let i0 = mesh.indices[tri * 3];
+                let i1 = mesh.indices[tri * 3 + 1];
+                let i2 = mesh.indices[tri * 3 + 2];
+                i0 == south_idx || i1 == south_idx || i2 == south_idx
+            })
+            .count();
+        let north_fan: usize = (0..mesh.triangle_count())
+            .filter(|&tri| {
+                let i0 = mesh.indices[tri * 3];
+                let i1 = mesh.indices[tri * 3 + 1];
+                let i2 = mesh.indices[tri * 3 + 2];
+                i0 == north_idx || i1 == north_idx || i2 == north_idx
+            })
+            .count();
+
+        let n_u = 32;
+        assert_eq!(south_fan, n_u, "south pole fan should have {n_u} triangles");
+        assert_eq!(north_fan, n_u, "north pole fan should have {n_u} triangles");
+    }
+
+    /// T12: Non-canonical sphere face → TrimmedFaceUnsupported.
+    #[test]
+    fn test_non_canonical_sphere_face() {
+        use crate::brep::topology::Solid as S;
+
+        // Case 1: wrong number of HEs (3 instead of 2)
+        {
+            let mut s = S::new(0);
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
+            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+            let e0 = s.add_edge(
+                3,
+                [v0, v1],
+                Curve::Circle {
+                    center: Point::origin(),
+                    normal: -Vec3::y(),
+                    radius: 5.0,
+                },
+                [PI, 2.0 * PI],
+            );
+            let he0 = s.add_half_edge(4, v0, e0, true);
+            let he1 = s.add_half_edge(5, v1, e0, false);
+            let he_extra = s.add_half_edge(6, v1, e0, true);
+            let lp = s.add_loop(7, vec![he0, he1, he_extra]);
+            s.add_face(
+                8,
+                Surface::Sphere {
+                    center: Point::origin(),
+                    radius: 5.0,
+                },
+                lp,
+                vec![],
+                true,
+            );
+            s.add_shell(9, vec![0], true);
+            assert!(matches!(
+                tessellate_solid(&s),
+                Err(TessellationError::TrimmedFaceUnsupported)
+            ));
+        }
+
+        // Case 2: inner loops present
+        {
+            let mut s = S::new(0);
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
+            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+            let e0 = s.add_edge(
+                3,
+                [v0, v1],
+                Curve::Circle {
+                    center: Point::origin(),
+                    normal: -Vec3::y(),
+                    radius: 5.0,
+                },
+                [PI, 2.0 * PI],
+            );
+            let he0 = s.add_half_edge(4, v0, e0, true);
+            let he1 = s.add_half_edge(5, v1, e0, false);
+            let lp_outer = s.add_loop(6, vec![he0, he1]);
+            let lp_inner = s.add_loop(7, vec![he0]);
+            s.add_face(
+                8,
+                Surface::Sphere {
+                    center: Point::origin(),
+                    radius: 5.0,
+                },
+                lp_outer,
+                vec![lp_inner],
+                true,
+            );
+            s.add_shell(9, vec![0], true);
+            assert!(matches!(
+                tessellate_solid(&s),
+                Err(TessellationError::TrimmedFaceUnsupported)
+            ));
+        }
+
+        // Case 3: HEs on different edges
+        {
+            let mut s = S::new(0);
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
+            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+            let e0 = s.add_edge(
+                3,
+                [v0, v1],
+                Curve::Circle {
+                    center: Point::origin(),
+                    normal: -Vec3::y(),
+                    radius: 5.0,
+                },
+                [PI, 2.0 * PI],
+            );
+            let e1 = s.add_edge(
+                4,
+                [v0, v1],
+                Curve::Line {
+                    origin: Point::new(0.0, 0.0, -5.0),
+                    direction: Vec3::new(0.0, 0.0, 10.0),
+                },
+                [0.0, 1.0],
+            );
+            let he0 = s.add_half_edge(5, v0, e0, true);
+            let he1 = s.add_half_edge(6, v1, e1, false);
+            let lp = s.add_loop(7, vec![he0, he1]);
+            s.add_face(
+                8,
+                Surface::Sphere {
+                    center: Point::origin(),
+                    radius: 5.0,
+                },
+                lp,
+                vec![],
+                true,
+            );
+            s.add_shell(9, vec![0], true);
+            assert!(matches!(
+                tessellate_solid(&s),
+                Err(TessellationError::TrimmedFaceUnsupported)
+            ));
+        }
+    }
+
+    /// T15: Outward normals — winding normal same sign as centroid→facet_center.
+    #[test]
+    fn test_sphere_outward_normals() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+
+        let center = [0.0f64, 0.0, 0.0];
+
+        for tri in 0..mesh.triangle_count() {
+            let i0 = mesh.indices[tri * 3] as usize;
+            let i1 = mesh.indices[tri * 3 + 1] as usize;
+            let i2 = mesh.indices[tri * 3 + 2] as usize;
+
+            let p0 = mesh.positions[i0];
+            let p1 = mesh.positions[i1];
+            let p2 = mesh.positions[i2];
+
+            let facet_center = [
+                (p0[0] + p1[0] + p2[0]) / 3.0,
+                (p0[1] + p1[1] + p2[1]) / 3.0,
+                (p0[2] + p1[2] + p2[2]) / 3.0,
+            ];
+
+            let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+            let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+            let nx = u[1] * v[2] - u[2] * v[1];
+            let ny = u[2] * v[0] - u[0] * v[2];
+            let nz = u[0] * v[1] - u[1] * v[0];
+
+            let dx = facet_center[0] - center[0];
+            let dy = facet_center[1] - center[1];
+            let dz = facet_center[2] - center[2];
+
+            let dot = nx * dx + ny * dy + nz * dz;
+            assert!(
+                dot > 0.0,
+                "facet {tri}: winding normal should point outward (dot={dot})"
+            );
+        }
+    }
+
+    /// T19: Parameterized angular segments — formula, watertight, outward normals.
+    #[test]
+    fn test_sphere_various_angular_segments() {
+        for &angular in &[3, 4, 5, 7, 32] {
+            let mut gen = IdGenerator::new(0);
+            let solid = make_sphere(5.0, &mut gen).unwrap();
+            let opts = TessellationOptions {
+                angular_segments: angular,
+                axial_segments: 1,
+            };
+            let mesh = tessellate_solid_with(&solid, &opts).unwrap();
+
+            let n_u = angular.max(3);
+            let n_v = (n_u / 2).max(2);
+            let expected = 2 * n_u * (n_v - 1);
+            assert_eq!(
+                mesh.triangle_count(),
+                expected,
+                "angular={angular}: expected {expected}, got {}",
+                mesh.triangle_count()
+            );
+
+            // Watertight
+            let mut edge_count: std::collections::HashMap<[u32; 2], usize> =
+                std::collections::HashMap::new();
+            for tri in 0..mesh.triangle_count() {
+                let i0 = mesh.indices[tri * 3];
+                let i1 = mesh.indices[tri * 3 + 1];
+                let i2 = mesh.indices[tri * 3 + 2];
+                for edge in &[[i0, i1], [i1, i2], [i2, i0]] {
+                    let key = if edge[0] < edge[1] {
+                        [edge[0], edge[1]]
+                    } else {
+                        [edge[1], edge[0]]
+                    };
+                    *edge_count.entry(key).or_insert(0) += 1;
+                }
+            }
+            for (edge, count) in &edge_count {
+                assert_eq!(
+                    *count, 2,
+                    "angular={angular}: edge {:?} shared by {count}",
+                    edge
+                );
+            }
+
+            // Outward normals
+            for tri in 0..mesh.triangle_count() {
+                let i0 = mesh.indices[tri * 3] as usize;
+                let i1 = mesh.indices[tri * 3 + 1] as usize;
+                let i2 = mesh.indices[tri * 3 + 2] as usize;
+                let p0 = mesh.positions[i0];
+                let p1 = mesh.positions[i1];
+                let p2 = mesh.positions[i2];
+                let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+                let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+                let nx = u[1] * v[2] - u[2] * v[1];
+                let ny = u[2] * v[0] - u[0] * v[2];
+                let nz = u[0] * v[1] - u[1] * v[0];
+                let fc = [
+                    (p0[0] + p1[0] + p2[0]) / 3.0,
+                    (p0[1] + p1[1] + p2[1]) / 3.0,
+                    (p0[2] + p1[2] + p2[2]) / 3.0,
+                ];
+                let dot = nx * fc[0] + ny * fc[1] + nz * fc[2];
+                assert!(
+                    dot > 0.0,
+                    "angular={angular} facet {tri}: outward (dot={dot})"
+                );
+            }
+        }
+    }
+
+    /// Sphere tessellation with 0 angular_segments gets clamped to 3.
+    #[test]
+    fn test_sphere_zero_segments_clamped() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let opts = TessellationOptions {
+            angular_segments: 0,
+            axial_segments: 0,
+        };
+        let mesh = tessellate_solid_with(&solid, &opts).unwrap();
+        let n_u = 3;
+        let n_v = (n_u / 2).max(2);
+        assert_eq!(mesh.triangle_count(), 2 * n_u * (n_v - 1));
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "mesh must not contain NaN/inf"
+        );
+    }
+
+    /// F01 regression: large radius sphere (r=1e6) tessellation succeeds.
+    /// With absolute eps=1e-9, curve.evaluate(π) x-component ≈ r*sin(π) ≈ 1.2e-10 would fail
+    /// because r*1.2e-16 ≈ 1.2e-10 and the check was > 1e-9. Relative eps fixes this.
+    #[test]
+    fn test_sphere_large_radius_tessellation() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(1e6, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid);
+        assert!(
+            mesh.is_ok(),
+            "large radius sphere should tessellate successfully"
+        );
+        assert!(mesh.unwrap().triangle_count() > 0);
+    }
+
+    /// Sphere tessellation 100-run determinism.
+    #[test]
+    fn test_sphere_tessellation_100_runs() {
+        let first = {
+            let mut gen = IdGenerator::new(0);
+            let s = make_sphere(5.0, &mut gen).unwrap();
+            tessellate_solid(&s).unwrap()
+        };
+        for i in 1..100 {
+            let mut gen = IdGenerator::new(0);
+            let s = make_sphere(5.0, &mut gen).unwrap();
+            let m = tessellate_solid(&s).unwrap();
+            assert_eq!(first.indices, m.indices, "run {i}: indices mismatch");
+            assert_eq!(
+                first.positions.len(),
+                m.positions.len(),
+                "run {i}: positions len"
+            );
+        }
+    }
+
+    /// Adversarial: sphere with r=1e-10 tessellates without NaN/Inf.
+    #[test]
+    fn test_sphere_tiny_radius_tessellation() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(1e-10, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "tiny sphere mesh must not contain NaN/Inf"
+        );
+        assert!(mesh.triangle_count() > 0);
+    }
+
+    /// Adversarial: sphere with r=1e10 tessellates (F01 regression at extreme scale).
+    #[test]
+    fn test_sphere_extreme_large_radius_tessellation() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(1e10, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "extreme large sphere mesh must not contain NaN/Inf"
+        );
+        assert!(mesh.triangle_count() > 0);
+    }
+
+    /// Adversarial: sphere tessellation with angular=3 (minimum) is watertight.
+    #[test]
+    fn test_sphere_minimum_angular_watertight() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let opts = TessellationOptions {
+            angular_segments: 3,
+            axial_segments: 1,
+        };
+        let mesh = tessellate_solid_with(&solid, &opts).unwrap();
+        let mut edge_count: std::collections::HashMap<[u32; 2], usize> =
+            std::collections::HashMap::new();
+        for tri in 0..mesh.triangle_count() {
+            let i0 = mesh.indices[tri * 3];
+            let i1 = mesh.indices[tri * 3 + 1];
+            let i2 = mesh.indices[tri * 3 + 2];
+            for edge in &[[i0, i1], [i1, i2], [i2, i0]] {
+                let key = if edge[0] < edge[1] {
+                    [edge[0], edge[1]]
+                } else {
+                    [edge[1], edge[0]]
+                };
+                *edge_count.entry(key).or_insert(0) += 1;
+            }
+        }
+        for (edge, count) in &edge_count {
+            assert_eq!(
+                *count, 2,
+                "angular=3: edge {:?} shared by {count} triangles",
+                edge
+            );
+        }
     }
 }

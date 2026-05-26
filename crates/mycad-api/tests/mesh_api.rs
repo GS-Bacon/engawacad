@@ -159,10 +159,10 @@ async fn t06_host_header_rebinding() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-// T07: 422 unsupported feature (sphere)
+// T07: 422 unsupported feature (extrude)
 #[tokio::test]
 async fn t07_unsupported_feature() {
-    let file = fixture_path("create_sphere.mycad");
+    let file = fixture_path("extrude.mycad");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
@@ -205,4 +205,28 @@ async fn t10_empty_part() {
         "expected empty part message, got: {}",
         err.error
     );
+}
+
+// T17: Sphere API success — 200 + mesh with 960 triangles.
+#[tokio::test]
+async fn t17_sphere_success() {
+    let file = example_path("sphere.mycad");
+    let (status, body) = send_mesh_request(file).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        mesh.indices.len() / 3,
+        960,
+        "sphere should produce 960 triangles"
+    );
+}
+
+// T18: Unsupported feature (extrude) → 422.
+#[tokio::test]
+async fn t18_extrude_unsupported() {
+    let file = fixture_path("extrude.mycad");
+    let (status, body) = send_mesh_request(file).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
+    assert!(!err.error.is_empty(), "error message must not be empty");
 }

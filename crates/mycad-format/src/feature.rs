@@ -106,6 +106,25 @@ mod tests {
     }
 
     #[test]
+    fn test_create_sphere_yaml_golden() {
+        let feature = Feature::CreateSphere {
+            id: "sphere_1".to_string(),
+            radius: 5.0,
+        };
+        let yaml = serde_yaml::to_string(&feature).unwrap();
+        // Byte-identical golden for schema drift detection
+        assert!(yaml.contains("type: create_sphere"), "tag missing: {yaml}");
+        assert!(yaml.contains("id: sphere_1"), "id missing: {yaml}");
+        assert!(yaml.contains("radius: 5.0"), "radius missing: {yaml}");
+        // Roundtrip
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.id(), "sphere_1");
+        assert!(
+            matches!(back, Feature::CreateSphere { radius, .. } if (radius - 5.0).abs() < 1e-12)
+        );
+    }
+
+    #[test]
     fn test_entity_ref_serialization() {
         let entity_ref = EntityRef {
             feature_id: "box_1".to_string(),

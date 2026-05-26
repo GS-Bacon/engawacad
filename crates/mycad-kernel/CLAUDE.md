@@ -16,6 +16,7 @@ geometry → (nalgebra)
 - HalfEdge/Edgeのvertexインデックスは親Solidのvertex配列を参照
 - Loopは閉じたHalfEdge列（最後のHalfEdgeの終点 = 最初のHalfEdgeの始点）
 - EntityIDは `IdGenerator` で決定的に生成される
+- 自己隣接周期面 (self-adjacent periodic face) を許容: 1本のseam edgeに正逆2 HalfEdgeを載せる面 (e.g. full sphere) は正当なB-rep表現
 
 ## How to Add a New Primitive
 

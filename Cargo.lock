@@ -668,6 +668,7 @@ dependencies = [
  "indexmap",
  "nalgebra",
  "serde",
+ "serde_json",
  "thiserror",
  "ts-rs",
 ]

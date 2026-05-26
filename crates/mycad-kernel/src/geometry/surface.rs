@@ -9,6 +9,8 @@ pub enum TessellationStrategy {
     BoundaryFan,
     /// Full UV grid patch (untrimmed periodic/rectangular face).
     UvGridFullPatch,
+    /// UV sphere tessellation with polar fan + latitude bands.
+    UvSphere,
     /// Not yet supported by the tessellator.
     Unsupported,
 }
@@ -175,7 +177,8 @@ impl Surface {
         match self {
             Surface::Plane { .. } => TessellationStrategy::BoundaryFan,
             Surface::Cylinder { .. } => TessellationStrategy::UvGridFullPatch,
-            Surface::Sphere { .. } | Surface::Cone { .. } => TessellationStrategy::Unsupported,
+            Surface::Sphere { .. } => TessellationStrategy::UvSphere,
+            Surface::Cone { .. } => TessellationStrategy::Unsupported,
         }
     }
 }
