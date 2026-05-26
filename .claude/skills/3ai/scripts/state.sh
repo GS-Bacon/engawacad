@@ -33,6 +33,17 @@ import json, sys
 sys.exit(0 if json.load(open(sys.argv[1]))['steps'].get(sys.argv[2]) == 'passed' else 1)
 " "$FILE" "$3"
     ;;
+  inc)
+    python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+loops = d.setdefault('loops', {})
+n = loops.get(sys.argv[2], 0) + 1
+loops[sys.argv[2]] = n
+json.dump(d, open(sys.argv[1], 'w'))
+print(n)
+" "$FILE" "$3"
+    ;;
   *)
     echo "unknown cmd: $CMD" >&2
     exit 1

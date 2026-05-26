@@ -76,21 +76,23 @@ bash .claude/skills/3ai/scripts/state.sh init features/$ISSUE_NUM-$ISSUE_SLUG/st
 ## STEP 3: Codex 設計レビュー（プランモード内）
 
 プランファイルへの記述が完成したら、Codex にレビューを委託する。
-ループ上限: **3回**。それでも Critical/High が残れば停止してユーザーに報告。
+ループ上限: **wrapper が自動判定**（code=3 / docs=2）。超過時は wrapper が exit 3 で終了。
 
 ```bash
 # プランファイルをまとめてレビュー用 input として使う
-bash .claude/skills/3ai/scripts/dispatch-codex.sh \
+bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
+  --issue $ISSUE_NUM \
   --mode design \
   --input <プランファイルパス> \
-  --instruction .claude/skills/3ai/agents/codex-design-reviewer.md \
+  --plan <プランファイルパス> \
+  --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
   --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md
 ```
 
 **完了通知を待つ（ポーリングしない）。** 結果ファイルを読み、Critical/High があれば:
 1. プランを改訂
-2. 上記コマンドを再実行（ループカウント +1）
-3. 上限(3回)に達したら **停止してユーザーにエスカレーション**
+2. 上記コマンドを再実行
+3. wrapper が **exit 3（上限超過）** で終了したら **停止してユーザーにエスカレーション**
 
 全 Critical/High 解消後:
 ```bash
@@ -146,12 +148,13 @@ bash .claude/skills/3ai/scripts/dispatch-glm.sh \
 bash .claude/skills/3ai/scripts/state.sh assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
 ```
 
-ループ上限: **2回**。残れば停止してエスカレーション。
+ループ上限: **wrapper が自動判定**（code=2 / docs=1）。超過時は wrapper が exit 3 で終了。
 
 ```bash
-bash .claude/skills/3ai/scripts/dispatch-codex.sh \
-  --mode review \
-  --instruction .claude/skills/3ai/agents/codex-final-reviewer.md \
+bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
+  --issue $ISSUE_NUM \
+  --mode final \
+  --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
   --result features/$ISSUE_NUM-$ISSUE_SLUG/final-review.md
 ```
 
@@ -163,7 +166,7 @@ bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/sta
 Critical/High があれば:
 1. GLM 修正ディスパッチ（dispatch-glm.sh を再実行、フォーカスは指摘箇所のみ）
 2. Codex 再レビュー（ループ +1）
-3. 上限到達で **停止・エスカレーション**
+3. wrapper が **exit 3（上限超過）** で終了したら **停止・エスカレーション**
 
 ---
 
