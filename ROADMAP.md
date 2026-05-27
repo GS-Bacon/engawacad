@@ -63,7 +63,7 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 
 ---
 
-## Phase 3: 円柱・球・押し出しが作れる
+## Phase 3: 円柱・球・押し出しが作れる ✅
 
 **前提 ADR**: [ADR-005](docs/decisions/005-topological-naming.md) — `Extrude` (スケッチ→ソリッド) 着手前に決定必須
 
@@ -73,6 +73,8 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 - `CreateCylinder` / `CreateSphere` が `.mycad` から geometry 生成まで動作する
 - `Extrude` (スケッチ → ソリッド) が動作する
 - Phase 1 の `export` と Phase 2 の `view` で確認できる
+
+**状態**: 完了 (2026-05-27)
 
 ---
 
