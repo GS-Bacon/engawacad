@@ -1,6 +1,6 @@
 version: "0.1.0"
 root_component:
-  name: "Extrude Test"
+  name: "Extruded Rect"
   features:
     - type: create_sketch
       id: sketch_1
@@ -13,4 +13,4 @@ root_component:
     - type: extrude
       id: extrude_1
       sketch: sketch_1
-      depth: 10.0
+      depth: 8.0

@@ -6,4 +6,4 @@ pub mod feature;
 pub use component::Component;
 pub use document::Document;
 pub use error::FormatError;
-pub use feature::Feature;
+pub use feature::{Feature, SketchPlane, SketchSegment};

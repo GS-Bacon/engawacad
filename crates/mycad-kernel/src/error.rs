@@ -13,4 +13,10 @@ pub enum KernelError {
 
     #[error("invalid parameter: {kind}")]
     InvalidParameter { kind: &'static str },
+
+    #[error("sketch not found: {sketch}")]
+    SketchNotFound { sketch: String },
+
+    #[error("duplicate feature id: {id}")]
+    DuplicateFeatureId { id: String },
 }

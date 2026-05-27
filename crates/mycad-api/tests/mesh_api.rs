@@ -159,14 +159,18 @@ async fn t06_host_header_rebinding() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-// T07: 422 unsupported feature (extrude)
+// T07: Extrude success — 200 + mesh with 12 triangles.
 #[tokio::test]
-async fn t07_unsupported_feature() {
+async fn t07_extrude_success() {
     let file = fixture_path("extrude.mycad");
     let (status, body) = send_mesh_request(file).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
-    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
-    assert!(!err.error.is_empty(), "error message must not be empty");
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        mesh.indices.len() / 3,
+        12,
+        "extrude should produce 12 triangles (2 caps × 2 + 4 sides × 2)"
+    );
 }
 
 // T08: 422 degenerate dimension (zero-width box)
@@ -221,12 +225,11 @@ async fn t17_sphere_success() {
     );
 }
 
-// T18: Unsupported feature (extrude) → 422.
+// T18: Extrude determinism — two requests produce identical mesh.
 #[tokio::test]
-async fn t18_extrude_unsupported() {
+async fn t18_extrude_determinism() {
     let file = fixture_path("extrude.mycad");
-    let (status, body) = send_mesh_request(file).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
-    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
-    assert!(!err.error.is_empty(), "error message must not be empty");
+    let (_, body1) = send_mesh_request(file.clone()).await;
+    let (_, body2) = send_mesh_request(file).await;
+    assert_eq!(body1, body2, "extrude mesh responses must be deterministic");
 }

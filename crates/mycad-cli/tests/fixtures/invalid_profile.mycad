@@ -1,0 +1,16 @@
+version: "0.1.0"
+root_component:
+  name: "Invalid Profile"
+  features:
+    - type: create_sketch
+      id: sketch_1
+      plane: xy
+      profile:
+        - { id: seg_a, from: [0.0, 0.0], to: [10.0, 10.0] }
+        - { id: seg_b, from: [10.0, 10.0], to: [10.0, 0.0] }
+        - { id: seg_c, from: [10.0, 0.0], to: [0.0, 10.0] }
+        - { id: seg_d, from: [0.0, 10.0], to: [0.0, 0.0] }
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_1
+      depth: 5.0

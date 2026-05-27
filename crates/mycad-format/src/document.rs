@@ -177,4 +177,69 @@ mod tests {
         let golden = "version: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
         assert_eq!(yaml, golden, "simple_box.mycad golden YAML mismatch");
     }
+
+    #[test]
+    fn test_extruded_rect_yaml_golden() {
+        use crate::feature::{Feature, SketchPlane, SketchSegment};
+        use std::path::Path;
+
+        // Load from file and verify exact serialization
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join("extruded_rect.mycad");
+        let doc = Document::from_path(&path).unwrap();
+        let yaml = doc.to_yaml().unwrap();
+
+        static GOLDEN: &str = concat!(
+            "version: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
+            "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
+            "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
+            "    - id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
+            "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
+        );
+        assert_eq!(yaml, GOLDEN, "extruded_rect.mycad YAML golden mismatch");
+
+        // Also verify constructed Document produces same YAML
+        let mut doc2 = Document::new("Extruded Rect");
+        doc2.root_component.features.push(Feature::CreateSketch {
+            id: "sketch_1".to_string(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "seg_a".to_string(),
+                    from: [0.0, 0.0],
+                    to: [10.0, 0.0],
+                },
+                SketchSegment {
+                    id: "seg_b".to_string(),
+                    from: [10.0, 0.0],
+                    to: [10.0, 5.0],
+                },
+                SketchSegment {
+                    id: "seg_c".to_string(),
+                    from: [10.0, 5.0],
+                    to: [0.0, 5.0],
+                },
+                SketchSegment {
+                    id: "seg_d".to_string(),
+                    from: [0.0, 5.0],
+                    to: [0.0, 0.0],
+                },
+            ],
+        });
+        doc2.root_component.features.push(Feature::Extrude {
+            id: "extrude_1".to_string(),
+            sketch: "sketch_1".to_string(),
+            depth: 8.0,
+        });
+        assert_eq!(
+            doc2.to_yaml().unwrap(),
+            GOLDEN,
+            "constructed doc YAML must match golden"
+        );
+    }
 }

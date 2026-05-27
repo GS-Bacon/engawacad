@@ -11,6 +11,23 @@ pub struct EntityRef {
     pub role: String,
 }
 
+/// The plane on which a sketch is drawn.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum SketchPlane {
+    Xy,
+    Xz,
+    Yz,
+}
+
+/// A line segment in a 2D sketch profile.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct SketchSegment {
+    pub id: String,
+    pub from: [f64; 2],
+    pub to: [f64; 2],
+}
+
 /// A feature — one step in the operation history.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type")]
@@ -35,6 +52,14 @@ pub enum Feature {
     /// Create a sphere primitive.
     #[serde(rename = "create_sphere")]
     CreateSphere { id: String, radius: f64 },
+
+    /// Create a sketch (2D closed profile on a plane).
+    #[serde(rename = "create_sketch")]
+    CreateSketch {
+        id: String,
+        plane: SketchPlane,
+        profile: Vec<SketchSegment>,
+    },
 
     /// Extrude a sketch profile.
     #[serde(rename = "extrude")]
@@ -76,6 +101,7 @@ impl Feature {
             Feature::CreateBox { id, .. }
             | Feature::CreateCylinder { id, .. }
             | Feature::CreateSphere { id, .. }
+            | Feature::CreateSketch { id, .. }
             | Feature::Extrude { id, .. }
             | Feature::Cut { id, .. }
             | Feature::Fuse { id, .. }
@@ -135,5 +161,43 @@ mod tests {
         let deserialized: EntityRef = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(deserialized.feature_id, "box_1");
         assert_eq!(deserialized.role, "top_face");
+    }
+
+    #[test]
+    fn test_create_sketch_yaml_golden() {
+        let f = Feature::CreateSketch {
+            id: "sketch_1".to_string(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "seg_a".to_string(),
+                    from: [0.0, 0.0],
+                    to: [10.0, 0.0],
+                },
+                SketchSegment {
+                    id: "seg_b".to_string(),
+                    from: [10.0, 0.0],
+                    to: [10.0, 5.0],
+                },
+                SketchSegment {
+                    id: "seg_c".to_string(),
+                    from: [10.0, 5.0],
+                    to: [0.0, 5.0],
+                },
+                SketchSegment {
+                    id: "seg_d".to_string(),
+                    from: [0.0, 5.0],
+                    to: [0.0, 0.0],
+                },
+            ],
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert_eq!(
+            yaml,
+            "type: create_sketch\nid: sketch_1\nplane: xy\nprofile:\n- id: seg_a\n  from:\n  - 0.0\n  - 0.0\n  to:\n  - 10.0\n  - 0.0\n- id: seg_b\n  from:\n  - 10.0\n  - 0.0\n  to:\n  - 10.0\n  - 5.0\n- id: seg_c\n  from:\n  - 10.0\n  - 5.0\n  to:\n  - 0.0\n  - 5.0\n- id: seg_d\n  from:\n  - 0.0\n  - 5.0\n  to:\n  - 0.0\n  - 0.0\n",
+            "CreateSketch YAML golden mismatch — field order or rename drifted"
+        );
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.id(), "sketch_1");
     }
 }
