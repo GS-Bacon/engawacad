@@ -512,10 +512,10 @@ fn push_triangle(mesh: &mut TriangleMesh, i0: u32, i1: u32, i2: u32) {
     let p2: [f64; 3] = mesh.positions[i2 as usize];
     let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
-    let cross_norm = (u[1] * v[2] - u[2] * v[1]).powi(2)
+    let cross_norm_sq = (u[1] * v[2] - u[2] * v[1]).powi(2)
         + (u[2] * v[0] - u[0] * v[2]).powi(2)
-        + (u[0] * v[1] - u[1] * v[0]).powi(2).sqrt();
-    if cross_norm < AREA_EPS * AREA_EPS {
+        + (u[0] * v[1] - u[1] * v[0]).powi(2);
+    if cross_norm_sq < AREA_EPS * AREA_EPS {
         return;
     }
     mesh.indices.push(i0);
@@ -1267,7 +1267,12 @@ mod tests {
                 .all(|p| p.iter().all(|x| x.is_finite())),
             "tiny sphere mesh must not contain NaN/Inf"
         );
-        assert!(mesh.triangle_count() > 0);
+        // r=1e-10 triangles have cross_norm_sq ≈ 1e-40 << AREA_EPS² = 1e-28
+        assert_eq!(
+            mesh.triangle_count(),
+            0,
+            "sub-AREA_EPS sphere should produce no triangles"
+        );
     }
 
     /// Adversarial: sphere with r=1e10 tessellates (F01 regression at extreme scale).
