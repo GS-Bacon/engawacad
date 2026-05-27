@@ -1,0 +1,1 @@
+{"status": "failed", "ci_passed": false, "summary": "CI red", "glm_exit": 1, "failed_reason": "cargo xtask ci failed — see features/18-api-skeleton/ci.log"}

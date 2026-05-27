@@ -1,1 +1,1 @@
-{"issue": 22, "slug": "extrude", "steps": {"glm_impl": "passed", "final_review": "passed"}, "loops": {"design_loops": 3, "final_loops": 2}}
+{"issue": 22, "slug": "extrude", "steps": {"glm_impl": "passed", "final_review": "passed", "merge": "passed"}, "loops": {"design_loops": 3, "final_loops": 2}}

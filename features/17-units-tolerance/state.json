@@ -1,1 +1,1 @@
-{"issue": 17, "slug": "17-units-tolerance", "steps": {"design_review": "passed", "glm_impl": "passed", "final_review": "passed"}, "loops": {"design_loops": 3, "final_loops": 2}}
+{"issue": 17, "slug": "17-units-tolerance", "steps": {"design_review": "passed", "glm_impl": "passed", "final_review": "passed", "merge": "passed"}, "loops": {"design_loops": 3, "final_loops": 2}}
