@@ -263,15 +263,20 @@ ADR-004 の「加算的に追加」原則と整合する。
 - role 付与後も `validate_manifold()` が通り `V - E + F = 2(S - H)` を満たす(sphere/cylinder 含む)
 - `from_path`/`from_yaml`/直接 deserialize 各経路で validation が必ず効くテスト
 
-### Phase 4 での再検討事項 → Issue #27
+### Phase 4 での再検討事項
 
-以下は今決定せず Phase 4(Boolean 着手時)に本 ADR を改訂して確定する:
+以下は今決定せず Phase 4(Boolean 着手時)に本 ADR を改訂して確定する。
+Issue を 2 本に分割して粒度を管理する。
 
+**#27 — 平面 Boolean 用 派生名伝播(Phase 4 の入口)**:
 - 履歴ハッシュのアルゴリズム(合成名の正規化・連結・ハッシュ関数)
 - 要素マップの伝播ルール(generated / modified / deleted の定義と実装)
 - 明示グラフ式 vs ハッシュ名式の最終選択
+- `EntityRef::Derived` の実装・`EntityRef.ts` golden
+
+**#31 — 曲面 Boolean 用 pcurve + 数値モデル(#27 の後続)**:
 - pcurve 対応 (ADR-004 参照)
 - 数値モデル(トレラント vs 厳密、ADR-004 参照)
-- Component 階層越し・複数 occurrence 参照(Phase 5 参照)
 
-詳細は Issue #27「トポロジカル・ネーミング: 要素マップ + 履歴ハッシュ伝播の実装」を参照。
+**Phase 5 へ延期**:
+- Component 階層越し・複数 occurrence 参照の命名とエラー化(Phase 5 参照)
