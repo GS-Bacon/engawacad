@@ -13,4 +13,13 @@ pub enum FormatError {
 
     #[error("invalid reference {value:?}: {reason}")]
     InvalidReference { value: String, reason: &'static str },
+
+    #[error("invalid name {value:?}: {reason}")]
+    InvalidName { value: String, reason: &'static str },
+
+    #[error("duplicate feature_id {id:?} in component {component:?}")]
+    DuplicateFeatureId { id: String, component: String },
+
+    #[error("empty provenance in derived reference with op {op:?}")]
+    EmptyProvenance { op: String },
 }

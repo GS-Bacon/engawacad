@@ -29,6 +29,9 @@ impl From<FormatError> for ApiError {
                 _ => ApiError::Internal(err.to_string()),
             },
             FormatError::InvalidReference { .. } => ApiError::Unprocessable(err.to_string()),
+            FormatError::InvalidName { .. }
+            | FormatError::DuplicateFeatureId { .. }
+            | FormatError::EmptyProvenance { .. } => ApiError::Unprocessable(err.to_string()),
         }
     }
 }

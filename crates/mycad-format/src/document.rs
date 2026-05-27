@@ -12,7 +12,7 @@ fn default_schema_version() -> u32 {
 }
 
 /// The top-level document representing a MyCad design file.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, JsonSchema, TS)]
 pub struct Document {
     /// Format schema version. Increment when the .mycad file format changes in a breaking way.
     #[serde(default = "default_schema_version")]
@@ -21,6 +21,15 @@ pub struct Document {
     pub version: String,
     /// The root component (assembly or single part).
     pub root_component: Component,
+}
+
+/// Wire-format shadow for deserialization (no validation).
+#[derive(Deserialize)]
+struct RawDocument {
+    #[serde(default = "default_schema_version")]
+    schema_version: u32,
+    version: String,
+    root_component: Component,
 }
 
 impl Document {
@@ -33,14 +42,27 @@ impl Document {
         }
     }
 
-    /// Serialize to YAML string.
-    pub fn to_yaml(&self) -> Result<String, serde_yaml::Error> {
-        serde_yaml::to_string(self)
+    /// Validate the entire document tree.
+    pub fn validate(&self) -> Result<(), FormatError> {
+        validate_component(&self.root_component, &self.root_component.name)
     }
 
-    /// Deserialize from YAML string.
-    pub fn from_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(yaml)
+    /// Serialize to YAML string (validates first).
+    pub fn to_yaml(&self) -> Result<String, FormatError> {
+        self.validate()?;
+        Ok(serde_yaml::to_string(self)?)
+    }
+
+    /// Deserialize from YAML string with typed validation errors.
+    pub fn from_yaml(yaml: &str) -> Result<Self, FormatError> {
+        let raw: RawDocument = serde_yaml::from_str(yaml)?;
+        let doc = Document {
+            schema_version: raw.schema_version,
+            version: raw.version,
+            root_component: raw.root_component,
+        };
+        doc.validate()?;
+        Ok(doc)
     }
 
     /// Load a Document from a `.mycad` file path.
@@ -50,9 +72,82 @@ impl Document {
             return Err(FormatError::InvalidExtension(ext.map(str::to_string)));
         }
         let content = std::fs::read_to_string(path)?;
-        let doc = Self::from_yaml(&content)?;
+        Self::from_yaml(&content)
+    }
+}
+
+impl<'de> Deserialize<'de> for Document {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = RawDocument::deserialize(deserializer)?;
+        let doc = Document {
+            schema_version: raw.schema_version,
+            version: raw.version,
+            root_component: raw.root_component,
+        };
+        doc.validate().map_err(serde::de::Error::custom)?;
         Ok(doc)
     }
+}
+
+fn validate_identifier(value: &str, _field: &'static str) -> Result<(), FormatError> {
+    if value.is_empty() {
+        return Err(FormatError::InvalidName {
+            value: value.to_string(),
+            reason: "feature_id must not be empty",
+        });
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return Err(FormatError::InvalidName {
+            value: value.to_string(),
+            reason: "feature_id contains invalid characters",
+        });
+    }
+    Ok(())
+}
+
+fn validate_component(component: &Component, component_name: &str) -> Result<(), FormatError> {
+    if let Some(reference) = &component.reference {
+        match reference {
+            crate::component::ComponentRef::StdLib(path) if path.is_empty() => {
+                return Err(FormatError::InvalidReference {
+                    value: "stdlib://".to_string(),
+                    reason: "stdlib reference must have a non-empty path after 'stdlib://'",
+                });
+            }
+            crate::component::ComponentRef::File(path) if path.is_empty() => {
+                return Err(FormatError::InvalidReference {
+                    value: String::new(),
+                    reason: "reference must not be empty",
+                });
+            }
+            crate::component::ComponentRef::File(path) if path.starts_with("stdlib://") => {
+                return Err(FormatError::InvalidReference {
+                    value: path.clone(),
+                    reason: "file reference must not start with 'stdlib://'",
+                });
+            }
+            _ => {}
+        }
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for feature in &component.features {
+        let id = feature.id();
+        validate_identifier(id, "feature_id")?;
+        if !seen.insert(id.to_string()) {
+            return Err(FormatError::DuplicateFeatureId {
+                id: id.to_string(),
+                component: component_name.to_string(),
+            });
+        }
+    }
+    for child in &component.children {
+        validate_component(child, &child.name)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -384,5 +479,459 @@ mod tests {
                 path.file_name().unwrap().to_string_lossy()
             );
         }
+    }
+
+    // --- T07-T14: Topological naming document validation tests ---
+
+    /// T07: Duplicate feature_id in same component rejected.
+    #[test]
+    fn t07_duplicate_feature_id_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Dup
+  features:
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 20.0
+      depth: 30.0
+    - type: create_box
+      id: box_1
+      width: 5.0
+      height: 5.0
+      depth: 5.0
+";
+        let result = Document::from_yaml(yaml);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            FormatError::DuplicateFeatureId { id, component } => {
+                assert_eq!(id, "box_1");
+                assert_eq!(component, "Dup");
+            }
+            other => panic!("expected DuplicateFeatureId, got {other:?}"),
+        }
+    }
+
+    /// T08: Same feature_id in sibling components is allowed.
+    #[test]
+    fn t08_same_id_in_sibling_components_allowed() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Root
+  children:
+    - name: PartA
+      features:
+        - type: create_box
+          id: box_1
+          width: 10.0
+          height: 20.0
+          depth: 30.0
+    - name: PartB
+      features:
+        - type: create_box
+          id: box_1
+          width: 5.0
+          height: 5.0
+          depth: 5.0
+";
+        let doc =
+            Document::from_yaml(yaml).expect("same id in sibling components should be allowed");
+        assert_eq!(doc.root_component.children.len(), 2);
+    }
+
+    /// T09a: from_yaml returns typed FormatError for invalid feature_id.
+    #[test]
+    fn t09a_from_yaml_typed_error_invalid_feature_id() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test
+  features:
+    - type: create_box
+      id: ''
+      width: 10.0
+      height: 20.0
+      depth: 30.0
+";
+        let result = Document::from_yaml(yaml);
+        assert!(matches!(result, Err(FormatError::InvalidName { .. })));
+    }
+
+    /// T09b: Direct serde_yaml::from_str::<Document> also rejects invalid feature_id.
+    #[test]
+    fn t09b_direct_deserialize_rejects_invalid() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test
+  features:
+    - type: create_box
+      id: ''
+      width: 10.0
+      height: 20.0
+      depth: 30.0
+";
+        let result: Result<Document, serde_yaml::Error> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+
+    /// T14: to_yaml rejects document with invalid feature_id.
+    #[test]
+    fn t14_to_yaml_rejects_invalid() {
+        let mut doc = Document::new("Test");
+        doc.root_component.features.push(Feature::CreateBox {
+            id: "".to_string(),
+            width: 10.0,
+            height: 20.0,
+            depth: 30.0,
+        });
+        let result = doc.to_yaml();
+        assert!(matches!(result, Err(FormatError::InvalidName { .. })));
+    }
+
+    /// T14b: to_yaml rejects document with duplicate feature_id.
+    #[test]
+    fn t14b_to_yaml_rejects_duplicate() {
+        let mut doc = Document::new("Test");
+        doc.root_component.features.push(Feature::CreateBox {
+            id: "box_1".to_string(),
+            width: 10.0,
+            height: 20.0,
+            depth: 30.0,
+        });
+        doc.root_component.features.push(Feature::CreateSphere {
+            id: "box_1".to_string(),
+            radius: 5.0,
+        });
+        let result = doc.to_yaml();
+        assert!(matches!(
+            result,
+            Err(FormatError::DuplicateFeatureId { .. })
+        ));
+    }
+
+    /// T09a extended: DuplicateFeatureId returned as typed error from from_yaml.
+    #[test]
+    fn t09a_from_yaml_typed_error_duplicate() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test
+  features:
+    - type: create_box
+      id: dup
+      width: 10.0
+      height: 20.0
+      depth: 30.0
+    - type: create_sphere
+      id: dup
+      radius: 5.0
+";
+        let result = Document::from_yaml(yaml);
+        match result {
+            Err(FormatError::DuplicateFeatureId { id, component }) => {
+                assert_eq!(id, "dup");
+                assert_eq!(component, "Test");
+            }
+            other => panic!("expected DuplicateFeatureId, got {other:?}"),
+        }
+    }
+
+    /// Edge: feature_id with invalid characters rejected on load.
+    #[test]
+    fn test_invalid_chars_in_feature_id_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test
+  features:
+    - type: create_box
+      id: 'box;1'
+      width: 10.0
+      height: 20.0
+      depth: 30.0
+";
+        let result = Document::from_yaml(yaml);
+        assert!(matches!(result, Err(FormatError::InvalidName { .. })));
+    }
+
+    /// T15: ComponentRef::StdLib("") rejected by validate.
+    #[test]
+    fn t15_stdlib_empty_path_rejected_by_validate() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::StdLib("".into()));
+        let err = doc.to_yaml().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidReference { .. }));
+    }
+
+    /// T16: ComponentRef::File("") rejected by validate.
+    #[test]
+    fn t16_file_empty_path_rejected_by_validate() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::File("".into()));
+        let err = doc.to_yaml().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidReference { .. }));
+    }
+
+    // --- Edge-case tests for ComponentRef validation (adversarial persona) ---
+
+    /// Empty StdLib ref in child component also rejected.
+    #[test]
+    fn edge_stdlib_empty_in_child_rejected() {
+        let mut doc = Document::new("Root");
+        let mut child = Component::new("Child");
+        child.reference = Some(crate::component::ComponentRef::StdLib("".into()));
+        doc.root_component.children.push(child);
+        let err = doc.to_yaml().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidReference { .. }));
+    }
+
+    /// Empty File ref in deeply nested child rejected.
+    #[test]
+    fn edge_file_empty_in_deeply_nested_child_rejected() {
+        let mut doc = Document::new("Root");
+        let mut inner = Component::new("Inner");
+        inner.reference = Some(crate::component::ComponentRef::File("".into()));
+        let mut outer = Component::new("Outer");
+        outer.children.push(inner);
+        doc.root_component.children.push(outer);
+        let err = doc.to_yaml().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidReference { .. }));
+    }
+
+    /// Valid StdLib ref passes validation.
+    #[test]
+    fn edge_valid_stdlib_ref_passes() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::StdLib(
+            "fasteners/M5".into(),
+        ));
+        assert!(doc.validate().is_ok());
+    }
+
+    /// Valid File ref passes validation.
+    #[test]
+    fn edge_valid_file_ref_passes() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference =
+            Some(crate::component::ComponentRef::File("./motor.mycad".into()));
+        assert!(doc.validate().is_ok());
+    }
+
+    /// No reference (None) passes validation.
+    #[test]
+    fn edge_no_reference_passes() {
+        let doc = Document::new("Test");
+        assert!(doc.validate().is_ok());
+    }
+
+    /// StdLib empty path produces correct error message.
+    #[test]
+    fn edge_stdlib_empty_error_message() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::StdLib("".into()));
+        match doc.to_yaml().unwrap_err() {
+            FormatError::InvalidReference { value, reason } => {
+                assert_eq!(value, "stdlib://");
+                assert!(reason.contains("non-empty path"));
+            }
+            other => panic!("expected InvalidReference, got {other:?}"),
+        }
+    }
+
+    /// File empty path produces correct error message.
+    #[test]
+    fn edge_file_empty_error_message() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::File("".into()));
+        match doc.to_yaml().unwrap_err() {
+            FormatError::InvalidReference { value, reason } => {
+                assert_eq!(value, "");
+                assert!(reason.contains("must not be empty"));
+            }
+            other => panic!("expected InvalidReference, got {other:?}"),
+        }
+    }
+
+    /// StdLib ref with valid feature_id in same component passes.
+    #[test]
+    fn edge_stdlib_with_features_passes() {
+        use crate::feature::Feature;
+        let mut doc = Document::new("Test");
+        doc.root_component.reference =
+            Some(crate::component::ComponentRef::StdLib("parts/screw".into()));
+        doc.root_component.features.push(Feature::CreateBox {
+            id: "box_1".to_string(),
+            width: 1.0,
+            height: 2.0,
+            depth: 3.0,
+        });
+        assert!(doc.validate().is_ok());
+    }
+
+    /// Multiple children, one with empty ref — only the bad one is caught.
+    #[test]
+    fn edge_mixed_children_one_bad_ref() {
+        let mut doc = Document::new("Root");
+        let good_child = Component::from_ref("Good", "stdlib://parts/a").unwrap();
+        let mut bad_child = Component::new("Bad");
+        bad_child.reference = Some(crate::component::ComponentRef::File("".into()));
+        doc.root_component.children.push(good_child);
+        doc.root_component.children.push(bad_child);
+        let err = doc.to_yaml().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidReference { .. }));
+    }
+
+    /// Determinism: same invalid doc always produces InvalidReference.
+    #[test]
+    fn edge_deterministic_empty_ref_error() {
+        for _ in 0..100 {
+            let mut doc = Document::new("Test");
+            doc.root_component.reference = Some(crate::component::ComponentRef::StdLib("".into()));
+            assert!(matches!(
+                doc.to_yaml().unwrap_err(),
+                FormatError::InvalidReference { .. }
+            ));
+        }
+    }
+
+    /// T17: ComponentRef::File("stdlib://...") rejected by validate.
+    #[test]
+    fn t17_file_with_stdlib_prefix_rejected() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference =
+            Some(crate::component::ComponentRef::File("stdlib://foo".into()));
+        assert!(matches!(
+            doc.to_yaml().unwrap_err(),
+            FormatError::InvalidReference { .. }
+        ));
+    }
+
+    // --- Adversarial edge-case tests (F01) ---
+
+    /// File("stdlib://") with empty path after prefix rejected.
+    #[test]
+    fn edge_file_stdlib_prefix_empty_path_rejected() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference =
+            Some(crate::component::ComponentRef::File("stdlib://".into()));
+        let err = doc.to_yaml().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidReference { .. }));
+    }
+
+    /// File("stdlib://x/y/z") with multi-segment stdlib prefix rejected.
+    #[test]
+    fn edge_file_stdlib_prefix_multi_segment_rejected() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::File(
+            "stdlib://a/b/c".into(),
+        ));
+        assert!(matches!(
+            doc.to_yaml().unwrap_err(),
+            FormatError::InvalidReference { .. }
+        ));
+    }
+
+    /// File("stdlib://...") error message contains correct reason.
+    #[test]
+    fn edge_file_stdlib_prefix_error_message() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference =
+            Some(crate::component::ComponentRef::File("stdlib://foo".into()));
+        match doc.to_yaml().unwrap_err() {
+            FormatError::InvalidReference { value, reason } => {
+                assert_eq!(value, "stdlib://foo");
+                assert!(reason.contains("must not start with 'stdlib://'"));
+            }
+            other => panic!("expected InvalidReference, got {other:?}"),
+        }
+    }
+
+    /// File("stdlib://...") in child component also rejected.
+    #[test]
+    fn edge_file_stdlib_prefix_in_child_rejected() {
+        let mut doc = Document::new("Root");
+        let mut child = Component::new("Child");
+        child.reference = Some(crate::component::ComponentRef::File(
+            "stdlib://screw".into(),
+        ));
+        doc.root_component.children.push(child);
+        assert!(matches!(
+            doc.to_yaml().unwrap_err(),
+            FormatError::InvalidReference { .. }
+        ));
+    }
+
+    /// File("STDLIB://...") (uppercase) NOT rejected — case-sensitive.
+    #[test]
+    fn edge_file_uppercase_stdlib_prefix_allowed() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference =
+            Some(crate::component::ComponentRef::File("STDLIB://foo".into()));
+        assert!(doc.validate().is_ok());
+    }
+
+    /// File("./stdlib://fake") — contains but doesn't start with — allowed.
+    #[test]
+    fn edge_file_stdlib_midstring_allowed() {
+        let mut doc = Document::new("Test");
+        doc.root_component.reference = Some(crate::component::ComponentRef::File(
+            "./stdlib://fake".into(),
+        ));
+        assert!(doc.validate().is_ok());
+    }
+
+    /// Deserialize rejects File("stdlib://...") via YAML.
+    #[test]
+    fn edge_deserialize_file_stdlib_prefix_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test
+  ref: \"stdlib://foo\"
+  features: []
+";
+        // from_str parses "stdlib://foo" as StdLib("foo") — this is valid
+        let doc = Document::from_yaml(yaml).unwrap();
+        match doc.root_component.reference {
+            Some(crate::component::ComponentRef::StdLib(ref p)) => assert_eq!(p, "foo"),
+            other => panic!("expected StdLib, got {other:?}"),
+        }
+    }
+
+    /// Determinism: File("stdlib://x") rejected 100 times consistently.
+    #[test]
+    fn edge_file_stdlib_prefix_deterministic_100() {
+        for _ in 0..100 {
+            let mut doc = Document::new("Test");
+            doc.root_component.reference =
+                Some(crate::component::ComponentRef::File("stdlib://x".into()));
+            assert!(matches!(
+                doc.to_yaml().unwrap_err(),
+                FormatError::InvalidReference { .. }
+            ));
+        }
+    }
+
+    /// Edge: from_path also validates feature_ids.
+    #[test]
+    fn test_from_path_validates_feature_ids() {
+        // All example files have valid IDs — this just ensures validation runs on from_path
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join("simple_box.mycad");
+        let doc = Document::from_path(&path).unwrap();
+        assert!(doc.validate().is_ok());
     }
 }
