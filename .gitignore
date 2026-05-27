@@ -10,3 +10,5 @@ web/dist/
 # /3ai フロー
 .env
 features/**/*.raw
+features/**/*.log
+.claude/scheduled_tasks.lock
