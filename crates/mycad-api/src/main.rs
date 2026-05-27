@@ -10,9 +10,9 @@ async fn main() {
         .and_then(|p| std::fs::canonicalize(p).ok())
         .expect("Usage: mycad-api <path-to-file.mycad>");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
         .await
-        .expect("failed to bind to 127.0.0.1:3000");
+        .expect("failed to bind to 127.0.0.1:7878");
     axum::serve(listener, app(Arc::new(file)))
         .await
         .expect("server error");
