@@ -5,9 +5,18 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use ts_rs::TS;
 
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+fn default_schema_version() -> u32 {
+    CURRENT_SCHEMA_VERSION
+}
+
 /// The top-level document representing a MyCad design file.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Document {
+    /// Format schema version. Increment when the .mycad file format changes in a breaking way.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     /// Kernel version that created this document.
     pub version: String,
     /// The root component (assembly or single part).
@@ -18,6 +27,7 @@ impl Document {
     /// Create a new document with a single empty root component.
     pub fn new(name: &str) -> Self {
         Self {
+            schema_version: CURRENT_SCHEMA_VERSION,
             version: env!("CARGO_PKG_VERSION").to_string(),
             root_component: Component::new(name),
         }
@@ -141,6 +151,23 @@ mod tests {
         assert_eq!(doc.to_yaml().unwrap(), doc2.to_yaml().unwrap());
     }
 
+    #[test]
+    fn test_schema_version_backward_compat() {
+        // schema_version フィールドがない古い形式の YAML でも読めること
+        let old_yaml = "version: 0.1.0\nroot_component:\n  name: Old\n  features: []\n";
+        let doc = Document::from_yaml(old_yaml).expect("old yaml should parse");
+        assert_eq!(
+            doc.schema_version, 1,
+            "missing schema_version defaults to 1"
+        );
+        // 再シリアライズすると schema_version: 1 が出力されること
+        let yaml = doc.to_yaml().unwrap();
+        assert!(
+            yaml.starts_with("schema_version: 1\n"),
+            "re-serialized yaml must include schema_version"
+        );
+    }
+
     /// T08: TS derive 追加後も .mycad fixture の YAML 表現が不変であること。
     #[test]
     fn test_ts_derive_backward_compat() {
@@ -174,7 +201,7 @@ mod tests {
         let simple_box_path = examples_dir.join("simple_box.mycad");
         let doc = Document::from_path(&simple_box_path).unwrap();
         let yaml = doc.to_yaml().unwrap();
-        let golden = "version: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
+        let golden = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
         assert_eq!(yaml, golden, "simple_box.mycad golden YAML mismatch");
     }
 
@@ -193,7 +220,7 @@ mod tests {
         let yaml = doc.to_yaml().unwrap();
 
         static GOLDEN: &str = concat!(
-            "version: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
+            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
             "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
             "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
             "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
@@ -241,5 +268,121 @@ mod tests {
             GOLDEN,
             "constructed doc YAML must match golden"
         );
+    }
+
+    // --- Edge case tests (adversarial persona) ---
+
+    #[test]
+    fn test_schema_version_explicit_zero() {
+        let yaml =
+            "schema_version: 0\nversion: 0.1.0\nroot_component:\n  name: Zero\n  features: []\n";
+        let doc = Document::from_yaml(yaml).expect("schema_version 0 should parse");
+        assert_eq!(doc.schema_version, 0);
+        let reserialized = doc.to_yaml().unwrap();
+        assert!(
+            reserialized.starts_with("schema_version: 0\n"),
+            "should preserve explicit 0"
+        );
+    }
+
+    #[test]
+    fn test_schema_version_large_value() {
+        let yaml = "schema_version: 4294967295\nversion: 0.1.0\nroot_component:\n  name: Max\n  features: []\n";
+        let doc = Document::from_yaml(yaml).expect("u32 max should parse");
+        assert_eq!(doc.schema_version, u32::MAX);
+    }
+
+    #[test]
+    fn test_schema_version_roundtrip_preserves_value() {
+        let yaml =
+            "schema_version: 42\nversion: 0.1.0\nroot_component:\n  name: v42\n  features: []\n";
+        let doc = Document::from_yaml(yaml).unwrap();
+        let reserialized = doc.to_yaml().unwrap();
+        let doc2 = Document::from_yaml(&reserialized).unwrap();
+        assert_eq!(doc2.schema_version, 42);
+    }
+
+    #[test]
+    fn test_new_doc_has_current_schema_version() {
+        let doc = Document::new("Test");
+        assert_eq!(doc.schema_version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_yaml_deterministic_100_runs() {
+        let mut doc = Document::new("Determinism");
+        doc.root_component.features.push(Feature::CreateBox {
+            id: "box_1".to_string(),
+            width: 10.0,
+            height: 20.0,
+            depth: 30.0,
+        });
+        let reference = doc.to_yaml().unwrap();
+        for i in 0..100 {
+            let yaml = doc.to_yaml().unwrap();
+            assert_eq!(yaml, reference, "serialization differs at run {i}");
+        }
+    }
+
+    #[test]
+    fn test_schema_version_negative_rejected() {
+        let yaml =
+            "schema_version: -1\nversion: 0.1.0\nroot_component:\n  name: Neg\n  features: []\n";
+        let result = Document::from_yaml(yaml);
+        assert!(
+            result.is_err(),
+            "negative schema_version should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_schema_version_string_rejected() {
+        let yaml = "schema_version: \"hello\"\nversion: 0.1.0\nroot_component:\n  name: Str\n  features: []\n";
+        let result = Document::from_yaml(yaml);
+        assert!(result.is_err(), "string schema_version should be rejected");
+    }
+
+    #[test]
+    fn test_empty_features_yaml() {
+        let yaml =
+            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Empty\n  features: []\n";
+        let doc = Document::from_yaml(yaml).unwrap();
+        assert!(doc.root_component.features.is_empty());
+    }
+
+    #[test]
+    fn test_missing_features_defaults() {
+        let yaml = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: NoFeatures\n";
+        let doc = Document::from_yaml(yaml).unwrap();
+        assert!(doc.root_component.features.is_empty());
+    }
+
+    #[test]
+    fn test_all_example_files_have_schema_version() {
+        let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples");
+
+        for entry in std::fs::read_dir(&examples_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().map_or(true, |e| e != "mycad") {
+                continue;
+            }
+            let content = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                content.starts_with("schema_version: 1\n"),
+                "{} should start with schema_version: 1",
+                path.file_name().unwrap().to_string_lossy()
+            );
+            let doc = Document::from_path(&path).unwrap();
+            assert_eq!(
+                doc.schema_version,
+                1,
+                "{} should have schema_version 1",
+                path.file_name().unwrap().to_string_lossy()
+            );
+        }
     }
 }

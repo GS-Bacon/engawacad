@@ -6,6 +6,10 @@ import type { Component } from "./Component";
  */
 export type Document = { 
 /**
+ * Format schema version. Increment when the .mycad file format changes in a breaking way.
+ */
+schema_version: number, 
+/**
  * Kernel version that created this document.
  */
 version: string, 
