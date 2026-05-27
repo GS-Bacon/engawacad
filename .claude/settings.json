@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/skills/3ai/scripts/guard-crates.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
