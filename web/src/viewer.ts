@@ -1,9 +1,10 @@
-import type { TriangleMesh } from "./generated/TriangleMesh";
+import type { BodyMesh } from "./generated/BodyMesh";
 import {
   AmbientLight,
   Box3,
   Color,
   DirectionalLight,
+  Group,
   Mesh,
   MeshPhongMaterial,
   PerspectiveCamera,
@@ -14,7 +15,9 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { meshToGeometry } from "./mesh";
 
-export function initViewer(container: HTMLElement, mesh: TriangleMesh): void {
+const BODY_COLORS = [0x4a90d9, 0xd94a4a, 0x4ad94a, 0xd9d94a, 0xd94ad9, 0x4ad9d9];
+
+export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void {
   const width = container.clientWidth;
   const height = container.clientHeight;
 
@@ -31,17 +34,24 @@ export function initViewer(container: HTMLElement, mesh: TriangleMesh): void {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
-  const geometry = meshToGeometry(mesh);
-  geometry.computeBoundingBox();
-  const material = new MeshPhongMaterial({
-    color: 0x4a90d9,
-    specular: 0x333333,
-    shininess: 30,
-  });
-  const threeMesh = new Mesh(geometry, material);
-  scene.add(threeMesh);
+  const group = new Group();
 
-  const bbox = new Box3().setFromObject(threeMesh);
+  for (let i = 0; i < bodies.length; i++) {
+    const geometry = meshToGeometry(bodies[i].mesh);
+    geometry.computeBoundingBox();
+    const color = BODY_COLORS[i % BODY_COLORS.length];
+    const material = new MeshPhongMaterial({
+      color,
+      specular: 0x333333,
+      shininess: 30,
+    });
+    const threeMesh = new Mesh(geometry, material);
+    group.add(threeMesh);
+  }
+
+  scene.add(group);
+
+  const bbox = new Box3().setFromObject(group);
   if (!bbox.isEmpty()) {
     const center = new Vector3();
     bbox.getCenter(center);

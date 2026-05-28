@@ -1,4 +1,4 @@
-import { fetchMesh } from "./api";
+import { fetchBodies } from "./api";
 import { initViewer } from "./viewer";
 
 const app = document.getElementById("app")!;
@@ -17,8 +17,12 @@ function showInfo(msg: string): void {
 
 async function main(): Promise<void> {
   try {
-    const mesh = await fetchMesh();
-    initViewer(app, mesh);
+    const bodies = await fetchBodies();
+    if (bodies.length === 0) {
+      showError("No bodies found in document");
+      return;
+    }
+    initViewer(app, bodies);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     showError(message);

@@ -5,8 +5,8 @@ pub enum KernelError {
     #[error("empty feature list")]
     EmptyFeatureList,
 
-    #[error("multiple features not yet supported (got {count})")]
-    MultipleFeatures { count: usize },
+    #[error("referenced body not found: {id}")]
+    BodyNotFound { id: String },
 
     #[error("unsupported feature variant: {kind}")]
     UnsupportedFeature { kind: &'static str },

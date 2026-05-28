@@ -12,6 +12,12 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Deserialize)]
+struct BodyMesh {
+    feature_id: String,
+    mesh: TriangleMesh,
+}
+
 fn fixture_path(name: &str) -> PathBuf {
     let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let path = std::path::Path::new(&dir)
@@ -49,16 +55,21 @@ async fn send_mesh_request(file: PathBuf) -> (StatusCode, String) {
     (status, String::from_utf8(body.to_vec()).unwrap())
 }
 
-// T01: normal box
+// T01: normal box — now returns Vec<BodyMesh> with len==1
 #[tokio::test]
 async fn t01_normal_box() {
     let file = example_path("simple_box.mycad");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
-    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].feature_id, "box_1");
     assert!(
-        mesh.indices.len() % 3 == 0,
+        !bodies[0].mesh.positions.is_empty(),
+        "positions must not be empty"
+    );
+    assert!(
+        bodies[0].mesh.indices.len() % 3 == 0,
         "indices count must be multiple of 3"
     );
 }
@@ -69,10 +80,14 @@ async fn t02_normal_cylinder() {
     let file = example_path("cylinder.mycad");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
-    assert!(!mesh.positions.is_empty(), "positions must not be empty");
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert_eq!(bodies.len(), 1);
     assert!(
-        mesh.indices.len() % 3 == 0,
+        !bodies[0].mesh.positions.is_empty(),
+        "positions must not be empty"
+    );
+    assert!(
+        bodies[0].mesh.indices.len() % 3 == 0,
         "indices count must be multiple of 3"
     );
 }
@@ -165,9 +180,10 @@ async fn t07_extrude_success() {
     let file = fixture_path("extrude.mycad");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert_eq!(bodies.len(), 1);
     assert_eq!(
-        mesh.indices.len() / 3,
+        bodies[0].mesh.indices.len() / 3,
         12,
         "extrude should produce 12 triangles (2 caps × 2 + 4 sides × 2)"
     );
@@ -211,15 +227,57 @@ async fn t10_empty_part() {
     );
 }
 
+// T12: API multi-body — two_bodies.mycad returns Vec<BodyMesh> with exact order
+#[tokio::test]
+async fn t12_multi_body() {
+    let file = example_path("two_bodies.mycad");
+    let (status, body) = send_mesh_request(file).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert_eq!(bodies.len(), 2);
+    assert_eq!(bodies[0].feature_id, "body_a");
+    assert_eq!(bodies[1].feature_id, "body_b");
+    assert!(
+        !bodies[0].mesh.positions.is_empty(),
+        "body_a mesh non-empty"
+    );
+    assert!(
+        !bodies[1].mesh.positions.is_empty(),
+        "body_b mesh non-empty"
+    );
+}
+
+// T13: API single body — existing examples return len==1 with correct feature_id
+#[tokio::test]
+async fn t13_single_body() {
+    let file = example_path("simple_box.mycad");
+    let (status, body) = send_mesh_request(file).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].feature_id, "box_1");
+    assert_eq!(bodies[0].mesh.indices.len() / 3, 12);
+}
+
+// T14: API determinism — same request produces identical response body
+#[tokio::test]
+async fn t14_api_determinism() {
+    let file = example_path("two_bodies.mycad");
+    let (_, body1) = send_mesh_request(file.clone()).await;
+    let (_, body2) = send_mesh_request(file).await;
+    assert_eq!(body1, body2, "API responses must be deterministic");
+}
+
 // T17: Sphere API success — 200 + mesh with 960 triangles.
 #[tokio::test]
 async fn t17_sphere_success() {
     let file = example_path("sphere.mycad");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    let mesh: TriangleMesh = serde_json::from_str(&body).unwrap();
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert_eq!(bodies.len(), 1);
     assert_eq!(
-        mesh.indices.len() / 3,
+        bodies[0].mesh.indices.len() / 3,
         960,
         "sphere should produce 960 triangles"
     );

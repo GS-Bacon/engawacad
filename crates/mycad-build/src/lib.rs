@@ -1,21 +1,58 @@
-use mycad_format::{Feature, SketchPlane};
+use mycad_format::Feature;
 use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::error::KernelError;
 use mycad_kernel::geometry::Plane;
 use mycad_kernel::primitives::{make_cuboid, make_cylinder, make_extrusion, make_sphere};
 use std::collections::HashMap;
 
-pub fn build_solid_from_features(
+#[derive(Debug, Clone)]
+pub struct Body {
+    pub feature_id: String,
+    pub solid: Solid,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BuiltBodies {
+    bodies: Vec<Body>,
+    index: HashMap<String, usize>,
+}
+
+impl BuiltBodies {
+    pub fn get(&self, feature_id: &str) -> Option<&Body> {
+        let &idx = self.index.get(feature_id)?;
+        Some(&self.bodies[idx])
+    }
+
+    pub fn all(&self) -> &[Body] {
+        &self.bodies
+    }
+
+    pub fn len(&self) -> usize {
+        self.bodies.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bodies.is_empty()
+    }
+
+    fn register(&mut self, feature_id: String, solid: Solid) {
+        let idx = self.bodies.len();
+        self.index.insert(feature_id.clone(), idx);
+        self.bodies.push(Body { feature_id, solid });
+    }
+}
+
+pub fn build_bodies_from_features(
     features: &[Feature],
     gen: &mut IdGenerator,
-) -> Result<Solid, KernelError> {
+) -> Result<BuiltBodies, KernelError> {
     if features.is_empty() {
         return Err(KernelError::EmptyFeatureList);
     }
 
-    let mut sketches: HashMap<&str, (&SketchPlane, &[mycad_format::SketchSegment])> =
+    let mut sketches: HashMap<&str, (&mycad_format::SketchPlane, &[mycad_format::SketchSegment])> =
         HashMap::new();
-    let mut solid: Option<Solid> = None;
+    let mut built = BuiltBodies::default();
     let mut seen_ids: HashMap<&str, ()> = HashMap::new();
 
     for feature in features {
@@ -44,11 +81,6 @@ pub fn build_solid_from_features(
                 sketch,
                 depth,
             } => {
-                if solid.is_some() {
-                    return Err(KernelError::MultipleFeatures {
-                        count: count_solid_features(features),
-                    });
-                }
                 let (sketch_plane, segments) =
                     sketches
                         .get(sketch.as_str())
@@ -57,14 +89,15 @@ pub fn build_solid_from_features(
                         })?;
 
                 let plane = match sketch_plane {
-                    SketchPlane::Xy => Plane::xy(),
-                    SketchPlane::Xz => Plane::xz(),
-                    SketchPlane::Yz => Plane::yz(),
+                    mycad_format::SketchPlane::Xy => Plane::xy(),
+                    mycad_format::SketchPlane::Xz => Plane::xz(),
+                    mycad_format::SketchPlane::Yz => Plane::yz(),
                 };
 
                 let profile_uv: Vec<(f64, f64)> =
                     segments.iter().map(|s| (s.from[0], s.from[1])).collect();
-                solid = Some(make_extrusion(&plane, &profile_uv, *depth, gen)?);
+                let solid = make_extrusion(&plane, &profile_uv, *depth, gen)?;
+                built.register(id.to_string(), solid);
             }
             Feature::CreateBox {
                 id: _,
@@ -72,61 +105,68 @@ pub fn build_solid_from_features(
                 height,
                 depth,
             } => {
-                if solid.is_some() {
-                    return Err(KernelError::MultipleFeatures {
-                        count: count_solid_features(features),
-                    });
-                }
-                solid = Some(make_cuboid(*width, *height, *depth, gen)?);
+                let solid = make_cuboid(*width, *height, *depth, gen)?;
+                built.register(id.to_string(), solid);
             }
             Feature::CreateCylinder {
                 id: _,
                 radius,
                 height,
             } => {
-                if solid.is_some() {
-                    return Err(KernelError::MultipleFeatures {
-                        count: count_solid_features(features),
-                    });
-                }
-                solid = Some(make_cylinder(*radius, *height, gen)?);
+                let solid = make_cylinder(*radius, *height, gen)?;
+                built.register(id.to_string(), solid);
             }
             Feature::CreateSphere { id: _, radius } => {
-                if solid.is_some() {
-                    return Err(KernelError::MultipleFeatures {
-                        count: count_solid_features(features),
-                    });
-                }
-                solid = Some(make_sphere(*radius, gen)?);
+                let solid = make_sphere(*radius, gen)?;
+                built.register(id.to_string(), solid);
             }
-            Feature::Cut { .. } => {
+            Feature::Cut {
+                id: _,
+                target,
+                tool,
+            } => {
+                if built.get(target).is_none() {
+                    return Err(KernelError::BodyNotFound { id: target.clone() });
+                }
+                if built.get(tool).is_none() {
+                    return Err(KernelError::BodyNotFound { id: tool.clone() });
+                }
                 return Err(KernelError::UnsupportedFeature { kind: "cut" });
             }
-            Feature::Fuse { .. } => {
+            Feature::Fuse {
+                id: _,
+                target,
+                tool,
+            } => {
+                if built.get(target).is_none() {
+                    return Err(KernelError::BodyNotFound { id: target.clone() });
+                }
+                if built.get(tool).is_none() {
+                    return Err(KernelError::BodyNotFound { id: tool.clone() });
+                }
                 return Err(KernelError::UnsupportedFeature { kind: "fuse" });
             }
-            Feature::Intersect { .. } => {
+            Feature::Intersect {
+                id: _,
+                target,
+                tool,
+            } => {
+                if built.get(target).is_none() {
+                    return Err(KernelError::BodyNotFound { id: target.clone() });
+                }
+                if built.get(tool).is_none() {
+                    return Err(KernelError::BodyNotFound { id: tool.clone() });
+                }
                 return Err(KernelError::UnsupportedFeature { kind: "intersect" });
             }
         }
     }
 
-    solid.ok_or(KernelError::EmptyFeatureList)
-}
+    if built.is_empty() {
+        return Err(KernelError::EmptyFeatureList);
+    }
 
-fn count_solid_features(features: &[Feature]) -> usize {
-    features
-        .iter()
-        .filter(|f| {
-            matches!(
-                f,
-                Feature::CreateBox { .. }
-                    | Feature::CreateCylinder { .. }
-                    | Feature::CreateSphere { .. }
-                    | Feature::Extrude { .. }
-            )
-        })
-        .count()
+    Ok(built)
 }
 
 fn validate_feature_id(id: &str) -> Result<(), KernelError> {

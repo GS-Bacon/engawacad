@@ -1,7 +1,7 @@
-import type { TriangleMesh } from "./generated/TriangleMesh";
+import type { BodyMesh } from "./generated/BodyMesh";
 import type { ErrorResponse } from "./generated/ErrorResponse";
 
-export async function fetchMesh(): Promise<TriangleMesh> {
+export async function fetchBodies(): Promise<BodyMesh[]> {
   const res = await fetch("/api/v0/mesh");
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
@@ -13,5 +13,5 @@ export async function fetchMesh(): Promise<TriangleMesh> {
     }
     throw new Error(message);
   }
-  return (await res.json()) as TriangleMesh;
+  return (await res.json()) as BodyMesh[];
 }

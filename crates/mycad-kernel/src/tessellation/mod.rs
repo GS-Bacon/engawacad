@@ -523,6 +523,32 @@ fn push_triangle(mesh: &mut TriangleMesh, i0: u32, i1: u32, i2: u32) {
     mesh.indices.push(i2);
 }
 
+/// Merge multiple meshes into one by concatenating positions/normals
+/// and offsetting indices from subsequent meshes by the accumulated vertex count.
+pub fn merge_meshes(meshes: &[TriangleMesh]) -> TriangleMesh {
+    let total_positions = meshes.iter().map(|m| m.positions.len()).sum();
+    let total_normals = meshes.iter().map(|m| m.normals.len()).sum();
+    let total_indices = meshes.iter().map(|m| m.indices.len()).sum();
+
+    let mut merged = TriangleMesh {
+        positions: Vec::with_capacity(total_positions),
+        normals: Vec::with_capacity(total_normals),
+        indices: Vec::with_capacity(total_indices),
+    };
+
+    let mut vertex_offset: u32 = 0;
+    for mesh in meshes {
+        merged.positions.extend_from_slice(&mesh.positions);
+        merged.normals.extend_from_slice(&mesh.normals);
+        for &idx in &mesh.indices {
+            merged.indices.push(vertex_offset + idx);
+        }
+        vertex_offset += mesh.positions.len() as u32;
+    }
+
+    merged
+}
+
 /// Surface kind name for error messages.
 trait SurfaceKind {
     fn kind_name(&self) -> &'static str;
@@ -1430,5 +1456,91 @@ mod tests {
             before + 3,
             "near-degenerate but non-zero triangle should be added"
         );
+    }
+
+    // --- merge_meshes tests (T08, T09, T10) ---
+
+    /// T08: merge_meshes concatenates positions/normals and offsets indices.
+    #[test]
+    fn t08_merge_normal() {
+        let m1 = TriangleMesh {
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+            indices: vec![0, 1, 2],
+        };
+        let m2 = TriangleMesh {
+            positions: vec![[5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [5.0, 1.0, 0.0]],
+            normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+            indices: vec![0, 1, 2],
+        };
+
+        let merged = merge_meshes(&[m1, m2]);
+
+        assert_eq!(merged.positions.len(), 6);
+        assert_eq!(merged.normals.len(), 6);
+        // m2 indices offset by m1.positions.len() = 3
+        assert_eq!(merged.indices, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    /// T09: merge_meshes determinism — same input produces same output.
+    #[test]
+    fn t09_merge_determinism() {
+        let mut gen1 = IdGenerator::new(0);
+        let mut gen2 = IdGenerator::new(0);
+        let s1 = make_cuboid(1.0, 1.0, 1.0, &mut gen1).unwrap();
+        let s2 = make_cuboid(1.0, 1.0, 1.0, &mut gen2).unwrap();
+
+        let mesh1a = tessellate_solid(&s1).unwrap();
+        let mesh1b = tessellate_solid(&s2).unwrap();
+
+        let merged1 = merge_meshes(&[mesh1a.clone(), mesh1b.clone()]);
+
+        let mut gen3 = IdGenerator::new(0);
+        let mut gen4 = IdGenerator::new(0);
+        let s3 = make_cuboid(1.0, 1.0, 1.0, &mut gen3).unwrap();
+        let s4 = make_cuboid(1.0, 1.0, 1.0, &mut gen4).unwrap();
+        let mesh2a = tessellate_solid(&s3).unwrap();
+        let mesh2b = tessellate_solid(&s4).unwrap();
+        let merged2 = merge_meshes(&[mesh2a, mesh2b]);
+
+        assert_eq!(merged1.positions, merged2.positions);
+        assert_eq!(merged1.normals, merged2.normals);
+        assert_eq!(merged1.indices, merged2.indices);
+    }
+
+    /// T10: merge_meshes with empty and single inputs.
+    #[test]
+    fn t10_merge_empty_and_single() {
+        let empty = merge_meshes(&[]);
+        assert_eq!(empty.positions.len(), 0);
+        assert_eq!(empty.normals.len(), 0);
+        assert_eq!(empty.indices.len(), 0);
+
+        let m1 = TriangleMesh {
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+            indices: vec![0, 1, 2],
+        };
+        let single = merge_meshes(&[m1.clone()]);
+        assert_eq!(single.positions, m1.positions);
+        assert_eq!(single.normals, m1.normals);
+        assert_eq!(single.indices, m1.indices);
+    }
+
+    /// merge_meshes with three meshes — cumulative offset.
+    #[test]
+    fn t08_merge_three_meshes() {
+        let make_mesh = |offset: f64| TriangleMesh {
+            positions: vec![
+                [offset, 0.0, 0.0],
+                [offset + 1.0, 0.0, 0.0],
+                [offset, 1.0, 0.0],
+            ],
+            normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+            indices: vec![0, 1, 2],
+        };
+        let merged = merge_meshes(&[make_mesh(0.0), make_mesh(5.0), make_mesh(10.0)]);
+        assert_eq!(merged.positions.len(), 9);
+        assert_eq!(merged.indices, vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
     }
 }

@@ -1,10 +1,12 @@
 mod view;
 
 use clap::{Parser, Subcommand};
-use mycad_build::build_solid_from_features;
+use mycad_build::build_bodies_from_features;
 use mycad_format::Document;
 use mycad_kernel::brep::topology::IdGenerator;
-use mycad_kernel::tessellation::{tessellate_solid_with, to_ascii_stl, TessellationOptions};
+use mycad_kernel::tessellation::{
+    merge_meshes, tessellate_solid_with, to_ascii_stl, TessellationOptions,
+};
 use std::path::PathBuf;
 use std::process;
 
@@ -67,15 +69,29 @@ fn run_export(
 ) -> Result<(), String> {
     let doc = Document::from_path(input)
         .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+
+    let root = &doc.root_component;
+    if root.reference.is_some() || !root.children.is_empty() {
+        return Err("assembly/reference documents are not supported".to_string());
+    }
+
     let mut gen = IdGenerator::new(0);
-    let solid = build_solid_from_features(&doc.root_component.features, &mut gen)
+    let bodies = build_bodies_from_features(&root.features, &mut gen)
         .map_err(|e| format!("failed to build solid: {e}"))?;
+
     let opts = match segments {
         Some(n) => TessellationOptions::new(n, 1),
         None => TessellationOptions::default(),
     };
-    let mesh =
-        tessellate_solid_with(&solid, &opts).map_err(|e| format!("failed to tessellate: {e}"))?;
+
+    let meshes: Vec<_> = bodies
+        .all()
+        .iter()
+        .map(|b| tessellate_solid_with(&b.solid, &opts))
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("failed to tessellate: {e}"))?;
+
+    let mesh = merge_meshes(&meshes);
     let stl = to_ascii_stl(&mesh, "model");
     std::fs::write(output, stl)
         .map_err(|e| format!("failed to write {}: {e}", output.display()))?;

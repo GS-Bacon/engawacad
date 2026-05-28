@@ -70,6 +70,7 @@ fn web() -> ExitCode {
 }
 
 fn gen_ts() -> ExitCode {
+    use mycad_api::transport::BodyMesh;
     use mycad_api::ErrorResponse;
     use mycad_format::feature::EntityRef;
     use mycad_format::Document;
@@ -97,6 +98,7 @@ fn gen_ts() -> ExitCode {
         ("Document", Box::new(Document::export_all)),
         ("EntityRef", Box::new(EntityRef::export_all)),
         ("TriangleMesh", Box::new(TriangleMesh::export_all)),
+        ("BodyMesh", Box::new(BodyMesh::export_all)),
         ("ErrorResponse", Box::new(ErrorResponse::export_all)),
     ];
 
@@ -238,6 +240,7 @@ mod tests {
     fn export_to_temp_dir() -> PathBuf {
         let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
 
+        use mycad_api::transport::BodyMesh;
         use mycad_api::ErrorResponse;
         use mycad_format::feature::EntityRef;
         use mycad_format::Document;
@@ -251,6 +254,7 @@ mod tests {
         Document::export_all(&cfg).unwrap();
         EntityRef::export_all(&cfg).unwrap();
         TriangleMesh::export_all(&cfg).unwrap();
+        BodyMesh::export_all(&cfg).unwrap();
         ErrorResponse::export_all(&cfg).unwrap();
 
         dir
@@ -276,6 +280,7 @@ mod tests {
             "EntityKind.ts",
             "EntityRef.ts",
             "TriangleMesh.ts",
+            "BodyMesh.ts",
             "ErrorResponse.ts",
         ];
 
@@ -406,6 +411,7 @@ export type ErrorResponse = { error: string, };
             "EntityKind.ts",
             "EntityRef.ts",
             "TriangleMesh.ts",
+            "BodyMesh.ts",
             "ErrorResponse.ts",
         ];
         for name in &expected {
