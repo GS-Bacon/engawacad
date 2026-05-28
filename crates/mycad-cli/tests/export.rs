@@ -114,3 +114,29 @@ fn export_invalid_profile_fails_no_stl() {
     let written = std::fs::metadata(output).map(|m| m.len()).unwrap_or(0);
     assert_eq!(written, 0, "no STL should be written for invalid profile");
 }
+
+/// T16: CLI export of assembly document fails with error (fail-closed).
+#[test]
+fn t16_export_assembly_fails() {
+    let bin = env!("CARGO_BIN_EXE_mycad");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join("assembly.mycad");
+    let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
+
+    let output = Command::new(bin)
+        .arg("export")
+        .arg(&input)
+        .arg("-o")
+        .arg(tmp.path())
+        .output()
+        .expect("run mycad export");
+    assert!(!output.status.success(), "export of assembly must fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("assembly") || stderr.contains("not supported"),
+        "error must mention assembly or not supported: {stderr}"
+    );
+}
