@@ -46,6 +46,8 @@ mime_guess = "2"
 # Browser open
 open = "5"
 urlencoding = "2"
+# Earcut triangulation for concave faces
+earcutr = "0.4"
 # Internal crates
 mycad-format = { path = "crates/mycad-format" }
 mycad-kernel = { path = "crates/mycad-kernel" }

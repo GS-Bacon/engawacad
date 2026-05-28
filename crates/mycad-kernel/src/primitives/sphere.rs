@@ -18,23 +18,9 @@ pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, Kerne
 
     let origin = Point::origin();
 
-    let v_south = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, -radius));
-    let v_north = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, radius));
+    let v_south = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, -radius), None);
+    let v_north = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, radius), None);
 
-    // Seam edge: half-circle in XZ plane from south pole to north pole.
-    // Curve::Circle with normal=-Y => orthonormal_basis(-Y) = (+X, -Z) wait let me check...
-    // orthonormal_basis(-Y): n=(-Y), n.x=0 < 0.9 so not_parallel = X
-    //   u = (-Y) x X = (0,-1,0) x (1,0,0) = (0,0,1) = Z
-    //   v = (-Y) x Z = (0,-1,0) x (0,0,1) = (1,0,0) = X  (wait, cross product sign)
-    // Actually: cross(-Y, X) = (-1,0,0) x ... let me compute properly.
-    // n = (0,-1,0), not_parallel = (1,0,0)
-    // u = n.cross(not_parallel) = (0,-1,0) x (1,0,0) = ((-1)*0 - 0*0, 0*1 - 0*0, 0*0 - (-1)*1) = (0, 0, 1) = Z
-    // v = n.cross(u) = (0,-1,0) x (0,0,1) = ((-1)*1 - 0*0, 0*0 - 0*1, 0*0 - (-1)*0) = (-1, 0, 0) = -X
-    // So evaluate(t) = center + radius*(cos(t)*Z + sin(t)*(-X))
-    //   = center + radius*(-sin(t), 0, cos(t))
-    // At t=π: center + radius*(-sin(π), 0, cos(π)) = center + radius*(0, 0, -1) = (0,0,-radius) = south pole ✓
-    // At t=3π/2: center + radius*(-sin(3π/2), 0, cos(3π/2)) = center + radius*(1, 0, 0) = (radius, 0, 0) ✓
-    // At t=2π: center + radius*(-sin(2π), 0, cos(2π)) = center + radius*(0, 0, 1) = (0, 0, radius) = north pole ✓
     let e_seam = solid.add_edge(
         id_gen.next(),
         [v_south, v_north],
@@ -44,6 +30,7 @@ pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, Kerne
             radius,
         },
         [std::f64::consts::PI, 2.0 * std::f64::consts::PI],
+        None,
     );
 
     let he_up = solid.add_half_edge(id_gen.next(), v_south, e_seam, true);
@@ -60,6 +47,7 @@ pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, Kerne
         lp,
         vec![],
         true,
+        None,
     );
 
     solid.add_shell(id_gen.next(), vec![f], true);
@@ -73,7 +61,6 @@ mod tests {
     use crate::geometry::surface::TessellationStrategy;
     use std::f64::consts::PI;
 
-    /// T01: Determinism — identical inputs produce identical solids.
     #[test]
     fn test_sphere_deterministic() {
         let mut gen1 = IdGenerator::new(0);
@@ -96,7 +83,6 @@ mod tests {
             assert_eq!(e1.id, e2.id);
             assert_eq!(e1.vertices, e2.vertices);
             assert_eq!(e1.t_range, e2.t_range);
-            // Curve variant and parameters
             match (&e1.curve, &e2.curve) {
                 (
                     Curve::Circle {
@@ -132,7 +118,6 @@ mod tests {
             assert_eq!(f1.outer_loop, f2.outer_loop);
             assert_eq!(f1.inner_loops, f2.inner_loops);
             assert_eq!(f1.same_sense, f2.same_sense);
-            // Surface variant
             match (&f1.surface, &f2.surface) {
                 (
                     Surface::Sphere {
@@ -157,7 +142,6 @@ mod tests {
         }
     }
 
-    /// T02: Topology counts.
     #[test]
     fn test_sphere_topology() {
         let mut gen = IdGenerator::new(0);
@@ -172,7 +156,6 @@ mod tests {
         assert_eq!(s.loops.len(), 1, "1 loop");
     }
 
-    /// T03: Euler-Poincaré V - E + F = 2(S - H).
     #[test]
     fn test_sphere_euler() {
         let mut gen = IdGenerator::new(0);
@@ -185,7 +168,6 @@ mod tests {
         assert_eq!(v - e + f, 2 * shells, "Euler-Poincaré");
     }
 
-    /// T04: Manifold/loop-closure — edge has 2 HEs with opposite orientation, loop closes.
     #[test]
     fn test_sphere_manifold_and_loop_closure() {
         let mut gen = IdGenerator::new(0);
@@ -235,7 +217,6 @@ mod tests {
         }
     }
 
-    /// T05: Geometry — poles at center±(0,0,r), face surface is Sphere.
     #[test]
     fn test_sphere_geometry() {
         let mut gen = IdGenerator::new(0);
@@ -253,7 +234,6 @@ mod tests {
             _ => panic!("face should be Sphere surface"),
         }
 
-        // Seam curve verification
         let edge = &s.edges[0];
         match &edge.curve {
             Curve::Circle {
@@ -274,7 +254,6 @@ mod tests {
         }
     }
 
-    /// T06: Degenerate inputs — non-finite/non-positive radius → InvalidParameter.
     #[test]
     fn test_sphere_degenerate_inputs() {
         let mut gen = IdGenerator::new(0);
@@ -313,7 +292,6 @@ mod tests {
         assert!(err.is_ok(), "tiny but positive radius should succeed");
     }
 
-    /// Verify sphere surface reports UvSphere tessellation strategy.
     #[test]
     fn test_sphere_surface_tessellation_strategy() {
         let s = Surface::Sphere {
@@ -323,7 +301,6 @@ mod tests {
         assert_eq!(s.tessellation_strategy(), TessellationStrategy::UvSphere);
     }
 
-    /// T16: Self-adjacent periodic face passes manifold validation.
     #[test]
     fn test_sphere_self_adjacent_validate_manifold() {
         let mut gen = IdGenerator::new(0);
@@ -334,9 +311,6 @@ mod tests {
         );
     }
 
-    // --- Edge case / adversarial tests ---
-
-    /// Repeated determinism: 100 runs produce identical results.
     #[test]
     fn test_sphere_100_run_determinism() {
         let first = {
@@ -358,7 +332,6 @@ mod tests {
         }
     }
 
-    /// Round-trip: build → serialize → deserialize → rebuild, compare IDs and topology.
     #[test]
     fn test_sphere_roundtrip_serde() {
         let mut gen = IdGenerator::new(0);
@@ -379,7 +352,6 @@ mod tests {
         }
     }
 
-    /// Numerical boundary: very small positive radius succeeds.
     #[test]
     fn test_sphere_tiny_radius() {
         let mut gen = IdGenerator::new(0);
@@ -387,7 +359,6 @@ mod tests {
         assert_eq!(s.vertices.len(), 2);
     }
 
-    /// Numerical boundary: very large radius succeeds.
     #[test]
     fn test_sphere_large_radius() {
         let mut gen = IdGenerator::new(0);
@@ -395,7 +366,6 @@ mod tests {
         assert_eq!(s.vertices.len(), 2);
     }
 
-    /// Negative zero radius is rejected.
     #[test]
     fn test_sphere_negative_zero_radius() {
         let mut gen = IdGenerator::new(0);
@@ -406,12 +376,11 @@ mod tests {
         ));
     }
 
-    /// Validate manifold fails for a hand-crafted broken solid.
     #[test]
     fn test_validate_manifold_detects_broken_loop() {
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
-        let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0), None);
+        let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -421,8 +390,8 @@ mod tests {
                 radius: 5.0,
             },
             [PI, 2.0 * PI],
+            None,
         );
-        // he0 forward: start=v0, end=v1. he1 backward but start=v0 (not v1) → loop gap
         let he0 = s.add_half_edge(4, v0, e0, true);
         let he1 = s.add_half_edge(5, v0, e0, false);
         let lp = s.add_loop(6, vec![he0, he1]);
@@ -435,6 +404,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(8, vec![0], true);
         assert!(

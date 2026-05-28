@@ -1,6 +1,7 @@
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::Surface;
 use crate::geometry::Point;
+use mycad_format::EntityRef;
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for topological entities.
@@ -12,6 +13,8 @@ pub type EntityId = u64;
 pub struct Vertex {
     pub id: EntityId,
     pub point: Point,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<EntityRef>,
 }
 
 /// A half-edge — one side of an edge, used within a loop (wire).
@@ -39,6 +42,8 @@ pub struct Edge {
     pub curve: Curve,
     /// Parameter range [t_start, t_end] on the curve.
     pub t_range: [f64; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<EntityRef>,
 }
 
 /// A loop (wire) — a closed sequence of half-edges forming a boundary.
@@ -62,6 +67,8 @@ pub struct Face {
     pub inner_loops: Vec<usize>,
     /// Whether the face normal matches the surface normal.
     pub same_sense: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<EntityRef>,
 }
 
 /// A shell — a connected set of faces forming a closed or open surface.
@@ -102,9 +109,9 @@ impl Solid {
     }
 
     /// Add a vertex and return its index.
-    pub fn add_vertex(&mut self, id: EntityId, point: Point) -> usize {
+    pub fn add_vertex(&mut self, id: EntityId, point: Point, name: Option<EntityRef>) -> usize {
         let idx = self.vertices.len();
-        self.vertices.push(Vertex { id, point });
+        self.vertices.push(Vertex { id, point, name });
         idx
     }
 
@@ -115,6 +122,7 @@ impl Solid {
         vertices: [usize; 2],
         curve: Curve,
         t_range: [f64; 2],
+        name: Option<EntityRef>,
     ) -> usize {
         let idx = self.edges.len();
         self.edges.push(Edge {
@@ -122,6 +130,7 @@ impl Solid {
             vertices,
             curve,
             t_range,
+            name,
         });
         idx
     }
@@ -159,6 +168,7 @@ impl Solid {
         outer_loop: usize,
         inner_loops: Vec<usize>,
         same_sense: bool,
+        name: Option<EntityRef>,
     ) -> usize {
         let idx = self.faces.len();
         self.faces.push(Face {
@@ -167,6 +177,7 @@ impl Solid {
             outer_loop,
             inner_loops,
             same_sense,
+            name,
         });
         idx
     }
@@ -263,6 +274,17 @@ impl Solid {
 
         Ok(())
     }
+
+    /// Compute Euler-Poincaré characteristic: V - E + F - 2*S + 2*H should equal 0.
+    /// For this simplified version, H (through-holes) = 0 (inner_loops are trim curves, not genus).
+    /// Valid for closed manifold: V - E + F = 2(S - H) where S = shells.len(), H = 0.
+    pub fn euler_poincare(&self) -> i64 {
+        let v = self.vertices.len() as i64;
+        let e = self.edges.len() as i64;
+        let f = self.faces.len() as i64;
+        let s = self.shells.len() as i64;
+        v - e + f - 2 * s
+    }
 }
 
 /// Counter for generating deterministic entity IDs.
@@ -301,7 +323,7 @@ mod tests {
     #[test]
     fn test_solid_add_vertex() {
         let mut solid = Solid::new(0);
-        let idx = solid.add_vertex(1, Point::new(1.0, 2.0, 3.0));
+        let idx = solid.add_vertex(1, Point::new(1.0, 2.0, 3.0), None);
         assert_eq!(idx, 0);
         assert_eq!(solid.vertices[0].id, 1);
         assert_eq!(solid.vertices[0].point, Point::new(1.0, 2.0, 3.0));
@@ -314,8 +336,8 @@ mod tests {
         use crate::geometry::Vec3;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         // Edge with no half-edges at all
         let e0 = s.add_edge(
             3,
@@ -325,6 +347,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         // Create a valid face/loop using a different edge setup
         let e1 = s.add_edge(
@@ -335,6 +358,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         let he0 = s.add_half_edge(5, v0, e1, true);
         let he1 = s.add_half_edge(6, v1, e1, false);
@@ -350,6 +374,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(9, vec![0], true);
         let _ = e0; // e0 is the isolated edge with 0 HEs
@@ -366,8 +391,8 @@ mod tests {
         use crate::geometry::Vec3;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -376,6 +401,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         // Only 1 half-edge for this edge (should be 2)
         let he0 = s.add_half_edge(4, v0, e0, true);
@@ -391,6 +417,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(7, vec![0], true);
         assert!(
@@ -407,9 +434,9 @@ mod tests {
 
         let mut s = Solid::new(0);
         // v0 and v1 have same coordinates but are different indices
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 0.0));
-        let v2 = s.add_vertex(3, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 0.0), None);
+        let v2 = s.add_vertex(3, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             4,
             [v0, v2],
@@ -418,6 +445,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         let e1 = s.add_edge(
             5,
@@ -427,6 +455,7 @@ mod tests {
                 direction: -Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         let he0 = s.add_half_edge(6, v0, e0, true);
         let he1 = s.add_half_edge(7, v2, e1, true);
@@ -447,6 +476,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_face(
             13,
@@ -459,6 +489,7 @@ mod tests {
             lp2,
             vec![],
             true,
+            None,
         );
         s.add_shell(14, vec![0, 1], true);
         assert!(
@@ -474,8 +505,8 @@ mod tests {
         use crate::geometry::Vec3;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -484,6 +515,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         // Half-edge referencing edge 99 (out-of-bounds)
         let he0 = s.add_half_edge(4, v0, 99, true);
@@ -500,6 +532,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(8, vec![0], true);
         assert!(
@@ -514,7 +547,7 @@ mod tests {
         use crate::geometry::surface::Surface;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
         let _ = v0;
         s.add_face(
             2,
@@ -527,6 +560,7 @@ mod tests {
             99,
             vec![],
             true,
+            None,
         );
         s.add_shell(3, vec![0], true);
         assert!(
@@ -543,8 +577,8 @@ mod tests {
         use crate::geometry::Vec3;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -553,6 +587,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         let he0 = s.add_half_edge(4, v0, e0, true);
         let he1 = s.add_half_edge(5, v1, e0, false);
@@ -568,6 +603,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(8, vec![99], true);
         assert!(
@@ -584,8 +620,8 @@ mod tests {
         use crate::geometry::Vec3;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -594,6 +630,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         // Both HEs forward — should fail
         let he0 = s.add_half_edge(4, v0, e0, true);
@@ -610,6 +647,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(8, vec![0], true);
         assert!(
@@ -637,6 +675,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(3, vec![0], true);
         assert!(s.validate_manifold().is_err(), "empty outer loop must fail");
@@ -650,8 +689,8 @@ mod tests {
         use crate::geometry::Vec3;
 
         let mut s = Solid::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -660,6 +699,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         let he0 = s.add_half_edge(4, v0, e0, true);
         let he1 = s.add_half_edge(5, v1, e0, false);
@@ -675,6 +715,7 @@ mod tests {
             lp,
             vec![99],
             true,
+            None,
         );
         s.add_shell(8, vec![0], true);
         assert!(

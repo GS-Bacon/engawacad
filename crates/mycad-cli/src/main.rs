@@ -85,8 +85,7 @@ fn run_export(
     };
 
     let meshes: Vec<_> = bodies
-        .all()
-        .iter()
+        .live()
         .map(|b| tessellate_solid_with(&b.solid, &opts))
         .collect::<Result<_, _>>()
         .map_err(|e| format!("failed to tessellate: {e}"))?;

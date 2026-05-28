@@ -1,0 +1,19 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Boolean Box Intersect"
+  features:
+    - type: create_box
+      id: box_a
+      width: 2.0
+      height: 2.0
+      depth: 2.0
+    - type: create_box
+      id: box_b
+      width: 2.0
+      height: 2.0
+      depth: 2.0
+    - type: intersect
+      id: int1
+      target: box_a
+      tool: box_b

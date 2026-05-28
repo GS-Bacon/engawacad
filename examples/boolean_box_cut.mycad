@@ -1,0 +1,19 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Boolean Box Cut"
+  features:
+    - type: create_box
+      id: target
+      width: 2.0
+      height: 2.0
+      depth: 2.0
+    - type: create_box
+      id: tool
+      width: 1.0
+      height: 1.0
+      depth: 1.0
+    - type: cut
+      id: cut1
+      target: target
+      tool: tool

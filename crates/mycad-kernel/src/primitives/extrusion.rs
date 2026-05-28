@@ -3,8 +3,7 @@ use crate::error::KernelError;
 use crate::geometry::curve::Curve;
 use crate::geometry::math::LENGTH_TOLERANCE;
 use crate::geometry::surface::Surface;
-#[cfg(test)]
-use crate::geometry::Vec3;
+use mycad_format::{EntityKind, EntityRef};
 
 /// Signed area of the 2D polygon (shoelace formula).
 fn signed_area(profile: &[(f64, f64)]) -> f64 {
@@ -188,6 +187,8 @@ pub fn make_extrusion(
 
     let mut solid = Solid::new(id_gen.next());
 
+    let fid = "extrusion";
+
     // Handedness of the plane's coordinate system
     let cross_uv = plane.u_axis.cross(&plane.v_axis);
     let handedness = cross_uv.dot(&plane.normal).signum();
@@ -196,10 +197,14 @@ pub fn make_extrusion(
     // Build 3D positions for bottom and top vertices
     let mut bottom_v = Vec::with_capacity(n);
     let mut top_v = Vec::with_capacity(n);
-    for &(u, v) in profile {
+    for (i, &(u, v)) in profile.iter().enumerate() {
         let p = plane.origin + u * plane.u_axis + v * plane.v_axis;
-        bottom_v.push(solid.add_vertex(id_gen.next(), p));
-        top_v.push(solid.add_vertex(id_gen.next(), p + depth * plane.normal));
+        let vname = format!("v_profile_{i:04}_start");
+        let vname2 = format!("v_profile_{i:04}_end");
+        let name_start = EntityRef::try_named(fid, EntityKind::Vertex, &vname).ok();
+        let name_end = EntityRef::try_named(fid, EntityKind::Vertex, &vname2).ok();
+        bottom_v.push(solid.add_vertex(id_gen.next(), p, name_start));
+        top_v.push(solid.add_vertex(id_gen.next(), p + depth * plane.normal, name_end));
     }
 
     // Edges: bottom n, top n, vertical n
@@ -211,6 +216,8 @@ pub fn make_extrusion(
         let j = (i + 1) % n;
         let p0 = solid.vertices[bottom_v[i]].point;
         let p1 = solid.vertices[bottom_v[j]].point;
+        let role = format!("e_profile_start_{i:04}");
+        let name = EntityRef::try_named(fid, EntityKind::Edge, &role).ok();
         bottom_edges.push(solid.add_edge(
             id_gen.next(),
             [bottom_v[i], bottom_v[j]],
@@ -219,6 +226,7 @@ pub fn make_extrusion(
                 direction: p1 - p0,
             },
             [0.0, 1.0],
+            name,
         ));
     }
 
@@ -226,6 +234,8 @@ pub fn make_extrusion(
         let j = (i + 1) % n;
         let p0 = solid.vertices[top_v[i]].point;
         let p1 = solid.vertices[top_v[j]].point;
+        let role = format!("e_profile_end_{i:04}");
+        let name = EntityRef::try_named(fid, EntityKind::Edge, &role).ok();
         top_edges.push(solid.add_edge(
             id_gen.next(),
             [top_v[i], top_v[j]],
@@ -234,12 +244,15 @@ pub fn make_extrusion(
                 direction: p1 - p0,
             },
             [0.0, 1.0],
+            name,
         ));
     }
 
     for i in 0..n {
         let p0 = solid.vertices[bottom_v[i]].point;
         let p1 = solid.vertices[top_v[i]].point;
+        let role = format!("e_side_{i:04}");
+        let name = EntityRef::try_named(fid, EntityKind::Edge, &role).ok();
         vertical_edges.push(solid.add_edge(
             id_gen.next(),
             [bottom_v[i], top_v[i]],
@@ -248,26 +261,20 @@ pub fn make_extrusion(
                 direction: p1 - p0,
             },
             [0.0, 1.0],
+            name,
         ));
     }
 
-    // Cap HE direction logic:
-    // Side face k uses bottom_edge[k] forward when winding > 0, backward when winding < 0.
-    // Each edge needs exactly 2 HEs with opposite orientation.
-    // Bottom cap uses the opposite direction of the side face on bottom edges.
-    // Top cap uses the opposite direction of the side face on top edges.
     let side_bottom_fwd = winding > 0.0;
     let side_top_fwd = winding < 0.0;
 
-    // Bottom cap: opposite of side face bottom direction
+    // Bottom cap
     let mut bottom_hes = Vec::with_capacity(n);
     if !side_bottom_fwd {
-        // Cap uses forward, iterate edges 0..n
         for i in 0..n {
             bottom_hes.push(solid.add_half_edge(id_gen.next(), bottom_v[i], bottom_edges[i], true));
         }
     } else {
-        // Cap uses backward, iterate edges in reverse for loop closure
         for i in (0..n).rev() {
             let j = (i + 1) % n;
             bottom_hes.push(solid.add_half_edge(
@@ -279,6 +286,7 @@ pub fn make_extrusion(
         }
     }
     let bottom_loop = solid.add_loop(id_gen.next(), bottom_hes);
+    let bname = EntityRef::try_named(fid, EntityKind::Face, "f_cap_start").ok();
     let bottom_face = solid.add_face(
         id_gen.next(),
         Surface::Plane {
@@ -290,23 +298,23 @@ pub fn make_extrusion(
         bottom_loop,
         vec![],
         true,
+        bname,
     );
 
-    // Top cap: opposite of side face top direction
+    // Top cap
     let mut top_hes = Vec::with_capacity(n);
     if !side_top_fwd {
-        // Cap uses forward
         for i in 0..n {
             top_hes.push(solid.add_half_edge(id_gen.next(), top_v[i], top_edges[i], true));
         }
     } else {
-        // Cap uses backward, reverse order
         for i in (0..n).rev() {
             let j = (i + 1) % n;
             top_hes.push(solid.add_half_edge(id_gen.next(), top_v[j], top_edges[i], false));
         }
     }
     let top_loop = solid.add_loop(id_gen.next(), top_hes);
+    let tname = EntityRef::try_named(fid, EntityKind::Face, "f_cap_end").ok();
     let top_face = solid.add_face(
         id_gen.next(),
         Surface::Plane {
@@ -318,6 +326,7 @@ pub fn make_extrusion(
         top_loop,
         vec![],
         true,
+        tname,
     );
 
     // Side faces
@@ -340,14 +349,12 @@ pub fn make_extrusion(
         };
 
         let he_loop = if side_bottom_fwd {
-            // bottom_fwd, vert_j_fwd, top_bwd, vert_k_bwd
             let he0 = solid.add_half_edge(id_gen.next(), bottom_v[k], bottom_edges[k], true);
             let he1 = solid.add_half_edge(id_gen.next(), bottom_v[j], vertical_edges[j], true);
             let he2 = solid.add_half_edge(id_gen.next(), top_v[j], top_edges[k], false);
             let he3 = solid.add_half_edge(id_gen.next(), top_v[k], vertical_edges[k], false);
             vec![he0, he1, he2, he3]
         } else {
-            // vert_k_fwd, top_fwd, vert_j_bwd, bottom_bwd
             let he0 = solid.add_half_edge(id_gen.next(), bottom_v[k], vertical_edges[k], true);
             let he1 = solid.add_half_edge(id_gen.next(), top_v[k], top_edges[k], true);
             let he2 = solid.add_half_edge(id_gen.next(), top_v[j], vertical_edges[j], false);
@@ -356,6 +363,8 @@ pub fn make_extrusion(
         };
 
         let side_loop = solid.add_loop(id_gen.next(), he_loop);
+        let role = format!("f_side_{k:04}");
+        let sname = EntityRef::try_named(fid, EntityKind::Face, &role).ok();
         let side_face = solid.add_face(
             id_gen.next(),
             Surface::Plane {
@@ -367,6 +376,7 @@ pub fn make_extrusion(
             side_loop,
             vec![],
             true,
+            sname,
         );
         side_faces.push(side_face);
     }
@@ -385,12 +395,13 @@ mod tests {
     use crate::brep::topology::IdGenerator;
     use crate::error::KernelError;
     use crate::geometry::Plane;
+    #[cfg(test)]
+    use crate::geometry::Vec3;
 
     fn rect_profile() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)]
     }
 
-    // T01: Determinism
     #[test]
     fn test_deterministic() {
         let plane = Plane::xy();
@@ -420,7 +431,6 @@ mod tests {
         }
     }
 
-    // T02: Rect profile topology
     #[test]
     fn test_rect_topology() {
         let plane = Plane::xy();
@@ -437,7 +447,6 @@ mod tests {
         assert_eq!(solid.loops.len(), 6, "loops=N+2=6");
     }
 
-    // T03: Euler-Poincaré
     #[test]
     fn test_euler() {
         let plane = Plane::xy();
@@ -452,7 +461,6 @@ mod tests {
         assert_eq!((v as i64) - (e as i64) + (f as i64), 2 * s);
     }
 
-    // T04: Manifold validation
     #[test]
     fn test_manifold() {
         let plane = Plane::xy();
@@ -462,7 +470,6 @@ mod tests {
         assert!(solid.validate_manifold().is_ok());
     }
 
-    // T05: Geometry — cap normals and top vertex Z
     #[test]
     fn test_cap_geometry_xy() {
         let plane = Plane::xy();
@@ -488,7 +495,6 @@ mod tests {
             );
         }
 
-        // Top vertices are at odd indices (bottom_v[0]=idx0, top_v[0]=idx1, ...)
         let top_count = solid
             .vertices
             .iter()
@@ -497,7 +503,6 @@ mod tests {
         assert_eq!(top_count, 4, "should have 4 top vertices at z=8.0");
     }
 
-    // T06: Degenerate inputs
     #[test]
     fn test_degenerate_depth() {
         let plane = Plane::xy();
@@ -570,7 +575,6 @@ mod tests {
         ));
     }
 
-    // T07: Orientation — xy, xz, yz planes with CW and CCW input
     #[test]
     fn test_orientation_xy_ccw() {
         let plane = Plane::xy();
@@ -612,44 +616,28 @@ mod tests {
         assert!(solid.validate_manifold().is_ok());
 
         if let Surface::Plane { normal, .. } = &solid.faces[0].surface {
-            assert!(
-                (*normal + Vec3::y()).norm() < 1e-12,
-                "xz bottom cap normal should be -Y, got {:?}",
-                normal
-            );
+            assert!((*normal + Vec3::y()).norm() < 1e-12);
         }
         if let Surface::Plane { normal, .. } = &solid.faces[1].surface {
-            assert!(
-                (*normal - Vec3::y()).norm() < 1e-12,
-                "xz top cap normal should be +Y, got {:?}",
-                normal
-            );
+            assert!((*normal - Vec3::y()).norm() < 1e-12);
         }
     }
 
     #[test]
     fn test_orientation_xz_plane_cw() {
         let plane = Plane::xz();
-        // CW in xz (left-handed plane) — bottom cap must still be -Y, top +Y
         let profile = vec![(0.0, 0.0), (0.0, 5.0), (10.0, 5.0), (10.0, 0.0)];
         let mut gen = IdGenerator::new(0);
         let solid = make_extrusion(&plane, &profile, 8.0, &mut gen).unwrap();
         assert!(solid.validate_manifold().is_ok());
         if let Surface::Plane { normal, .. } = &solid.faces[0].surface {
-            assert!(
-                (*normal + Vec3::y()).norm() < 1e-12,
-                "xz CW bottom cap normal should be -Y, got {:?}",
-                normal
-            );
+            assert!((*normal + Vec3::y()).norm() < 1e-12);
         }
         if let Surface::Plane { normal, .. } = &solid.faces[1].surface {
-            assert!(
-                (*normal - Vec3::y()).norm() < 1e-12,
-                "xz CW top cap normal should be +Y, got {:?}",
-                normal
-            );
+            assert!((*normal - Vec3::y()).norm() < 1e-12);
         }
     }
+
     #[test]
     fn test_orientation_yz_plane() {
         let plane = Plane::yz();
@@ -659,46 +647,28 @@ mod tests {
         assert!(solid.validate_manifold().is_ok());
 
         if let Surface::Plane { normal, .. } = &solid.faces[0].surface {
-            assert!(
-                (*normal + Vec3::x()).norm() < 1e-12,
-                "yz bottom cap normal should be -X, got {:?}",
-                normal
-            );
+            assert!((*normal + Vec3::x()).norm() < 1e-12);
         }
         if let Surface::Plane { normal, .. } = &solid.faces[1].surface {
-            assert!(
-                (*normal - Vec3::x()).norm() < 1e-12,
-                "yz top cap normal should be +X, got {:?}",
-                normal
-            );
+            assert!((*normal - Vec3::x()).norm() < 1e-12);
         }
     }
 
     #[test]
     fn test_orientation_yz_plane_cw() {
         let plane = Plane::yz();
-        // CW input in yz — bottom cap must still be -X, top +X
         let profile = vec![(0.0, 0.0), (0.0, 5.0), (10.0, 5.0), (10.0, 0.0)];
         let mut gen = IdGenerator::new(0);
         let solid = make_extrusion(&plane, &profile, 8.0, &mut gen).unwrap();
         assert!(solid.validate_manifold().is_ok());
         if let Surface::Plane { normal, .. } = &solid.faces[0].surface {
-            assert!(
-                (*normal + Vec3::x()).norm() < 1e-12,
-                "yz CW bottom cap normal should be -X, got {:?}",
-                normal
-            );
+            assert!((*normal + Vec3::x()).norm() < 1e-12);
         }
         if let Surface::Plane { normal, .. } = &solid.faces[1].surface {
-            assert!(
-                (*normal - Vec3::x()).norm() < 1e-12,
-                "yz CW top cap normal should be +X, got {:?}",
-                normal
-            );
+            assert!((*normal - Vec3::x()).norm() < 1e-12);
         }
     }
 
-    // T13: Non-convex and self-intersecting profiles rejected
     #[test]
     fn test_non_convex_rejected() {
         let plane = Plane::xy();
@@ -728,7 +698,6 @@ mod tests {
         ));
     }
 
-    // T15: Side face ↔ segment correspondence (bottom_edge[k] is in side face k)
     #[test]
     fn test_side_face_segment_order() {
         let plane = Plane::xy();
@@ -739,7 +708,6 @@ mod tests {
         for k in 0..4 {
             let face = &solid.faces[2 + k];
             let lp = &solid.loops[face.outer_loop];
-            // Check that bottom_edges[k] appears in this side face's loop
             let mut found = false;
             for &he_idx in &lp.half_edges {
                 let he = &solid.half_edges[he_idx];
@@ -752,7 +720,6 @@ mod tests {
         }
     }
 
-    // Edge case: 100-run determinism
     #[test]
     fn test_determinism_100_runs() {
         let plane = Plane::xy();
@@ -770,7 +737,6 @@ mod tests {
         }
     }
 
-    // Edge case: pentagon (non-rectangular convex)
     #[test]
     fn test_pentagon() {
         let plane = Plane::xy();
@@ -785,7 +751,6 @@ mod tests {
         assert!(solid.validate_manifold().is_ok());
     }
 
-    // Edge case: f64 boundary values for coordinates
     #[test]
     fn test_large_coordinates() {
         let plane = Plane::xy();

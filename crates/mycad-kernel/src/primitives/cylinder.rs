@@ -23,8 +23,8 @@ pub fn make_cylinder(
     let mut solid = Solid::new(id_gen.next());
 
     // 2 vertices: seam at bottom and top
-    let v_bot = solid.add_vertex(id_gen.next(), Point::new(0.0, radius, 0.0));
-    let v_top = solid.add_vertex(id_gen.next(), Point::new(0.0, radius, height));
+    let v_bot = solid.add_vertex(id_gen.next(), Point::new(0.0, radius, 0.0), None);
+    let v_top = solid.add_vertex(id_gen.next(), Point::new(0.0, radius, height), None);
 
     // 3 edges
     let e_bot = solid.add_edge(
@@ -36,6 +36,7 @@ pub fn make_cylinder(
             radius,
         },
         [0.0, 2.0 * std::f64::consts::PI],
+        None,
     );
 
     let e_top = solid.add_edge(
@@ -47,6 +48,7 @@ pub fn make_cylinder(
             radius,
         },
         [0.0, 2.0 * std::f64::consts::PI],
+        None,
     );
 
     let e_seam = solid.add_edge(
@@ -57,6 +59,7 @@ pub fn make_cylinder(
             direction: Vec3::new(0.0, 0.0, height),
         },
         [0.0, 1.0],
+        None,
     );
 
     // 3 faces: bottom cap, top cap, lateral
@@ -76,6 +79,7 @@ pub fn make_cylinder(
         loop_bot,
         vec![],
         true,
+        None,
     );
     face_indices.push(f_bot);
 
@@ -93,12 +97,11 @@ pub fn make_cylinder(
         loop_top,
         vec![],
         true,
+        None,
     );
     face_indices.push(f_top);
 
     // Lateral face: Surface::Cylinder, loop = 4 HE
-    //   seam up (fwd, start v_bot) → top circle (rev, start v_top) →
-    //   seam down (rev, start v_top) → bot circle (fwd, start v_bot)
     let he_seam_up = solid.add_half_edge(id_gen.next(), v_bot, e_seam, true);
     let he_top_rev = solid.add_half_edge(id_gen.next(), v_top, e_top, false);
     let he_seam_dn = solid.add_half_edge(id_gen.next(), v_top, e_seam, false);
@@ -117,6 +120,7 @@ pub fn make_cylinder(
         loop_lat,
         vec![],
         true,
+        None,
     );
     face_indices.push(f_lat);
 
@@ -204,7 +208,6 @@ mod tests {
         let s = make_cylinder(5.0, 20.0, &mut gen).unwrap();
         let eps = 1e-10;
 
-        // Each edge must have exactly 2 HEs with opposite forward flags
         let mut edge_he_count: std::collections::HashMap<usize, Vec<bool>> =
             std::collections::HashMap::new();
         for he in &s.half_edges {
@@ -218,7 +221,6 @@ mod tests {
             );
         }
 
-        // Loop closure: each loop's consecutive HEs must connect geometrically
         for (loop_idx, lp) in s.loops.iter().enumerate() {
             assert!(
                 !lp.half_edges.is_empty(),
@@ -258,11 +260,9 @@ mod tests {
         let s = make_cylinder(5.0, 20.0, &mut gen).unwrap();
         let eps = 1e-10;
 
-        // Seam vertices
         assert!((s.vertices[0].point - Point::new(0.0, 5.0, 0.0)).norm() < eps);
         assert!((s.vertices[1].point - Point::new(0.0, 5.0, 20.0)).norm() < eps);
 
-        // Bottom cap surface: Plane with normal -Z
         match &s.faces[0].surface {
             Surface::Plane { normal, .. } => {
                 assert!(
@@ -273,7 +273,6 @@ mod tests {
             _ => panic!("bottom cap should be a Plane"),
         }
 
-        // Top cap surface: Plane with normal +Z
         match &s.faces[1].surface {
             Surface::Plane { normal, .. } => {
                 assert!(
@@ -284,7 +283,6 @@ mod tests {
             _ => panic!("top cap should be a Plane"),
         }
 
-        // Lateral surface: Cylinder
         match &s.faces[2].surface {
             Surface::Cylinder {
                 radius: r, axis, ..
@@ -301,56 +299,48 @@ mod tests {
     fn test_cylinder_degenerate_inputs() {
         let mut gen = IdGenerator::new(0);
 
-        // Zero radius
         let err = make_cylinder(0.0, 20.0, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        // Negative radius
         let err = make_cylinder(-5.0, 20.0, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        // NaN radius
         let err = make_cylinder(f64::NAN, 20.0, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        // Inf radius
         let err = make_cylinder(f64::INFINITY, 20.0, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        // Zero height
         let err = make_cylinder(5.0, 0.0, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
         ));
 
-        // Negative height
         let err = make_cylinder(5.0, -10.0, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
         ));
 
-        // NaN height
         let err = make_cylinder(5.0, f64::NAN, &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
         ));
 
-        // Inf height
         let err = make_cylinder(5.0, f64::INFINITY, &mut gen).unwrap_err();
         assert!(matches!(
             err,
@@ -358,7 +348,6 @@ mod tests {
         ));
     }
 
-    /// Verify that cylinder surface reports UvGridFullPatch strategy.
     #[test]
     fn test_cylinder_surface_tessellation_strategy() {
         let s = Surface::Cylinder {

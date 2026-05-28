@@ -1,0 +1,19 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Boolean Box Void Shell"
+  features:
+    - type: create_box
+      id: outer
+      width: 4.0
+      height: 4.0
+      depth: 4.0
+    - type: create_box
+      id: inner
+      width: 2.0
+      height: 2.0
+      depth: 2.0
+    - type: cut
+      id: cut1
+      target: outer
+      tool: inner

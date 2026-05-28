@@ -1,0 +1,596 @@
+use crate::brep::topology::{IdGenerator, Solid};
+use crate::error::KernelError;
+use crate::geometry::curve::Curve;
+use crate::geometry::math::LENGTH_TOLERANCE;
+use crate::geometry::surface::Surface;
+use crate::geometry::Point;
+use mycad_format::EntityRef;
+
+use super::classify::ClassifiedFragment;
+use super::types::{BooleanOp, FragmentLabel};
+
+pub fn assemble(
+    classified: &[ClassifiedFragment],
+    op: BooleanOp,
+    id_gen: &mut IdGenerator,
+) -> Result<Solid, KernelError> {
+    let len_eps = LENGTH_TOLERANCE;
+    let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
+
+    // Select fragments based on operation
+    let mut selected: Vec<&ClassifiedFragment> = Vec::new();
+
+    for cf in classified {
+        let is_tool = cf.fragment.is_tool_side;
+        let should_select = matches!(
+            (op, is_tool, cf.label),
+            (BooleanOp::Cut, false, FragmentLabel::OutsideOther)
+                | (
+                    BooleanOp::Cut,
+                    false,
+                    FragmentLabel::SharedOppositeDirection
+                )
+                | (BooleanOp::Cut, true, FragmentLabel::InsideOther)
+                | (BooleanOp::Fuse, false, FragmentLabel::OutsideOther)
+                | (BooleanOp::Fuse, false, FragmentLabel::SharedSameDirection)
+                | (BooleanOp::Fuse, true, FragmentLabel::OutsideOther)
+                | (BooleanOp::Intersect, false, FragmentLabel::InsideOther)
+                | (
+                    BooleanOp::Intersect,
+                    false,
+                    FragmentLabel::SharedSameDirection
+                )
+                | (BooleanOp::Intersect, true, FragmentLabel::InsideOther)
+        );
+
+        if should_select {
+            selected.push(cf);
+        }
+    }
+
+    if selected.is_empty() {
+        return Err(KernelError::EmptyBooleanResult);
+    }
+
+    // Merge vertices
+    let mut vertices: Vec<(Point, Option<EntityRef>)> = Vec::new();
+    let mut vertex_map: Vec<usize> = Vec::new();
+
+    let mut all_points: Vec<(Point, Option<EntityRef>)> = Vec::new();
+    for cf in &selected {
+        for (vi, p) in cf.fragment.polygon_3d.iter().enumerate() {
+            let name = derive_vertex_name(&cf.fragment, vi, op);
+            all_points.push((*p, name));
+        }
+    }
+
+    for (point, name) in &all_points {
+        let existing = vertices
+            .iter()
+            .position(|(vp, _)| (vp - point).norm() < len_eps);
+        match existing {
+            Some(idx) => vertex_map.push(idx),
+            None => {
+                let idx = vertices.len();
+                vertices.push((*point, name.clone()));
+                vertex_map.push(idx);
+            }
+        }
+    }
+
+    let mut solid = Solid::new(id_gen.next());
+
+    for (point, name) in &vertices {
+        solid.add_vertex(id_gen.next(), *point, name.clone());
+    }
+
+    // Build fragment-local vertex index lists
+    let mut frag_vertex_indices: Vec<Vec<usize>> = Vec::new();
+    let mut point_offset = 0;
+    for cf in &selected {
+        let n = cf.fragment.polygon_3d.len();
+        let mut local_vi: Vec<usize> = Vec::new();
+        for i in 0..n {
+            local_vi.push(vertex_map[point_offset + i]);
+        }
+        frag_vertex_indices.push(local_vi);
+        point_offset += n;
+    }
+
+    // Collect all unique undirected edges across all selected fragments
+    // Key: normalized (min_vertex, max_vertex), Value: edge index in solid
+    let mut edge_map: std::collections::HashMap<[usize; 2], usize> =
+        std::collections::HashMap::new();
+
+    for (fi, _cf) in selected.iter().enumerate() {
+        let vis = &frag_vertex_indices[fi];
+        let n = vis.len();
+
+        for k in 0..n {
+            let i = k;
+            let j = (k + 1) % n;
+            let vi_start = vis[i];
+            let vi_end = vis[j];
+            let key = normalize_edge_key(vi_start, vi_end);
+            if let std::collections::hash_map::Entry::Vacant(e) = edge_map.entry(key) {
+                let p0 = solid.vertices[vi_start].point;
+                let p1 = solid.vertices[vi_end].point;
+                let direction = p1 - p0;
+                let edge_idx = solid.add_edge(
+                    id_gen.next(),
+                    [vi_start, vi_end],
+                    Curve::Line {
+                        origin: p0,
+                        direction,
+                    },
+                    [0.0, 1.0],
+                    None,
+                );
+                e.insert(edge_idx);
+            }
+        }
+    }
+
+    // Build faces: for each edge, track if the forward HE has been created
+    // Key: edge index, Value: (forward_he_created, reverse_he_created)
+    let mut he_forward_created: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
+    let mut he_reverse_created: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
+
+    let mut face_indices = Vec::new();
+
+    for (fi, cf) in selected.iter().enumerate() {
+        let frag = &cf.fragment;
+        let vis = &frag_vertex_indices[fi];
+        let n = vis.len();
+        if n < 3 {
+            continue;
+        }
+
+        let flip_normals = matches!(
+            (op, cf.fragment.is_tool_side, cf.label),
+            (BooleanOp::Cut, true, _)
+        );
+
+        let mut he_indices = Vec::with_capacity(n);
+
+        for k in 0..n {
+            let i = k;
+            let j = (k + 1) % n;
+            let vi_start = vis[i];
+            let vi_end = vis[j];
+
+            let edge_idx = edge_map[&normalize_edge_key(vi_start, vi_end)];
+            let edge = &solid.edges[edge_idx];
+
+            // Determine if this traversal goes forward along the edge
+            let goes_forward = edge.vertices[0] == vi_start && edge.vertices[1] == vi_end;
+
+            // Check which HE slot to use
+            let he_idx = if goes_forward {
+                if let Some(&existing) = he_forward_created.get(&edge_idx) {
+                    existing
+                } else {
+                    let idx = solid.add_half_edge(id_gen.next(), vi_start, edge_idx, true);
+                    he_forward_created.insert(edge_idx, idx);
+                    idx
+                }
+            } else if let Some(&existing) = he_reverse_created.get(&edge_idx) {
+                existing
+            } else {
+                let idx = solid.add_half_edge(id_gen.next(), vi_start, edge_idx, false);
+                he_reverse_created.insert(edge_idx, idx);
+                idx
+            };
+
+            he_indices.push(he_idx);
+        }
+
+        let loop_idx = solid.add_loop(id_gen.next(), he_indices);
+
+        let normal = if flip_normals {
+            -frag.plane.normal
+        } else {
+            frag.plane.normal
+        };
+
+        let face_name = derive_face_name(frag, op);
+        let face_idx = solid.add_face(
+            id_gen.next(),
+            Surface::Plane {
+                origin: frag.plane.origin,
+                normal,
+                u_axis: frag.plane.u_axis,
+                v_axis: frag.plane.v_axis,
+            },
+            loop_idx,
+            vec![],
+            true,
+            face_name,
+        );
+        face_indices.push(face_idx);
+    }
+
+    // Build shells by connected components
+    let shells = find_connected_shells(&solid, &face_indices);
+    if shells.is_empty() {
+        return Err(KernelError::EmptyBooleanResult);
+    }
+
+    // Classify shells by signed volume
+    let mut positive_shells = Vec::new();
+    let mut negative_shells = Vec::new();
+
+    for shell_faces in &shells {
+        let vol = signed_volume(&solid, shell_faces);
+        if vol > area_eps {
+            positive_shells.push(shell_faces.clone());
+        } else if vol < -area_eps {
+            negative_shells.push(shell_faces.clone());
+        }
+    }
+
+    match op {
+        BooleanOp::Cut => {
+            if positive_shells.len() > 1 {
+                return Err(KernelError::MultipleOuterShellsResult { op: "cut" });
+            }
+        }
+        BooleanOp::Fuse => {
+            if positive_shells.len() > 1 {
+                return Err(KernelError::DisjointFuseResult);
+            }
+        }
+        BooleanOp::Intersect => {
+            if positive_shells.len() > 1 {
+                return Err(KernelError::MultipleOuterShellsResult { op: "intersect" });
+            }
+        }
+    }
+
+    if positive_shells.is_empty() {
+        if !negative_shells.is_empty() {
+            return Err(KernelError::DegenerateBooleanContact);
+        }
+        return Err(KernelError::EmptyBooleanResult);
+    }
+
+    // Sort shells for determinism: sort each shell's face list, then sort shells by first face index
+    let mut sorted_positive: Vec<Vec<usize>> = positive_shells;
+    for shell in &mut sorted_positive {
+        shell.sort_unstable();
+    }
+    sorted_positive.sort_by_key(|s| s[0]);
+
+    let mut sorted_negative: Vec<Vec<usize>> = negative_shells;
+    for shell in &mut sorted_negative {
+        shell.sort_unstable();
+    }
+    sorted_negative.sort_by_key(|s| s[0]);
+
+    // Add outer shell first
+    solid.add_shell(id_gen.next(), sorted_positive[0].clone(), true);
+
+    // Handle void shells
+    for void_shell in &sorted_negative {
+        for &fi in void_shell {
+            reverse_face_orientation(&mut solid, fi, id_gen);
+        }
+        solid.add_shell(id_gen.next(), void_shell.clone(), true);
+    }
+
+    // Shrink: remove orphan half-edges and loops
+    shrink_solid(&mut solid);
+
+    // Validate
+    solid
+        .validate_manifold()
+        .map_err(|e| KernelError::BooleanInternal(format!("manifold validation failed: {}", e)))?;
+
+    Ok(solid)
+}
+
+fn normalize_edge_key(v0: usize, v1: usize) -> [usize; 2] {
+    if v0 < v1 {
+        [v0, v1]
+    } else {
+        [v1, v0]
+    }
+}
+
+fn reverse_face_orientation(solid: &mut Solid, face_idx: usize, id_gen: &mut IdGenerator) {
+    let face = &solid.faces[face_idx];
+    let loop_idx = face.outer_loop;
+    let lp = &solid.loops[loop_idx];
+
+    let mut vertex_seq: Vec<usize> = Vec::new();
+    for &he_idx in &lp.half_edges {
+        let he = &solid.half_edges[he_idx];
+        vertex_seq.push(he.start_vertex);
+    }
+
+    vertex_seq.reverse();
+
+    // Build new half-edges using the shared edge approach
+    let mut new_he_indices = Vec::with_capacity(vertex_seq.len());
+    for k in 0..vertex_seq.len() {
+        let vi_start = vertex_seq[k];
+        let vi_end = vertex_seq[(k + 1) % vertex_seq.len()];
+
+        // Find the existing edge for this vertex pair
+        let key = normalize_edge_key(vi_start, vi_end);
+        let edge_idx = find_edge_by_vertices(&solid.edges, &key);
+
+        let goes_forward = solid.edges[edge_idx].vertices[0] == vi_start
+            && solid.edges[edge_idx].vertices[1] == vi_end;
+
+        let he_idx = solid.add_half_edge(id_gen.next(), vi_start, edge_idx, goes_forward);
+        new_he_indices.push(he_idx);
+    }
+
+    solid.loops[loop_idx].half_edges = new_he_indices;
+    solid.faces[face_idx].same_sense = !solid.faces[face_idx].same_sense;
+
+    if let Surface::Plane { normal, .. } = &mut solid.faces[face_idx].surface {
+        *normal = -*normal;
+    }
+}
+
+fn find_edge_by_vertices(edges: &[crate::brep::topology::Edge], key: &[usize; 2]) -> usize {
+    for (i, e) in edges.iter().enumerate() {
+        let ek = normalize_edge_key(e.vertices[0], e.vertices[1]);
+        if ek == *key {
+            return i;
+        }
+    }
+    unreachable!("edge for vertex pair must exist")
+}
+
+fn find_connected_shells(solid: &Solid, face_indices: &[usize]) -> Vec<Vec<usize>> {
+    let n = face_indices.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let mut face_edges: std::collections::HashMap<usize, Vec<[usize; 2]>> =
+        std::collections::HashMap::new();
+
+    for &fi in face_indices {
+        let face = &solid.faces[fi];
+        let lp = &solid.loops[face.outer_loop];
+        let mut edges = Vec::new();
+        for &he_idx in &lp.half_edges {
+            let he = &solid.half_edges[he_idx];
+            let edge = &solid.edges[he.edge];
+            let v0 = edge.vertices[0].min(edge.vertices[1]);
+            let v1 = edge.vertices[0].max(edge.vertices[1]);
+            edges.push([v0, v1]);
+        }
+        face_edges.insert(fi, edges);
+    }
+
+    let mut parent: Vec<usize> = (0..n).collect();
+
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        if parent[i] != i {
+            parent[i] = find(parent, parent[i]);
+        }
+        parent[i]
+    }
+
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let fi = face_indices[i];
+            let fj = face_indices[j];
+            let edges_i = &face_edges[&fi];
+            let edges_j = &face_edges[&fj];
+
+            let adjacent = edges_i.iter().any(|ei| edges_j.iter().any(|ej| ei == ej));
+            if adjacent {
+                let pi = find(&mut parent, i);
+                let pj = find(&mut parent, j);
+                if pi != pj {
+                    parent[pi] = pj;
+                }
+            }
+        }
+    }
+
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for (i, &fi) in face_indices.iter().enumerate().take(n) {
+        let root = find(&mut parent, i);
+        groups.entry(root).or_default().push(fi);
+    }
+
+    groups.into_values().collect()
+}
+
+fn signed_volume(solid: &Solid, face_indices: &[usize]) -> f64 {
+    let mut volume = 0.0;
+    let area_eps = 1e-14;
+
+    for &fi in face_indices {
+        let face = &solid.faces[fi];
+
+        // Get the declared outward normal from the surface definition.
+        let face_normal = match &face.surface {
+            crate::geometry::surface::Surface::Plane { normal, .. } => *normal,
+            _ => continue,
+        };
+
+        let lp = &solid.loops[face.outer_loop];
+
+        let verts: Vec<Point> = lp
+            .half_edges
+            .iter()
+            .map(|&he_idx| {
+                let he = &solid.half_edges[he_idx];
+                solid.vertices[he.start_vertex].point
+            })
+            .collect();
+
+        if verts.len() < 3 {
+            continue;
+        }
+
+        let v0 = verts[0];
+        for i in 1..verts.len() - 1 {
+            let v1 = verts[i];
+            let v2 = verts[i + 1];
+
+            let a = v1 - v0;
+            let b = v2 - v0;
+            let cross = a.cross(&b);
+            let cross_norm = cross.norm();
+            if cross_norm < area_eps {
+                continue;
+            }
+            // Align sign with the declared outward normal so both CW-from-outside
+            // (cuboid) and CCW-from-outside (extrusion) primitives contribute
+            // a positive volume for the outward-facing shell.
+            let sign = if face_normal.dot(&(cross / cross_norm)) > 0.0 {
+                1.0_f64
+            } else {
+                -1.0_f64
+            };
+            volume += sign * v0.coords.dot(&cross) / 6.0;
+        }
+    }
+
+    volume
+}
+
+fn shrink_solid(solid: &mut Solid) {
+    let mut used_loops: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut used_half_edges: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+    for face in &solid.faces {
+        used_loops.insert(face.outer_loop);
+        for &il in &face.inner_loops {
+            used_loops.insert(il);
+        }
+    }
+
+    for &li in &used_loops {
+        let lp = &solid.loops[li];
+        for &he in &lp.half_edges {
+            used_half_edges.insert(he);
+        }
+    }
+
+    // Collect used edges
+    let mut used_edges: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for &he_idx in &used_half_edges {
+        let he = &solid.half_edges[he_idx];
+        used_edges.insert(he.edge);
+    }
+
+    // Remove orphan elements: build new arrays and remap indices
+    // Sort by ID for determinism
+    let mut he_old_to_new: Vec<Option<usize>> = vec![None; solid.half_edges.len()];
+    let mut new_half_edges = Vec::new();
+    for (old_idx, he) in solid.half_edges.iter().enumerate() {
+        if used_half_edges.contains(&old_idx) {
+            let new_idx = new_half_edges.len();
+            he_old_to_new[old_idx] = Some(new_idx);
+            new_half_edges.push(he.clone());
+        }
+    }
+    solid.half_edges = new_half_edges;
+
+    // Remap loop half-edge indices
+    for lp in &mut solid.loops {
+        let mut new_hes = Vec::new();
+        for &old_he in &lp.half_edges {
+            if let Some(new_idx) = he_old_to_new[old_he] {
+                new_hes.push(new_idx);
+            }
+        }
+        lp.half_edges = new_hes;
+    }
+
+    // Remove unused edges
+    let mut edge_old_to_new: Vec<Option<usize>> = vec![None; solid.edges.len()];
+    let mut new_edges = Vec::new();
+    let mut edge_ids: Vec<(usize, usize)> = Vec::new();
+    for (old_idx, edge) in solid.edges.iter().enumerate() {
+        if used_edges.contains(&old_idx) {
+            edge_ids.push((old_idx, edge.id as usize));
+        }
+    }
+    // Sort by ID for determinism
+    edge_ids.sort_by_key(|(_, id)| *id);
+    for (old_idx, _) in &edge_ids {
+        let new_idx = new_edges.len();
+        edge_old_to_new[*old_idx] = Some(new_idx);
+        new_edges.push(solid.edges[*old_idx].clone());
+    }
+    solid.edges = new_edges;
+
+    // Remap half-edge edge references
+    for he in &mut solid.half_edges {
+        if let Some(new_idx) = edge_old_to_new[he.edge] {
+            he.edge = new_idx;
+        }
+    }
+
+    // Remove unused loops
+    let mut loop_old_to_new: Vec<Option<usize>> = vec![None; solid.loops.len()];
+    let mut new_loops = Vec::new();
+    for (old_idx, lp) in solid.loops.iter().enumerate() {
+        if used_loops.contains(&old_idx) && !lp.half_edges.is_empty() {
+            let new_idx = new_loops.len();
+            loop_old_to_new[old_idx] = Some(new_idx);
+            new_loops.push(lp.clone());
+        }
+    }
+    solid.loops = new_loops;
+
+    // Remap face loop references
+    for face in &mut solid.faces {
+        if let Some(new_idx) = loop_old_to_new[face.outer_loop] {
+            face.outer_loop = new_idx;
+        }
+        let mut new_inner = Vec::new();
+        for &old_il in &face.inner_loops {
+            if let Some(new_idx) = loop_old_to_new[old_il] {
+                new_inner.push(new_idx);
+            }
+        }
+        face.inner_loops = new_inner;
+    }
+}
+
+fn derive_vertex_name(
+    frag: &super::partition::FaceFragment,
+    vi: usize,
+    op: BooleanOp,
+) -> Option<EntityRef> {
+    let op_str = match op {
+        BooleanOp::Cut => "cut_isect_vertex",
+        BooleanOp::Fuse => "fuse_isect_vertex",
+        BooleanOp::Intersect => "intersect_isect_vertex",
+    };
+    let selector = format!("v{:04}", vi);
+    EntityRef::try_derived(
+        mycad_format::EntityKind::Vertex,
+        op_str,
+        vec![frag.parent_name.clone()],
+        &selector,
+    )
+    .ok()
+}
+
+fn derive_face_name(frag: &super::partition::FaceFragment, op: BooleanOp) -> Option<EntityRef> {
+    let op_str = op.op_str();
+    let selector = format!("frag{:04}", frag.traversal_index);
+    EntityRef::try_derived(
+        mycad_format::EntityKind::Face,
+        op_str,
+        vec![frag.parent_name.clone()],
+        &selector,
+    )
+    .ok()
+}

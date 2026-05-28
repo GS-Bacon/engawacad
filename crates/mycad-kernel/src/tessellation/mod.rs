@@ -108,7 +108,18 @@ pub fn tessellate_solid_with(
         let strategy = face.surface.tessellation_strategy();
         match strategy {
             TessellationStrategy::BoundaryFan => {
-                tessellate_face_fan(solid, face, opts, &mut mesh)?;
+                // Determine if we need earcutr (concave or has inner loops)
+                let outer_loop = &solid.loops[face.outer_loop];
+                let loop_points =
+                    collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
+                let has_inner = !face.inner_loops.is_empty();
+                let is_convex = is_polygon_convex(&loop_points, &face.surface, face.same_sense);
+
+                if has_inner || !is_convex {
+                    tessellate_face_earcut(solid, face, opts, &mut mesh)?;
+                } else {
+                    tessellate_face_fan_from_points(&loop_points, face, &mut mesh)?;
+                }
             }
             TessellationStrategy::UvGridFullPatch => {
                 tessellate_face_uv_grid(solid, face, opts, &mut mesh)?;
@@ -128,6 +139,7 @@ pub fn tessellate_solid_with(
 }
 
 /// Triangulate a face as a fan from its first boundary vertex (planar convex faces).
+#[allow(dead_code)]
 fn tessellate_face_fan(
     solid: &Solid,
     face: &crate::brep::topology::Face,
@@ -135,16 +147,23 @@ fn tessellate_face_fan(
     mesh: &mut TriangleMesh,
 ) -> Result<(), TessellationError> {
     let outer_loop = &solid.loops[face.outer_loop];
-
     let loop_points = collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
+    tessellate_face_fan_from_points(&loop_points, face, mesh)
+}
 
+/// Tessellate a convex polygon as a fan (given pre-collected points).
+fn tessellate_face_fan_from_points(
+    loop_points: &[Point],
+    face: &crate::brep::topology::Face,
+    mesh: &mut TriangleMesh,
+) -> Result<(), TessellationError> {
     if loop_points.len() < 3 {
         return Ok(());
     }
 
     let base_idx = mesh.positions.len() as u32;
 
-    for p in &loop_points {
+    for p in loop_points {
         let normal = face.surface.normal_at_point(p);
         let n = if face.same_sense {
             [normal.x, normal.y, normal.z]
@@ -159,6 +178,134 @@ fn tessellate_face_fan(
         mesh.indices.push(base_idx);
         mesh.indices.push(base_idx + i);
         mesh.indices.push(base_idx + i + 1);
+    }
+
+    Ok(())
+}
+
+/// Check if a 3D polygon is convex by projecting to 2D and checking cross product signs.
+fn is_polygon_convex(points: &[Point], surface: &Surface, _same_sense: bool) -> bool {
+    if points.len() < 3 {
+        return false;
+    }
+    let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
+
+    // Get the face normal for projection
+    let normal = match surface {
+        Surface::Plane { normal, .. } => *normal,
+        _ => return true, // Assume convex for non-planar
+    };
+
+    // Project to 2D using dominant axis
+    let (u_idx, v_idx) = if normal.x.abs() >= normal.y.abs() && normal.x.abs() >= normal.z.abs() {
+        (1, 2)
+    } else if normal.y.abs() >= normal.z.abs() {
+        (0, 2)
+    } else {
+        (0, 1)
+    };
+
+    let n = points.len();
+    let mut first_sign: Option<f64> = None;
+    for i in 0..n {
+        let prev = (i + n - 1) % n;
+        let next = (i + 1) % n;
+        let d1 = (
+            points[i].coords[u_idx] - points[prev].coords[u_idx],
+            points[i].coords[v_idx] - points[prev].coords[v_idx],
+        );
+        let d2 = (
+            points[next].coords[u_idx] - points[i].coords[u_idx],
+            points[next].coords[v_idx] - points[i].coords[v_idx],
+        );
+        let cross = d1.0 * d2.1 - d1.1 * d2.0;
+        if cross.abs() <= area_eps {
+            // Borderline — conservatively treat as non-convex
+            return false;
+        }
+        let sign = cross.signum();
+        match first_sign {
+            None => first_sign = Some(sign),
+            Some(fs) if fs != sign => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
+/// Tessellate a face using earcutr (for concave faces and faces with inner loops).
+fn tessellate_face_earcut(
+    solid: &Solid,
+    face: &crate::brep::topology::Face,
+    opts: &TessellationOptions,
+    mesh: &mut TriangleMesh,
+) -> Result<(), TessellationError> {
+    let outer_loop = &solid.loops[face.outer_loop];
+    let outer_points = collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
+    if outer_points.len() < 3 {
+        return Ok(());
+    }
+
+    // Get projection axes
+    let normal = match &face.surface {
+        Surface::Plane { normal, .. } => *normal,
+        _ => return Err(TessellationError::UnsupportedSurface { kind: "non-planar" }),
+    };
+    let (u_idx, v_idx) = if normal.x.abs() >= normal.y.abs() && normal.x.abs() >= normal.z.abs() {
+        (1, 2)
+    } else if normal.y.abs() >= normal.z.abs() {
+        (0, 2)
+    } else {
+        (0, 1)
+    };
+
+    // Build flat vertex array for earcutr
+    let mut flat_coords: Vec<f64> = Vec::new();
+    for p in &outer_points {
+        flat_coords.push(p.coords[u_idx]);
+        flat_coords.push(p.coords[v_idx]);
+    }
+
+    // Collect inner loop points
+    let mut hole_indices: Vec<usize> = Vec::new();
+    for &il_idx in &face.inner_loops {
+        let il = &solid.loops[il_idx];
+        let il_points = collect_loop_points(solid, il, opts.angular_segments.max(3))?;
+        hole_indices.push(flat_coords.len() / 2);
+        for p in &il_points {
+            flat_coords.push(p.coords[u_idx]);
+            flat_coords.push(p.coords[v_idx]);
+        }
+    }
+
+    // Run earcutr
+    let indices = earcutr::earcut(&flat_coords, &hole_indices, 2)
+        .map_err(|_| TessellationError::NonManifoldLoop)?;
+
+    let base_idx = mesh.positions.len() as u32;
+
+    // Add all vertices (outer + inner) to mesh
+    let all_points: Vec<Point> = outer_points
+        .into_iter()
+        .chain(face.inner_loops.iter().flat_map(|&il_idx| {
+            let il = &solid.loops[il_idx];
+            collect_loop_points(solid, il, opts.angular_segments.max(3)).unwrap_or_default()
+        }))
+        .collect();
+
+    for p in &all_points {
+        let n = face.surface.normal_at_point(p);
+        let nm = if face.same_sense {
+            [n.x, n.y, n.z]
+        } else {
+            [-n.x, -n.y, -n.z]
+        };
+        mesh.positions.push([p.x, p.y, p.z]);
+        mesh.normals.push(nm);
+    }
+
+    for idx in indices {
+        mesh.indices.push(base_idx + idx as u32);
     }
 
     Ok(())
@@ -720,8 +867,8 @@ mod tests {
         use crate::geometry::curve::Curve;
 
         let mut s = S::new(0);
-        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0));
-        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             3,
             [v0, v1],
@@ -730,6 +877,7 @@ mod tests {
                 direction: Vec3::x(),
             },
             [0.0, 1.0],
+            None,
         );
         let he0 = s.add_half_edge(4, v0, e0, true);
         let lp = s.add_loop(5, vec![he0]);
@@ -743,6 +891,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(7, vec![0], true);
 
@@ -807,7 +956,7 @@ mod tests {
     fn test_partial_revolution_cylinder_face_errors() {
         use crate::brep::topology::Solid as S;
         let mut s = S::new(0);
-        let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             2,
             [v0, v0],
@@ -817,6 +966,7 @@ mod tests {
                 radius: 5.0,
             },
             [0.0, PI], // half revolution
+            None,
         );
         let he0 = s.add_half_edge(3, v0, e0, true);
         let lp = s.add_loop(4, vec![he0]);
@@ -830,6 +980,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(6, vec![0], true);
         let result = tessellate_solid(&s);
@@ -995,8 +1146,8 @@ mod tests {
         // Case 1: wrong number of HEs (3 instead of 2)
         {
             let mut s = S::new(0);
-            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
-            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0), None);
+            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0), None);
             let e0 = s.add_edge(
                 3,
                 [v0, v1],
@@ -1006,6 +1157,7 @@ mod tests {
                     radius: 5.0,
                 },
                 [PI, 2.0 * PI],
+                None,
             );
             let he0 = s.add_half_edge(4, v0, e0, true);
             let he1 = s.add_half_edge(5, v1, e0, false);
@@ -1020,6 +1172,7 @@ mod tests {
                 lp,
                 vec![],
                 true,
+                None,
             );
             s.add_shell(9, vec![0], true);
             assert!(matches!(
@@ -1031,8 +1184,8 @@ mod tests {
         // Case 2: inner loops present
         {
             let mut s = S::new(0);
-            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
-            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0), None);
+            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0), None);
             let e0 = s.add_edge(
                 3,
                 [v0, v1],
@@ -1042,6 +1195,7 @@ mod tests {
                     radius: 5.0,
                 },
                 [PI, 2.0 * PI],
+                None,
             );
             let he0 = s.add_half_edge(4, v0, e0, true);
             let he1 = s.add_half_edge(5, v1, e0, false);
@@ -1056,6 +1210,7 @@ mod tests {
                 lp_outer,
                 vec![lp_inner],
                 true,
+                None,
             );
             s.add_shell(9, vec![0], true);
             assert!(matches!(
@@ -1067,8 +1222,8 @@ mod tests {
         // Case 3: HEs on different edges
         {
             let mut s = S::new(0);
-            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0));
-            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0));
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0), None);
+            let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 5.0), None);
             let e0 = s.add_edge(
                 3,
                 [v0, v1],
@@ -1078,6 +1233,7 @@ mod tests {
                     radius: 5.0,
                 },
                 [PI, 2.0 * PI],
+                None,
             );
             let e1 = s.add_edge(
                 4,
@@ -1087,6 +1243,7 @@ mod tests {
                     direction: Vec3::new(0.0, 0.0, 10.0),
                 },
                 [0.0, 1.0],
+                None,
             );
             let he0 = s.add_half_edge(5, v0, e0, true);
             let he1 = s.add_half_edge(6, v1, e1, false);
@@ -1100,6 +1257,7 @@ mod tests {
                 lp,
                 vec![],
                 true,
+                None,
             );
             s.add_shell(9, vec![0], true);
             assert!(matches!(
@@ -1358,7 +1516,7 @@ mod tests {
         // Span = 2π + ANGLE_TOLERANCE (just above), should reject
         let span = 2.0 * PI + ANGLE_TOLERANCE;
         let mut s = S::new(0);
-        let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0));
+        let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0), None);
         let e0 = s.add_edge(
             2,
             [v0, v0],
@@ -1368,6 +1526,7 @@ mod tests {
                 radius: 5.0,
             },
             [0.0, span],
+            None,
         );
         let he0 = s.add_half_edge(3, v0, e0, true);
         let lp = s.add_loop(4, vec![he0]);
@@ -1381,6 +1540,7 @@ mod tests {
             lp,
             vec![],
             true,
+            None,
         );
         s.add_shell(6, vec![0], true);
         let result = tessellate_solid(&s);
