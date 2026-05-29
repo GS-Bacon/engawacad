@@ -62,6 +62,19 @@
 
 ---
 
+## 行き詰まり検出と報告（補助）
+
+同一の CI エラーパターンが 3 ターン以上続いた場合:
+1. 実装変更を止める
+2. summary に「同一エラー継続」と明記し、試した修正の要約を 3 行以内で書く
+3. result JSON を書いて終了する（status: failed、ci_passed: false のままで構わない）
+4. 自分で解決しようとし続けることは禁止（オーケストレーターが debug-spec を作って再 dispatch する）
+
+注: `status=escalate` は使わない。escalate 判定はオーケストレーター（Claude）が
+error_pattern の連続性から行う。
+
+---
+
 ## 完了時の必須アクション
 
 作業完了時に、以下の JSON を `--result-file` に指定されたパスに書き出す:

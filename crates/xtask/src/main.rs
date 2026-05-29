@@ -204,6 +204,23 @@ fn ci() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // 3ai シェルスクリプトのユニットテスト
+    println!("\n=== Running 3ai shell tests ===");
+    let Some(bats) = which("bats") else {
+        eprintln!("FAILED: 'bats' not found. Install with: sudo apt install bats");
+        return ExitCode::FAILURE;
+    };
+    let tests_dir = workspace_root().join("tests/3ai");
+    let status = Command::new(bats)
+        .args(["dispatch-glm.bats", "state.bats", "guard-crates.bats"])
+        .current_dir(&tests_dir)
+        .status()
+        .expect("failed to execute bats");
+    if !status.success() {
+        eprintln!("FAILED: 3ai shell tests");
+        return ExitCode::FAILURE;
+    }
+
     println!("\n=== All CI checks passed ===");
     ExitCode::SUCCESS
 }

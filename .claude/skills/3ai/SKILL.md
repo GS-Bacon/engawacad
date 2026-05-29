@@ -19,7 +19,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 > harness のプランモードは「read-only except plan file」と指示するが、これが deny するのは Edit/Write 等のファイル変更ツールであって、**Bash サブプロセス起動は通る**。
 > `mkdir features/...`・`state.sh`・`dispatch-codex.sh`（Codex 設計レビュー）はすべて Bash であり、プランモード内でそのまま走る。
 > したがって **STEP 3 の Codex 設計レビューを「ExitPlanMode 後に回す」と後ろ倒ししてはならない。** プランファイル記述完了後、プランモード内で Codex レビューを回して Critical/High を潰し、その後で STEP 4 の `ExitPlanMode` を呼ぶ（STEP 3→4 の順序厳守）。
-> ファイル変更で deny されるのは `crates/**` への Edit/Write のみ（`guard-crates.sh` フック）。
+> ファイル変更で deny されるのは `crates/**` への Edit/Write のみ（`guard-crates.sh` フック）。Read や `features/` 配下への Write は通過する。
 
 ---
 
@@ -69,6 +69,12 @@ bash .claude/skills/3ai/scripts/state.sh init features/$ISSUE_NUM-$ISSUE_SLUG/st
 | T02 | 正常系 | ... | ... |
 | TXX | エッジケース | 退化入力 / 境界数値 | エラーまたは正常処理 |
 | TXX | golden YAML | .mycad → rebuild → 再出力が一致 | assert_eq! |
+
+## 幾何的不変条件チェックリスト（Boolean/Partition/Assemble 系のみ。該当しない場合は "N/A" と明記）
+- [ ] partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか
+- [ ] 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか
+- [ ] flip_normals / same_sense の意味論が明確か（頂点順を変えるか vs 法線だけ変えるか）
+- [ ] pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか
 ```
 
 ---
@@ -130,10 +136,16 @@ git checkout -b cad/$ISSUE_NUM-$ISSUE_SLUG
 
 ---
 
-## STEP 6: GLM-5.1 実装（背景実行・完了通知）
+## STEP 6: GLM-5.1 実装（背景実行・自動エスカレーション付き）
 
-GLM に実装+テスト+`cargo xtask ci` green ループを**全て内部で**回させる。
-**自分（Claude）は crates/** を編集しない**（フックが deny する）。
+**ループ定数**: `GLM_MAX_LOOPS=3`（通常試行上限）、`ESC_MAX_LOOPS=1`（debug-spec 付き再 dispatch 上限）
+
+**自分（Claude）は crates/** を Edit/Write しない**（guard-crates フックが deny する）。
+crates/** の Read は許可（debug-spec 作成のための根本原因分析に使う）。
+
+### 6-A: 通常実装ループ（最大 3 回）
+
+各試行で以下を実行する:
 
 ```bash
 bash .claude/skills/3ai/scripts/dispatch-glm.sh \
@@ -142,16 +154,54 @@ bash .claude/skills/3ai/scripts/dispatch-glm.sh \
   --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
   --result-file features/$ISSUE_NUM-$ISSUE_SLUG/glm-result.json \
   --max-turns 80
+# debug-spec 付き再 dispatch の場合は --debug-spec features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md を追加
+
+bash .claude/skills/3ai/scripts/state.sh inc features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
 ```
 
-**`run_in_background: true` で起動し、完了通知を待つ。**
+**`run_in_background: true` で起動し、完了通知を待つ（ポーリングしない）。**
 
-`glm-result.json` を読んで確認:
+### 6-B: 結果判定と早期エスカレーション判定
+
+`glm-result.json` を読んで:
+
 - `status: success` かつ `ci_passed: true` → 以下を実行して STEP 7 へ:
   ```bash
   bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl passed
   ```
-- `status: failed` → **停止してユーザーにエスカレーション**（Anthropic claude への自動フォールバック禁止）
+
+- `status: failed` の場合:
+  - 今回の `error_pattern` と前回の `error_pattern` を比較する。
+  - **2 連続同一 error_pattern** または **通常試行が GLM_MAX_LOOPS 回に達した** → **6-C へ**
+  - それ以外（新しいエラーに変わっている）→ 6-A に戻って次の試行を行う
+
+### 6-C: Claude デバッグアシスト（debug-spec 作成）
+
+以下を行う（**コード差分そのものは書かない**。修正は GLM が担当）:
+
+1. `features/$ISSUE_NUM-$ISSUE_SLUG/ci.log` と `crates/**` の関連ファイルを **Read** して根本原因を分析する
+2. `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` を **Write** する。構成:
+   ```markdown
+   ## 仮説
+   （根本原因の仮説を 1〜3 行で）
+
+   ## 関連ファイル
+   （疑わしいファイルとその該当箇所）
+
+   ## 修正方針
+   （「何をどう変えるべきか」の仕様。コード差分ではなく意図を記述）
+
+   ## 追加で書いてほしいテスト
+   （根本原因を再現・検証するためのテストケース）
+   ```
+3. 6-A に戻り `--debug-spec features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` 付きで dispatch する（ESC_MAX_LOOPS=1 のため、この再 dispatch は 1 回まで）
+
+### 6-D: 終結判定
+
+debug-spec 付き再 dispatch でも `status: failed` のままなら:
+- **停止してユーザーにエスカレーション**
+- `debug-spec.md` は `features/$ISSUE_NUM-$ISSUE_SLUG/` に残る。ユーザーが手動で改稿して再投入できる
+- Anthropic claude への自動フォールバック禁止
 
 ---
 
@@ -211,7 +261,7 @@ bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/sta
 
 ## 禁止事項（常に守ること）
 
-- `crates/**` を自分（Claude）が直接 Edit/Write **しない** — フックが deny する
+- `crates/**` を自分（Claude）が直接 Edit/Write **しない** — guard-crates フックが deny する（Read は可）
 - `glm`（Z.AI ラッパー）以外の `claude -p` ワーカーを spawn **しない**（課金制約）
 - GLM が詰まっても Anthropic claude へ自動フォールバック**しない**
 - dispatch 完了をポーリング**しない** — 背景実行 + 完了通知で受け取る
