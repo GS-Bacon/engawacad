@@ -48,4 +48,26 @@ pub enum KernelError {
 
     #[error("boolean internal error: {0}")]
     BooleanInternal(String),
+
+    #[error("invalid tolerance value: {value}")]
+    InvalidTolerance { value: f64 },
+
+    #[error("invalid pcurve t_range: t_start={t_start}, t_end={t_end}")]
+    InvalidPcurveTrange { t_start: f64, t_end: f64 },
+
+    #[error("degenerate pcurve: {reason}")]
+    DegeneratePcurve { reason: &'static str },
+
+    #[error("pcurve-surface mismatch at half-edge {he_idx}: deviation={deviation}, tolerance={tolerance}")]
+    PcurveSurfaceMismatch {
+        he_idx: usize,
+        deviation: f64,
+        tolerance: f64,
+    },
+
+    #[error("missing intersection provenance for op: {op}")]
+    MissingIntersectionProvenance { op: String },
+
+    #[error("manifold violation: {reason}")]
+    ManifoldViolation { reason: &'static str },
 }

@@ -1,4 +1,6 @@
+use crate::error::KernelError;
 use crate::geometry::curve::Curve;
+use crate::geometry::pcurve::Pcurve;
 use crate::geometry::surface::Surface;
 use crate::geometry::Point;
 use mycad_format::EntityRef;
@@ -29,6 +31,9 @@ pub struct HalfEdge {
     pub edge: usize,
     /// Whether this half-edge follows the edge's natural direction.
     pub forward: bool,
+    /// Optional pcurve (2D curve in face surface parameter space).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pcurve: Option<Pcurve>,
 }
 
 /// An edge — a curve segment bounded by two vertices.
@@ -143,12 +148,25 @@ impl Solid {
         edge: usize,
         forward: bool,
     ) -> usize {
+        self.add_half_edge_with_pcurve(id, start_vertex, edge, forward, None)
+    }
+
+    /// Add a half-edge with an optional pcurve and return its index.
+    pub fn add_half_edge_with_pcurve(
+        &mut self,
+        id: EntityId,
+        start_vertex: usize,
+        edge: usize,
+        forward: bool,
+        pcurve: Option<Pcurve>,
+    ) -> usize {
         let idx = self.half_edges.len();
         self.half_edges.push(HalfEdge {
             id,
             start_vertex,
             edge,
             forward,
+            pcurve,
         });
         idx
     }
@@ -193,26 +211,40 @@ impl Solid {
     /// all loops are closed, face/shell indices are in-bounds.
     /// Self-adjacent periodic faces (e.g. full sphere with 1 seam edge shared by 2 HEs)
     /// are explicitly permitted.
-    pub fn validate_manifold(&self) -> Result<(), &'static str> {
+    /// Also validates pcurve integrity: for HEs with pcurve, checks that pcurve→surface→3D
+    /// lifting matches edge.curve 3D evaluation at start, end, and midpoint.
+    pub fn validate_manifold(&self) -> Result<(), KernelError> {
+        use crate::geometry::tolerance::Tolerance;
+
         // Edge ↔ HE correspondence
         let mut edge_he_count: std::collections::HashMap<usize, Vec<bool>> =
             std::collections::HashMap::new();
         for he in &self.half_edges {
             if he.edge >= self.edges.len() {
-                return Err("half-edge references out-of-bounds edge");
+                return Err(KernelError::ManifoldViolation {
+                    reason: "half-edge references out-of-bounds edge",
+                });
             }
             edge_he_count.entry(he.edge).or_default().push(he.forward);
         }
 
         for edge_idx in 0..self.edges.len() {
             match edge_he_count.get(&edge_idx) {
-                None => return Err("edge has no half-edges"),
+                None => {
+                    return Err(KernelError::ManifoldViolation {
+                        reason: "edge has no half-edges",
+                    })
+                }
                 Some(forwards) => {
                     if forwards.len() != 2 {
-                        return Err("edge must have exactly 2 half-edges");
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "edge must have exactly 2 half-edges",
+                        });
                     }
                     if forwards[0] == forwards[1] {
-                        return Err("edge half-edges must have opposite orientation");
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "edge half-edges must have opposite orientation",
+                        });
                     }
                 }
             }
@@ -221,35 +253,46 @@ impl Solid {
         // Loop closure and face/shell bounds
         for face in &self.faces {
             if face.outer_loop >= self.loops.len() {
-                return Err("face references out-of-bounds outer loop");
+                return Err(KernelError::ManifoldViolation {
+                    reason: "face references out-of-bounds outer loop",
+                });
             }
             for &il in &face.inner_loops {
                 if il >= self.loops.len() {
-                    return Err("face references out-of-bounds inner loop");
+                    return Err(KernelError::ManifoldViolation {
+                        reason: "face references out-of-bounds inner loop",
+                    });
                 }
             }
-            // Validate outer loop and all inner loops identically
             let loop_indices: Vec<usize> = std::iter::once(face.outer_loop)
                 .chain(face.inner_loops.iter().copied())
                 .collect();
             for loop_idx in loop_indices {
                 let lp = &self.loops[loop_idx];
                 if lp.half_edges.is_empty() {
-                    return Err("loop must not be empty");
+                    return Err(KernelError::ManifoldViolation {
+                        reason: "loop must not be empty",
+                    });
                 }
                 for i in 0..lp.half_edges.len() {
                     let he_i = lp.half_edges[i];
                     let he_next_i = lp.half_edges[(i + 1) % lp.half_edges.len()];
                     if he_i >= self.half_edges.len() || he_next_i >= self.half_edges.len() {
-                        return Err("loop references out-of-bounds half-edge");
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "loop references out-of-bounds half-edge",
+                        });
                     }
                     let he_cur = &self.half_edges[he_i];
                     let he_next = &self.half_edges[he_next_i];
                     if he_cur.edge >= self.edges.len() {
-                        return Err("half-edge references out-of-bounds edge");
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "half-edge references out-of-bounds edge",
+                        });
                     }
                     if he_next.start_vertex >= self.vertices.len() {
-                        return Err("half-edge references out-of-bounds vertex");
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "half-edge references out-of-bounds vertex",
+                        });
                     }
                     let cur_edge = &self.edges[he_cur.edge];
                     let end_v = if he_cur.forward {
@@ -258,7 +301,9 @@ impl Solid {
                         cur_edge.vertices[0]
                     };
                     if end_v != he_next.start_vertex {
-                        return Err("loop is not closed");
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "loop is not closed",
+                        });
                     }
                 }
             }
@@ -267,9 +312,60 @@ impl Solid {
         for shell in &self.shells {
             for &fi in &shell.faces {
                 if fi >= self.faces.len() {
-                    return Err("shell references out-of-bounds face");
+                    return Err(KernelError::ManifoldViolation {
+                        reason: "shell references out-of-bounds face",
+                    });
                 }
             }
+        }
+
+        // Pcurve integrity check: for HEs with pcurve, validate 3D consistency
+        let tol = Tolerance::DEFAULT;
+        for (face_idx, face) in self.faces.iter().enumerate() {
+            let surface = &face.surface;
+            let loop_indices: Vec<usize> = std::iter::once(face.outer_loop)
+                .chain(face.inner_loops.iter().copied())
+                .collect();
+            for _loop_idx in &loop_indices {
+                let lp = &self.loops[*_loop_idx];
+                for &he_idx in &lp.half_edges {
+                    let he = &self.half_edges[he_idx];
+                    if let Some(ref pcurve) = he.pcurve {
+                        let edge = &self.edges[he.edge];
+                        let tr = pcurve.t_range();
+                        let t_e_start = if he.forward {
+                            edge.t_range[0]
+                        } else {
+                            edge.t_range[1]
+                        };
+                        let t_e_end = if he.forward {
+                            edge.t_range[1]
+                        } else {
+                            edge.t_range[0]
+                        };
+
+                        let mut max_deviation = 0.0_f64;
+                        for frac in &[0.0_f64, 0.5, 1.0] {
+                            let t_p = tr[0] + frac * (tr[1] - tr[0]);
+                            let (u, v) = pcurve.curve_2d().evaluate(t_p);
+                            let p_3d = surface.evaluate(u, v);
+                            let t_e = t_e_start + frac * (t_e_end - t_e_start);
+                            let e_3d = edge.curve.evaluate(t_e);
+                            let dev = (p_3d - e_3d).norm();
+                            max_deviation = max_deviation.max(dev);
+                        }
+
+                        if max_deviation > tol.value() {
+                            return Err(KernelError::PcurveSurfaceMismatch {
+                                he_idx,
+                                deviation: max_deviation,
+                                tolerance: tol.value(),
+                            });
+                        }
+                    }
+                }
+            }
+            let _ = face_idx;
         }
 
         Ok(())
@@ -722,5 +818,185 @@ mod tests {
             s.validate_manifold().is_err(),
             "out-of-bounds inner loop must fail"
         );
+    }
+
+    // T09: HalfEdge with pcurve: None serializes without pcurve field
+    #[test]
+    fn t09_half_edge_pcurve_none_yaml() {
+        let he = HalfEdge {
+            id: 1,
+            start_vertex: 0,
+            edge: 0,
+            forward: true,
+            pcurve: None,
+        };
+        let yaml = serde_yaml::to_string(&he).unwrap();
+        assert!(!yaml.contains("pcurve"));
+    }
+
+    // T10: HalfEdge with pcurve roundtrip
+    #[test]
+    fn t10_half_edge_pcurve_some_yaml_roundtrip() {
+        let line = crate::geometry::pcurve::Curve2D::try_line((0.0, 0.0), (1.0, 0.0)).unwrap();
+        let pc = crate::geometry::pcurve::Pcurve::try_new(line, [0.0, 1.0]).unwrap();
+        let he = HalfEdge {
+            id: 42,
+            start_vertex: 1,
+            edge: 2,
+            forward: true,
+            pcurve: Some(pc),
+        };
+        let yaml = serde_yaml::to_string(&he).unwrap();
+        let parsed: HalfEdge = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.id, 42);
+        assert_eq!(parsed.start_vertex, 1);
+        assert_eq!(parsed.edge, 2);
+        assert!(parsed.forward);
+        assert!(parsed.pcurve.is_some());
+        assert_eq!(parsed.pcurve.unwrap().t_range(), [0.0, 1.0]);
+    }
+
+    // T11: Mixed add_half_edge and add_half_edge_with_pcurve
+    #[test]
+    fn t11_mixed_half_edge_apis() {
+        let mut solid = Solid::new(0);
+        let v0 = solid.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = solid.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
+        let e0 = solid.add_edge(
+            3,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::origin(),
+                direction: crate::geometry::Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let he0 = solid.add_half_edge(4, v0, e0, true);
+        let he1 = solid.add_half_edge_with_pcurve(5, v1, e0, false, None);
+        assert_eq!(solid.half_edges[he0].pcurve, None);
+        assert_eq!(solid.half_edges[he1].pcurve, None);
+    }
+
+    /// Helper: build a minimal 2-vertex 1-edge solid with pcurve on a given HE.
+    fn build_pcurve_solid(
+        pcurve_forward: Option<crate::geometry::pcurve::Pcurve>,
+        pcurve_reverse: Option<crate::geometry::pcurve::Pcurve>,
+    ) -> Solid {
+        use crate::geometry::Vec3;
+        let mut s = Solid::new(0);
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
+        let e0 = s.add_edge(
+            3,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::origin(),
+                direction: Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let _ = s.add_half_edge_with_pcurve(4, v0, e0, true, pcurve_forward);
+        let _ = s.add_half_edge_with_pcurve(5, v1, e0, false, pcurve_reverse);
+        let lp = s.add_loop(6, vec![0, 1]);
+        s.add_face(
+            7,
+            Surface::Plane {
+                origin: Point::origin(),
+                normal: Vec3::z(),
+                u_axis: Vec3::x(),
+                v_axis: Vec3::y(),
+            },
+            lp,
+            vec![],
+            true,
+            None,
+        );
+        s.add_shell(8, vec![0], true);
+        s
+    }
+
+    // T12: pcurve endpoints match edge curve 3D evaluation
+    #[test]
+    fn t12_pcurve_consistent_with_edge() {
+        // Line pcurve in XY plane: origin=(0,0), direction=(1,0), t_range=[0,1]
+        // Surface is Plane XY: evaluate(u,v) = (u,v,0)
+        // edge.curve is Line{origin=(0,0,0), direction=(1,0,0)}, t_range=[0,1]
+        // pcurve at t=0: (0,0) -> surface(0,0) = (0,0,0) == edge.evaluate(0) ✓
+        // pcurve at t=1: (1,0) -> surface(1,0) = (1,0,0) == edge.evaluate(1) ✓
+        let line = crate::geometry::pcurve::Curve2D::try_line((0.0, 0.0), (1.0, 0.0)).unwrap();
+        let pc = crate::geometry::pcurve::Pcurve::try_new(line, [0.0, 1.0]).unwrap();
+        let solid = build_pcurve_solid(Some(pc), None);
+        assert!(solid.validate_manifold().is_ok());
+    }
+
+    // T13: pcurve deviating from edge curve by ~1e-3
+    #[test]
+    fn t13_pcurve_mismatch_detected() {
+        // Line pcurve: origin=(0,0), direction=(1,0.001), t_range=[0,1]
+        // Midpoint at t=0.5: (0.5, 0.0005) -> surface gives (0.5, 0.0005, 0)
+        // Edge curve midpoint: (0.5, 0, 0)
+        // Deviation = sqrt(0.0005^2) = 0.0005 >> LENGTH_TOLERANCE
+        let line = crate::geometry::pcurve::Curve2D::try_line((0.0, 0.0), (1.0, 0.001)).unwrap();
+        let pc = crate::geometry::pcurve::Pcurve::try_new(line, [0.0, 1.0]).unwrap();
+        let solid = build_pcurve_solid(Some(pc), None);
+        let result = solid.validate_manifold();
+        assert!(matches!(
+            result,
+            Err(KernelError::PcurveSurfaceMismatch { .. })
+        ));
+    }
+
+    // T13b: endpoints match but midpoint diverges (edge is line, pcurve is circle arc with same endpoints)
+    #[test]
+    fn t13b_midpoint_mismatch_detected() {
+        // Circle2D centered at (0.5, 0), radius=0.5, sweep from angle π to 0
+        // At angle π: (-0.5+0.5, 0) = (0,0) → surface(0,0)=(0,0,0) matches edge.evaluate(0)
+        // At angle 0: (0.5+0.5, 0) = (1,0) → surface(1,0)=(1,0,0) matches edge.evaluate(1)
+        // At angle π/2: (0.5, 0.5) → surface(0.5, 0.5)=(0.5,0.5,0) ≠ edge.evaluate(0.5)=(0.5,0,0)
+        let circle = crate::geometry::pcurve::Curve2D::try_circle((0.5, 0.0), 0.5).unwrap();
+        let pc =
+            crate::geometry::pcurve::Pcurve::try_new(circle, [std::f64::consts::PI, 0.0]).unwrap();
+        let solid = build_pcurve_solid(Some(pc), None);
+        let result = solid.validate_manifold();
+        assert!(
+            matches!(result, Err(KernelError::PcurveSurfaceMismatch { .. })),
+            "expected PcurveSurfaceMismatch for midpoint divergence, got {:?}",
+            result
+        );
+    }
+
+    // T13c: descending t_range pcurve on forward HE with consistent edge
+    #[test]
+    fn t13c_descending_trange_forward_he_ok() {
+        // Forward HE: edge t_range [0,1], pcurve t_range [1,0] (descending)
+        // Line pcurve: origin=(1,0), direction=(-1,0)
+        // At t=1: (1+(-1)*1, 0) = (0,0) → surface(0,0)=(0,0,0) == edge.evaluate(0)
+        // At t=0: (1+(-1)*0, 0) = (1,0) → surface(1,0)=(1,0,0) == edge.evaluate(1)
+        // This is valid: pcurve descends while edge ascends (both traverse the same geometry)
+        let line = crate::geometry::pcurve::Curve2D::try_line((1.0, 0.0), (-1.0, 0.0)).unwrap();
+        let pc = crate::geometry::pcurve::Pcurve::try_new(line, [1.0, 0.0]).unwrap();
+        let solid = build_pcurve_solid(Some(pc), None);
+        assert!(solid.validate_manifold().is_ok());
+    }
+
+    // T13d: validate_manifold returns Result<(), KernelError> with structured error
+    #[test]
+    fn t13d_validate_returns_kernel_error() {
+        let line = crate::geometry::pcurve::Curve2D::try_line((0.0, 0.0), (1.0, 0.001)).unwrap();
+        let pc = crate::geometry::pcurve::Pcurve::try_new(line, [0.0, 1.0]).unwrap();
+        let solid = build_pcurve_solid(Some(pc), None);
+        match solid.validate_manifold() {
+            Err(KernelError::PcurveSurfaceMismatch {
+                he_idx,
+                deviation,
+                tolerance,
+            }) => {
+                assert_eq!(he_idx, 0);
+                assert!(deviation > tolerance);
+            }
+            other => panic!("expected PcurveSurfaceMismatch, got {:?}", other),
+        }
     }
 }

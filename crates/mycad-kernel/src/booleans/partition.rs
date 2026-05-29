@@ -5,7 +5,13 @@ use mycad_format::EntityRef;
 
 use super::types::BooleanOp;
 
-type Segment2D = ((f64, f64), (f64, f64));
+/// An intersection segment with provenance tracking (per-edge partner).
+#[derive(Clone)]
+pub struct IntersectionSegment {
+    pub p_start: (f64, f64),
+    pub p_end: (f64, f64),
+    pub partner: EntityRef,
+}
 
 pub struct FaceFragment {
     pub source_face_index: usize,
@@ -14,6 +20,10 @@ pub struct FaceFragment {
     pub parent_name: EntityRef,
     pub traversal_index: u32,
     pub is_tool_side: bool,
+    /// Per-edge partner provenance. Edge i connects polygon_3d[i] → polygon_3d[(i+1)%n].
+    /// Some(partner) means this edge was created by an intersection with the partner face.
+    /// None means it originated from the outer loop of the source face.
+    pub boundary_partners: Vec<Option<EntityRef>>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,8 +175,8 @@ pub fn partition_faces(
         let polygon_3d = &target_polygons_3d[fi];
         let face = &target.faces[fi];
 
-        // Collect intersection segments from tool faces
-        let mut segments: Vec<((f64, f64), (f64, f64))> = Vec::new();
+        // Collect intersection segments from tool faces (with partner provenance)
+        let mut segments: Vec<IntersectionSegment> = Vec::new();
 
         for ui in 0..tool.faces.len() {
             if coplanar_tool_set[ui] {
@@ -174,6 +184,10 @@ pub fn partition_faces(
             }
             let uplane = &tool_planes[ui];
             let tool_poly_2d = &tool_polygons_2d[ui];
+            let tool_face_name = tool.faces[ui]
+                .name
+                .clone()
+                .ok_or_else(|| format!("tool face {} missing name", ui))?;
 
             // Intersect two planes
             let line = intersect_planes(plane, uplane);
@@ -223,7 +237,11 @@ pub fn partition_faces(
                 continue;
             };
 
-            segments.push((s_start_final, s_end_final));
+            segments.push(IntersectionSegment {
+                p_start: s_start_final,
+                p_end: s_end_final,
+                partner: tool_face_name,
+            });
         }
 
         // Build PSLG and subdivide
@@ -241,11 +259,12 @@ pub fn partition_faces(
                 parent_name: name,
                 traversal_index: 0,
                 is_tool_side: false,
+                boundary_partners: vec![None; polygon_3d.len()],
             });
         } else {
             // Subdivide the polygon using PSLG
             let sub_faces = pslg_subdivide(polygon_2d, &segments, plane);
-            for (idx, sub_poly_2d) in sub_faces.into_iter().enumerate() {
+            for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
                 let poly_3d: Vec<Point> = sub_poly_2d
                     .iter()
                     .map(|(u, v)| plane.unproject_3d(*u, *v))
@@ -257,6 +276,7 @@ pub fn partition_faces(
                     parent_name: name.clone(),
                     traversal_index: idx as u32,
                     is_tool_side: false,
+                    boundary_partners: edge_partners,
                 });
             }
         }
@@ -272,13 +292,17 @@ pub fn partition_faces(
         let polygon_3d = &tool_polygons_3d[fi];
         let face = &tool.faces[fi];
 
-        let mut segments: Vec<((f64, f64), (f64, f64))> = Vec::new();
+        let mut segments: Vec<IntersectionSegment> = Vec::new();
 
         for ti in 0..target.faces.len() {
             if coplanar_target_set[ti] {
                 continue;
             }
             let tplane = &target_planes[ti];
+            let target_face_name = target.faces[ti]
+                .name
+                .clone()
+                .ok_or_else(|| format!("target face {} missing name", ti))?;
 
             let line = intersect_planes(plane, tplane);
             let Some((line_origin_2d, line_dir_2d)) = line else {
@@ -324,7 +348,11 @@ pub fn partition_faces(
                 continue;
             };
 
-            segments.push((s_start_final, s_end_final));
+            segments.push(IntersectionSegment {
+                p_start: s_start_final,
+                p_end: s_end_final,
+                partner: target_face_name,
+            });
         }
 
         let name = face
@@ -340,10 +368,11 @@ pub fn partition_faces(
                 parent_name: name,
                 traversal_index: 0,
                 is_tool_side: true,
+                boundary_partners: vec![None; polygon_3d.len()],
             });
         } else {
             let sub_faces = pslg_subdivide(polygon_2d, &segments, plane);
-            for (idx, sub_poly_2d) in sub_faces.into_iter().enumerate() {
+            for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
                 let poly_3d: Vec<Point> = sub_poly_2d
                     .iter()
                     .map(|(u, v)| plane.unproject_3d(*u, *v))
@@ -355,6 +384,7 @@ pub fn partition_faces(
                     parent_name: name.clone(),
                     traversal_index: idx as u32,
                     is_tool_side: true,
+                    boundary_partners: edge_partners,
                 });
             }
         }
@@ -384,11 +414,12 @@ pub fn partition_faces(
                 .collect();
             target_fragments.push(FaceFragment {
                 source_face_index: pair.target_face,
-                polygon_3d: poly_3d,
+                polygon_3d: poly_3d.clone(),
                 plane: tp.clone(),
                 parent_name: tname.clone(),
                 traversal_index: 0,
                 is_tool_side: false,
+                boundary_partners: vec![None; poly_3d.len()],
             });
         }
 
@@ -411,11 +442,12 @@ pub fn partition_faces(
                     strip.iter().map(|(u, v)| tp.unproject_3d(*u, *v)).collect();
                 target_fragments.push(FaceFragment {
                     source_face_index: pair.target_face,
-                    polygon_3d: poly_3d,
+                    polygon_3d: poly_3d.clone(),
                     plane: tp.clone(),
                     parent_name: tname.clone(),
                     traversal_index: strip_idx,
                     is_tool_side: false,
+                    boundary_partners: vec![None; poly_3d.len()],
                 });
                 strip_idx += 1;
             }
@@ -732,31 +764,39 @@ fn line_intersection_2d(
     Some((a1.0 + t * d1.0, a1.1 + t * d1.1))
 }
 
+/// Per-edge partner provenance for pslg_subdivide output.
+type EdgePartners = Vec<Option<EntityRef>>;
+
+/// Sub-polygon result from PSLG subdivision.
+type SubFaceResult = (Vec<(f64, f64)>, EdgePartners);
+
 /// Build a PSLG from the outer loop and segments, then subdivide into sub-polygons.
+/// Returns (polygon_2d, per_edge_partners) pairs. Edge i of polygon goes from vertex[i] to vertex[(i+1)%n].
+/// partner is Some(partner_face_name) if the edge originated from an intersection segment.
 fn pslg_subdivide(
     outer_loop: &[(f64, f64)],
-    segments: &[Segment2D],
+    segments: &[IntersectionSegment],
     _plane: &PlaneData,
-) -> Vec<Vec<(f64, f64)>> {
+) -> Vec<SubFaceResult> {
     let len_eps = LENGTH_TOLERANCE;
     let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
     let outer_signed_area = signed_area_2d(outer_loop);
 
     // Collect all unique points
     let mut all_points: Vec<(f64, f64)> = outer_loop.to_vec();
-    for (s, e) in segments {
-        all_points.push(*s);
-        all_points.push(*e);
+    for seg in segments {
+        all_points.push(seg.p_start);
+        all_points.push(seg.p_end);
     }
 
     // Add intersection points between segments
     for i in 0..segments.len() {
         for j in (i + 1)..segments.len() {
             if let Some(pt) = segment_segment_intersect_2d(
-                segments[i].0,
-                segments[i].1,
-                segments[j].0,
-                segments[j].1,
+                segments[i].p_start,
+                segments[i].p_end,
+                segments[j].p_start,
+                segments[j].p_end,
             ) {
                 all_points.push(pt);
             }
@@ -769,7 +809,7 @@ fn pslg_subdivide(
         for i in 0..n_outer {
             let j = (i + 1) % n_outer;
             if let Some(pt) =
-                segment_segment_intersect_2d(seg.0, seg.1, outer_loop[i], outer_loop[j])
+                segment_segment_intersect_2d(seg.p_start, seg.p_end, outer_loop[i], outer_loop[j])
             {
                 all_points.push(pt);
             }
@@ -793,7 +833,12 @@ fn pslg_subdivide(
     };
 
     // Build edges: outer loop edges + segments (split at intersections)
+    // Also track per-edge partner provenance for intersection segment edges.
     let mut edges: Vec<(usize, usize)> = Vec::new();
+    let mut edge_partner: std::collections::HashMap<[usize; 2], EntityRef> =
+        std::collections::HashMap::new();
+    let mut segment_edge_set: std::collections::HashSet<[usize; 2]> =
+        std::collections::HashSet::new();
 
     // Split outer loop edges at all interior points
     for i in 0..n_outer {
@@ -801,7 +846,6 @@ fn pslg_subdivide(
         let pi = find_point(outer_loop[i], &unique_points).unwrap();
         let pj = find_point(outer_loop[j], &unique_points).unwrap();
 
-        // Find all points along this edge
         let mut edge_points = vec![pi];
         for (k, pk) in unique_points.iter().enumerate() {
             if k == pi || k == pj {
@@ -813,7 +857,6 @@ fn pslg_subdivide(
         }
         edge_points.push(pj);
 
-        // Sort by parameter t along the edge
         let d = (
             outer_loop[j].0 - outer_loop[i].0,
             outer_loop[j].1 - outer_loop[i].1,
@@ -834,52 +877,56 @@ fn pslg_subdivide(
         }
     }
 
-    // Split segments at all interior points
+    // Split segments at all interior points — tag with partner provenance
     for seg in segments {
-        let si = find_point(seg.0, &unique_points).unwrap();
-        let ei = find_point(seg.1, &unique_points).unwrap();
+        let si = find_point(seg.p_start, &unique_points).unwrap();
+        let ei = find_point(seg.p_end, &unique_points).unwrap();
 
         let mut seg_points = vec![si];
         for (k, pk) in unique_points.iter().enumerate() {
             if k == si || k == ei {
                 continue;
             }
-            if point_on_segment_2d(*pk, seg.0, seg.1) {
+            if point_on_segment_2d(*pk, seg.p_start, seg.p_end) {
                 seg_points.push(k);
             }
         }
         seg_points.push(ei);
 
-        let d = (seg.1 .0 - seg.0 .0, seg.1 .1 - seg.0 .1);
+        let d = (seg.p_end.0 - seg.p_start.0, seg.p_end.1 - seg.p_start.1);
         let d_len_sq = d.0 * d.0 + d.1 * d.1;
         if d_len_sq > len_eps * len_eps {
             seg_points.sort_by_key(|&k| {
                 let pk = unique_points[k];
-                let t = ((pk.0 - seg.0 .0) * d.0 + (pk.1 - seg.0 .1) * d.1) / d_len_sq;
+                let t = ((pk.0 - seg.p_start.0) * d.0 + (pk.1 - seg.p_start.1) * d.1) / d_len_sq;
                 (t * 1e12).round() as i64
             });
         }
         seg_points.dedup();
 
         for w in seg_points.windows(2) {
+            let key = if w[0] < w[1] {
+                [w[0], w[1]]
+            } else {
+                [w[1], w[0]]
+            };
+            segment_edge_set.insert(key);
+            edge_partner.insert(key, seg.partner.clone());
             edges.push((w[0], w[1]));
         }
     }
 
     // Build adjacency and walk sub-faces using DCEL-like traversal
-    // Each edge (a, b) generates two half-edges: a→b and b→a
     let mut he_next: std::collections::HashMap<(usize, usize), (usize, usize)> =
         std::collections::HashMap::new();
 
-    // For each vertex, collect all outgoing half-edges (both directions), sorted by angle
     let mut out_edges: std::collections::HashMap<usize, Vec<usize>> =
         std::collections::HashMap::new();
     for (a, b) in &edges {
         out_edges.entry(*a).or_default().push(*b);
-        out_edges.entry(*b).or_default().push(*a); // both directions for DCEL correctness
+        out_edges.entry(*b).or_default().push(*a);
     }
 
-    // Sort outgoing edges by angle for proper face walking
     for (v, neighbors) in out_edges.iter_mut() {
         let pv = unique_points[*v];
         neighbors.sort_by(|a, b| {
@@ -893,16 +940,13 @@ fn pslg_subdivide(
         });
     }
 
-    // Build DCEL next-pointer for every directed half-edge (both a→b and b→a per edge)
     for (a, b) in &edges {
-        // Forward a→b: arriving at b, find the CCW-next outgoing edge from b
         if let Some(nbrs) = out_edges.get(b) {
             if let Some(pos) = nbrs.iter().position(|x| *x == *a) {
                 let prev_pos = if pos == 0 { nbrs.len() - 1 } else { pos - 1 };
                 he_next.insert((*a, *b), (*b, nbrs[prev_pos]));
             }
         }
-        // Reverse b→a: arriving at a, find the CCW-next outgoing edge from a
         if let Some(nbrs) = out_edges.get(a) {
             if let Some(pos) = nbrs.iter().position(|x| *x == *b) {
                 let prev_pos = if pos == 0 { nbrs.len() - 1 } else { pos - 1 };
@@ -911,7 +955,6 @@ fn pslg_subdivide(
         }
     }
 
-    // Walk faces — iterate all directed half-edges (both directions per edge)
     let all_directed: Vec<(usize, usize)> = {
         let mut v: Vec<(usize, usize)> =
             edges.iter().flat_map(|&(a, b)| [(a, b), (b, a)]).collect();
@@ -921,7 +964,8 @@ fn pslg_subdivide(
     };
 
     let mut visited: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
-    let mut sub_faces: Vec<Vec<(f64, f64)>> = Vec::new();
+    type FaceRaw = (Vec<(f64, f64)>, Vec<(usize, usize)>);
+    let mut sub_faces_raw: Vec<FaceRaw> = Vec::new();
 
     for &(a, b) in &all_directed {
         if visited.contains(&(a, b)) {
@@ -929,6 +973,7 @@ fn pslg_subdivide(
         }
 
         let mut face_verts = Vec::new();
+        let mut face_dir_edges = Vec::new();
         let mut cur = (a, b);
         let start = cur;
         loop {
@@ -937,6 +982,7 @@ fn pslg_subdivide(
             }
             visited.insert(cur);
             face_verts.push(unique_points[cur.0]);
+            face_dir_edges.push(cur);
 
             match he_next.get(&cur) {
                 Some(next) => cur = *next,
@@ -948,25 +994,24 @@ fn pslg_subdivide(
             }
 
             if face_verts.len() > unique_points.len() * 2 {
-                break; // Safety: prevent infinite loop
+                break;
             }
         }
 
         if face_verts.len() >= 3 && cur == start {
             let area = signed_area_2d(&face_verts);
             if area.abs() > area_eps {
-                // Preserve the original outer_loop orientation so that edge
-                // traversal directions remain consistent across adjacent faces.
                 if (area < 0.0) != (outer_signed_area < 0.0) {
                     face_verts.reverse();
+                    face_dir_edges.reverse();
                 }
-                sub_faces.push(face_verts);
+                sub_faces_raw.push((face_verts, face_dir_edges));
             }
         }
     }
 
     // The outer boundary face has the largest area; filter it out
-    if sub_faces.len() > 1 {
+    if sub_faces_raw.len() > 1 {
         let outer_area: f64 = outer_loop
             .iter()
             .zip(outer_loop.iter().cycle().skip(1))
@@ -975,14 +1020,13 @@ fn pslg_subdivide(
             .abs()
             / 2.0;
 
-        sub_faces.retain(|f| {
+        sub_faces_raw.retain(|(f, _)| {
             let area = signed_area_2d(f).abs();
             area < outer_area - area_eps
         });
     }
 
-    // Sanitize: remove degenerate faces
-    sub_faces.retain(|f| {
+    sub_faces_raw.retain(|(f, _)| {
         if f.len() < 3 {
             return false;
         }
@@ -990,11 +1034,23 @@ fn pslg_subdivide(
         area > area_eps
     });
 
-    if sub_faces.is_empty() {
-        // No subdivision actually happened
-        vec![outer_loop.to_vec()]
+    if sub_faces_raw.is_empty() {
+        let n = outer_loop.len();
+        vec![(outer_loop.to_vec(), vec![None; n])]
     } else {
-        sub_faces
+        sub_faces_raw
+            .into_iter()
+            .map(|(verts, dir_edges)| {
+                let partners: EdgePartners = dir_edges
+                    .iter()
+                    .map(|&(a, b)| {
+                        let key = if a < b { [a, b] } else { [b, a] };
+                        edge_partner.get(&key).cloned()
+                    })
+                    .collect();
+                (verts, partners)
+            })
+            .collect()
     }
 }
 

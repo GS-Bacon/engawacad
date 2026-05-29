@@ -1,6 +1,8 @@
 pub mod curve;
 pub mod math;
+pub mod pcurve;
 pub mod surface;
+pub mod tolerance;
 
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};

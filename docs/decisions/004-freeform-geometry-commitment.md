@@ -27,7 +27,7 @@ Accepted
 
 1. **`Surface` / `Curve` enum を唯一の幾何拡張点**とする。`Nurbs` / スプライン variant の追加が加算的であり続けるよう、アルゴリズムは variant 集合を仮定しない。
 2. **アルゴリズムは曲面・曲線の型に非依存**であること。平面・直線前提をアルゴリズムへ埋め込まない (例: 面法線は面ごとに 1 回でなく、点ごとに `Surface::normal_at_point` で評価する)。
-3. **数値モデル (トレラント方式 vs 厳密方式) は本 ADR では保留**し、曲面 Boolean を実装する Phase 4 着手時に決定する。自由曲面の交線は数値的近似になるため、業界カーネル (Parasolid / ACIS) はエンティティ毎に公差を持つトレラントモデルを採る。これを後から全エンティティ・全比較へ導入するのは大改修であり、Phase 4 で意思決定する論点として明示しておく。なお `CLAUDE.md` の **決定性** 原則とは両立可能 (アルゴリズム固定で再現できる) だが、数値ロバスト性の確保が決定性維持の難所になる点に留意する。
+3. **数値モデル: トレラント方式採用 (Decision 3 — Phase 4 (#31) で確定)**。詳細は [下の節](#数値モデルトレラント方式採用-decision-3--phase-4-31-で確定) を参照。
 
 ## 単位系・グローバル公差 (暫定)
 
@@ -77,7 +77,17 @@ Accepted
 
 質量 (g)・密度等の物理単位は本 Issue では扱わず、将来の質量特性/材料 feature 着手時に決定する。公差の次元別分離が `MASS_TOLERANCE` 等を加算的に足す継ぎ目になる。
 
-Phase 4 でのトレラントモデル移行については Decision 3 を参照のこと。
+### 数値モデル: トレラント方式採用 (Decision 3 — Phase 4 (#31) で確定)
+
+Phase 4 は Parasolid/ACIS 流の per-entity トレラント方式を採用する。`Tolerance` newtype を `geometry::tolerance` に導入し、`Vertex.tolerance` / `Edge.tolerance` / `Face.tolerance` field を将来追加する (型導入は #31、field 追加は #34)。比較は両端の Tolerance の max を用いる。グローバル定数 (`LENGTH_TOLERANCE` / `ANGLE_TOLERANCE` / `RELATIVE_TOLERANCE`) は `Tolerance::DEFAULT` の値として残し、既存 call site を段階移行する。一括差し替えは決定性回帰リスクが高いため、新規コード経路から順次移行する。
+
+### 段階移行プラン (Decision 3 補足)
+
+| Issue | 範囲 | 内容 |
+|-------|------|------|
+| #31 | 型導入 | `Tolerance` newtype + `length_near_within` / `point_near_within` helper。既存 `LENGTH_TOLERANCE` call site は不変 |
+| #34 | field 埋め込み + 移行 | `Vertex` / `Edge` / `Face` に `tolerance: Tolerance` field 追加。既存 call site を段階的に per-entity 比較へ移行 |
+| #34 以降 | 完全移行 | グローバル定数参照を全て per-entity 経由に差し替え |
 
 ## Rationale
 
@@ -87,7 +97,7 @@ Phase 4 でのトレラントモデル移行については Decision 3 を参照
 ## Implementation Details
 
 - 本 ADR は ADR-001 (B-rep 採用) を拡張する位置づけ。番号 003 は ADR-002 で Viewer スタック用に予約済みのため 004 を使用。
-- **未決の横断的論点 (Phase 4 で再検討)**:
-  - **pcurve (パラメータ空間曲線)**: トリムされた周期・自由曲面を tessellation / Boolean で安定に扱うには、half-edge ごとに面のパラメータ空間上の 2D 曲線を持たせる構造が事実上必要になりうる (OpenCASCADE 等が保持)。現在の `Edge` は 3D `curve + t_range` のみで pcurve を持たない。
-  - **数値モデル (トレラント vs 厳密)**: 上記 Decision 3。
+- **Phase 4 で確定した横断的論点**:
+  - **pcurve (パラメータ空間曲線)**: #31 で `Curve2D` enum (`Line2D` + `Circle2D`) と `Pcurve` struct を導入。`HalfEdge.pcurve: Option<Pcurve>` により、half-edge ごとに面のパラメータ空間上の 2D 曲線を持たせる構造を採用 (OpenCASCADE 慣行)。#34 以降で `Sampled2D` / `NURBS2D` 等、自由曲面に対応する variant を additive 追加する。
+  - **数値モデル (トレラント方式)**: #31 で Decision 3 を確定。上記 Decision 3 および段階移行プランを参照。
 - 本 ADR 採択に伴う即時対応: `tessellate_solid` が面法線を `normal_at(0.0, 0.0)` で 1 回だけ評価していた平面前提を解消し、`Surface::normal_at_point` による頂点毎評価へ変更した (平面では従来と同一の結果)。

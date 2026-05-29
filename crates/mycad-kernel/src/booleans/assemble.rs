@@ -102,6 +102,63 @@ pub fn assemble(
     let mut edge_map: std::collections::HashMap<[usize; 2], usize> =
         std::collections::HashMap::new();
 
+    // Collect intersection edge candidates for naming: (fragment_idx, edge_local_idx)
+    // to look up partner provenance from boundary_partners.
+    let mut edge_fragment_partner: std::collections::HashMap<[usize; 2], Vec<(usize, usize)>> =
+        std::collections::HashMap::new();
+
+    for (fi, cf) in selected.iter().enumerate() {
+        let vis = &frag_vertex_indices[fi];
+        let n = vis.len();
+
+        for k in 0..n {
+            let i = k;
+            let j = (k + 1) % n;
+            let vi_start = vis[i];
+            let vi_end = vis[j];
+            let key = normalize_edge_key(vi_start, vi_end);
+
+            // Track provenance for intersection edge naming
+            if cf
+                .fragment
+                .boundary_partners
+                .get(k)
+                .is_some_and(|p| p.is_some())
+            {
+                edge_fragment_partner.entry(key).or_default().push((fi, k));
+            }
+        }
+    }
+
+    // Assign intersection edge names using provenance
+    let mut intersection_edge_names: std::collections::HashMap<[usize; 2], EntityRef> =
+        std::collections::HashMap::new();
+    {
+        // Collect candidates: (op, canonical_parents, edge_key, frag_idx, edge_local_idx)
+        let mut candidates: Vec<(BooleanOp, Vec<EntityRef>, [usize; 2])> = Vec::new();
+        for (&key, entries) in &edge_fragment_partner {
+            let mut partners_seen: Vec<EntityRef> = Vec::new();
+            for &(fi, k) in entries {
+                if let Some(Some(partner)) = selected[fi].fragment.boundary_partners.get(k) {
+                    partners_seen.push(partner.clone());
+                }
+            }
+            if !partners_seen.is_empty() {
+                let canonical = canonicalize_provenance(&partners_seen, op);
+                candidates.push((op, canonical, key));
+            }
+        }
+
+        let selectors = assign_intersection_edge_selectors(&candidates);
+        for (op, canonical, key) in &candidates {
+            if let Some(selector) = selectors.get(key) {
+                if let Ok(name) = derive_edge_name(canonical, *op, selector) {
+                    intersection_edge_names.insert(*key, name);
+                }
+            }
+        }
+    }
+
     for (fi, _cf) in selected.iter().enumerate() {
         let vis = &frag_vertex_indices[fi];
         let n = vis.len();
@@ -116,6 +173,7 @@ pub fn assemble(
                 let p0 = solid.vertices[vi_start].point;
                 let p1 = solid.vertices[vi_end].point;
                 let direction = p1 - p0;
+                let edge_name = intersection_edge_names.get(&key).cloned();
                 let edge_idx = solid.add_edge(
                     id_gen.next(),
                     [vi_start, vi_end],
@@ -124,7 +182,7 @@ pub fn assemble(
                         direction,
                     },
                     [0.0, 1.0],
-                    None,
+                    edge_name,
                 );
                 e.insert(edge_idx);
             }
@@ -593,4 +651,145 @@ fn derive_face_name(frag: &super::partition::FaceFragment, op: BooleanOp) -> Opt
         &selector,
     )
     .ok()
+}
+
+/// Derive a stable name for an intersection edge from its provenance (2 parent faces).
+/// Returns `Err(MissingIntersectionProvenance)` if parents are empty or insufficient.
+pub fn derive_edge_name(
+    parents: &[EntityRef],
+    op: BooleanOp,
+    selector: &str,
+) -> Result<EntityRef, KernelError> {
+    if parents.is_empty() {
+        return Err(KernelError::MissingIntersectionProvenance {
+            op: op.isect_op_str().to_string(),
+        });
+    }
+    let canonical = canonicalize_provenance(parents, op);
+    EntityRef::try_derived(
+        mycad_format::EntityKind::Edge,
+        op.isect_op_str(),
+        canonical,
+        selector,
+    )
+    .map_err(|_| KernelError::MissingIntersectionProvenance {
+        op: op.isect_op_str().to_string(),
+    })
+}
+
+/// Canonicalize provenance: for commutative ops (Fuse, Intersect), sort parents by canonical_name.
+/// For non-commutative ops (Cut), preserve order.
+pub fn canonicalize_provenance(parents: &[EntityRef], op: BooleanOp) -> Vec<EntityRef> {
+    match op {
+        BooleanOp::Cut => parents.to_vec(),
+        BooleanOp::Fuse | BooleanOp::Intersect => {
+            let mut sorted = parents.to_vec();
+            sorted.sort_by_key(|a| a.canonical_name());
+            sorted
+        }
+    }
+}
+
+/// Assign deterministic selectors to intersection edges within the same (op, canonical_parents) group.
+/// Edges are sorted by edge_key and assigned e0000, e0001, ...
+pub fn assign_intersection_edge_selectors(
+    candidates: &[(BooleanOp, Vec<EntityRef>, [usize; 2])],
+) -> std::collections::HashMap<[usize; 2], String> {
+    use std::collections::BTreeMap;
+
+    let mut groups: BTreeMap<String, Vec<[usize; 2]>> = BTreeMap::new();
+    for (op, parents, key) in candidates {
+        let canonical = canonicalize_provenance(parents, *op);
+        let group_key = format!(
+            "{}:{}",
+            op.isect_op_str(),
+            canonical
+                .iter()
+                .map(|p| p.canonical_name())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        groups.entry(group_key).or_default().push(*key);
+    }
+
+    let mut result = std::collections::HashMap::new();
+    for (_, mut edges) in groups {
+        edges.sort();
+        for (ordinal, key) in edges.into_iter().enumerate() {
+            result.insert(key, format!("e{:04}", ordinal));
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named_face(id: &str, role: &str) -> EntityRef {
+        EntityRef::try_named(id, mycad_format::EntityKind::Face, role).unwrap()
+    }
+
+    // T15: derive_edge_name produces correct canonical_name
+    #[test]
+    fn t15_derive_edge_name_cut() {
+        let fa = named_face("box1", "top");
+        let fb = named_face("box2", "front");
+        let result = derive_edge_name(&[fa.clone(), fb.clone()], BooleanOp::Cut, "e0001");
+        assert!(result.is_ok());
+        let name = result.unwrap();
+        let canonical = name.canonical_name();
+        // Cut is non-commutative: order preserved [fa, fb]
+        assert!(canonical.contains("cut_isect_edge"));
+        assert!(canonical.contains("e0001"));
+    }
+
+    // T15b: derive_edge_name with empty parents returns MissingIntersectionProvenance
+    #[test]
+    fn t15b_derive_edge_name_empty_parents() {
+        let result = derive_edge_name(&[], BooleanOp::Cut, "e0001");
+        assert!(matches!(
+            result,
+            Err(KernelError::MissingIntersectionProvenance { .. })
+        ));
+    }
+
+    // T16: commutative op sorts parents — [B, A] same as [A, B]
+    #[test]
+    fn t16_commutative_sort_deterministic() {
+        let fa = named_face("a", "top");
+        let fb = named_face("b", "front");
+        let r1 = derive_edge_name(&[fa.clone(), fb.clone()], BooleanOp::Fuse, "e0001").unwrap();
+        let r2 = derive_edge_name(&[fb.clone(), fa.clone()], BooleanOp::Fuse, "e0001").unwrap();
+        assert_eq!(r1.canonical_name(), r2.canonical_name());
+    }
+
+    // T17: non-commutative op preserves order — [B, A] ≠ [A, B]
+    #[test]
+    fn t17_non_commutative_preserves_order() {
+        let fa = named_face("a", "top");
+        let fb = named_face("b", "front");
+        let r1 = derive_edge_name(&[fa.clone(), fb.clone()], BooleanOp::Cut, "e0001").unwrap();
+        let r2 = derive_edge_name(&[fb.clone(), fa.clone()], BooleanOp::Cut, "e0001").unwrap();
+        assert_ne!(r1.canonical_name(), r2.canonical_name());
+    }
+
+    // T17b: assign_intersection_edge_selectors produces unique selectors
+    #[test]
+    fn t17b_assign_selectors_unique() {
+        let fa = named_face("a", "top");
+        let fb = named_face("b", "front");
+        let parents = vec![fa, fb];
+        let candidates = vec![
+            (BooleanOp::Cut, parents.clone(), [0usize, 5]),
+            (BooleanOp::Cut, parents.clone(), [0usize, 3]),
+            (BooleanOp::Cut, parents.clone(), [0usize, 1]),
+        ];
+        let selectors = assign_intersection_edge_selectors(&candidates);
+        assert_eq!(selectors.len(), 3);
+        // Sorted by key ascending: [0,1], [0,3], [0,5]
+        assert_eq!(selectors[&[0, 1]], "e0000");
+        assert_eq!(selectors[&[0, 3]], "e0001");
+        assert_eq!(selectors[&[0, 5]], "e0002");
+    }
 }

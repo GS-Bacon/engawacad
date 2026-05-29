@@ -15,6 +15,14 @@ impl BooleanOp {
             BooleanOp::Intersect => "intersect",
         }
     }
+
+    pub fn isect_op_str(&self) -> &'static str {
+        match self {
+            BooleanOp::Cut => "cut_isect_edge",
+            BooleanOp::Fuse => "fuse_isect_edge",
+            BooleanOp::Intersect => "intersect_isect_edge",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

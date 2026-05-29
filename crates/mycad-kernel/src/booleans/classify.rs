@@ -315,6 +315,7 @@ impl Clone for FaceFragment {
             parent_name: self.parent_name.clone(),
             traversal_index: self.traversal_index,
             is_tool_side: self.is_tool_side,
+            boundary_partners: self.boundary_partners.clone(),
         }
     }
 }

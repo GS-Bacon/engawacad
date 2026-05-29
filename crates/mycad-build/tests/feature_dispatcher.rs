@@ -59,6 +59,24 @@ fn assert_solids_equal(
     }
 }
 
+/// Like assert_solids_equal but also checks entity names (vertex, edge, face).
+fn assert_solids_equal_with_names(
+    a: &mycad_kernel::brep::topology::Solid,
+    b: &mycad_kernel::brep::topology::Solid,
+) {
+    assert_solids_equal(a, b);
+
+    for (i, (va, vb)) in a.vertices.iter().zip(b.vertices.iter()).enumerate() {
+        assert_eq!(va.name, vb.name, "vertex {i} name");
+    }
+    for (i, (ea, eb)) in a.edges.iter().zip(b.edges.iter()).enumerate() {
+        assert_eq!(ea.name, eb.name, "edge {i} name");
+    }
+    for (i, (fa, fb)) in a.faces.iter().zip(b.faces.iter()).enumerate() {
+        assert_eq!(fa.name, fb.name, "face {i} name");
+    }
+}
+
 // --- T01: Determinism — 2-body document built twice, all topology identical ---
 
 #[test]
@@ -1375,4 +1393,232 @@ fn t24_disjoint_fuse_boxes() {
         "expected DisjointFuseResult, got {:?}",
         result
     );
+}
+
+// T18: intersection edges in boolean cut get derived names
+// Uses partial-overlap geometry (L-shape cut) where non-coplanar faces intersect.
+#[test]
+fn t18_intersection_edge_names() {
+    use mycad_format::Feature;
+    let features = vec![
+        Feature::CreateBox {
+            id: "target".into(),
+            width: 2.0,
+            height: 2.0,
+            depth: 2.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_tool".into(),
+            plane: mycad_format::SketchPlane::Xy,
+            profile: vec![
+                mycad_format::SketchSegment {
+                    id: "ts1".into(),
+                    from: [0.5, -2.0],
+                    to: [2.0, -2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts2".into(),
+                    from: [2.0, -2.0],
+                    to: [2.0, 2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts3".into(),
+                    from: [2.0, 2.0],
+                    to: [0.5, 2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts4".into(),
+                    from: [0.5, 2.0],
+                    to: [0.5, -2.0],
+                },
+            ],
+        },
+        Feature::Extrude {
+            id: "tool".into(),
+            sketch: "sk_tool".into(),
+            depth: 2.0,
+        },
+        Feature::Cut {
+            id: "cut1".into(),
+            target: "target".into(),
+            tool: "tool".into(),
+        },
+    ];
+    let bodies = build_features(features).expect("cut should succeed");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    // At least some edges should have names (intersection edges)
+    let named_edges: Vec<_> = solid.edges.iter().filter_map(|e| e.name.as_ref()).collect();
+    assert!(
+        !named_edges.is_empty(),
+        "expected at least one named edge, got 0"
+    );
+
+    // All named edges should be Derived with op containing "cut"
+    for (i, name) in named_edges.iter().enumerate() {
+        match name {
+            mycad_format::EntityRef::Derived { op, .. } => {
+                assert!(
+                    op.contains("cut"),
+                    "named edge {} should have cut op, got: {}",
+                    i,
+                    op
+                );
+            }
+            mycad_format::EntityRef::Named { .. } => {
+                panic!("intersection edge should be Derived, not Named");
+            }
+        }
+    }
+}
+
+// T19: boolean determinism with names — build twice, all names match
+// Uses partial-overlap geometry (L-shape cut) for intersection edge naming.
+#[test]
+fn t19_boolean_determinism_with_names() {
+    use mycad_format::Feature;
+    let features = vec![
+        Feature::CreateBox {
+            id: "target".into(),
+            width: 2.0,
+            height: 2.0,
+            depth: 2.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_tool".into(),
+            plane: mycad_format::SketchPlane::Xy,
+            profile: vec![
+                mycad_format::SketchSegment {
+                    id: "ts1".into(),
+                    from: [0.5, -2.0],
+                    to: [2.0, -2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts2".into(),
+                    from: [2.0, -2.0],
+                    to: [2.0, 2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts3".into(),
+                    from: [2.0, 2.0],
+                    to: [0.5, 2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts4".into(),
+                    from: [0.5, 2.0],
+                    to: [0.5, -2.0],
+                },
+            ],
+        },
+        Feature::Extrude {
+            id: "tool".into(),
+            sketch: "sk_tool".into(),
+            depth: 2.0,
+        },
+        Feature::Cut {
+            id: "cut1".into(),
+            target: "target".into(),
+            tool: "tool".into(),
+        },
+    ];
+
+    let mut gen1 = IdGenerator::new(0);
+    let mut gen2 = IdGenerator::new(0);
+    let result1 = build_bodies_from_features(&features, &mut gen1);
+    let result2 = build_bodies_from_features(&features, &mut gen2);
+
+    assert!(result1.is_ok());
+    assert!(result2.is_ok());
+
+    let solids1 = result1.unwrap();
+    let solids2 = result2.unwrap();
+    assert_solids_equal_with_names(
+        &solids1.get("cut1").expect("cut1").solid,
+        &solids2.get("cut1").expect("cut1").solid,
+    );
+}
+
+// T20: golden — intersection edge name format is byte-identical across builds
+// Uses partial-overlap geometry (L-shape cut) for intersection edge naming.
+#[test]
+fn t20_intersection_edge_name_golden() {
+    use mycad_format::Feature;
+    let features = vec![
+        Feature::CreateBox {
+            id: "target".into(),
+            width: 2.0,
+            height: 2.0,
+            depth: 2.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_tool".into(),
+            plane: mycad_format::SketchPlane::Xy,
+            profile: vec![
+                mycad_format::SketchSegment {
+                    id: "ts1".into(),
+                    from: [0.5, -2.0],
+                    to: [2.0, -2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts2".into(),
+                    from: [2.0, -2.0],
+                    to: [2.0, 2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts3".into(),
+                    from: [2.0, 2.0],
+                    to: [0.5, 2.0],
+                },
+                mycad_format::SketchSegment {
+                    id: "ts4".into(),
+                    from: [0.5, 2.0],
+                    to: [0.5, -2.0],
+                },
+            ],
+        },
+        Feature::Extrude {
+            id: "tool".into(),
+            sketch: "sk_tool".into(),
+            depth: 2.0,
+        },
+        Feature::Cut {
+            id: "cut1".into(),
+            target: "target".into(),
+            tool: "tool".into(),
+        },
+    ];
+
+    let mut gen = IdGenerator::new(0);
+    let result = build_bodies_from_features(&features, &mut gen);
+    assert!(result.is_ok());
+    let bodies = result.unwrap();
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    // Collect canonical names of all Derived edges
+    let mut edge_names: Vec<String> = solid
+        .edges
+        .iter()
+        .filter_map(|e| e.name.as_ref().map(|n| n.canonical_name()))
+        .collect();
+    edge_names.sort();
+
+    // There should be at least one intersection edge with cut_isect_edge op
+    assert!(
+        edge_names.iter().any(|n| n.contains("cut_isect_edge")),
+        "expected at least one cut_isect_edge, got: {:?}",
+        edge_names
+    );
+
+    // Verify determinism: rebuild and check
+    let mut gen2 = IdGenerator::new(0);
+    let result2 = build_bodies_from_features(&features, &mut gen2);
+    let binding2 = result2.unwrap();
+    let solid2 = &binding2.get("cut1").expect("cut1 body").solid;
+    let mut edge_names2: Vec<String> = solid2
+        .edges
+        .iter()
+        .filter_map(|e| e.name.as_ref().map(|n| n.canonical_name()))
+        .collect();
+    edge_names2.sort();
+    assert_eq!(edge_names, edge_names2, "edge names not deterministic");
 }

@@ -104,19 +104,19 @@ pub fn tessellate_solid_with(
 ) -> Result<TriangleMesh, TessellationError> {
     let mut mesh = TriangleMesh::new();
 
-    for face in &solid.faces {
+    for (face_idx, face) in solid.faces.iter().enumerate() {
         let strategy = face.surface.tessellation_strategy();
         match strategy {
             TessellationStrategy::BoundaryFan => {
                 // Determine if we need earcutr (concave or has inner loops)
                 let outer_loop = &solid.loops[face.outer_loop];
                 let loop_points =
-                    collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
+                    collect_loop_points(solid, outer_loop, opts.angular_segments.max(3), face_idx)?;
                 let has_inner = !face.inner_loops.is_empty();
                 let is_convex = is_polygon_convex(&loop_points, &face.surface, face.same_sense);
 
                 if has_inner || !is_convex {
-                    tessellate_face_earcut(solid, face, opts, &mut mesh)?;
+                    tessellate_face_earcut(solid, face, opts, &mut mesh, face_idx)?;
                 } else {
                     tessellate_face_fan_from_points(&loop_points, face, &mut mesh)?;
                 }
@@ -145,9 +145,11 @@ fn tessellate_face_fan(
     face: &crate::brep::topology::Face,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
+    face_idx: usize,
 ) -> Result<(), TessellationError> {
     let outer_loop = &solid.loops[face.outer_loop];
-    let loop_points = collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
+    let loop_points =
+        collect_loop_points(solid, outer_loop, opts.angular_segments.max(3), face_idx)?;
     tessellate_face_fan_from_points(&loop_points, face, mesh)
 }
 
@@ -239,9 +241,11 @@ fn tessellate_face_earcut(
     face: &crate::brep::topology::Face,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
+    face_idx: usize,
 ) -> Result<(), TessellationError> {
     let outer_loop = &solid.loops[face.outer_loop];
-    let outer_points = collect_loop_points(solid, outer_loop, opts.angular_segments.max(3))?;
+    let outer_points =
+        collect_loop_points(solid, outer_loop, opts.angular_segments.max(3), face_idx)?;
     if outer_points.len() < 3 {
         return Ok(());
     }
@@ -270,7 +274,7 @@ fn tessellate_face_earcut(
     let mut hole_indices: Vec<usize> = Vec::new();
     for &il_idx in &face.inner_loops {
         let il = &solid.loops[il_idx];
-        let il_points = collect_loop_points(solid, il, opts.angular_segments.max(3))?;
+        let il_points = collect_loop_points(solid, il, opts.angular_segments.max(3), face_idx)?;
         hole_indices.push(flat_coords.len() / 2);
         for p in &il_points {
             flat_coords.push(p.coords[u_idx]);
@@ -289,7 +293,8 @@ fn tessellate_face_earcut(
         .into_iter()
         .chain(face.inner_loops.iter().flat_map(|&il_idx| {
             let il = &solid.loops[il_idx];
-            collect_loop_points(solid, il, opts.angular_segments.max(3)).unwrap_or_default()
+            collect_loop_points(solid, il, opts.angular_segments.max(3), face_idx)
+                .unwrap_or_default()
         }))
         .collect();
 
@@ -312,24 +317,42 @@ fn tessellate_face_earcut(
 }
 
 /// Collect the ordered boundary points of a loop by sampling each HE's curve.
+/// When an HE has a pcurve, samples via pcurve→surface→3D instead of edge.curve.
 fn collect_loop_points(
     solid: &Solid,
     lp: &crate::brep::topology::Loop,
     segments: usize,
+    face_idx: usize,
 ) -> Result<Vec<Point>, TessellationError> {
+    use crate::geometry::pcurve::Curve2D;
+
     let mut points = Vec::new();
 
     for &he_idx in &lp.half_edges {
         let he = &solid.half_edges[he_idx];
         let edge = &solid.edges[he.edge];
 
-        let (t_start, t_end) = if he.forward {
-            (edge.t_range[0], edge.t_range[1])
+        let seg_points = if let Some(ref pcurve) = he.pcurve {
+            let face = &solid.faces[face_idx];
+            let uv_samples = match pcurve.curve_2d() {
+                Curve2D::Line2D { .. } => {
+                    vec![pcurve.evaluate(pcurve.t_range()[0])]
+                }
+                Curve2D::Circle2D { .. } => pcurve.sample(segments),
+            };
+            uv_samples
+                .into_iter()
+                .map(|(u, v)| face.surface.evaluate(u, v))
+                .collect()
         } else {
-            (edge.t_range[1], edge.t_range[0])
+            let (t_start, t_end) = if he.forward {
+                (edge.t_range[0], edge.t_range[1])
+            } else {
+                (edge.t_range[1], edge.t_range[0])
+            };
+            edge.curve.sample_segment(t_start, t_end, segments)
         };
 
-        let seg_points = edge.curve.sample_segment(t_start, t_end, segments);
         for p in seg_points {
             points.push(p);
         }
@@ -1702,5 +1725,299 @@ mod tests {
         let merged = merge_meshes(&[make_mesh(0.0), make_mesh(5.0), make_mesh(10.0)]);
         assert_eq!(merged.positions.len(), 9);
         assert_eq!(merged.indices, vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    // T14: planar face + line pcurve produces same point count as edge.curve (1 point per Line HE)
+    #[test]
+    fn t14_line_pcurve_same_point_count() {
+        use crate::geometry::pcurve::{Curve2D, Pcurve};
+
+        // Build a solid with one line pcurve HE on a planar face
+        let mut s = Solid::new(0);
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
+        let v2 = s.add_vertex(3, Point::new(0.0, 1.0, 0.0), None);
+        let e0 = s.add_edge(
+            4,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::origin(),
+                direction: Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e1 = s.add_edge(
+            5,
+            [v1, v2],
+            Curve::Line {
+                origin: Point::new(1.0, 0.0, 0.0),
+                direction: Vec3::new(-1.0, 1.0, 0.0),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e2 = s.add_edge(
+            6,
+            [v2, v0],
+            Curve::Line {
+                origin: Point::new(0.0, 1.0, 0.0),
+                direction: -Vec3::y(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+
+        // Attach a line pcurve to the forward HE of e0
+        let line = Curve2D::try_line((0.0, 0.0), (1.0, 0.0)).unwrap();
+        let pc = Pcurve::try_new(line, [0.0, 1.0]).unwrap();
+        let he0 = s.add_half_edge_with_pcurve(7, v0, e0, true, Some(pc));
+        let he1 = s.add_half_edge(8, v1, e1, true);
+        let he2 = s.add_half_edge(9, v2, e2, true);
+        let he0r = s.add_half_edge(10, v1, e0, false);
+        let he1r = s.add_half_edge(11, v2, e1, false);
+        let he2r = s.add_half_edge(12, v0, e2, false);
+
+        let lp0 = s.add_loop(13, vec![he0, he1, he2]);
+        let lp1 = s.add_loop(14, vec![he0r, he1r, he2r]);
+
+        s.add_face(
+            15,
+            Surface::Plane {
+                origin: Point::origin(),
+                normal: Vec3::z(),
+                u_axis: Vec3::x(),
+                v_axis: Vec3::y(),
+            },
+            lp0,
+            vec![],
+            true,
+            None,
+        );
+        s.add_face(
+            16,
+            Surface::Plane {
+                origin: Point::origin(),
+                normal: -Vec3::z(),
+                u_axis: Vec3::x(),
+                v_axis: Vec3::y(),
+            },
+            lp1,
+            vec![],
+            true,
+            None,
+        );
+        s.add_shell(17, vec![0, 1], true);
+
+        let mesh = tessellate_solid(&s).unwrap();
+        // Each face: 3 Line HEs × 1 point each = 3 points per face = 6 total
+        // Face 0 (top): 1 triangle (3 vertices), Face 1 (bottom): 1 triangle (3 vertices)
+        assert_eq!(
+            mesh.positions.len(),
+            6,
+            "expected 6 vertices, got {}",
+            mesh.positions.len()
+        );
+        assert_eq!(mesh.triangle_count(), 2);
+    }
+
+    // T14b: planar face + circle arc pcurve produces N sample points
+    #[test]
+    fn t14b_circle_pcurve_n_points() {
+        use crate::geometry::pcurve::{Curve2D, Pcurve};
+
+        let mut s = Solid::new(0);
+        // A triangular face where one edge is on XY plane with a circle pcurve
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
+        let v2 = s.add_vertex(3, Point::new(0.0, 1.0, 0.0), None);
+
+        let e0 = s.add_edge(
+            4,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::origin(),
+                direction: Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e1 = s.add_edge(
+            5,
+            [v1, v2],
+            Curve::Line {
+                origin: Point::new(1.0, 0.0, 0.0),
+                direction: Vec3::new(-1.0, 1.0, 0.0),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e2 = s.add_edge(
+            6,
+            [v2, v0],
+            Curve::Line {
+                origin: Point::new(0.0, 1.0, 0.0),
+                direction: -Vec3::y(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+
+        // Circle pcurve: center=(0.5, 0), radius=0.5, sweep from π to 0 (same endpoints as edge)
+        let circle = Curve2D::try_circle((0.5, 0.0), 0.5).unwrap();
+        let pc = Pcurve::try_new(circle, [std::f64::consts::PI, 0.0]).unwrap();
+
+        let he0 = s.add_half_edge_with_pcurve(7, v0, e0, true, Some(pc));
+        let he1 = s.add_half_edge(8, v1, e1, true);
+        let he2 = s.add_half_edge(9, v2, e2, true);
+        let he0r = s.add_half_edge(10, v1, e0, false);
+        let he1r = s.add_half_edge(11, v2, e1, false);
+        let he2r = s.add_half_edge(12, v0, e2, false);
+
+        let lp0 = s.add_loop(13, vec![he0, he1, he2]);
+        let lp1 = s.add_loop(14, vec![he0r, he1r, he2r]);
+
+        s.add_face(
+            15,
+            Surface::Plane {
+                origin: Point::origin(),
+                normal: Vec3::z(),
+                u_axis: Vec3::x(),
+                v_axis: Vec3::y(),
+            },
+            lp0,
+            vec![],
+            true,
+            None,
+        );
+        s.add_face(
+            16,
+            Surface::Plane {
+                origin: Point::origin(),
+                normal: -Vec3::z(),
+                u_axis: Vec3::x(),
+                v_axis: Vec3::y(),
+            },
+            lp1,
+            vec![],
+            true,
+            None,
+        );
+        s.add_shell(17, vec![0, 1], true);
+
+        // With default angular_segments=32, circle pcurve should produce 32 points
+        let mesh = tessellate_solid(&s).unwrap();
+        // Face 0: circle_pcurve(32 pts) + 2 Line HEs(1 pt each) = 34 points
+        // Face 1: 3 Line HEs × 1 pt each = 3 points
+        assert_eq!(
+            mesh.positions.len(),
+            34 + 3,
+            "expected 37 vertices, got {}",
+            mesh.positions.len()
+        );
+    }
+
+    // T22: pcurve solid build → YAML roundtrip → rebuild → tessellate → identical
+    #[test]
+    fn t22_pcurve_yaml_roundtrip_tessellation() {
+        use crate::geometry::pcurve::{Curve2D, Pcurve};
+
+        let build_solid = || -> Solid {
+            let mut s = Solid::new(0);
+            let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+            let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
+            let v2 = s.add_vertex(3, Point::new(0.0, 1.0, 0.0), None);
+            let e0 = s.add_edge(
+                4,
+                [v0, v1],
+                Curve::Line {
+                    origin: Point::origin(),
+                    direction: Vec3::x(),
+                },
+                [0.0, 1.0],
+                None,
+            );
+            let e1 = s.add_edge(
+                5,
+                [v1, v2],
+                Curve::Line {
+                    origin: Point::new(1.0, 0.0, 0.0),
+                    direction: Vec3::new(-1.0, 1.0, 0.0),
+                },
+                [0.0, 1.0],
+                None,
+            );
+            let e2 = s.add_edge(
+                6,
+                [v2, v0],
+                Curve::Line {
+                    origin: Point::new(0.0, 1.0, 0.0),
+                    direction: -Vec3::y(),
+                },
+                [0.0, 1.0],
+                None,
+            );
+
+            let line = Curve2D::try_line((0.0, 0.0), (1.0, 0.0)).unwrap();
+            let pc = Pcurve::try_new(line, [0.0, 1.0]).unwrap();
+            let he0 = s.add_half_edge_with_pcurve(7, v0, e0, true, Some(pc));
+            let he1 = s.add_half_edge(8, v1, e1, true);
+            let he2 = s.add_half_edge(9, v2, e2, true);
+            let he0r = s.add_half_edge(10, v1, e0, false);
+            let he1r = s.add_half_edge(11, v2, e1, false);
+            let he2r = s.add_half_edge(12, v0, e2, false);
+
+            let lp0 = s.add_loop(13, vec![he0, he1, he2]);
+            let lp1 = s.add_loop(14, vec![he0r, he1r, he2r]);
+            s.add_face(
+                15,
+                Surface::Plane {
+                    origin: Point::origin(),
+                    normal: Vec3::z(),
+                    u_axis: Vec3::x(),
+                    v_axis: Vec3::y(),
+                },
+                lp0,
+                vec![],
+                true,
+                None,
+            );
+            s.add_face(
+                16,
+                Surface::Plane {
+                    origin: Point::origin(),
+                    normal: -Vec3::z(),
+                    u_axis: Vec3::x(),
+                    v_axis: Vec3::y(),
+                },
+                lp1,
+                vec![],
+                true,
+                None,
+            );
+            s.add_shell(17, vec![0, 1], true);
+            s
+        };
+
+        let s1 = build_solid();
+        let m1 = tessellate_solid(&s1).unwrap();
+
+        // YAML roundtrip
+        let yaml = serde_yaml::to_string(&s1).unwrap();
+        let s2: Solid = serde_yaml::from_str(&yaml).unwrap();
+        let m2 = tessellate_solid(&s2).unwrap();
+
+        assert_eq!(
+            m1.positions, m2.positions,
+            "tessellation positions differ after YAML roundtrip"
+        );
+        assert_eq!(
+            m1.normals, m2.normals,
+            "tessellation normals differ after YAML roundtrip"
+        );
+        assert_eq!(
+            m1.indices, m2.indices,
+            "tessellation indices differ after YAML roundtrip"
+        );
     }
 }
