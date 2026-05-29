@@ -44,6 +44,30 @@ json.dump(d, open(sys.argv[1], 'w'))
 print(n)
 " "$FILE" "$3"
     ;;
+  judge)
+    # state.sh judge <state.json> <round> <adopted> <rejected>
+    python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+judgments = d.setdefault('judgments', [])
+judgments.append({'round': int(sys.argv[2]), 'adopted': int(sys.argv[3]), 'rejected': int(sys.argv[4])})
+json.dump(d, open(sys.argv[1], 'w'))
+" "$FILE" "$3" "$4" "$5"
+    ;;
+  check-full-adoption-warning)
+    # exit 1 (=警告) if 直近 2 round 連続で rejected=0
+    python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+judgments = d.get('judgments', [])
+if len(judgments) < 2:
+    sys.exit(0)
+last2 = judgments[-2:]
+if all(j['rejected'] == 0 for j in last2):
+    sys.exit(1)
+sys.exit(0)
+" "$FILE"
+    ;;
   *)
     echo "unknown cmd: $CMD" >&2
     exit 1

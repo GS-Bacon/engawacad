@@ -53,5 +53,15 @@ case "$MODE:$DELIVERABLE" in
     echo "ERROR: unexpected mode/deliverable: $MODE/$DELIVERABLE" >&2; exit 1 ;;
 esac
 
+# type ラベルから SCOPE_HINT を決定（新規 label 不要: 既存 type: ラベルを流用）
+labels="$(gh issue view "$ISSUE_NUM" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null || echo "")"
+SCOPE_HINT=""
+if echo "$labels" | grep -q 'type: foundation'; then
+  SCOPE_HINT="foundation: 拡張・最適化・退化検出の追加は指摘しない。構造の入れ物が成立しているかだけ見ること。完成度ではなく『次の issue が継続できるか』が成否基準。"
+elif echo "$labels" | grep -q 'type: refactor'; then
+  SCOPE_HINT="refactor: 影響範囲の最小性を最重視。新機能要求・gold plating はしない。"
+fi
+
 printf 'DELIVERABLE=%s\nREVIEW_INSTRUCTION=%s\nMAX_LOOPS=%d\n' \
   "$DELIVERABLE" "$REVIEW_INSTRUCTION" "$MAX_LOOPS"
+printf 'SCOPE_HINT=%q\n' "$SCOPE_HINT"

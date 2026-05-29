@@ -49,6 +49,11 @@ bash .claude/skills/3ai/scripts/state.sh init features/$ISSUE_NUM-$ISSUE_SLUG/st
 プランファイルに以下を記述する（`features/$ISSUE_NUM-$ISSUE_SLUG/plan.md` と対応させる）:
 
 ```markdown
+## Non-Goals
+本 Issue では実装しない項目を箇条書きで列挙する。該当なしの場合も明示的に `- 該当なし` と書くこと（空欄禁止）。
+- (例) フル退化検出: #34 で対応予定
+- (例) 既存テストの全 golden 更新: スコープ外
+
 ## 実装対象
 - Issue: #NNN
 - 影響クレート/ファイル: (具体パス列挙)
@@ -98,8 +103,9 @@ bash .claude/skills/3ai/scripts/state.sh init features/$ISSUE_NUM-$ISSUE_SLUG/st
 プランファイルへの記述が完成したら、Codex にレビューを委託する。
 ループ上限: **wrapper が自動判定**（code=3 / docs=2）。超過時は wrapper が exit 3 で終了。
 
+### 3-A: dispatch（初回）
+
 ```bash
-# プランファイルをまとめてレビュー用 input として使う
 bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
   --issue $ISSUE_NUM \
   --mode design \
@@ -109,12 +115,57 @@ bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
   --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md
 ```
 
-**完了通知を待つ（ポーリングしない）。** 結果ファイルを読み、Critical/High があれば:
-1. プランを改訂
-2. 上記コマンドを再実行
-3. wrapper が **exit 3（上限超過）** で終了したら **停止してユーザーにエスカレーション**
+> **注意**: `--plan` に `## Non-Goals` セクションがない場合、wrapper が exit 1 で停止する。  
+> プランに Non-Goals を追記してから再実行すること（「該当なし」の場合は `- 該当なし` と明記）。
 
-全 Critical/High 解消後:
+### 3-B: 棄却 gate（毎 round 必須）
+
+**完了通知を待つ（ポーリングしない）。** `design-review.md` を読んで各 issue を判定する:
+
+1. **採用** → plan を修正する
+2. **棄却** → `features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md` に追記する:
+   ```markdown
+   ## Round N
+   - R0X: 「<指摘の要点>」を棄却 — <理由（scope 外、Non-Goals に記載済み、次 issue で対応 等）>
+   ```
+3. **部分採用** → plan 一部修正 + `rejection.md` に「残りの N 点は棄却」として追記する
+
+採用数・棄却数を記録する:
+```bash
+bash .claude/skills/3ai/scripts/state.sh judge \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
+  <round番号> <adopted_count> <rejected_count>
+```
+
+**全採用警告チェック**（次 round dispatch 前に必ず実行）:
+```bash
+bash .claude/skills/3ai/scripts/state.sh check-full-adoption-warning \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json
+```
+exit 1 が返った場合は **停止して次のメッセージをユーザーへ表示**:
+> 2 round 連続で棄却が 0 件です。scope 防衛できていますか?  
+> Non-Goals に含まれる指摘や medium 以下で受容すべき指摘は棄却 log に記録してから次 round に進んでください。
+
+### 3-C: 再 dispatch（round 2 以降）
+
+Critical/High が残っていれば再 dispatch する（rejection.md がある場合は `--rejection` を追加）:
+
+```bash
+bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
+  --issue $ISSUE_NUM \
+  --mode design \
+  --input <プランファイルパス> \
+  --plan <プランファイルパス> \
+  --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md \
+  --rejection features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md
+```
+
+wrapper が **exit 3（上限超過）** で終了したら **停止してユーザーにエスカレーション**。
+
+### 3-D: 通過
+
+全 Critical/High 解消後（中断している medium/low は棄却 log に記録済みであることを確認）:
 ```bash
 bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/state.json design_review passed
 ```
