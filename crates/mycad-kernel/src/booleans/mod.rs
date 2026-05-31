@@ -10,8 +10,8 @@ use crate::error::KernelError;
 use crate::geometry::math::LENGTH_TOLERANCE;
 use crate::geometry::surface::Surface;
 
-/// Perform a boolean operation between two planar solids.
-pub fn boolean_planar(
+/// Perform a boolean operation between two solids.
+pub fn boolean(
     target: &Solid,
     tool: &Solid,
     op: BooleanOp,
@@ -46,37 +46,46 @@ fn validate_boolean_input(solid: &Solid, _label: &str) -> Result<(), KernelError
         .validate_manifold()
         .map_err(|_| KernelError::OpenBooleanInput)?;
 
-    // 2. All faces must be planar
+    // 2. All faces must be Plane, Cylinder, or Sphere (Cone unsupported)
     for face in &solid.faces {
-        if !matches!(face.surface, Surface::Plane { .. }) {
-            return Err(KernelError::NonPlanarBooleanInput {
-                kind: "non-planar surface",
-            });
+        match &face.surface {
+            Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Sphere { .. } => {}
+            Surface::Cone { .. } => {
+                return Err(KernelError::NonPlanarBooleanInput {
+                    kind: "cone surface",
+                });
+            }
         }
     }
 
-    // 3. All faces must have empty inner_loops
+    // 3. Inner loops: accept up to 1 level of nesting, reject empty or multi-nested
     for face in &solid.faces {
-        if !face.inner_loops.is_empty() {
-            return Err(KernelError::UnsupportedBooleanInput {
-                reason: "input face has inner loops",
-            });
+        for inner_idx in &face.inner_loops {
+            let lp = &solid.loops[*inner_idx];
+            if lp.half_edges.is_empty() {
+                return Err(KernelError::UnsupportedBooleanInput {
+                    reason: "inner loop has no half-edges",
+                });
+            }
         }
     }
 
-    // 4. All outer loops must be convex
+    // 4. Planar faces: outer loop must be a simple (non-self-intersecting) polygon.
+    //    Curved faces: no convexity check (surface UV handles shape).
     let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
     for face in &solid.faces {
-        let lp = &solid.loops[face.outer_loop];
-        let points: Vec<_> = lp
-            .half_edges
-            .iter()
-            .map(|&he_idx| solid.vertices[solid.half_edges[he_idx].start_vertex].point)
-            .collect();
-        if !is_convex_polygon_3d(&points, area_eps) {
-            return Err(KernelError::UnsupportedBooleanInput {
-                reason: "input face has non-convex outer loop",
-            });
+        if matches!(face.surface, Surface::Plane { .. }) {
+            let lp = &solid.loops[face.outer_loop];
+            let points: Vec<_> = lp
+                .half_edges
+                .iter()
+                .map(|&he_idx| solid.vertices[solid.half_edges[he_idx].start_vertex].point)
+                .collect();
+            if !is_convex_polygon_3d(&points, area_eps) {
+                return Err(KernelError::UnsupportedBooleanInput {
+                    reason: "planar face has non-convex outer loop",
+                });
+            }
         }
     }
 

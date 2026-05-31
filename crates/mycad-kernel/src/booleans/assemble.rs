@@ -247,24 +247,26 @@ pub fn assemble(
 
         let loop_idx = solid.add_loop(id_gen.next(), he_indices);
 
-        let normal = if flip_normals {
-            -frag.plane.normal
+        let face_name = derive_face_name(frag, op);
+
+        let mut frag_surface = frag.surface.clone();
+        let same_sense = if flip_normals {
+            // Flip the surface normal so signed_volume gives negative volume (void shell).
+            // reverse_face_orientation will flip it back and toggle same_sense.
+            if let Surface::Plane { normal, .. } = &mut frag_surface {
+                *normal = -*normal;
+            }
+            true // Keep same_sense=true so reverse_face_orientation toggles to false
         } else {
-            frag.plane.normal
+            true
         };
 
-        let face_name = derive_face_name(frag, op);
         let face_idx = solid.add_face(
             id_gen.next(),
-            Surface::Plane {
-                origin: frag.plane.origin,
-                normal,
-                u_axis: frag.plane.u_axis,
-                v_axis: frag.plane.v_axis,
-            },
+            frag_surface,
             loop_idx,
             vec![],
-            true,
+            same_sense,
             face_name,
         );
         face_indices.push(face_idx);
@@ -389,10 +391,6 @@ fn reverse_face_orientation(solid: &mut Solid, face_idx: usize, id_gen: &mut IdG
 
     solid.loops[loop_idx].half_edges = new_he_indices;
     solid.faces[face_idx].same_sense = !solid.faces[face_idx].same_sense;
-
-    if let Surface::Plane { normal, .. } = &mut solid.faces[face_idx].surface {
-        *normal = -*normal;
-    }
 }
 
 fn find_edge_by_vertices(edges: &[crate::brep::topology::Edge], key: &[usize; 2]) -> usize {
@@ -472,10 +470,14 @@ fn signed_volume(solid: &Solid, face_indices: &[usize]) -> f64 {
     for &fi in face_indices {
         let face = &solid.faces[fi];
 
-        // Get the declared outward normal from the surface definition.
-        let face_normal = match &face.surface {
-            crate::geometry::surface::Surface::Plane { normal, .. } => *normal,
-            _ => continue,
+        // Get the effective outward normal considering same_sense.
+        let face_normal = face
+            .surface
+            .normal_at_point(&face.surface.evaluate(0.0, 0.0));
+        let effective_normal = if face.same_sense {
+            face_normal
+        } else {
+            -face_normal
         };
 
         let lp = &solid.loops[face.outer_loop];
@@ -493,27 +495,52 @@ fn signed_volume(solid: &Solid, face_indices: &[usize]) -> f64 {
             continue;
         }
 
-        let v0 = verts[0];
-        for i in 1..verts.len() - 1 {
-            let v1 = verts[i];
-            let v2 = verts[i + 1];
+        match &face.surface {
+            Surface::Plane { .. } => {
+                let v0 = verts[0];
+                for i in 1..verts.len() - 1 {
+                    let v1 = verts[i];
+                    let v2 = verts[i + 1];
 
-            let a = v1 - v0;
-            let b = v2 - v0;
-            let cross = a.cross(&b);
-            let cross_norm = cross.norm();
-            if cross_norm < area_eps {
-                continue;
+                    let a = v1 - v0;
+                    let b = v2 - v0;
+                    let cross = a.cross(&b);
+                    let cross_norm = cross.norm();
+                    if cross_norm < area_eps {
+                        continue;
+                    }
+                    let sign = if effective_normal.dot(&(cross / cross_norm)) > 0.0 {
+                        1.0_f64
+                    } else {
+                        -1.0_f64
+                    };
+                    volume += sign * v0.coords.dot(&cross) / 6.0;
+                }
             }
-            // Align sign with the declared outward normal so both CW-from-outside
-            // (cuboid) and CCW-from-outside (extrusion) primitives contribute
-            // a positive volume for the outward-facing shell.
-            let sign = if face_normal.dot(&(cross / cross_norm)) > 0.0 {
-                1.0_f64
-            } else {
-                -1.0_f64
-            };
-            volume += sign * v0.coords.dot(&cross) / 6.0;
+            _ => {
+                // Curved face: use fan triangulation from loop vertices.
+                // For volume estimation this is sufficient — the signed tetrahedral
+                // volume formula works regardless of surface curvature.
+                let v0 = verts[0];
+                for i in 1..verts.len() - 1 {
+                    let v1 = verts[i];
+                    let v2 = verts[i + 1];
+
+                    let a = v1 - v0;
+                    let b = v2 - v0;
+                    let cross = a.cross(&b);
+                    let cross_norm = cross.norm();
+                    if cross_norm < area_eps {
+                        continue;
+                    }
+                    let sign = if effective_normal.dot(&(cross / cross_norm)) > 0.0 {
+                        1.0_f64
+                    } else {
+                        -1.0_f64
+                    };
+                    volume += sign * v0.coords.dot(&cross) / 6.0;
+                }
+            }
         }
     }
 

@@ -16,7 +16,7 @@ pub struct IntersectionSegment {
 pub struct FaceFragment {
     pub source_face_index: usize,
     pub polygon_3d: Vec<Point>,
-    pub plane: PlaneData,
+    pub surface: Surface,
     pub parent_name: EntityRef,
     pub traversal_index: u32,
     pub is_tool_side: bool,
@@ -62,6 +62,35 @@ impl PlaneData {
     }
 }
 
+/// Project a 3D point to 2D coordinates in the surface's parameter space.
+pub fn project_to_face_uv(surface: &Surface, p: &Point) -> (f64, f64) {
+    match surface {
+        Surface::Plane {
+            origin,
+            u_axis,
+            v_axis,
+            ..
+        } => {
+            let d = p - *origin;
+            (d.dot(u_axis), d.dot(v_axis))
+        }
+        _ => surface.uv_of(p),
+    }
+}
+
+/// Reconstruct a 3D point from 2D coordinates in the surface's parameter space.
+pub fn unproject_from_face_uv(surface: &Surface, u: f64, v: f64) -> Point {
+    match surface {
+        Surface::Plane {
+            origin,
+            u_axis,
+            v_axis,
+            ..
+        } => *origin + u * u_axis + v * v_axis,
+        _ => surface.evaluate(u, v),
+    }
+}
+
 pub struct CoplanarPair {
     pub target_face: usize,
     #[allow(dead_code)]
@@ -78,7 +107,7 @@ pub fn partition_faces(
     let len_eps = LENGTH_TOLERANCE;
     let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
 
-    // Collect plane data for all faces
+    // Collect plane data for all faces (for coplanar detection, still Plane-only)
     let target_planes: Vec<PlaneData> = target
         .faces
         .iter()
@@ -97,20 +126,24 @@ pub fn partition_faces(
     let target_polygons_2d: Vec<Vec<(f64, f64)>> = target
         .faces
         .iter()
-        .zip(target_planes.iter())
-        .map(|(f, pl)| {
+        .map(|f| {
             let verts = get_loop_vertices(target, f.outer_loop);
-            verts.iter().map(|p| pl.project_2d(p)).collect()
+            verts
+                .iter()
+                .map(|p| project_to_face_uv(&f.surface, p))
+                .collect()
         })
         .collect();
 
     let tool_polygons_2d: Vec<Vec<(f64, f64)>> = tool
         .faces
         .iter()
-        .zip(tool_planes.iter())
-        .map(|(f, pl)| {
+        .map(|f| {
             let verts = get_loop_vertices(tool, f.outer_loop);
-            verts.iter().map(|p| pl.project_2d(p)).collect()
+            verts
+                .iter()
+                .map(|p| project_to_face_uv(&f.surface, p))
+                .collect()
         })
         .collect();
 
@@ -166,7 +199,6 @@ pub fn partition_faces(
 
     // Process target faces
     for fi in 0..target.faces.len() {
-        // Skip faces that are coplanar with a tool face — they're handled in the coplanar pair section
         if coplanar_target_set[fi] {
             continue;
         }
@@ -174,74 +206,111 @@ pub fn partition_faces(
         let polygon_2d = &target_polygons_2d[fi];
         let polygon_3d = &target_polygons_3d[fi];
         let face = &target.faces[fi];
+        let surface = &face.surface;
 
-        // Collect intersection segments from tool faces (with partner provenance)
         let mut segments: Vec<IntersectionSegment> = Vec::new();
 
         for ui in 0..tool.faces.len() {
             if coplanar_tool_set[ui] {
                 continue;
             }
-            let uplane = &tool_planes[ui];
+            let _uplane = &tool_planes[ui];
             let tool_poly_2d = &tool_polygons_2d[ui];
+            let tool_surface = &tool.faces[ui].surface;
             let tool_face_name = tool.faces[ui]
                 .name
                 .clone()
                 .ok_or_else(|| format!("tool face {} missing name", ui))?;
 
-            // Intersect two planes
-            let line = intersect_planes(plane, uplane);
-            let Some((line_origin_2d, line_dir_2d)) = line else {
+            // Intersect surfaces via the unified dispatcher
+            let isect_result =
+                crate::geometry::surface_intersect::intersect_surfaces(surface, tool_surface);
+            let Ok(isect_loops) = isect_result else {
                 continue;
             };
-
-            // Clip line to both polygons
-            let seg_opt = clip_line_to_polygon_2d(line_origin_2d, line_dir_2d, polygon_2d);
-            let Some((s_start, s_end)) = seg_opt else {
-                continue;
-            };
-
-            // Check segment length
-            let dx = s_end.0 - s_start.0;
-            let dy = s_end.1 - s_start.1;
-            if (dx * dx + dy * dy).sqrt() < len_eps {
+            if isect_loops.is_empty() {
                 continue;
             }
 
-            // Also clip to tool polygon in tool 2D
-            let tool_proj_start = uplane.project_2d(&plane.unproject_3d(s_start.0, s_start.1));
-            let tool_proj_end = uplane.project_2d(&plane.unproject_3d(s_end.0, s_end.1));
+            // Convert each intersection loop to line segments for the PSLG
+            for iloop in &isect_loops {
+                match &iloop.curve_3d {
+                    crate::geometry::curve::Curve::Line { .. } => {
+                        // Use pcurve_on_a to get 2D coordinates in target face's UV space
+                        let line_2d = &iloop.pcurve_on_a;
+                        let t_range = iloop.pcurve_on_a_t_range;
+                        let p0 = line_2d.evaluate(t_range[0]);
+                        let p1 = line_2d.evaluate(t_range[1]);
 
-            let tool_seg =
-                clip_line_to_polygon_2d_given_points(tool_proj_start, tool_proj_end, tool_poly_2d);
-            let Some((ts, te)) = tool_seg else { continue };
+                        // Clip line to target polygon
+                        let dir_2d = (p1.0 - p0.0, p1.1 - p0.1);
+                        let dir_len = (dir_2d.0 * dir_2d.0 + dir_2d.1 * dir_2d.1).sqrt();
+                        if dir_len < len_eps {
+                            continue;
+                        }
+                        let dir_norm = (dir_2d.0 / dir_len, dir_2d.1 / dir_len);
+                        let seg_opt = clip_line_to_polygon_2d(p0, dir_norm, polygon_2d);
+                        let Some((s_start, s_end)) = seg_opt else {
+                            continue;
+                        };
 
-            // Check tool segment length in tool 2D
-            let tdx = te.0 - ts.0;
-            let tdy = te.1 - ts.1;
-            if (tdx * tdx + tdy * tdy).sqrt() < len_eps {
-                continue;
+                        let dx = s_end.0 - s_start.0;
+                        let dy = s_end.1 - s_start.1;
+                        if (dx * dx + dy * dy).sqrt() < len_eps {
+                            continue;
+                        }
+
+                        // Clip to tool polygon in tool 2D
+                        let tool_proj_start = project_to_face_uv(
+                            tool_surface,
+                            &unproject_from_face_uv(surface, s_start.0, s_start.1),
+                        );
+                        let tool_proj_end = project_to_face_uv(
+                            tool_surface,
+                            &unproject_from_face_uv(surface, s_end.0, s_end.1),
+                        );
+
+                        let tool_seg = clip_line_to_polygon_2d_given_points(
+                            tool_proj_start,
+                            tool_proj_end,
+                            tool_poly_2d,
+                        );
+                        let Some((ts, te)) = tool_seg else { continue };
+
+                        let tdx = te.0 - ts.0;
+                        let tdy = te.1 - ts.1;
+                        if (tdx * tdx + tdy * tdy).sqrt() < len_eps {
+                            continue;
+                        }
+
+                        // Map back to target 2D
+                        let p_start_3d = unproject_from_face_uv(tool_surface, ts.0, ts.1);
+                        let p_end_3d = unproject_from_face_uv(tool_surface, te.0, te.1);
+                        let s_start_final = project_to_face_uv(surface, &p_start_3d);
+                        let s_end_final = project_to_face_uv(surface, &p_end_3d);
+
+                        let Some((s_start_final, s_end_final)) =
+                            clip_line_to_polygon_2d_given_points(
+                                s_start_final,
+                                s_end_final,
+                                polygon_2d,
+                            )
+                        else {
+                            continue;
+                        };
+
+                        segments.push(IntersectionSegment {
+                            p_start: s_start_final,
+                            p_end: s_end_final,
+                            partner: tool_face_name.clone(),
+                        });
+                    }
+                    crate::geometry::curve::Curve::Circle { .. } => {
+                        // Circle intersections handled in later steps
+                        continue;
+                    }
+                }
             }
-
-            // Map back to target 2D
-            let p_start_3d = uplane.unproject_3d(ts.0, ts.1);
-            let p_end_3d = uplane.unproject_3d(te.0, te.1);
-            let s_start_final = plane.project_2d(&p_start_3d);
-            let s_end_final = plane.project_2d(&p_end_3d);
-
-            // Re-clip to face polygon: the tool-polygon clip operates on an infinite
-            // line and can extend beyond the original face boundary.
-            let Some((s_start_final, s_end_final)) =
-                clip_line_to_polygon_2d_given_points(s_start_final, s_end_final, polygon_2d)
-            else {
-                continue;
-            };
-
-            segments.push(IntersectionSegment {
-                p_start: s_start_final,
-                p_end: s_end_final,
-                partner: tool_face_name,
-            });
         }
 
         // Build PSLG and subdivide
@@ -251,28 +320,26 @@ pub fn partition_faces(
             .ok_or_else(|| format!("target face {} missing name", fi))?;
 
         if segments.is_empty() {
-            // No subdivision needed — single fragment = original face
             target_fragments.push(FaceFragment {
                 source_face_index: fi,
                 polygon_3d: polygon_3d.clone(),
-                plane: plane.clone(),
+                surface: surface.clone(),
                 parent_name: name,
                 traversal_index: 0,
                 is_tool_side: false,
                 boundary_partners: vec![None; polygon_3d.len()],
             });
         } else {
-            // Subdivide the polygon using PSLG
             let sub_faces = pslg_subdivide(polygon_2d, &segments, plane);
             for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
                 let poly_3d: Vec<Point> = sub_poly_2d
                     .iter()
-                    .map(|(u, v)| plane.unproject_3d(*u, *v))
+                    .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
                     .collect();
                 target_fragments.push(FaceFragment {
                     source_face_index: fi,
                     polygon_3d: poly_3d,
-                    plane: plane.clone(),
+                    surface: surface.clone(),
                     parent_name: name.clone(),
                     traversal_index: idx as u32,
                     is_tool_side: false,
@@ -287,10 +354,10 @@ pub fn partition_faces(
         if coplanar_tool_set[fi] {
             continue;
         }
-        let plane = &tool_planes[fi];
         let polygon_2d = &tool_polygons_2d[fi];
         let polygon_3d = &tool_polygons_3d[fi];
         let face = &tool.faces[fi];
+        let surface = &face.surface;
 
         let mut segments: Vec<IntersectionSegment> = Vec::new();
 
@@ -298,61 +365,98 @@ pub fn partition_faces(
             if coplanar_target_set[ti] {
                 continue;
             }
-            let tplane = &target_planes[ti];
             let target_face_name = target.faces[ti]
                 .name
                 .clone()
                 .ok_or_else(|| format!("target face {} missing name", ti))?;
 
-            let line = intersect_planes(plane, tplane);
-            let Some((line_origin_2d, line_dir_2d)) = line else {
-                continue;
-            };
-
-            let seg_opt = clip_line_to_polygon_2d(line_origin_2d, line_dir_2d, polygon_2d);
-            let Some((s_start, s_end)) = seg_opt else {
-                continue;
-            };
-
-            let dx = s_end.0 - s_start.0;
-            let dy = s_end.1 - s_start.1;
-            if (dx * dx + dy * dy).sqrt() < len_eps {
-                continue;
-            }
-
-            let target_proj_start = tplane.project_2d(&plane.unproject_3d(s_start.0, s_start.1));
-            let target_proj_end = tplane.project_2d(&plane.unproject_3d(s_end.0, s_end.1));
-
-            let target_seg = clip_line_to_polygon_2d_given_points(
-                target_proj_start,
-                target_proj_end,
-                &target_polygons_2d[ti],
+            let isect_result = crate::geometry::surface_intersect::intersect_surfaces(
+                surface,
+                &target.faces[ti].surface,
             );
-            let Some((ts, te)) = target_seg else { continue };
-
-            let tdx = te.0 - ts.0;
-            let tdy = te.1 - ts.1;
-            if (tdx * tdx + tdy * tdy).sqrt() < len_eps {
+            let Ok(isect_loops) = isect_result else {
+                continue;
+            };
+            if isect_loops.is_empty() {
                 continue;
             }
 
-            let p_start_3d = tplane.unproject_3d(ts.0, ts.1);
-            let p_end_3d = tplane.unproject_3d(te.0, te.1);
-            let s_start_final = plane.project_2d(&p_start_3d);
-            let s_end_final = plane.project_2d(&p_end_3d);
+            for iloop in &isect_loops {
+                match &iloop.curve_3d {
+                    crate::geometry::curve::Curve::Line { .. } => {
+                        let line_2d = &iloop.pcurve_on_a;
+                        let t_range = iloop.pcurve_on_a_t_range;
+                        let p0 = line_2d.evaluate(t_range[0]);
+                        let p1 = line_2d.evaluate(t_range[1]);
 
-            // Re-clip to tool face polygon for the same reason as on the target side.
-            let Some((s_start_final, s_end_final)) =
-                clip_line_to_polygon_2d_given_points(s_start_final, s_end_final, polygon_2d)
-            else {
-                continue;
-            };
+                        let dir_2d = (p1.0 - p0.0, p1.1 - p0.1);
+                        let dir_len = (dir_2d.0 * dir_2d.0 + dir_2d.1 * dir_2d.1).sqrt();
+                        if dir_len < len_eps {
+                            continue;
+                        }
+                        let dir_norm = (dir_2d.0 / dir_len, dir_2d.1 / dir_len);
+                        let seg_opt = clip_line_to_polygon_2d(p0, dir_norm, polygon_2d);
+                        let Some((s_start, s_end)) = seg_opt else {
+                            continue;
+                        };
 
-            segments.push(IntersectionSegment {
-                p_start: s_start_final,
-                p_end: s_end_final,
-                partner: target_face_name,
-            });
+                        let dx = s_end.0 - s_start.0;
+                        let dy = s_end.1 - s_start.1;
+                        if (dx * dx + dy * dy).sqrt() < len_eps {
+                            continue;
+                        }
+
+                        let target_surface = &target.faces[ti].surface;
+                        let target_poly_2d = &target_polygons_2d[ti];
+
+                        let tool_proj_start = project_to_face_uv(
+                            target_surface,
+                            &unproject_from_face_uv(surface, s_start.0, s_start.1),
+                        );
+                        let tool_proj_end = project_to_face_uv(
+                            target_surface,
+                            &unproject_from_face_uv(surface, s_end.0, s_end.1),
+                        );
+
+                        let target_seg = clip_line_to_polygon_2d_given_points(
+                            tool_proj_start,
+                            tool_proj_end,
+                            target_poly_2d,
+                        );
+                        let Some((ts, te)) = target_seg else { continue };
+
+                        let tdx = te.0 - ts.0;
+                        let tdy = te.1 - ts.1;
+                        if (tdx * tdx + tdy * tdy).sqrt() < len_eps {
+                            continue;
+                        }
+
+                        let p_start_3d = unproject_from_face_uv(target_surface, ts.0, ts.1);
+                        let p_end_3d = unproject_from_face_uv(target_surface, te.0, te.1);
+                        let s_start_final = project_to_face_uv(surface, &p_start_3d);
+                        let s_end_final = project_to_face_uv(surface, &p_end_3d);
+
+                        let Some((s_start_final, s_end_final)) =
+                            clip_line_to_polygon_2d_given_points(
+                                s_start_final,
+                                s_end_final,
+                                polygon_2d,
+                            )
+                        else {
+                            continue;
+                        };
+
+                        segments.push(IntersectionSegment {
+                            p_start: s_start_final,
+                            p_end: s_end_final,
+                            partner: target_face_name.clone(),
+                        });
+                    }
+                    crate::geometry::curve::Curve::Circle { .. } => {
+                        continue;
+                    }
+                }
+            }
         }
 
         let name = face
@@ -364,23 +468,33 @@ pub fn partition_faces(
             tool_fragments.push(FaceFragment {
                 source_face_index: fi,
                 polygon_3d: polygon_3d.clone(),
-                plane: plane.clone(),
+                surface: surface.clone(),
                 parent_name: name,
                 traversal_index: 0,
                 is_tool_side: true,
                 boundary_partners: vec![None; polygon_3d.len()],
             });
         } else {
-            let sub_faces = pslg_subdivide(polygon_2d, &segments, plane);
+            let plane_data = PlaneData::from_surface(surface);
+            let sub_faces = pslg_subdivide(
+                polygon_2d,
+                &segments,
+                plane_data.as_ref().unwrap_or(&PlaneData {
+                    origin: Point::origin(),
+                    normal: Vec3::z(),
+                    u_axis: Vec3::x(),
+                    v_axis: Vec3::y(),
+                }),
+            );
             for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
                 let poly_3d: Vec<Point> = sub_poly_2d
                     .iter()
-                    .map(|(u, v)| plane.unproject_3d(*u, *v))
+                    .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
                     .collect();
                 tool_fragments.push(FaceFragment {
                     source_face_index: fi,
                     polygon_3d: poly_3d,
-                    plane: plane.clone(),
+                    surface: surface.clone(),
                     parent_name: name.clone(),
                     traversal_index: idx as u32,
                     is_tool_side: true,
@@ -403,6 +517,7 @@ pub fn partition_faces(
             .clone()
             .ok_or_else(|| format!("target face {} missing name", pair.target_face))?;
         let tp = &target_planes[pair.target_face];
+        let t_surface = &tf.surface;
 
         // (a) Overlap polygon — must be CCW in target 2D; sutherland_hodgman_clip preserves
         // subject orientation so this is guaranteed when target_polygons_2d is CCW.
@@ -415,7 +530,7 @@ pub fn partition_faces(
             target_fragments.push(FaceFragment {
                 source_face_index: pair.target_face,
                 polygon_3d: poly_3d.clone(),
-                plane: tp.clone(),
+                surface: t_surface.clone(),
                 parent_name: tname.clone(),
                 traversal_index: 0,
                 is_tool_side: false,
@@ -443,7 +558,7 @@ pub fn partition_faces(
                 target_fragments.push(FaceFragment {
                     source_face_index: pair.target_face,
                     polygon_3d: poly_3d.clone(),
-                    plane: tp.clone(),
+                    surface: t_surface.clone(),
                     parent_name: tname.clone(),
                     traversal_index: strip_idx,
                     is_tool_side: false,
@@ -490,40 +605,6 @@ fn get_loop_vertices(solid: &crate::brep::topology::Solid, loop_idx: usize) -> V
             solid.vertices[he.start_vertex].point
         })
         .collect()
-}
-
-fn intersect_planes(a: &PlaneData, b: &PlaneData) -> Option<((f64, f64), (f64, f64))> {
-    let direction = a.normal.cross(&b.normal);
-    if direction.norm() < LENGTH_TOLERANCE {
-        return None; // Parallel planes
-    }
-
-    let n_dot = a.normal.dot(&b.normal);
-    let denom = 1.0 - n_dot * n_dot;
-    if denom.abs() < LENGTH_TOLERANCE * LENGTH_TOLERANCE {
-        return None;
-    }
-
-    // Solve n_A·P = c_A, n_B·P = c_B with P = α·n_A + β·n_B.
-    // α = (c_A - ndot·c_B)/denom, β = (c_B - ndot·c_A)/denom.
-    let c_a = a.origin.coords.dot(&a.normal);
-    let c_b = b.origin.coords.dot(&b.normal);
-    let origin = Point::from(
-        (c_a - n_dot * c_b) / denom * a.normal + (c_b - n_dot * c_a) / denom * b.normal,
-    );
-
-    let origin_2d = a.project_2d(&origin);
-    let dir_3d = direction.normalize();
-    let p2 = origin + dir_3d;
-    let p2_2d = a.project_2d(&p2);
-    let dir_2d = (p2_2d.0 - origin_2d.0, p2_2d.1 - origin_2d.1);
-    let dir_len = (dir_2d.0 * dir_2d.0 + dir_2d.1 * dir_2d.1).sqrt();
-    if dir_len < LENGTH_TOLERANCE {
-        return None;
-    }
-    let dir_2d_norm = (dir_2d.0 / dir_len, dir_2d.1 / dir_len);
-
-    Some((origin_2d, dir_2d_norm))
 }
 
 fn clip_line_to_polygon_2d(

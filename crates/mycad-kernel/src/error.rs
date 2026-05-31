@@ -70,4 +70,7 @@ pub enum KernelError {
 
     #[error("manifold violation: {reason}")]
     ManifoldViolation { reason: &'static str },
+
+    #[error("unsupported surface intersection: {reason}")]
+    UnsupportedSurfaceIntersection { reason: &'static str },
 }

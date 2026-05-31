@@ -3,7 +3,7 @@ use super::{Point, Vec3};
 use serde::{Deserialize, Serialize};
 
 /// A geometric curve in 3D space.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Curve {
     /// A line defined by an origin point and a direction vector.
     Line { origin: Point, direction: Vec3 },

@@ -27,7 +27,7 @@ Accepted
 
 1. **`Surface` / `Curve` enum を唯一の幾何拡張点**とする。`Nurbs` / スプライン variant の追加が加算的であり続けるよう、アルゴリズムは variant 集合を仮定しない。
 2. **アルゴリズムは曲面・曲線の型に非依存**であること。平面・直線前提をアルゴリズムへ埋め込まない (例: 面法線は面ごとに 1 回でなく、点ごとに `Surface::normal_at_point` で評価する)。
-3. **数値モデル: トレラント方式採用 (Decision 3 — Phase 4 (#31) で確定)**。詳細は [下の節](#数値モデルトレラント方式採用-decision-3--phase-4-31-で確定) を参照。
+3. **数値モデル: トレラント方式採用 (Decision 3 — Phase 4 (#31) で確定)**。詳細は [下の節](#数値モデル-トレラント方式採用-decision-3--phase-4-31-で確定) を参照。
 
 ## 単位系・グローバル公差 (暫定)
 
@@ -86,8 +86,8 @@ Phase 4 は Parasolid/ACIS 流の per-entity トレラント方式を採用す�
 | Issue | 範囲 | 内容 |
 |-------|------|------|
 | #31 | 型導入 | `Tolerance` newtype + `length_near_within` / `point_near_within` helper。既存 `LENGTH_TOLERANCE` call site は不変 |
-| #34 | field 埋め込み + 移行 | `Vertex` / `Edge` / `Face` に `tolerance: Tolerance` field 追加。既存 call site を段階的に per-entity 比較へ移行 |
-| #34 以降 | 完全移行 | グローバル定数参照を全て per-entity 経由に差し替え |
+| #34 | 曲面 Boolean MVP | Plane×Cylinder / Plane×Sphere / Cylinder×Sphere の軸整列 Boolean。per-entity tolerance 埋め込みは Non-Goal (別 Issue へ委譲) |
+| #34 以降 (Phase 5 候補) | field 埋め込み + 完全移行 | `Vertex` / `Edge` / `Face` に `tolerance: Tolerance` field 追加。グローバル定数参照を全て per-entity 経由に差し替え |
 
 ## Rationale
 

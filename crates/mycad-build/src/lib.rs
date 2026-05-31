@@ -1,5 +1,5 @@
 use mycad_format::Feature;
-use mycad_kernel::booleans::boolean_planar;
+use mycad_kernel::booleans::boolean;
 use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::error::KernelError;
 use mycad_kernel::geometry::Plane;
@@ -148,7 +148,7 @@ pub fn build_bodies_from_features(
                 let u_solid = built
                     .get(tool)
                     .ok_or_else(|| KernelError::BodyNotFound { id: tool.clone() })?;
-                let result = boolean_planar(&t_solid.solid, &u_solid.solid, BooleanOp::Cut, gen)?;
+                let result = boolean(&t_solid.solid, &u_solid.solid, BooleanOp::Cut, gen)?;
                 built.consume(target);
                 built.consume(tool);
                 built.register(id.to_string(), result);
@@ -164,7 +164,7 @@ pub fn build_bodies_from_features(
                 let u_solid = built
                     .get(tool)
                     .ok_or_else(|| KernelError::BodyNotFound { id: tool.clone() })?;
-                let result = boolean_planar(&t_solid.solid, &u_solid.solid, BooleanOp::Fuse, gen)?;
+                let result = boolean(&t_solid.solid, &u_solid.solid, BooleanOp::Fuse, gen)?;
                 built.consume(target);
                 built.consume(tool);
                 built.register(id.to_string(), result);
@@ -180,8 +180,7 @@ pub fn build_bodies_from_features(
                 let u_solid = built
                     .get(tool)
                     .ok_or_else(|| KernelError::BodyNotFound { id: tool.clone() })?;
-                let result =
-                    boolean_planar(&t_solid.solid, &u_solid.solid, BooleanOp::Intersect, gen)?;
+                let result = boolean(&t_solid.solid, &u_solid.solid, BooleanOp::Intersect, gen)?;
                 built.consume(target);
                 built.consume(tool);
                 built.register(id.to_string(), result);
