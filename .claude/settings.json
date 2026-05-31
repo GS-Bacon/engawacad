@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/bacon/mycad/.claude/skills/3ai/scripts/guard-crates.sh"
+            "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/guard-crates.ts"
           }
         ]
       }
