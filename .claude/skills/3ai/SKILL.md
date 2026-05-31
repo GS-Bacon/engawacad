@@ -385,7 +385,17 @@ bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/sta
 Critical/High があれば:
 1. GLM 修正ディスパッチ（dispatch-glm.sh を再実行、フォーカスは指摘箇所のみ）
 2. Codex 再レビュー（ループ +1）
-3. wrapper が **exit 3（上限超過）** で終了したら **停止・エスカレーション**
+3. wrapper が **exit 3（上限超過）** で終了した場合は以下のフォールバックを実行する:
+
+   `final-review.md.verdict.json` の `severity_counts.critical` を確認する:
+   - **critical が 1 件以上** → 停止してユーザーにエスカレーション
+   - **critical が 0 件** → blocking の性質を確認する:
+     - **blocking が docs-only**（コードファイルへの変更を伴わない文書修正のみ） → Claude 裁量で受け切る:
+       1. 残った high/medium を 1 件ずつ「採用 → 直接修正（docs ファイルへの Edit/Write）」または「棄却 → 理由を明記」で処理する
+       2. `cargo xtask ci` で green を確認する
+       3. `state.sh set ... final_review passed` で通過扱いにする
+       4. 対応内訳をユーザーに 1 メッセージで報告してから STEP 8 へ
+     - **blocking に code 系** が含まれる → 停止してユーザーにエスカレーション
 
 ---
 
