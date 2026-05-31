@@ -105,6 +105,8 @@ bash .claude/skills/3ai/scripts/state.sh init features/$ISSUE_NUM-$ISSUE_SLUG/st
 
 ### 3-A: dispatch（初回）
 
+`adr-context.md` が必要な場合（plan が特定の ADR を参照している場合）は、dispatch 前に Claude が該当 ADR の背景・決定セクションを抜粋して `features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md` に書く。
+
 ```bash
 bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
   --issue $ISSUE_NUM \
@@ -112,7 +114,9 @@ bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
   --input <プランファイルパス> \
   --plan <プランファイルパス> \
   --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md \
+  --plan-snapshot-dir features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots \
+  [--adr-context features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md]
 ```
 
 > **注意**: `--plan` に `## Non-Goals` セクションがない場合、wrapper が exit 1 で停止する。  
@@ -137,6 +141,15 @@ bash .claude/skills/3ai/scripts/state.sh judge \
   <round番号> <adopted_count> <rejected_count>
 ```
 
+**judgment-summary.md を更新する**（round 2 以降の dispatch で Codex に渡される）:
+`features/$ISSUE_NUM-$ISSUE_SLUG/judgment-summary.md` に以下の形式で追記する:
+```markdown
+## Round N
+- R01: 採用 → plan の「決定性要件」節に IdGenerator 制約を明記した
+- R02: 棄却 → Non-Goals に記載済みの「退化検出」の蒸し返し
+- R03: 部分採用 → epsilon 比較は採用。HalfEdge 循環チェックは後続 issue (#35) に委譲
+```
+
 **全採用警告チェック**（次 round dispatch 前に必ず実行）:
 ```bash
 bash .claude/skills/3ai/scripts/state.sh check-full-adoption-warning \
@@ -158,10 +171,27 @@ bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
   --plan <プランファイルパス> \
   --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
   --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md \
-  --rejection features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md
+  --plan-snapshot-dir features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots \
+  --rejection features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md \
+  --judgment-summary features/$ISSUE_NUM-$ISSUE_SLUG/judgment-summary.md \
+  [--adr-context features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md]
 ```
 
-wrapper が **exit 3（上限超過）** で終了したら **停止してユーザーにエスカレーション**。
+wrapper が **exit 3（上限超過）** で終了した場合は以下のフォールバック手順を実行する:
+
+1. `features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md.verdict.json` の `severity_counts.critical` を確認する
+2. **critical が 1 件以上** → 停止してユーザーにエスカレーション。design-review.md と rejection.md を提示し、判断を仰ぐ
+3. **critical が 0 件** → Claude 裁量で受け切る:
+   - 残った high/medium/low を 1 件ずつ「採用 → plan を直す」「棄却 → rejection.md に追記」で処理する
+   - 全件処理し終えたら `state.sh set` で通過扱いにする
+   - 受けた・棄却した内訳をユーザーに 1 メッセージで報告してから STEP 4 へ
+
+判定ヘルパー（critical = 0 なら exit 0）:
+```bash
+bash .claude/skills/3ai/scripts/state.sh assert-critical-zero \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
+  features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md.verdict.json
+```
 
 ### 3-D: 通過
 
@@ -187,14 +217,16 @@ git checkout -b cad/$ISSUE_NUM-$ISSUE_SLUG
 
 ---
 
-## STEP 6: GLM-5.1 実装（背景実行・自動エスカレーション付き）
+## STEP 6: GLM-5.1 コア実装（背景実行・自動エスカレーション付き）
+
+**目的**: コア機能の実装 + plan T01〜のうち決定性・正常系の最小テストのみ。エッジケーステストは STEP 6.6 で行う。
 
 **ループ定数**: `GLM_MAX_LOOPS=3`（通常試行上限）、`ESC_MAX_LOOPS=1`（debug-spec 付き再 dispatch 上限）
 
 **自分（Claude）は crates/** を Edit/Write しない**（guard-crates フックが deny する）。
 crates/** の Read は許可（debug-spec 作成のための根本原因分析に使う）。
 
-### 6-A: 通常実装ループ（最大 3 回）
+### 6-A: コア実装ループ（最大 3 回）
 
 各試行で以下を実行する:
 
@@ -204,10 +236,11 @@ bash .claude/skills/3ai/scripts/dispatch-glm.sh \
   --plan-file <プランファイルパス> \
   --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
   --result-file features/$ISSUE_NUM-$ISSUE_SLUG/glm-result.json \
-  --max-turns 80
+  --mode core \
+  --max-turns 60
 # debug-spec 付き再 dispatch の場合は --debug-spec features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md を追加
 
-bash .claude/skills/3ai/scripts/state.sh inc features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
+bash .claude/skills/3ai/scripts/state.sh inc features/$ISSUE_NUM-$ISSUE_SLUG/phases.core_impl.glm_runs
 ```
 
 **`run_in_background: true` で起動し、完了通知を待つ（ポーリングしない）。**
@@ -216,9 +249,9 @@ bash .claude/skills/3ai/scripts/state.sh inc features/$ISSUE_NUM-$ISSUE_SLUG/sta
 
 `glm-result.json` を読んで:
 
-- `status: success` かつ `ci_passed: true` → 以下を実行して STEP 7 へ:
+- `status: success` かつ `ci_passed: true` → 以下を実行して **STEP 6.5 へ**:
   ```bash
-  bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl passed
+  bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/state.json core_impl passed
   ```
 
 - `status: failed` の場合:
@@ -256,21 +289,92 @@ debug-spec 付き再 dispatch でも `status: failed` のままなら:
 
 ---
 
+## STEP 6.5: Claude がテスト仕様書（test-spec.md）を作成
+
+**ゲート: core_impl が passed であることを確認。**
+```bash
+bash .claude/skills/3ai/scripts/state.sh assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json core_impl
+```
+
+Claude が以下を実行する（crates/** の **Read のみ**。Edit/Write は guard-crates が deny する）:
+
+1. `git diff main..HEAD` で実装差分を読む
+2. plan のテスト計画 ID 表（T01〜）と突き合わせ、未実装のものを特定する
+3. 実装差分を見て「plan に書いていなかったが生じた分岐・ケース」を特定する
+4. 以下の構成で `features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md` を Write する:
+
+```markdown
+## 不足テスト（plan 計画分）
+- T03「..」: <plan からの再掲、期待挙動を明記>
+
+## 実装差分から追加すべきテスト
+- TX1「..」: <差分を見て気付いたケース>
+
+## エッジケース・退化入力
+- TX2 「..」（ゼロ長エッジ / 面積ゼロ / coincident vertices 等）
+
+## 数値境界
+- TX3 「..」（f64::MAX / f64::MIN_POSITIVE / NaN / Inf 等）
+
+## 決定性
+- TX4 「..」（同一入力 100 回反復 / ラウンドトリップ等）
+```
+
+---
+
+## STEP 6.6: GLM-5.1 テスト実装（背景実行）
+
+**ゲート: `features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md` が存在すること。**
+
+```bash
+bash .claude/skills/3ai/scripts/dispatch-glm.sh \
+  --agent .claude/skills/3ai/agents/glm-test-implementer.md \
+  --plan-file <プランファイルパス> \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --result-file features/$ISSUE_NUM-$ISSUE_SLUG/glm-test-result.json \
+  --mode test \
+  --test-spec features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md \
+  --max-turns 60
+
+bash .claude/skills/3ai/scripts/state.sh inc features/$ISSUE_NUM-$ISSUE_SLUG/phases.test_impl.glm_runs
+```
+
+**`run_in_background: true` で起動し、完了通知を待つ（ポーリングしない）。**
+
+`glm-test-result.json` を読んで:
+- `status: success` かつ `ci_passed: true` → `state.sh set ... glm_impl passed` に進む
+- `status: failed` の場合は 6-C と同じ手順（debug-spec を test モード向けに作成）で最大 1 回再 dispatch。それでも失敗なら停止・エスカレーション
+
+CI 通過後:
+```bash
+bash .claude/skills/3ai/scripts/state.sh set features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl passed
+```
+
+---
+
 ## STEP 7: Codex 最終レビュー（背景実行・完了通知）
 
-**ゲート: glm_impl が passed であることを確認。未通過なら STEP 6 へ戻ること。**
+**ゲート: glm_impl が passed であることを確認。未通過なら STEP 6.6 へ戻ること。**
 ```bash
 bash .claude/skills/3ai/scripts/state.sh assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
 ```
 
 ループ上限: **wrapper が自動判定**（code=2 / docs=1）。超過時は wrapper が exit 3 で終了。
 
+**dispatch 前に test-summary.json を生成する:**
+```bash
+bash .claude/skills/3ai/scripts/extract-test-summary.sh \
+  --ci-log features/$ISSUE_NUM-$ISSUE_SLUG/ci.log \
+  --output features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
+```
+
 ```bash
 bash .claude/skills/3ai/scripts/dispatch-codex-auto.sh \
   --issue $ISSUE_NUM \
   --mode final \
   --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  --result features/$ISSUE_NUM-$ISSUE_SLUG/final-review.md
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/final-review.md \
+  --test-summary features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
 ```
 
 **完了通知を待つ。** `final-review.md.verdict.json` の `blocking` が 0 かつ `verdict: pass` なら:

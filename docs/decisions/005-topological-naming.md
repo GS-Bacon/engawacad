@@ -108,7 +108,7 @@ enum EntityRef {
   **canonical order に正規化してから連結/ハッシュ**する(unordered container を seed に直接使わない)。
   これは Phase 4 実装の必須制約として今記録する。
 
-Phase 4 実装詳細は Issue #27 を参照。
+Phase 4 実装詳細は Issue #27 / #31 を参照。
 
 ### 6. 基底名の canonical grammar と charset
 
@@ -237,11 +237,11 @@ ADR-004 の「加算的に追加」原則と整合する。
 
 | 対象 | 内容 | 担当 issue |
 |------|------|-----------|
-| `mycad-format/src/feature.rs` | `EntityRef` を将来 enum 化(`Named { feature_id, kind, role }` + 後で `Derived`)。`Feature.id` の不変性を doc コメントに明記。`Debug, Clone, Serialize, Deserialize, JsonSchema, TS` の維持 | #22 / 専用 issue |
-| `mycad-format` load path | 単一 validated load path の実装。`feature_id` charset・Component 内一意性・`role` charset の検証。custom `Deserialize` または validated newtype でバイパス経路を塞ぐ | #22 / 専用 issue |
-| `mycad-kernel/src/brep/topology.rs` | `EntityId` の役割を「ビルド内ハンドル・非永続」と doc コメントに明記 | #22 / 専用 issue |
-| 各 primitive maker | canonical local frame 定義 + face/edge/vertex の role タグ付け実装 | 各 primitive の role 付与実装 issue |
-| `mycad-kernel` epsilon | kernel 共通の epsilon 定数/比較関数を 1 箇所に定義 | #22 または専用 issue |
+| `mycad-format/src/feature.rs` | `EntityRef` enum 化(`Named { feature_id, kind, role }` + `Derived`)。`Feature.id` の不変性を doc コメントに明記。`Debug, Clone, Serialize, Deserialize, JsonSchema, TS` の維持 | **DONE** (#22 で実装、#27 で `Derived` 追加) |
+| `mycad-format` load path | 単一 validated load path の実装。`feature_id` charset・Component 内一意性・`role` charset の検証。custom `Deserialize` または validated newtype でバイパス経路を塞ぐ | **DONE** (#22 で実装済み) |
+| `mycad-kernel/src/brep/topology.rs` | `EntityId` の役割を「ビルド内ハンドル・非永続」と doc コメントに明記 | **DONE** (#22 で実装済み) |
+| 各 primitive maker | canonical local frame 定義 + face/edge/vertex の role タグ付け実装 | **DONE** (cuboid/cylinder/extrude: #22、sphere: #38) |
+| `mycad-kernel` epsilon | kernel 共通の epsilon 定数/比較関数を 1 箇所に定義 | **DONE** (ADR-004 / #31 で実装済み) |
 
 ### 後続 issue の acceptance tests（予約）
 
@@ -278,5 +278,5 @@ Issue を 2 本に分割して粒度を管理する。
 - pcurve 対応 (ADR-004 参照)
 - 数値モデル(トレラント vs 厳密、ADR-004 参照)
 
-**Phase 5 へ延期**:
+**Phase 5 へ延期** (Issue 化は Phase 5 着手時):
 - Component 階層越し・複数 occurrence 参照の命名とエラー化(Phase 5 参照)

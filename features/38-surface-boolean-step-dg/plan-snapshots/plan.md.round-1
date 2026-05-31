@@ -1,0 +1,195 @@
+# Issue #38 — 曲面 Boolean STEP D–G: 円弧 PSLG 投入・convex チェック撤廃・球名前付け
+
+## Context
+
+Phase 4 (Boolean) のクリティカルパス上、commit ddf8ec1 (#34 部分実装) で残った 7 stub を埋め、Acceptance A1 (box から円柱で blind hole) と A3 (box 内包球の Cut → void shell) を成立させる。これにより Phase 4 完了条件「Cut/Fuse/Intersect が動作」のうち「曲面を含む Cut」が満たされ、#35 (ビューア目視確認) で Phase 4 を close できる。
+
+ddf8ec1 で既に landed (本 Issue では触らない):
+- `intersect_surfaces` dispatcher と Plane×Cylinder / Plane×Sphere / Cylinder×Sphere の交線生成
+- `assemble.rs::reverse_face_orientation` の `same_sense` 単独エンコード
+- `assemble.rs::signed_volume` の曲面 face 対応 (effective_normal 経由)
+- `classify.rs::ray_intersect_surface` の Cylinder/Sphere 対応
+- `classify.rs::count_ray_face_intersections` の曲面 face UV 投影
+- `validate_boolean_input` の Plane/Cylinder/Sphere accept、Cone のみ reject
+- `booleans::boolean` への rename + mycad-build 3 箇所追従
+
+本 Issue で落とすべき残り:
+1. **Circle 交線 PSLG 投入** — `partition.rs:308-311` (target side) と `partition.rs:455-457` (tool side) の `Curve::Circle { .. } => continue` stub を実装
+2. **arc 再構成** — `assemble.rs::reconstruct_intersection_curve` を新設し、同一親 Circle 上の連続サンプルセグメント列を 1 個の `Curve::Circle` edge に縮退 (現在は `assemble.rs:180` で全部 `Curve::Line` 決め打ち)
+3. **trim-aware tessellation** — `tessellate_face_uv_grid` に trim 経路 (`tessellate_face_uv_grid_trimmed`) を追加。cylinder lateral face の trim 出力を実体化
+4. **pcurve 後付け** — `attach_pcurves_for_trimmed_faces` を新設。trim された曲面 face の intersection HE に Circle2D/Line2D pcurve を付与し T21 (`validate_manifold` の pcurve consistency) を通す
+5. **convex チェック撤廃** — `mod.rs:84-88` の `is_convex_polygon_3d` ブロックを削除し `n >= 3` のみに後退、本体定義 (`mod.rs:112-161`) も削除
+6. **make_sphere エンティティ名付け** — `primitives/sphere.rs` の `add_vertex`/`add_edge`/`add_face` に `EntityRef::Named` (`cuboid.rs` パターン) を付与
+7. **テスト** — A1/A3 Acceptance + T17/T19/T21/T22 (A1 関連)・T22 (A3 関連)・T27 (体積) + arc 再構成単体テスト + sphere naming 決定性テスト
+
+設計判断 (壁打ちで合意済み):
+- arc 再構成は **#38 に含める** (案 A 採用)。stub 投入だけだと T21 で blind hole 内壁が「N 個の短い直線 edge」になり pcurve consistency が壊れる。
+- arc サンプル密度は **Boolean 内部の固定定数 `BOOLEAN_ARC_SAMPLES: usize = 32`** (案 β 採用)。`boolean` の公開 API は変更しない。
+- convex 撤廃の代替は **`n >= 3` のみ** (案 I 採用)。simple polygon (自己交差) チェックは Non-Goal とし将来 Issue で対応。
+- A2 (cyl ∩ sph Intersect) は **Non-Goal** (cylinder と sphere 両面の trim + sphere seam unwrap が必要で独立した複雑度)。
+
+## Non-Goals
+
+- **A2 (Cylinder ∩ Sphere Intersect)** および T18/T20/T34: 別 Issue (cyl×sph の両面 trim と sphere 側 trim tessellation を担う)。partition.rs に `Cylinder×Sphere` 入力に対して新エラー `UnsupportedSurfaceIntersection { reason: "cyl×sph partition deferred" }` を返す gate を一時的に置く (ddf8ec1 で intersect_surfaces 自体は動くが、partition 経由の PSLG/assemble が完成しないため)
+- **`tessellate_face_sphere` の trim 経路**: A3 では sphere 全体が inner void shell として保持され trim されないので不要。A2 と一緒に別 Issue へ
+- **Self-intersection (simple polygon) チェック**: convex 撤廃の代替として「n >= 3 のみ」で進む。自己交差 outer loop は kernel 内で生成経路が無いため現実的にリスクなし。将来 Issue で対応
+- **make_cylinder のエンティティ名付け**: 本 Issue は sphere のみ。cylinder は別 Issue (テスト golden への影響を分けるため)
+- **`point_in_curved_face` の named helper 抽出**: 既に `count_ray_face_intersections` (`classify.rs:182-190`) に inline で実装済み。リファクタは別 Issue
+- **`unwrap_periodic_uv` の tessellation 側共有**: 本 Issue では partition.rs 内に private helper として置く。共有化はリファクタ別 Issue
+- **STEP H の golden (T23) と STEP I の ADR/CLAUDE.md 文書 (T29)**: A1 が落ち着いてからまとめて別 Issue (ROADMAP/ADR 文書はリスク低・独立で切り出し可能)
+
+## 実装対象
+
+- **Issue**: #38
+- **影響クレート/ファイル**:
+  - `crates/mycad-kernel/src/booleans/partition.rs` (Circle PSLG 投入、`unwrap_periodic_uv` private helper)
+  - `crates/mycad-kernel/src/booleans/assemble.rs` (`reconstruct_intersection_curve`、`attach_pcurves_for_trimmed_faces`、intersection-edge loop 改修)
+  - `crates/mycad-kernel/src/booleans/types.rs` (`IntersectionSegment` に親 curve provenance フィールド追加 — 詳細は §設計方針)
+  - `crates/mycad-kernel/src/booleans/mod.rs` (convex 撤廃、`BOOLEAN_ARC_SAMPLES` 定数定義、cyl×sph partition gate)
+  - `crates/mycad-kernel/src/tessellation/mod.rs` (`tessellate_face_uv_grid` の trim 経路、`tessellate_face_uv_grid_trimmed` 新設、関連テスト T11 系の Ok 反転)
+  - `crates/mycad-kernel/src/primitives/sphere.rs` (`EntityRef::Named` 付与)
+  - `crates/mycad-build/tests/feature_dispatcher.rs` (A1/A3 + T17/T19/T21/T22/T27 追加)
+- **変更する型・関数のシグネチャ**:
+  - `IntersectionSegment` (types.rs): フィールド追加 `arc_provenance: Option<ArcProvenance>` (新 enum)。`ArcProvenance` は `{ parent_curve_2d_on_target: Curve2D, parent_curve_2d_on_tool: Curve2D, parent_curve_3d: Curve, segment_index: usize, total_segments: usize }`。`segment_index` で連続性、`parent_curve_3d` で arc 再構成 (Circle の center/normal/radius/t_range) を完全復元可能
+  - `assemble::reconstruct_intersection_curve(segments: &[(IntersectionSegment, [VertexIdx; 2])]) -> Vec<(Curve, [f64; 2], [VertexIdx; 2])>`: 同一 `arc_provenance.parent_curve_3d` を共有する連続セグメント (`segment_index` が 0..N-1) を 1 個の `Curve::Circle` edge に集約。それ以外は従来通り `Curve::Line` 1 edge 1 segment
+  - `assemble::attach_pcurves_for_trimmed_faces(solid: &mut Solid, ...)`: trim された face の各 intersection HE に `Curve2D` を pcurve として attach (face_idx + halfedge_idx + parent_curve_2d を IntersectionSegment 経由で渡す)
+  - `tessellation::tessellate_face_uv_grid` 内部 dispatch: canonical なら従来経路、trim 検出時 (loop 数 ≥ 1 かつ outer_loop が face 全周を覆わない) は `tessellate_face_uv_grid_trimmed` を呼ぶ
+  - `tessellate_face_uv_grid_trimmed(face: &Face, surface_uv_bounds, opts: &TessellationOptions) -> Result<Vec<Triangle>, TessellationError>`: pcurve から UV 多角形を構成 → earcut で 2D 三角形分割 → UV 各頂点を `surface.evaluate(u,v)` で 3D 化
+  - `make_sphere`: 戻り値・引数シグネチャは不変、`add_vertex`/`add_edge`/`add_face` に `Some(EntityRef::try_named("sphere", kind, role)?)` を渡す。**role 名は ADR-005 §7 の例 (`surface` / `seam` / `south_pole` / `north_pole`) に厳密準拠** (cuboid.rs の `f_x_pos` 系 prefix は採らない、`EntityKind` が既に kind を表現するため重複を避ける)
+  - `BOOLEAN_ARC_SAMPLES`: `const` で `booleans/mod.rs` 内 (private)
+
+## 設計方針
+
+### 決定性要件
+
+- すべての新規 entity (intersection edge, arc-reconstructed edge, sphere primitive entities) は `IdGenerator::next()` で発番。`IdGenerator` の呼び出し順序は入力面の `face_idx` 昇順 → loop_idx 昇順 → halfedge_idx 昇順で固定する (既存 partition/assemble の順序ポリシーを継承)
+- `reconstruct_intersection_curve` 内の集約処理は、`arc_provenance.parent_curve_3d` をキーとした安定ソート (例: `center.x/y/z, normal.x/y/z, radius` の lexicographic) で行う。HashMap は使わず BTreeMap または `Vec` + `binary_search` で順序保証
+- `BOOLEAN_ARC_SAMPLES = 32` は const なので同一入力同一出力。T22 (2 回 build → 完全一致) で検証
+- `make_sphere` の name 文字列はハードコード (feature_id=`"sphere"`、role=`"south_pole"` / `"north_pole"` / `"seam"` / `"surface"` — ADR-005 §7 準拠) で決定的
+
+### B-rep トポロジー妥当性
+
+- A1 結果: 単一 shell、genus 0、box 上面 z=+5 に inner_loop (cylinder 開口の円) 1 個、下面不変。Euler-Poincaré (inner_loop 込み): `V - E + F - L_inner = 2(S - G) = 2(1 - 0) = 2` を T31 相当で検証 (本 Issue では A1 のみ assert、A2/A3 の Euler は #34 plan T32/T33 が既に主張する範囲)
+- A3 結果: 2 shell (outer = 6 box faces、inner = 1 self-adjacent periodic sphere face)、genus 0、inner_loop なし。`V - E + F = 4` (= 2·(2-0)) を確認
+- `validate_manifold()` を A1/A3 双方で実行し `Ok(())` を確認 (T19, A3 用 T19'相当)
+
+### 退化幾何の扱い
+
+- A1 の cylinder が box 境界面と完全一致 (`z_top = 5.0` ぴったり) するケースは Phase 4 範囲外として `KernelError::UnsupportedSurfaceIntersection` で reject。本 Issue の A1 入力 (cylinder bottom z=0、top z=12、box top z=+5) は cylinder lateral が box top と clean に交わるので除外可能
+- arc 再構成で集約セグメント数が 1 (1 サンプルしか PSLG に残らなかった = clip でほぼ消えた) のときは chord `Curve::Line` で出力 (Circle 縮退としては不適切なため)
+- `BOOLEAN_ARC_SAMPLES` 個のサンプル全てが clip で polygon 外に出た場合、当該 arc は intersection 不成立として skip (assert ではなく log)
+- Circle 交線の 3D 全周 (`t_range = [0, 2π]`) と部分弧 (`[t_a, t_b]`) の両方を扱う。clip 後の残存 t 値から `t_min, t_max` を抽出し `Curve::Circle.t_range` に設定
+
+### derive 規約
+
+- `ArcProvenance`: `Debug, Clone, Serialize, Deserialize` 付与。`JsonSchema` は不要 (内部型、format 越えて出ない)
+- `EntityRef::Named` の name 文字列は ASCII `[A-Za-z0-9_-]` のみ (既存制約、`feature.rs:133`)
+
+### エラーハンドリング
+
+- 既存 `KernelError::UnsupportedSurfaceIntersection { reason: String }` を再利用。新エラー variant は追加しない
+- 新規 reject 理由: `"cyl×sph partition deferred"` (cyl×sph partition gate)、`"arc reconstruction failed: non-monotonic segment indices"` (再構成 invariant violation)
+- `attach_pcurves_for_trimmed_faces` の失敗は `KernelError::InvalidTopology { reason: "intersection HE has no pcurve provenance" }` (既存 variant 利用、なければ追加判断は実装時)
+
+### workspace.dependencies
+
+新規依存は **無し**。`earcut` (既存)、`nalgebra` (既存) で十分。
+
+## テスト計画 (ID 付き)
+
+| ID  | 種別     | 内容                                                                                                  | 期待結果                                                                 |
+|-----|----------|-------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| T01 | 単体 (assemble) | `reconstruct_intersection_curve` に同一 `parent_curve_3d` (Circle radius=2) を共有する `segment_index = 0..31` 列を入力 | 1 個の `Curve::Circle` edge (center/normal/radius 一致、t_range が連続) |
+| T02 | 単体 (assemble) | 同上で `segment_index` が `[0,1,3,4]` (non-contiguous) | 2 個に分割した Circle edge 群 (`[0,1]` と `[3,4]`) |
+| T03 | 単体 (assemble) | 集約セグメント数が 1 の入力 | `Curve::Line` (chord) 1 edge にフォールバック |
+| T04 | 単体 (assemble) | `arc_provenance = None` (元 Line) 列 | 従来通り Line edge 連続生成 (1 segment 1 edge) |
+| T05 | 単体 (partition) | `Curve::Circle { center, normal=+Z, radius=2, t_range=[0, 2π] }` を含む `IntersectionLoop` を target loop に投入 → `pslg_subdivide` 入力 segments を inspect | 32 個の `IntersectionSegment` (各 `arc_provenance.segment_index = 0..31`、`total_segments = 32`、`parent_curve_3d == Circle{..}`) |
+| T06 | 単体 (partition) | 部分弧 `t_range=[π/4, 3π/4]` の Circle を投入 | 32 個のセグメントが arc 長に分布、t_min/t_max が `[π/4, 3π/4]` |
+| T07 | 単体 (mod) | `validate_boolean_input` に頂点 3 個の非 convex (V 字 + 1 頂点) polygon を入力 | 旧 `is_convex_polygon_3d` で reject されていた入力が **`Ok(())`** に変わる |
+| T08 | 単体 (mod) | `validate_boolean_input` に頂点 2 個 (collinear) の outer_loop を入力 | `Err` (n >= 3 ガード) |
+| T09 | 単体 (sphere) | `make_sphere(center, radius, id_gen)` の戻り値 `Solid` から各 entity の `EntityRef::Named { feature_id, kind, role }` を取得 | `feature_id == "sphere"`、role が `"south_pole"` (V) / `"north_pole"` (V) / `"seam"` (E) / `"surface"` (F) — ADR-005 §7 準拠 |
+| T10 | 単体 (sphere) | `make_sphere` を 2 回呼び出し、ID 以外の entity 構造と name を比較 | 全 name 一致 (決定性) |
+| **A1** | 統合 (Acceptance) | box (中心原点、10×10×10、z=-5..+5) を Cut with cylinder (axis=+Z、origin=(0,0,0)、radius=2、height=12) → blind hole | `Ok(Solid)`、`validate_manifold == Ok(())`、`signed_volume ≈ 1000 - 20π ≈ 937.17` (相対誤差 < 1%) |
+| **A3** | 統合 (Acceptance) | box (中心原点、10×10×10) を Cut with sphere (center=(0,0,0)、radius=2、box 完全内包) | `Ok(Solid)`、`validate_manifold == Ok(())`、`shells.len() == 2` (outer 6 face + inner 1 sphere face)、inner shell の sphere face `same_sense == false` |
+| T17 | 統合 (A1 tessellation) | A1 結果に `tessellate_solid(opts_default)` を実行 | `triangles.len() > 0`、各頂点座標 finite (`is_finite`)、2 回実行で完全一致 |
+| T19 | 統合 (A1 manifold) | A1 結果に `validate_manifold()` | `Ok(())` |
+| T21 | 統合 (A1 pcurve 整合性) | A1 の trim された cylinder lateral face の intersection HE が pcurve を持ち、端点と中点 (`t = (t_start + t_end) / 2`) の 3D 復元 (`surface.evaluate(u, v)`) が edge.curve_3d.evaluate(t) と一致 (`< LENGTH_TOLERANCE`) | 全 HE で一致 |
+| T22 | 決定性 | A1 / A3 を 2 回 build し `assert_solids_equal_with_names` で完全一致 | 全 entity name 同一 |
+| T27 | 体積 | A1 結果の `signed_volume()` | `≈ 937.17` (誤差 < 1%) |
+| T_sphere_existing_unchanged | 既存リグレッション | `t03_sphere_regression` 既存テストが pass し続ける (sphere naming 追加で既存 expected が壊れていないか) | 既存と同じ trianle count / mesh hash |
+
+### テスト配置
+
+- T01-T04: `crates/mycad-kernel/src/booleans/assemble.rs` 内 `#[cfg(test)] mod tests`
+- T05-T06: `crates/mycad-kernel/src/booleans/partition.rs` 内 `#[cfg(test)] mod tests`
+- T07-T08: `crates/mycad-kernel/src/booleans/mod.rs` 内 `#[cfg(test)] mod tests`
+- T09-T10: `crates/mycad-kernel/src/primitives/sphere.rs` 内 `#[cfg(test)] mod tests`
+- A1, A3, T17, T19, T21, T22, T27: `crates/mycad-build/tests/feature_dispatcher.rs`
+- T_sphere_existing_unchanged: 既存テストを動かすだけ (新規追加なし)
+
+### 既存テスト影響評価
+
+- `crates/mycad-build/tests/feature_dispatcher.rs::t03_sphere_regression` (line 168): sphere の triangle count / mesh hash で固定されているため、**naming 追加では破綻しない** (mesh は entity name に依存しない)。ただし golden YAML / entity ref を assert している経路があれば追従が必要 → 実装段階で確認、必要なら expected を更新
+- `crates/mycad-kernel/src/tessellation/mod.rs` の T11/T12 系 reject test (`test_partial_revolution_cylinder_face_errors` 系): trim-aware 化により Ok 期待に反転。これは T24-T26 (#34 plan の番号) に相当するが、本 Issue では cylinder 経路のみ反転、sphere 経路は Non-Goal (現状の reject を維持)
+- 既存 Plane×Plane Boolean (`t02_*` 〜 `t20_*`) は intersection edge の Curve 種別を assert しないので破綻しない見込み。実装後に必ず `cargo test --workspace` で確認
+
+## 幾何的不変条件チェックリスト (Boolean/Partition/Assemble 系)
+
+- [x] **partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか** → ddf8ec1 の `signed_volume` が `effective_normal = if same_sense { face_normal } else { -face_normal }` で normal の符号を分離しているため、polygon 頂点順は normal 整合性に影響しない。本 Issue は同方針を継承
+- [x] **各プリミティブの face ごとの outer_loop 2D 向き (CW/CCW) が文書化されているか** → cuboid/cylinder/sphere の向きは ADR-005 §7 で既出。本 Issue は sphere の primitive 構造 (vertex/edge/face/loop の数と向き) を変更しない。名前付与のみ
+- [x] **flip_normals / same_sense の意味論が明確か** → ddf8ec1 で `same_sense` 単独エンコードに統一済み。本 Issue では Cut 操作で tool 側 face を `same_sense = false` で取り込む既存ロジックを変更しない
+- [x] **pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか** → PSLG ロジック (`pslg_subdivide`) は変更せず。Circle セグメントを直線サンプル化して投入するためアルゴリズム的に等価。`arc_provenance` は `IntersectionSegment` のフィールドとして passive に保持され、PSLG の幾何処理に影響しない
+- [x] **(本 Issue 固有) arc 再構成で `Curve::Circle.t_range` が PSLG 通過後も連続性を保つか** → `arc_provenance.segment_index` の連続性 (0..N-1) で検証可能。clip で一部が消えた場合は連続区間ごとに分割 (T02 で検証)
+- [x] **(本 Issue 固有) trim された UV polygon が earcut の前提 (CCW outer) に整合しているか** → `tessellate_face_uv_grid_trimmed` 内で UV 列を Newell's normal で検査し、CW なら反転 (helper `ensure_ccw_uv_polygon`、partition.rs と共有しない private)
+- [x] **(本 Issue 固有) Cylinder seam 跨ぎ UV の 2π wrap** → `unwrap_periodic_uv` (partition.rs private helper) で連続化。tessellation 側は本 Issue ではコピー実装で許容 (共有化は別 Issue)
+
+## 実装順序
+
+各 STEP 完了後に `cargo xtask ci` の該当部分グリーンを期待。
+
+1. **STEP 1 — sphere naming** (`primitives/sphere.rs` + T09/T10)
+   - 最小・独立・テスト容易。既存 `t03_sphere_regression` がコケないことを確認
+   - 完了条件: T09/T10 green、既存テスト全 green
+
+2. **STEP 2 — convex 撤廃** (`booleans/mod.rs` + T07/T08)
+   - `is_convex_polygon_3d` 削除、`n >= 3` のみ残す
+   - 既存 Plane×Plane Boolean (`t02-t20`) 全 green を確認
+   - 完了条件: T07/T08 green、既存 boolean test 全 green
+
+3. **STEP 3 — `IntersectionSegment` 拡張 + Circle PSLG 投入** (`booleans/types.rs` + `partition.rs` + T05/T06)
+   - `ArcProvenance` 型追加、既存の `IntersectionSegment` 構築箇所 (Line 経路) に `arc_provenance: None` を追加
+   - `BOOLEAN_ARC_SAMPLES = 32` を `booleans/mod.rs` に定義
+   - target side stub (`partition.rs:308-311`) と tool side stub (`partition.rs:455-457`) を実装: `Curve2D::Circle2D::sample_segment` で 2D 点列を得て既存 Line 経路と同じ clip → project → push をループ実行
+   - `cyl×sph` 入力には新 gate を追加 (intersect_surfaces の前で `UnsupportedSurfaceIntersection { reason: "cyl×sph partition deferred" }`)
+   - 完了条件: T05/T06 green、既存 Plane×Plane 全 green、A1 はまだ assemble 不足で red
+
+4. **STEP 4 — arc 再構成** (`assemble.rs::reconstruct_intersection_curve` + T01-T04)
+   - 既存の intersection-edge loop (line 162-190) を改修: segments → group by `arc_provenance.parent_curve_3d` (BTreeMap キー lexicographic) → 各グループに対し連続性チェック → `Curve::Circle` または `Curve::Line` 列を生成
+   - `derive_edge_name` は親 arc 単位で 1 回呼ぶ (連続 N セグメントに対し edge 1 個・name 1 個)
+   - 完了条件: T01-T04 green、A1 で blind hole 内壁が 1 個の Circle edge になることを T21 で検証 (まだ pcurve attach 不足で T21 red、A1 manifold は曖昧)
+
+5. **STEP 5 — `attach_pcurves_for_trimmed_faces`** (`assemble.rs` + 既存 T21 路径)
+   - trim された face の各 intersection HE を走査 → IntersectionSegment / ArcProvenance から該当 face 側の `Curve2D` を取得 → halfedge に pcurve を attach
+   - 完了条件: T21 green、A1 で `validate_manifold == Ok(())` (T19)
+
+6. **STEP 6 — trim-aware tessellation** (`tessellate_face_uv_grid_trimmed` + T11 系反転)
+   - canonical 判定経路に「outer_loop が face 全周覆わない → trim」分岐を追加
+   - `tessellate_face_uv_grid_trimmed`: pcurve から UV 多角形 → `unwrap_periodic_uv` → `ensure_ccw_uv_polygon` → earcut で 2D 三角形分割 → `surface.evaluate(u, v)` で 3D 化
+   - 既存 reject test (cylinder 経路) を Ok 期待に反転
+   - 完了条件: T17 green、A1 mesh が finite かつ triangle 数 > 0
+
+7. **STEP 7 — Acceptance + 体積** (`mycad-build/tests/feature_dispatcher.rs`)
+   - A1 (box - cylinder)、A3 (box - sphere)、T19/T21/T22/T27 を追加
+   - 完了条件: 全テスト green、`cargo xtask ci` 最終 green
+
+## Verification
+
+実装完了後:
+```bash
+cargo test --workspace                # 全テスト (新規・既存)
+cargo clippy --workspace -- -D warnings
+cargo fmt --all -- --check
+cargo xtask ci                        # 最終グリーン
+```
+
+Acceptance 目視確認は #35 に委譲 (本 Issue では mesh の triangle 数と manifold チェックまで)。

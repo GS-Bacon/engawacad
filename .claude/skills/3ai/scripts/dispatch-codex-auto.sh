@@ -4,9 +4,13 @@
 #   設計レビュー: dispatch-codex-auto.sh --issue <n> --mode design \
 #                   --input <plan.md> --plan <plan.md> \
 #                   --state <state.json> --result <result.md> \
-#                   [--rejection <rejection.md>]
+#                   [--rejection <rejection.md>] \
+#                   [--adr-context <adr-context.md>] \
+#                   [--judgment-summary <judgment-summary.md>] \
+#                   [--plan-snapshot-dir <dir>]
 #   最終レビュー: dispatch-codex-auto.sh --issue <n> --mode final \
-#                   [--base <branch>] --state <state.json> --result <result.md>
+#                   [--base <branch>] --state <state.json> --result <result.md> \
+#                   [--test-summary <test-summary.json>]
 #
 # ループ上限超過時は exit 3 で終了(エスカレーションシグナル)。
 set -euo pipefail
@@ -21,17 +25,25 @@ PLAN_FILE=""
 STATE_FILE=""
 RESULT_FILE=""
 REJECTION_FILE=""
+ADR_CONTEXT_FILE=""
+JUDGMENT_SUMMARY_FILE=""
+PLAN_SNAPSHOT_DIR=""
+TEST_SUMMARY_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --issue)     ISSUE_NUM="$2";     shift 2 ;;
-    --mode)      MODE="$2";           shift 2 ;;
-    --input)     INPUT_FILE="$2";     shift 2 ;;
-    --base)      BASE_BRANCH="$2";    shift 2 ;;
-    --plan)      PLAN_FILE="$2";      shift 2 ;;
-    --state)     STATE_FILE="$2";     shift 2 ;;
-    --result)    RESULT_FILE="$2";    shift 2 ;;
-    --rejection) REJECTION_FILE="$2"; shift 2 ;;
+    --issue)            ISSUE_NUM="$2";            shift 2 ;;
+    --mode)             MODE="$2";                  shift 2 ;;
+    --input)            INPUT_FILE="$2";            shift 2 ;;
+    --base)             BASE_BRANCH="$2";           shift 2 ;;
+    --plan)             PLAN_FILE="$2";             shift 2 ;;
+    --state)            STATE_FILE="$2";            shift 2 ;;
+    --result)           RESULT_FILE="$2";           shift 2 ;;
+    --rejection)        REJECTION_FILE="$2";        shift 2 ;;
+    --adr-context)      ADR_CONTEXT_FILE="$2";      shift 2 ;;
+    --judgment-summary) JUDGMENT_SUMMARY_FILE="$2"; shift 2 ;;
+    --plan-snapshot-dir) PLAN_SNAPSHOT_DIR="$2";   shift 2 ;;
+    --test-summary)     TEST_SUMMARY_FILE="$2";     shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -73,6 +85,12 @@ if (( n > MAX_LOOPS )); then
 fi
 echo "=== dispatch-codex-auto: issue=$ISSUE_NUM mode=$MODE deliverable=$DELIVERABLE loop=${n}/${MAX_LOOPS} ===" >&2
 
+# design モード: plan スナップショット保存（round n 開始前）
+if [[ "$MODE" == "design" && -n "$PLAN_SNAPSHOT_DIR" && -n "$PLAN_FILE" ]]; then
+  mkdir -p "$PLAN_SNAPSHOT_DIR"
+  cp "$PLAN_FILE" "$PLAN_SNAPSHOT_DIR/plan.md.round-${n}"
+fi
+
 # design モード: Non-Goals 抽出 → extra-input ファイル生成
 EXTRA_INPUT_TMP=""
 if [[ "$MODE" == "design" && -n "$PLAN_FILE" ]]; then
@@ -84,31 +102,95 @@ if [[ "$MODE" == "design" && -n "$PLAN_FILE" ]]; then
     exit 1
   fi
 
-  # Non-Goals 本文を抽出（次の ## まで）し extra-input ファイルへ
   EXTRA_INPUT_TMP="$(mktemp)"
-  awk '/^## Non-Goals/{found=1; next} found && /^## /{exit} found{print}' "$PLAN_FILE" \
-    | sed '/^[[:space:]]*$/d' > "$EXTRA_INPUT_TMP"
 
-  # rejection.md が指定されており存在する場合、PRIOR REJECTIONS ブロックを追記
-  if [[ -n "$REJECTION_FILE" && -f "$REJECTION_FILE" ]]; then
+  # ① Issue 本文（毎 round）
+  {
+    printf '===== ISSUE CONTEXT =====\n'
+    gh issue view "$ISSUE_NUM" --json title,body \
+      -q '"Issue #\(.number // "") \(.title)\n\n\(.body)"' 2>/dev/null \
+      || printf '(Issue 取得失敗)'
+    printf '\n===== END ISSUE CONTEXT =====\n\n'
+  } >> "$EXTRA_INPUT_TMP"
+
+  # ② ADR 抜粋（指定時のみ）
+  if [[ -n "$ADR_CONTEXT_FILE" && -f "$ADR_CONTEXT_FILE" ]]; then
     {
-      printf '\n===== PRIOR REJECTIONS =====\n'
-      printf '以下は過去 round で棄却済み。蒸し返さないこと。\n'
-      cat "$REJECTION_FILE"
-      printf '\n===== END PRIOR REJECTIONS =====\n'
+      printf '===== ADR EXCERPT =====\n'
+      printf '以下は本 Issue が前提とする設計決定（ADR 抜粋）。この方式自体への異議は挙げないこと。\n'
+      cat "$ADR_CONTEXT_FILE"
+      printf '\n===== END ADR EXCERPT =====\n\n'
     } >> "$EXTRA_INPUT_TMP"
   fi
+
+  # ③ Non-Goals 本文を抽出（次の ## まで）して SCOPE DEFENSE ブロックとして追記
+  {
+    printf '===== SCOPE DEFENSE =====\n'
+    printf '以下は本 Issue のスコープ外。指摘・拡張提案・改善要求の対象としないこと。\n'
+    awk '/^## Non-Goals/{found=1; next} found && /^## /{exit} found{print}' "$PLAN_FILE" \
+      | sed '/^[[:space:]]*$/d'
+    printf '\n===== END SCOPE DEFENSE =====\n\n'
+  } >> "$EXTRA_INPUT_TMP"
+
+  # ④ rejection.md（指定時かつ存在時）
+  if [[ -n "$REJECTION_FILE" && -f "$REJECTION_FILE" ]]; then
+    {
+      printf '===== PRIOR REJECTIONS =====\n'
+      printf '以下は過去 round で棄却済み。蒸し返さないこと。\n'
+      cat "$REJECTION_FILE"
+      printf '\n===== END PRIOR REJECTIONS =====\n\n'
+    } >> "$EXTRA_INPUT_TMP"
+  fi
+
+  # ⑤ PRIOR JUDGMENTS（round 2 以降 + 指定時）
+  if (( n >= 2 )) && [[ -n "$JUDGMENT_SUMMARY_FILE" && -f "$JUDGMENT_SUMMARY_FILE" ]]; then
+    {
+      printf '===== PRIOR JUDGMENTS =====\n'
+      printf '前 round で Claude が採用・棄却を判定済みの一覧。採用済み指摘は「足りない」と再指摘しない。棄却済み事項は再度持ち出さない。\n'
+      cat "$JUDGMENT_SUMMARY_FILE"
+      printf '\n===== END PRIOR JUDGMENTS =====\n\n'
+    } >> "$EXTRA_INPUT_TMP"
+  fi
+
+  # ⑥ PLAN DIFF（round 2 以降 + スナップショットが存在する場合）
+  if (( n >= 2 )) && [[ -n "$PLAN_SNAPSHOT_DIR" ]]; then
+    PREV_SNAPSHOT="$PLAN_SNAPSHOT_DIR/plan.md.round-$((n-1))"
+    if [[ -f "$PREV_SNAPSHOT" ]]; then
+      PLAN_DIFF_OUT="$(diff -u "$PREV_SNAPSHOT" "$PLAN_FILE" || true)"
+      if [[ -n "$PLAN_DIFF_OUT" ]]; then
+        {
+          printf '===== PLAN DIFF =====\n'
+          printf '前 round からの plan 変更点（unified diff）。指摘対応として行われた変更箇所への「やり方が違う」指摘は必ず理由を添えること。\n'
+          printf '%s\n' "$PLAN_DIFF_OUT"
+          printf '===== END PLAN DIFF =====\n\n'
+        } >> "$EXTRA_INPUT_TMP"
+      fi
+    fi
+  fi
+fi
+
+# final モード: TEST SUMMARY の注入
+FINAL_EXTRA_TMP=""
+if [[ "$MODE" == "final" && -n "$TEST_SUMMARY_FILE" && -f "$TEST_SUMMARY_FILE" ]]; then
+  FINAL_EXTRA_TMP="$(mktemp)"
+  {
+    printf '===== TEST SUMMARY =====\n'
+    printf 'テスト実行結果サマリ（構造化 JSON）。coverage_hints をテスト網羅性評価の入力として使うこと。\n'
+    cat "$TEST_SUMMARY_FILE"
+    printf '\n===== END TEST SUMMARY =====\n\n'
+  } > "$FINAL_EXTRA_TMP"
 fi
 
 # dispatch-codex.sh へ委譲
 dispatch_args=(--instruction "$REVIEW_INSTRUCTION" --result "$RESULT_FILE")
-[[ -n "${SCOPE_HINT:-}" ]]         && dispatch_args+=(--scope-hint "$SCOPE_HINT")
-[[ -n "${EXTRA_INPUT_TMP:-}" ]]    && dispatch_args+=(--extra-input "$EXTRA_INPUT_TMP")
+[[ -n "${SCOPE_HINT:-}" ]] && dispatch_args+=(--scope-hint "$SCOPE_HINT")
 case "$MODE" in
   design)
+    [[ -n "${EXTRA_INPUT_TMP:-}" ]] && dispatch_args+=(--extra-input "$EXTRA_INPUT_TMP")
     dispatch_args+=(--mode design --input "$INPUT_FILE")
     ;;
   final)
+    [[ -n "${FINAL_EXTRA_TMP:-}" ]] && dispatch_args+=(--extra-input "$FINAL_EXTRA_TMP")
     dispatch_args+=(--mode review --base "$BASE_BRANCH")
     ;;
 esac
@@ -116,3 +198,4 @@ esac
 bash "$SCRIPT_DIR/dispatch-codex.sh" "${dispatch_args[@]}"
 
 [[ -n "${EXTRA_INPUT_TMP:-}" ]] && rm -f "$EXTRA_INPUT_TMP"
+[[ -n "${FINAL_EXTRA_TMP:-}" ]] && rm -f "$FINAL_EXTRA_TMP"

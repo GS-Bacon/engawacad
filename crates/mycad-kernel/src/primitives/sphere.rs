@@ -3,6 +3,7 @@ use crate::error::KernelError;
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::Surface;
 use crate::geometry::{Point, Vec3};
+use mycad_format::{EntityKind, EntityRef};
 
 /// Create a sphere B-rep solid.
 ///
@@ -14,12 +15,21 @@ pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, Kerne
         return Err(KernelError::InvalidParameter { kind: "radius" });
     }
 
+    let fid = "sphere";
     let mut solid = Solid::new(id_gen.next());
 
     let origin = Point::origin();
 
-    let v_south = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, -radius), None);
-    let v_north = solid.add_vertex(id_gen.next(), Point::new(0.0, 0.0, radius), None);
+    let v_south = solid.add_vertex(
+        id_gen.next(),
+        Point::new(0.0, 0.0, -radius),
+        EntityRef::try_named(fid, EntityKind::Vertex, "south_pole").ok(),
+    );
+    let v_north = solid.add_vertex(
+        id_gen.next(),
+        Point::new(0.0, 0.0, radius),
+        EntityRef::try_named(fid, EntityKind::Vertex, "north_pole").ok(),
+    );
 
     let e_seam = solid.add_edge(
         id_gen.next(),
@@ -30,7 +40,7 @@ pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, Kerne
             radius,
         },
         [std::f64::consts::PI, 2.0 * std::f64::consts::PI],
-        None,
+        EntityRef::try_named(fid, EntityKind::Edge, "seam").ok(),
     );
 
     let he_up = solid.add_half_edge(id_gen.next(), v_south, e_seam, true);
@@ -47,7 +57,7 @@ pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, Kerne
         lp,
         vec![],
         true,
-        None,
+        EntityRef::try_named(fid, EntityKind::Face, "surface").ok(),
     );
 
     solid.add_shell(id_gen.next(), vec![f], true);
@@ -374,6 +384,86 @@ mod tests {
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
+    }
+
+    #[test]
+    fn test_sphere_entity_names() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_sphere(5.0, &mut gen).unwrap();
+
+        let v_south_name = s.vertices[0].name.as_ref().expect("south pole name");
+        match v_south_name {
+            EntityRef::Named {
+                feature_id,
+                kind,
+                role,
+            } => {
+                assert_eq!(feature_id, "sphere");
+                assert_eq!(*kind, EntityKind::Vertex);
+                assert_eq!(role, "south_pole");
+            }
+            _ => panic!("expected Named, got Derived"),
+        }
+
+        let v_north_name = s.vertices[1].name.as_ref().expect("north pole name");
+        match v_north_name {
+            EntityRef::Named {
+                feature_id,
+                kind,
+                role,
+            } => {
+                assert_eq!(feature_id, "sphere");
+                assert_eq!(*kind, EntityKind::Vertex);
+                assert_eq!(role, "north_pole");
+            }
+            _ => panic!("expected Named, got Derived"),
+        }
+
+        let e_name = s.edges[0].name.as_ref().expect("seam edge name");
+        match e_name {
+            EntityRef::Named {
+                feature_id,
+                kind,
+                role,
+            } => {
+                assert_eq!(feature_id, "sphere");
+                assert_eq!(*kind, EntityKind::Edge);
+                assert_eq!(role, "seam");
+            }
+            _ => panic!("expected Named, got Derived"),
+        }
+
+        let f_name = s.faces[0].name.as_ref().expect("face name");
+        match f_name {
+            EntityRef::Named {
+                feature_id,
+                kind,
+                role,
+            } => {
+                assert_eq!(feature_id, "sphere");
+                assert_eq!(*kind, EntityKind::Face);
+                assert_eq!(role, "surface");
+            }
+            _ => panic!("expected Named, got Derived"),
+        }
+    }
+
+    #[test]
+    fn test_sphere_name_determinism() {
+        let mut gen1 = IdGenerator::new(0);
+        let mut gen2 = IdGenerator::new(0);
+        let s1 = make_sphere(5.0, &mut gen1).unwrap();
+        let s2 = make_sphere(5.0, &mut gen2).unwrap();
+
+        for (i, (v1, v2)) in s1.vertices.iter().zip(s2.vertices.iter()).enumerate() {
+            assert_eq!(v1.name, v2.name, "vertex {i} name mismatch");
+        }
+        for (i, (e1, e2)) in s1.edges.iter().zip(s2.edges.iter()).enumerate() {
+            assert_eq!(e1.name, e2.name, "edge {i} name mismatch");
+        }
+        for (i, (f1, f2)) in s1.faces.iter().zip(s2.faces.iter()).enumerate() {
+            assert_eq!(f1.name, f2.name, "face {i} name mismatch");
+        }
     }
 
     #[test]

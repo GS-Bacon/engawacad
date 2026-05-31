@@ -30,6 +30,12 @@
 - 設計レビュー時に合意したテスト計画（ID T01〜）が全て実装されているか
 - エッジケーステストが退化入力・境界数値を含んでいるか
 - golden YAML ラウンドトリップが含まれているか
+- stdin に `===== TEST SUMMARY =====` ブロックがある場合、`coverage_hints` を参照して以下を評価する:
+  - `determinism_tests = 0` かつ本 Issue が決定性を要件とする場合: critical で指摘
+  - `degenerate_input_tests = 0` かつ本 Issue が退化入力検出を要件とする場合: high で指摘
+  - `total_added = 0` かつテスト追加が期待される Issue の場合: critical で指摘
+  - テスト数が非常に少ない場合（合計 3 件未満）でも high で指摘可
+  - 個別テストの正当性・名前付けの妥当性は git diff から判断（TEST SUMMARY はメタ情報として参照）
 
 ### 6. スコープ逸脱
 - プラン外の機能追加・リファクタが含まれていないか

@@ -4,13 +4,19 @@
 #   state.sh set    <state.json> <step> <passed|failed>
 #   state.sh get    <state.json> <step>      # 値を stdout（無ければ "none"）
 #   state.sh assert <state.json> <step>      # passed なら exit 0、それ以外 exit 1
+#   state.sh inc    <state.json> <key>       # ドット区切りネストキー対応
+#   state.sh assert-critical-zero <state.json> <verdict.json>  # critical=0 なら exit 0
 set -euo pipefail
 CMD="$1"; FILE="$2"
 case "$CMD" in
   init)
     python3 -c "
 import json, sys
-json.dump({'issue': int(sys.argv[1]), 'slug': sys.argv[2], 'steps': {}}, open(sys.argv[3], 'w'))
+json.dump({
+  'issue': int(sys.argv[1]), 'slug': sys.argv[2], 'steps': {},
+  'loops': {}, 'judgments': [],
+  'phases': {'core_impl': {'glm_runs': 0}, 'test_impl': {'glm_runs': 0}}
+}, open(sys.argv[3], 'w'))
 " "$3" "$4" "$FILE"
     ;;
   set)
@@ -34,14 +40,38 @@ sys.exit(0 if json.load(open(sys.argv[1]))['steps'].get(sys.argv[2]) == 'passed'
 " "$FILE" "$3"
     ;;
   inc)
+    # ドット区切りネストキーをサポート（例: phases.core_impl.glm_runs）
+    # 後方互換: ドットなしは従来の loops.{key} と同等
     python3 -c "
 import json, sys
 d = json.load(open(sys.argv[1]))
-loops = d.setdefault('loops', {})
-n = loops.get(sys.argv[2], 0) + 1
-loops[sys.argv[2]] = n
+key = sys.argv[2]
+if '.' in key:
+    parts = key.split('.')
+    node = d
+    for p in parts[:-1]:
+        node = node.setdefault(p, {})
+    n = node.get(parts[-1], 0) + 1
+    node[parts[-1]] = n
+else:
+    loops = d.setdefault('loops', {})
+    n = loops.get(key, 0) + 1
+    loops[key] = n
 json.dump(d, open(sys.argv[1], 'w'))
 print(n)
+" "$FILE" "$3"
+    ;;
+  assert-critical-zero)
+    # state.sh assert-critical-zero <state.json> <verdict.json>
+    # verdict.json の severity_counts.critical が 0 なら exit 0、それ以外 exit 1
+    python3 -c "
+import json, sys
+try:
+    v = json.load(open(sys.argv[2]))
+    critical = v.get('severity_counts', {}).get('critical', 0)
+    sys.exit(0 if critical == 0 else 1)
+except Exception:
+    sys.exit(1)
 " "$FILE" "$3"
     ;;
   judge)

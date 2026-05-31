@@ -104,6 +104,11 @@ fn classify_fragment_against_solid(
 fn get_fragment_interior_point(frag: &FaceFragment, _len_eps: f64) -> Result<Point, String> {
     let poly = &frag.polygon_3d;
     if poly.len() < 3 {
+        // Self-adjacent periodic sphere face: outer_loop has only 2 vertices (poles).
+        // Use the equatorial point at u=π/2, v=0 (away from the +X seam) as interior point.
+        if let Surface::Sphere { center, radius } = &frag.surface {
+            return Ok(Point::new(center.x, center.y + radius, center.z));
+        }
         return Err("fragment has < 3 vertices".to_string());
     }
 
@@ -440,5 +445,91 @@ mod tests {
         let dir = Vec3::new(1.0, 0.0, 0.0);
         let ts = ray_intersect_surface(&origin, &dir, &cyl);
         assert!(ts.is_empty());
+    }
+
+    #[test]
+    fn t14b_sphere_fragment_interior_point() {
+        use crate::booleans::partition::FaceFragment;
+        use mycad_format::EntityKind;
+        use mycad_format::EntityRef;
+
+        let frag = FaceFragment {
+            polygon_3d: vec![Point::new(0.0, 0.0, -3.0), Point::new(0.0, 0.0, 3.0)],
+            surface: Surface::Sphere {
+                center: Point::origin(),
+                radius: 3.0,
+            },
+            source_face_index: 0,
+            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
+            traversal_index: 0,
+            is_tool_side: true,
+            boundary_partners: vec![None, None],
+        };
+        let result = get_fragment_interior_point(&frag, 1e-9);
+        assert!(result.is_ok(), "sphere face interior point must succeed");
+        let pt = result.unwrap();
+        let dist = pt.coords.norm();
+        assert!(
+            (dist - 3.0).abs() < 1e-9,
+            "interior point must be on sphere surface, got dist={dist}"
+        );
+    }
+
+    /// TX3 — sphere fragment classify returns InsideOther when inside a box
+    #[test]
+    fn tx3_sphere_fragment_classify_inside_box() {
+        use crate::booleans::partition::FaceFragment;
+        use mycad_format::{EntityKind, EntityRef};
+
+        let frag = FaceFragment {
+            polygon_3d: vec![Point::new(0.0, 0.0, -3.0), Point::new(0.0, 0.0, 3.0)],
+            surface: Surface::Sphere {
+                center: Point::origin(),
+                radius: 3.0,
+            },
+            source_face_index: 0,
+            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
+            traversal_index: 0,
+            is_tool_side: true,
+            boundary_partners: vec![None, None],
+        };
+
+        let mut gen = crate::brep::topology::IdGenerator::new(0);
+        let box_solid = crate::primitives::make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+
+        let result = classify_fragment_against_solid(&frag, &box_solid, LENGTH_TOLERANCE);
+        assert!(result.is_ok(), "classify should succeed: {:?}", result);
+        assert_eq!(
+            result.unwrap(),
+            FragmentLabel::InsideOther,
+            "sphere inside box should be InsideOther"
+        );
+    }
+
+    /// TX5 — sphere interior point for non-origin center
+    #[test]
+    fn tx5_sphere_fragment_interior_point_non_origin() {
+        use crate::booleans::partition::FaceFragment;
+        use mycad_format::{EntityKind, EntityRef};
+
+        let frag = FaceFragment {
+            polygon_3d: vec![Point::new(3.0, 4.0, 3.0), Point::new(3.0, 4.0, 7.0)],
+            surface: Surface::Sphere {
+                center: Point::new(3.0, 4.0, 5.0),
+                radius: 2.0,
+            },
+            source_face_index: 0,
+            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
+            traversal_index: 0,
+            is_tool_side: true,
+            boundary_partners: vec![None, None],
+        };
+
+        let result = get_fragment_interior_point(&frag, LENGTH_TOLERANCE);
+        assert!(result.is_ok(), "should compute interior point");
+        let pt = result.unwrap();
+        assert!((pt.x - 3.0).abs() < 1e-9, "x should be 3.0, got {}", pt.x);
+        assert!((pt.y - 6.0).abs() < 1e-9, "y should be 6.0, got {}", pt.y);
+        assert!((pt.z - 5.0).abs() < 1e-9, "z should be 5.0, got {}", pt.z);
     }
 }

@@ -1,0 +1,110 @@
+{
+  "totals": {
+    "passed": 439,
+    "failed": 0,
+    "ignored": 0
+  },
+  "by_crate": {
+    "mycad_api-9e9d1870aa9cadef": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api-329b9d2d6ea1ed30": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-75cedea63d3f4e52": {
+      "passed": 2,
+      "failed": 0
+    },
+    "api_fallback_edge-287b060776dcefd8": {
+      "passed": 11,
+      "failed": 0
+    },
+    "mesh_api-6f23ebd3f12205aa": {
+      "passed": 15,
+      "failed": 0
+    },
+    "static_assets-be7d1edcd770af57": {
+      "passed": 6,
+      "failed": 0
+    },
+    "static_assets_edge-b2a903a33f614c33": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_build-3355e685a80dae07": {
+      "passed": 0,
+      "failed": 0
+    },
+    "feature_dispatcher-0661f799786660b5": {
+      "passed": 36,
+      "failed": 0
+    },
+    "mycad-b5adead3be99805e": {
+      "passed": 12,
+      "failed": 0
+    },
+    "export-f0ddd33755b5befa": {
+      "passed": 5,
+      "failed": 0
+    },
+    "mycad_format-616e4e63db1d1185": {
+      "passed": 92,
+      "failed": 0
+    },
+    "mycad_kernel-771e99093fc4c921": {
+      "passed": 230,
+      "failed": 0
+    },
+    "cuboid_roundtrip-d0c999ae9a93bd6e": {
+      "passed": 2,
+      "failed": 0
+    },
+    "mycad_viewer-c8430c910d6d682a": {
+      "passed": 0,
+      "failed": 0
+    },
+    "xtask-006f00c8ea8e3e91": {
+      "passed": 10,
+      "failed": 0
+    },
+    "mycad_api-4c331d4dbb333d12": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api-6dee189e8e8f7ed7": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-d3554a8d330eca86": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback_edge-361412be1026a4e7": {
+      "passed": 1,
+      "failed": 0
+    },
+    "mesh_api-fe6327a25ae8f3a7": {
+      "passed": 0,
+      "failed": 0
+    },
+    "static_assets-4c661d2c41b2d099": {
+      "passed": 2,
+      "failed": 0
+    },
+    "static_assets_edge-5bf715b114741fb9": {
+      "passed": 0,
+      "failed": 0
+    }
+  },
+  "added_in_round": [],
+  "coverage_hints": {
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0,
+    "total_added": 0
+  }
+}

@@ -1629,3 +1629,155 @@ fn t20_intersection_edge_name_golden() {
     edge_names2.sort();
     assert_eq!(edge_names, edge_names2, "edge names not deterministic");
 }
+
+// --- A3: Acceptance — box Cut sphere (sphere fully inside box → 2-shell void shell) ---
+
+fn build_a3_input() -> Vec<mycad_format::Feature> {
+    use mycad_format::Feature;
+    vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSphere {
+            id: "sphere".into(),
+            radius: 3.0,
+        },
+        Feature::Cut {
+            id: "cut1".into(),
+            target: "box".into(),
+            tool: "sphere".into(),
+        },
+    ]
+}
+
+#[test]
+fn a3_box_cut_contained_sphere() {
+    let features = build_a3_input();
+    let bodies = build_features(features).expect("A3: build should succeed");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    solid.validate_manifold().expect("A3: manifold validation");
+
+    assert_eq!(
+        solid.shells.len(),
+        2,
+        "A3: expected 2 shells (outer box + inner void), got {}",
+        solid.shells.len()
+    );
+
+    // Find the inner shell (should contain a single sphere face with same_sense == false)
+    let mut inner_shell_found = false;
+    for shell in &solid.shells {
+        if shell.faces.len() == 1 {
+            let face = &solid.faces[shell.faces[0]];
+            if matches!(
+                face.surface,
+                mycad_kernel::geometry::surface::Surface::Sphere { .. }
+            ) {
+                assert!(
+                    !face.same_sense,
+                    "A3: inner shell sphere face must have same_sense == false"
+                );
+                inner_shell_found = true;
+            }
+        }
+    }
+    assert!(
+        inner_shell_found,
+        "A3: inner void shell with sphere face not found"
+    );
+}
+
+#[test]
+fn t22_a3_determinism() {
+    let features = build_a3_input();
+    let b1 = build_features(features.clone()).expect("build 1");
+    let b2 = build_features(features).expect("build 2");
+
+    assert_solids_equal_with_names(
+        &b1.get("cut1").expect("cut1").solid,
+        &b2.get("cut1").expect("cut1").solid,
+    );
+}
+
+#[test]
+fn t32_a3_euler() {
+    let features = build_a3_input();
+    let bodies = build_features(features).expect("build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    let v = solid.vertices.len() as i64;
+    let e = solid.edges.len() as i64;
+    let f = solid.faces.len() as i64;
+    let l_inner: i64 = solid
+        .faces
+        .iter()
+        .map(|face| face.inner_loops.len() as i64)
+        .sum();
+    let s = solid.shells.len() as i64;
+
+    // Euler-Poincaré (B-rep form): V - E + F - L_inner = 2(S - G) = 2(2 - 0) = 4
+    let lhs = v - e + f - l_inner;
+    assert_eq!(
+        lhs, 4,
+        "A3 Euler: V({v}) - E({e}) + F({f}) - L_inner({l_inner}) = {lhs}, expected 4"
+    );
+    assert_eq!(s, 2, "A3: expected 2 shells, got {s}");
+
+    // Verify inner shell sphere face same_sense
+    for shell in &solid.shells {
+        if shell.faces.len() == 1 {
+            let face = &solid.faces[shell.faces[0]];
+            if matches!(
+                face.surface,
+                mycad_kernel::geometry::surface::Surface::Sphere { .. }
+            ) {
+                assert!(
+                    !face.same_sense,
+                    "inner sphere face same_sense must be false"
+                );
+            }
+        }
+    }
+}
+
+/// TX7 — A3 sphere face name: derived from the original sphere Named ref
+#[test]
+fn tx7_a3_sphere_face_name() {
+    use mycad_format::{EntityKind, EntityRef};
+
+    let features = build_a3_input();
+    let bodies = build_features(features).expect("build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    for shell in &solid.shells {
+        if shell.faces.len() == 1 {
+            let face = &solid.faces[shell.faces[0]];
+            if matches!(
+                face.surface,
+                mycad_kernel::geometry::surface::Surface::Sphere { .. }
+            ) {
+                let name = face.name.as_ref().expect("sphere face must have a name");
+                if let EntityRef::Derived { from, .. } = name {
+                    assert_eq!(from.len(), 1, "derived from should have 1 parent");
+                    assert_eq!(
+                        from[0],
+                        EntityRef::Named {
+                            feature_id: "sphere".to_string(),
+                            kind: EntityKind::Face,
+                            role: "surface".to_string(),
+                        },
+                        "derived from should reference the original sphere face name"
+                    );
+                } else {
+                    panic!("expected Derived name, got {:?}", name);
+                }
+                return;
+            }
+        }
+    }
+    panic!("inner sphere face not found");
+}

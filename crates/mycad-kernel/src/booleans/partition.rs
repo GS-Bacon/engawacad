@@ -107,16 +107,16 @@ pub fn partition_faces(
     let len_eps = LENGTH_TOLERANCE;
     let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
 
-    // Collect plane data for all faces (for coplanar detection, still Plane-only)
-    let target_planes: Vec<PlaneData> = target
+    // Collect plane data for all faces (None for non-planar surfaces)
+    let target_planes: Vec<Option<PlaneData>> = target
         .faces
         .iter()
-        .map(|f| PlaneData::from_surface(&f.surface).unwrap())
+        .map(|f| PlaneData::from_surface(&f.surface))
         .collect();
-    let tool_planes: Vec<PlaneData> = tool
+    let tool_planes: Vec<Option<PlaneData>> = tool
         .faces
         .iter()
-        .map(|f| PlaneData::from_surface(&f.surface).unwrap())
+        .map(|f| PlaneData::from_surface(&f.surface))
         .collect();
 
     // Get outer loop polygons for all faces (in 3D and 2D)
@@ -154,8 +154,10 @@ pub fn partition_faces(
 
     for ti in 0..target.faces.len() {
         for ui in 0..tool.faces.len() {
-            let tp = &target_planes[ti];
-            let up = &tool_planes[ui];
+            let Some(tp) = &target_planes[ti] else {
+                continue;
+            };
+            let Some(up) = &tool_planes[ui] else { continue };
 
             // Check if normals are parallel
             if !angle_near(tp.normal, up.normal) {
@@ -221,6 +223,15 @@ pub fn partition_faces(
                 .name
                 .clone()
                 .ok_or_else(|| format!("tool face {} missing name", ui))?;
+
+            // Skip cylinder×sphere face pairs — deferred to #39
+            let is_cyl = matches!(surface, Surface::Cylinder { .. });
+            let is_sph = matches!(surface, Surface::Sphere { .. });
+            let tool_is_cyl = matches!(tool_surface, Surface::Cylinder { .. });
+            let tool_is_sph = matches!(tool_surface, Surface::Sphere { .. });
+            if (is_cyl && tool_is_sph) || (is_sph && tool_is_cyl) {
+                continue;
+            }
 
             // Intersect surfaces via the unified dispatcher
             let isect_result =
@@ -329,8 +340,8 @@ pub fn partition_faces(
                 is_tool_side: false,
                 boundary_partners: vec![None; polygon_3d.len()],
             });
-        } else {
-            let sub_faces = pslg_subdivide(polygon_2d, &segments, plane);
+        } else if let Some(plane_data) = plane {
+            let sub_faces = pslg_subdivide(polygon_2d, &segments, plane_data);
             for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
                 let poly_3d: Vec<Point> = sub_poly_2d
                     .iter()
@@ -370,10 +381,18 @@ pub fn partition_faces(
                 .clone()
                 .ok_or_else(|| format!("target face {} missing name", ti))?;
 
-            let isect_result = crate::geometry::surface_intersect::intersect_surfaces(
-                surface,
-                &target.faces[ti].surface,
-            );
+            // Skip cylinder×sphere face pairs — deferred to #39
+            let target_surface = &target.faces[ti].surface;
+            let is_cyl = matches!(surface, Surface::Cylinder { .. });
+            let is_sph = matches!(surface, Surface::Sphere { .. });
+            let target_is_cyl = matches!(target_surface, Surface::Cylinder { .. });
+            let target_is_sph = matches!(target_surface, Surface::Sphere { .. });
+            if (is_cyl && target_is_sph) || (is_sph && target_is_cyl) {
+                continue;
+            }
+
+            let isect_result =
+                crate::geometry::surface_intersect::intersect_surfaces(surface, target_surface);
             let Ok(isect_loops) = isect_result else {
                 continue;
             };
@@ -474,18 +493,8 @@ pub fn partition_faces(
                 is_tool_side: true,
                 boundary_partners: vec![None; polygon_3d.len()],
             });
-        } else {
-            let plane_data = PlaneData::from_surface(surface);
-            let sub_faces = pslg_subdivide(
-                polygon_2d,
-                &segments,
-                plane_data.as_ref().unwrap_or(&PlaneData {
-                    origin: Point::origin(),
-                    normal: Vec3::z(),
-                    u_axis: Vec3::x(),
-                    v_axis: Vec3::y(),
-                }),
-            );
+        } else if let Some(plane_data) = PlaneData::from_surface(surface) {
+            let sub_faces = pslg_subdivide(polygon_2d, &segments, &plane_data);
             for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
                 let poly_3d: Vec<Point> = sub_poly_2d
                     .iter()
@@ -516,7 +525,9 @@ pub fn partition_faces(
             .name
             .clone()
             .ok_or_else(|| format!("target face {} missing name", pair.target_face))?;
-        let tp = &target_planes[pair.target_face];
+        let Some(tp) = &target_planes[pair.target_face] else {
+            continue;
+        };
         let t_surface = &tf.surface;
 
         // (a) Overlap polygon — must be CCW in target 2D; sutherland_hodgman_clip preserves
@@ -1174,5 +1185,107 @@ fn segment_segment_intersect_2d(
         Some((a0.0 + t * d1.0, a0.1 + t * d1.1))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::brep::topology::IdGenerator;
+    use crate::brep::topology::Solid;
+    use crate::geometry::surface::Surface;
+    use crate::primitives::{make_cuboid, make_cylinder, make_sphere};
+    use mycad_format::{EntityKind, EntityRef};
+
+    fn ensure_names(solid: &mut Solid, feature_id: &str) {
+        for (i, v) in solid.vertices.iter_mut().enumerate() {
+            if v.name.is_none() {
+                v.name =
+                    EntityRef::try_named(feature_id, EntityKind::Vertex, &format!("v{i}")).ok();
+            }
+        }
+        for (i, e) in solid.edges.iter_mut().enumerate() {
+            if e.name.is_none() {
+                e.name = EntityRef::try_named(feature_id, EntityKind::Edge, &format!("e{i}")).ok();
+            }
+        }
+        for (i, f) in solid.faces.iter_mut().enumerate() {
+            if f.name.is_none() {
+                f.name = EntityRef::try_named(feature_id, EntityKind::Face, &format!("f{i}")).ok();
+            }
+        }
+    }
+
+    #[test]
+    fn t14_sphere_face_partition_no_panic() {
+        let mut gen = IdGenerator::new(0);
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let sphere = make_sphere(3.0, &mut gen).unwrap();
+
+        let result = partition_faces(&box_solid, &sphere, BooleanOp::Cut);
+        assert!(
+            result.is_ok(),
+            "partition with sphere face should not panic"
+        );
+        let (target_frags, tool_frags) = result.unwrap();
+        assert!(!target_frags.is_empty(), "should have target fragments");
+        assert!(!tool_frags.is_empty(), "should have tool fragments");
+    }
+
+    /// TX2 — box+sphere partition produces exact fragment counts (no intersection)
+    #[test]
+    fn tx2_box_sphere_partition_fragment_counts() {
+        let mut gen = IdGenerator::new(0);
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let sphere = make_sphere(3.0, &mut gen).unwrap();
+
+        let result = partition_faces(&box_solid, &sphere, BooleanOp::Cut);
+        assert!(result.is_ok(), "partition should succeed");
+        let (target_frags, tool_frags) = result.unwrap();
+
+        // Sphere fully inside box → no intersections → whole-face fragments
+        assert_eq!(
+            target_frags.len(),
+            6,
+            "box should produce 6 fragments (one per face)"
+        );
+        assert_eq!(
+            tool_frags.len(),
+            1,
+            "sphere should produce 1 fragment (whole sphere face)"
+        );
+    }
+
+    #[test]
+    fn t15_cyl_sph_face_pair_skipped() {
+        let mut gen = IdGenerator::new(0);
+        let mut cylinder = make_cylinder(2.0, 4.0, &mut gen).unwrap();
+        let sphere = make_sphere(3.0, &mut gen).unwrap();
+        ensure_names(&mut cylinder, "cyl");
+
+        let result = partition_faces(&cylinder, &sphere, BooleanOp::Cut);
+        if let Err(e) = &result {
+            panic!("partition with cylinder+sphere failed: {e}");
+        }
+        let (target_frags, tool_frags) = result.unwrap();
+        assert!(!target_frags.is_empty());
+        assert!(!tool_frags.is_empty());
+
+        for frag in &target_frags {
+            if matches!(frag.surface, Surface::Cylinder { .. }) {
+                assert!(
+                    frag.boundary_partners.iter().all(|p| p.is_none()),
+                    "cylinder face should have no intersection segments with sphere"
+                );
+            }
+        }
+        for frag in &tool_frags {
+            if matches!(frag.surface, Surface::Sphere { .. }) {
+                assert!(
+                    frag.boundary_partners.iter().all(|p| p.is_none()),
+                    "sphere face should have no intersection segments with cylinder"
+                );
+            }
+        }
     }
 }

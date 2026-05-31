@@ -202,7 +202,7 @@ pub fn assemble(
         let frag = &cf.fragment;
         let vis = &frag_vertex_indices[fi];
         let n = vis.len();
-        if n < 3 {
+        if n < 3 && !matches!(frag.surface, Surface::Sphere { .. }) {
             continue;
         }
 
@@ -256,7 +256,9 @@ pub fn assemble(
             if let Surface::Plane { normal, .. } = &mut frag_surface {
                 *normal = -*normal;
             }
-            true // Keep same_sense=true so reverse_face_orientation toggles to false
+            // Self-adjacent periodic sphere face: same_sense=false gives negative volume.
+            // reverse_face_orientation is skipped for sphere void faces (handled below).
+            !matches!(frag_surface, Surface::Sphere { .. })
         } else {
             true
         };
@@ -335,7 +337,16 @@ pub fn assemble(
     // Handle void shells
     for void_shell in &sorted_negative {
         for &fi in void_shell {
-            reverse_face_orientation(&mut solid, fi, id_gen);
+            // Self-adjacent periodic sphere faces already have correct same_sense=false
+            // from flip_normals — skip reverse_face_orientation to preserve it.
+            let is_periodic_sphere = {
+                let face = &solid.faces[fi];
+                matches!(face.surface, Surface::Sphere { .. })
+                    && solid.loops[face.outer_loop].half_edges.len() < 3
+            };
+            if !is_periodic_sphere {
+                reverse_face_orientation(&mut solid, fi, id_gen);
+            }
         }
         solid.add_shell(id_gen.next(), void_shell.clone(), true);
     }
@@ -492,6 +503,12 @@ fn signed_volume(solid: &Solid, face_indices: &[usize]) -> f64 {
             .collect();
 
         if verts.len() < 3 {
+            // Self-adjacent periodic sphere face: use analytical volume
+            if let Surface::Sphere { radius, .. } = &face.surface {
+                let sphere_vol = (4.0 / 3.0) * std::f64::consts::PI * radius * radius * radius;
+                let sign = if face.same_sense { 1.0 } else { -1.0 };
+                volume += sign * sphere_vol;
+            }
             continue;
         }
 

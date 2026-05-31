@@ -4,7 +4,12 @@
 # 使い方:
 #   dispatch-glm.sh --agent <agent.md> --plan-file <plan.md> \
 #                   --feature-dir <dir> --result-file <result.json> \
+#                   [--mode core|test] [--test-spec <test-spec.md>] \
 #                   [--max-turns N] [--model GLM-5.1]
+#
+# --mode core  : コア実装 + plan T01〜の最小テスト（cargo xtask ci green 必須）
+# --mode test  : test-spec.md 主導のエッジケーステスト追加（cargo xtask ci green 必須）
+# --mode (未指定): 従来挙動（実装+テスト一括）
 set -euo pipefail
 
 AGENT_FILE=""
@@ -14,16 +19,20 @@ RESULT_FILE=""
 MAX_TURNS=80
 MODEL="GLM-5.1"
 DEBUG_SPEC=""
+GLM_MODE=""
+TEST_SPEC_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --agent)        AGENT_FILE="$2";    shift 2 ;;
-    --plan-file)    PLAN_FILE="$2";     shift 2 ;;
-    --feature-dir)  FEATURE_DIR="$2";   shift 2 ;;
-    --result-file)  RESULT_FILE="$2";   shift 2 ;;
-    --max-turns)    MAX_TURNS="$2";     shift 2 ;;
-    --model)        MODEL="$2";         shift 2 ;;
-    --debug-spec)   DEBUG_SPEC="$2";    shift 2 ;;
+    --agent)        AGENT_FILE="$2";      shift 2 ;;
+    --plan-file)    PLAN_FILE="$2";       shift 2 ;;
+    --feature-dir)  FEATURE_DIR="$2";     shift 2 ;;
+    --result-file)  RESULT_FILE="$2";     shift 2 ;;
+    --max-turns)    MAX_TURNS="$2";       shift 2 ;;
+    --model)        MODEL="$2";           shift 2 ;;
+    --debug-spec)   DEBUG_SPEC="$2";      shift 2 ;;
+    --mode)         GLM_MODE="$2";        shift 2 ;;
+    --test-spec)    TEST_SPEC_FILE="$2";  shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -33,6 +42,8 @@ done
 [[ -z "$FEATURE_DIR"  ]] && { echo "ERROR: --feature-dir required"   >&2; exit 1; }
 [[ -z "$RESULT_FILE"  ]] && { echo "ERROR: --result-file required"   >&2; exit 1; }
 [[ -n "$DEBUG_SPEC" && ! -f "$DEBUG_SPEC" ]] && { echo "ERROR: --debug-spec file not found: $DEBUG_SPEC" >&2; exit 1; }
+[[ "$GLM_MODE" == "test" && -z "$TEST_SPEC_FILE" ]] && { echo "ERROR: --test-spec required for --mode test" >&2; exit 1; }
+[[ -n "$TEST_SPEC_FILE" && ! -f "$TEST_SPEC_FILE" ]] && { echo "ERROR: --test-spec file not found: $TEST_SPEC_FILE" >&2; exit 1; }
 
 # Z.AI 認証キーを読み込む
 ZAI_ENV="${ZAI_ENV:-$HOME/AutoClaudeKMP/.env}"
@@ -70,7 +81,68 @@ DS
 )"
 fi
 
-PROMPT="$(cat <<PROMPT
+# モード別プロンプト生成
+_TEST_SPEC_SECTION=""
+if [[ -n "$TEST_SPEC_FILE" ]]; then
+  _TEST_SPEC_SECTION="$(cat <<TS
+
+## テスト仕様（オーケストレーターが作成）
+以下の仕様に従いテストを追加してください。
+テストに問題なく追加できる場合は本体実装の最小修正も可。
+
+$(cat "$TEST_SPEC_FILE")
+TS
+)"
+fi
+
+if [[ "$GLM_MODE" == "core" ]]; then
+  PROMPT="$(cat <<PROMPT
+以下の確定プランに従い**コア実装**と**最小テスト**を完了させてください。
+
+## 作業ディレクトリ
+$FEATURE_DIR
+
+## 確定プラン
+$(cat "$PLAN_FILE")
+${_DEBUG_SPEC_SECTION}
+## 完了条件（コアモード）
+1. プランに記載された全機能を実装する
+2. テスト計画のうち **core テスト**（T01〜 のうち決定性・正常系の最小セット）を実装し通過させる
+   - エッジケーステスト・敵対テストの実装は不要（後続ステップで追加される）
+3. \`cargo xtask ci\` が green（build / test / clippy -D warnings / fmt --check）
+4. 結果を $RESULT_FILE に JSON で書き出す:
+   { "status": "success|failed", "ci_passed": true|false, "summary": "...", "failed_reason": "...", "tests_added": N }
+
+## 禁止事項
+- git commit/push は行わない（オーケストレーターが行う）
+- プラン外の機能追加・リファクタは行わない
+PROMPT
+)"
+elif [[ "$GLM_MODE" == "test" ]]; then
+  PROMPT="$(cat <<PROMPT
+以下のテスト仕様に従い**エッジケーステスト**を追加して CI を通してください。
+
+## 作業ディレクトリ
+$FEATURE_DIR
+
+## 確定プラン（参照用）
+$(cat "$PLAN_FILE")
+${_TEST_SPEC_SECTION}
+${_DEBUG_SPEC_SECTION}
+## 完了条件（テストモード）
+1. テスト仕様の全ケースを実装し通過させる
+2. テストで露見した本体の明白なバグは最小修正可（それ以外の本体変更は禁止）
+3. \`cargo xtask ci\` が green（build / test / clippy -D warnings / fmt --check）
+4. 結果を $RESULT_FILE に JSON で書き出す:
+   { "status": "success|failed", "ci_passed": true|false, "summary": "...", "failed_reason": "...", "tests_added": N, "tests_added_in_phase_2": N }
+
+## 禁止事項
+- git commit/push は行わない（オーケストレーターが行う）
+- テスト仕様外の機能追加・リファクタは行わない
+PROMPT
+)"
+else
+  PROMPT="$(cat <<PROMPT
 以下の確定プランに従い実装・テスト・CI を完了させてください。
 
 ## 作業ディレクトリ
@@ -92,6 +164,7 @@ ${_DEBUG_SPEC_SECTION}
 - プラン外の機能追加・リファクタは行わない
 PROMPT
 )"
+fi
 
 echo "=== dispatch-glm: starting GLM worker ===" >&2
 echo "  agent:   $AGENT_FILE" >&2
@@ -99,6 +172,7 @@ echo "  plan:    $PLAN_FILE" >&2
 echo "  feature: $FEATURE_DIR" >&2
 echo "  result:  $RESULT_FILE" >&2
 echo "  model:   $MODEL" >&2
+echo "  mode:    ${GLM_MODE:-default}" >&2
 
 STATUS=0
 claude -p "$PROMPT" \
