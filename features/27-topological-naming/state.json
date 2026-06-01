@@ -1,0 +1,1 @@
+{"issue": 27, "slug": "27-topological-naming", "steps": {"design_review": "passed", "glm_impl": "passed", "final_review": "passed", "merge": "passed"}, "loops": {"design_loops": 3, "final_loops": 2}}

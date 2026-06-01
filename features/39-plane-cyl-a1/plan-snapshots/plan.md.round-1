@@ -1,0 +1,213 @@
+## Non-Goals
+<!-- スコープ外を必ず列挙。該当なしの場合も "- 該当なし" と書くこと（空欄禁止）。 -->
+- **Plane×Sphere の Circle PSLG 投入**: Sphere の tessellation trim が必要 → 次 Issue (#40 相当)
+- **Cylinder×Sphere face pair の取り扱い** (`partition.rs:232,390` の `continue`): 別 Issue (#41 相当, STEP G+A2)
+- **A3 のメッシュ可視化**: 既に shipped 済み (sphere 全周 — trim 不要)
+- **edge naming の golden / 100-run 決定性** (T22/T23/T30): 別 Issue (#42 相当, STEP H+I)
+- **ADR-004 / CLAUDE.md docs 追記** (STEP I): 別 Issue (#42 相当)
+- **Cone surface**: 触らない。`UnsupportedSurfaceIntersection` のまま
+- **per-entity tolerance 移行**: Phase 5 foundation 候補、別 Issue
+- **viewer 目視確認**: #35 に委譲 (本 Issue では STL export 出力のみ確認)
+- **Cylinder 側面に穴がある場合のトリム** (inner_loop): A1 では発生しないため非対象
+
+## 実装対象
+<!-- Issue: #39 -->
+<!-- 影響クレート/ファイル: -->
+- `crates/mycad-kernel/src/booleans/partition.rs` — Circle 交線の chord サンプル化・PSLG 投入、IntersectionSegment / FaceFragment 拡張
+- `crates/mycad-kernel/src/booleans/assemble.rs` — intersection edge の `Curve::Circle` 復元、`attach_pcurves_for_trimmed_faces` 新設
+- `crates/mycad-kernel/src/tessellation/mod.rs` — Plane/Cylinder の trimmed face 対応 (穴あき平面 `earcutr`、Cylinder 部分高さ)
+- `crates/mycad-kernel/src/geometry/math.rs` — `unwrap_periodic_uv` ヘルパー追加
+- `Cargo.toml` (workspace) + `crates/mycad-kernel/Cargo.toml` — `earcutr` 追加
+- `crates/mycad-build/tests/feature_dispatcher.rs` — A1 統合テスト (T01-T15)
+- `examples/boolean_cut_cylinder_hole.mycad` — 新規サンプル
+
+<!-- 変更する型・関数のシグネチャ -->
+```rust
+// partition.rs
+pub struct IntersectionSegment {
+    pub p_start: (f64, f64),
+    pub p_end: (f64, f64),
+    pub partner: EntityRef,
+    pub source_curve_3d: Option<Curve>,  // NEW: Some(Circle) for circle intersections
+}
+
+pub struct FaceFragment {
+    pub source_face_index: usize,
+    pub polygon_3d: Vec<Point>,
+    pub surface: Surface,
+    pub parent_name: EntityRef,
+    pub traversal_index: u32,
+    pub is_tool_side: bool,
+    pub boundary_partners: Vec<Option<EntityRef>>,
+    pub boundary_curves: Vec<Option<Curve>>,  // NEW: parallel to boundary_partners
+}
+
+// assemble.rs
+fn attach_pcurves_for_trimmed_faces(
+    solid: &mut Solid,
+    face_indices: &[usize],
+    circle_edges: &HashMap<usize, (Curve, [f64; 2])>,
+) -> Result<(), KernelError>;
+
+// geometry/math.rs
+pub fn unwrap_periodic_uv(u_list: &mut [f64]);
+```
+
+## 設計方針
+
+### 1. IntersectionSegment 拡張 — `source_curve_3d: Option<Curve>`
+
+線分ケース (Plane×Plane) は `None`。円ケース (Plane×Cylinder) は `Some(Curve::Circle{..})`。Plane×Sphere ケースは本 Issue 対象外だが、`intersect_surfaces` が Circle を返したとき Sphere 由来かどうかは surface 型で判定して PSLG 投入を skip する (scope 防衛)。
+
+### 2. FaceFragment 拡張 — `boundary_curves: Vec<Option<Curve>>`
+
+`boundary_partners` と並走する parallel array。`pslg_subdivide` の戻り値 `edge_partners` を `(Option<EntityRef>, Option<Curve>)` タプルのリストに拡張 (または並列 Vec)、各 FaceFragment 生成時に両方を同期して埋める。
+
+### 3. partition.rs の Circle 経路実装
+
+`partition.rs:319, 474` の `Curve::Circle { .. } => continue` を chord サンプル化に置換:
+
+```rust
+Curve::Circle { .. } => {
+    // Plane×Sphere は本 Issue 非対象 — surface が Sphere なら skip
+    if matches!(surface, Surface::Sphere { .. }) || matches!(tool_surface, Surface::Sphere { .. }) {
+        continue;
+    }
+    let n = ANGULAR_SEGMENTS_DEFAULT; // 32
+    let t0 = iloop.t_range[0];
+    let t1 = iloop.t_range[1];
+    let dt = (t1 - t0) / n as f64;
+    for k in 0..n {
+        let p3a = iloop.curve_3d.evaluate(t0 + k as f64 * dt);
+        let p3b = iloop.curve_3d.evaluate(t0 + (k + 1) as f64 * dt);
+        // project→clip→push (既存 Line 経路と同じクリップロジック)
+        // IntersectionSegment { .., source_curve_3d: Some(iloop.curve_3d.clone()) }
+    }
+}
+```
+
+`ANGULAR_SEGMENTS_DEFAULT = 32` を `booleans/mod.rs` の private const として定義。
+
+### 4. assemble.rs の edge curve 復元
+
+`assemble.rs:177-186` の `Curve::Line` ハードコードを `boundary_curves[k_at_fragment]` 参照に変更:
+
+```rust
+let edge_curve = match &cf.fragment.boundary_curves[k_at_fragment] {
+    Some(c @ Curve::Circle { .. }) => c.clone(),
+    _ => Curve::Line { origin: p0, direction: p1 - p0 },
+};
+```
+
+各 chord edge は独立した Edge として保持 (統合しない)。chord ごとに異なる `t_range` を持つ同じ Circle curve が付与される形。
+
+### 5. attach_pcurves_for_trimmed_faces (再呼び出し方式)
+
+assemble の `assemble()` 末尾で呼ぶ。face ごとに HalfEdge の edge curve が `Circle` かつ intersection 由来の場合、`intersect_surfaces` を再呼び出しして pcurve を取得し attach する。パフォーマンス劣化は許容 (決定性・シンプルさ優先、ADR-004 §3 "MVP では再計算を厭わない")。
+
+### 6. tessellation/mod.rs — Plane trim 分岐
+
+face に `inner_loops` が存在する Plane face は `tessellate_face_planar_with_holes` へ分岐:
+1. outer_loop と各 inner_loop のポイント列を project_2d で UV 多角形に変換
+2. `earcutr` で穴あき多角形を三角形分割 (flatten → indices → UV 逆変換 → TriangleMesh に追加)
+3. inner_loop が 2 つ以上の場合は `TrimmedFaceUnsupported` で reject (scope 防衛)
+
+### 7. tessellation/mod.rs — Cylinder trim 分岐
+
+Cylinder face で `outer_loop` が full 360° ではない (seam の HalfEdge が 2 本ではなく 4 本以上で v 範囲が部分的) 場合に部分高さグリッドを生成:
+1. outer_loop の pcurve から `v_min`, `v_max` を取得
+2. 既存グリッドを `v_min..v_max` 範囲に縮小して再生成
+3. seam 越えは `unwrap_periodic_uv` で正規化
+4. inner_loop がある場合は `TrimmedFaceUnsupported` で reject (scope 防衛)
+
+A1 の cylinder 側面は「上下 2 本の circle pcurve (v = const) + 2 本の axial line (seam)」で囲まれた矩形 UV patch。
+
+### 8. unwrap_periodic_uv
+
+```rust
+pub fn unwrap_periodic_uv(u_list: &mut [f64]) {
+    use std::f64::consts::PI;
+    for i in 1..u_list.len() {
+        while u_list[i] - u_list[i-1] > PI  { u_list[i] -= 2.0 * PI; }
+        while u_list[i] - u_list[i-1] < -PI { u_list[i] += 2.0 * PI; }
+    }
+}
+```
+
+`crates/mycad-kernel/src/geometry/math.rs` に `pub fn` として追加。
+
+### 9. 決定性要件
+
+- `IdGenerator` が決定的なので Vertex/Edge/Face/HalfEdge の id 割当順が安定する
+- partition の segments 出力は `(target_face_idx, tool_face_idx, chord_idx k)` の順で安定。Circle chord の k は 0..N の昇順
+- earcutr は入力多角形頂点順が同じなら出力三角形インデックスが同じ → 決定的
+- 再呼び出し方式の pcurve 再計算も `intersect_surfaces` が決定的なら OK (算術演算のみ)
+
+### 10. 退化幾何の扱い
+
+- Circle 半径 < `LENGTH_TOLERANCE` → `intersect_plane_cylinder` 段で `UnsupportedSurfaceIntersection`
+- chord 長 < `LENGTH_TOLERANCE` → segment skip (既存 Line 経路と同じロジック)
+- box face と cylinder 軸が非垂直 (45°等) → 既存 alignment 判定で `UnsupportedSurfaceIntersection`
+
+### 11. derive 規約
+
+- `IntersectionSegment`: `Debug, Clone` を維持。`source_curve_3d: Option<Curve>` は `Curve` が既に `Debug, Clone, Serialize, Deserialize` → 追加 derive 不要
+- `FaceFragment`: `boundary_curves: Vec<Option<Curve>>` 追加で同様
+- 新規 pub 型は出ない
+
+### 12. workspace.dependencies
+
+- `earcutr = "0.4"` を `[workspace.dependencies]` に追加
+- `crates/mycad-kernel/Cargo.toml` で `earcutr = { workspace = true }` で参照
+- ADR-004 数値モデル (絶対トレランス) との整合: earcutr は f64 ベースで polygon-only、閾値不使用 → 整合
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | box 10³ Cut cyl r=2 h=12 を 2 回 build し Solid が byte-identical YAML | assert_eq! |
+| T02 | 正常系 | A1 体積: box 貫通ケース (r=2 h=12) ≈ 1000 − π·4·10 ≈ 874.34 | volume ≈ 874.34 ±1.0 |
+| T03 | 正常系 | A1 blind hole (r=2 h=6 で box 内に収まる) 体積 ≈ 1000 − π·4·6 ≈ 924.62 | volume ≈ 924.62 ±1.0 |
+| T04 | manifold | A1 結果が validate_manifold 緑、Euler V-E+F-L_inner = 2 (outer shell 1 枚) | assert! |
+| T05 | edge curve | A1 結果の intersection edge が `Curve::Circle` を持つ | edge.curve が Circle |
+| T06 | tessellation | A1 の top face (穴あき) が tessellate でき三角形数 > 0、area ≈ 10×10 − π·4 ≈ 87.43 | |
+| T07 | tessellation | A1 の cylinder 側面が tessellate でき area ≈ 2π·2·h_trim | |
+| T08 | unit | `partition_faces` 呼び出し後に circle chord の segment が存在すること (fragment の boundary_curves に Some(Circle) がある) | |
+| T09 | 既存 | `intersect_plane_cylinder` の既存 unit test が依然緑 | no regression |
+| T10 | unit | `unwrap_periodic_uv` の単体テスト (seam 跨ぎ入力 → 連続出力) | |
+| T11 | 既存反転 | T24 (full revolution cylinder trim) / T26 (Plane trim with 1 hole) の期待値を Ok に反転、半周 cylinder は依然 Err | |
+| T12 | scope 防衛 | Plane trim with 2 穴は依然 TrimmedFaceUnsupported | assert!(Err) |
+| T13 | 正常系 | A1 と同形状で cylinder 軸を Y 方向にしたケース (非垂直検査が通過しないことの確認) | 追加対応不要なら skip |
+| T14 | エラー | cylinder 軸が plane normal と 45° → `UnsupportedSurfaceIntersection` | Err |
+| T15 | CLI | `mycad export examples/boolean_cut_cylinder_hole.mycad -o /tmp/x.stl` でファイル出力 > 0 bytes | file size > 0 |
+
+## 幾何的不変条件チェックリスト
+<!-- Boolean/Partition/Assemble 系の Issue -->
+- [x] partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか — 既存 pslg_subdivide が CCW を保証。Circle chord は time-order (t0→t1) で CCW になるよう確認する
+- [x] 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか — Plane: CCW (正方向)、Cylinder: CCW in UV (u=angle, v=height、右手則)
+- [x] flip_normals / same_sense の意味論が明確か — assemble.rs の既存 flip_normals ロジックを継承。Cylinder cut 側は `is_tool_side=true, op=Cut` で flip。
+- [x] pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか — 既存動作と同じ。Circle chord が外側から内側に分割する向きを unit test (T08) で確認
+
+## 実装順序
+
+各 STEP 完了後に `cargo xtask ci` グリーンを期待。
+
+1. **STEP α (型拡張)** — `IntersectionSegment.source_curve_3d` + `FaceFragment.boundary_curves` 追加。`pslg_subdivide` 戻り値拡張。Plane×Plane 経路で `None` を埋める。全既存テスト緑。
+2. **STEP β (Circle PSLG 投入)** — `partition.rs:319,474` の `continue` を chord サンプル化に置換。Sphere face pair は明示的に skip。T08 + T09 緑。
+3. **STEP γ (edge curve 復元)** — `assemble.rs:180` の `Curve::Line` ハードコードを `boundary_curves` 参照に変更。T05 緑。Plane×Plane テスト全部緑。
+4. **STEP δ (unwrap_periodic_uv)** — `geometry/math.rs` に追加 + T10。
+5. **STEP ε (earcutr 追加 + Plane trim)** — workspace.dependencies 更新、`tessellate_face_planar_with_holes` 実装、分岐追加。T06 + T11 (Plane 部分) + T12 緑。
+6. **STEP ζ (Cylinder trim)** — `tessellate_face_uv_grid` の cylinder partial height 分岐実装。T07 + T11 (Cylinder 部分) 緑。
+7. **STEP η (pcurve attach)** — `attach_pcurves_for_trimmed_faces` 実装 (再呼び出し方式)。assemble の最後で呼ぶ。
+8. **STEP θ (A1 acceptance)** — `examples/boolean_cut_cylinder_hole.mycad` 追加、T01-T04 + T13-T15 緑。
+9. **STEP ι (scope 防衛 + 最終 CI)** — T12 + 既存 reject test 緑確認。`cargo xtask ci` 最終グリーン化。
+
+## Verification
+
+```bash
+cargo test --workspace
+cargo clippy --workspace -- -D warnings
+cargo fmt --all -- --check
+cargo xtask ci
+mycad export examples/boolean_cut_cylinder_hole.mycad -o /tmp/A1.stl
+ls -lh /tmp/A1.stl
+```

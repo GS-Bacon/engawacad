@@ -1,6 +1,7 @@
 use crate::brep::topology::{IdGenerator, Solid};
 use crate::error::KernelError;
 use crate::geometry::curve::Curve;
+use crate::geometry::math::orthonormal_basis;
 use crate::geometry::math::LENGTH_TOLERANCE;
 use crate::geometry::surface::Surface;
 use crate::geometry::Point;
@@ -62,6 +63,11 @@ pub fn assemble(
             let name = derive_vertex_name(&cf.fragment, vi, op);
             all_points.push((*p, name));
         }
+        for inner_poly in &cf.fragment.inner_polygons_3d {
+            for p in inner_poly {
+                all_points.push((*p, None));
+            }
+        }
     }
 
     for (point, name) in &all_points {
@@ -84,8 +90,9 @@ pub fn assemble(
         solid.add_vertex(id_gen.next(), *point, name.clone());
     }
 
-    // Build fragment-local vertex index lists
+    // Build fragment-local vertex index lists (outer + inner polygons)
     let mut frag_vertex_indices: Vec<Vec<usize>> = Vec::new();
+    let mut frag_inner_vertex_indices: Vec<Vec<Vec<usize>>> = Vec::new();
     let mut point_offset = 0;
     for cf in &selected {
         let n = cf.fragment.polygon_3d.len();
@@ -95,6 +102,17 @@ pub fn assemble(
         }
         frag_vertex_indices.push(local_vi);
         point_offset += n;
+        let mut inner_vi_list: Vec<Vec<usize>> = Vec::new();
+        for inner_poly in &cf.fragment.inner_polygons_3d {
+            let m = inner_poly.len();
+            let mut inner_vi: Vec<usize> = Vec::new();
+            for i in 0..m {
+                inner_vi.push(vertex_map[point_offset + i]);
+            }
+            inner_vi_list.push(inner_vi);
+            point_offset += m;
+        }
+        frag_inner_vertex_indices.push(inner_vi_list);
     }
 
     // Collect all unique undirected edges across all selected fragments
@@ -159,7 +177,7 @@ pub fn assemble(
         }
     }
 
-    for (fi, _cf) in selected.iter().enumerate() {
+    for (fi, cf) in selected.iter().enumerate() {
         let vis = &frag_vertex_indices[fi];
         let n = vis.len();
 
@@ -172,19 +190,40 @@ pub fn assemble(
             if let std::collections::hash_map::Entry::Vacant(e) = edge_map.entry(key) {
                 let p0 = solid.vertices[vi_start].point;
                 let p1 = solid.vertices[vi_end].point;
-                let direction = p1 - p0;
                 let edge_name = intersection_edge_names.get(&key).cloned();
-                let edge_idx = solid.add_edge(
-                    id_gen.next(),
-                    [vi_start, vi_end],
-                    Curve::Line {
-                        origin: p0,
-                        direction,
-                    },
-                    [0.0, 1.0],
-                    edge_name,
-                );
+                let (curve, t_range) =
+                    circle_curve_for_edge(cf.fragment.boundary_curves.get(k), &p0, &p1);
+                let edge_idx =
+                    solid.add_edge(id_gen.next(), [vi_start, vi_end], curve, t_range, edge_name);
                 e.insert(edge_idx);
+            }
+        }
+    }
+
+    // Build edges for inner polygon boundaries (ring face holes)
+    for (fi, _cf) in selected.iter().enumerate() {
+        for inner_vis in &frag_inner_vertex_indices[fi] {
+            let m = inner_vis.len();
+            for k in 0..m {
+                let vi_start = inner_vis[k];
+                let vi_end = inner_vis[(k + 1) % m];
+                let key = normalize_edge_key(vi_start, vi_end);
+                if let std::collections::hash_map::Entry::Vacant(e) = edge_map.entry(key) {
+                    let p0 = solid.vertices[vi_start].point;
+                    let p1 = solid.vertices[vi_end].point;
+                    let direction = p1 - p0;
+                    let edge_idx = solid.add_edge(
+                        id_gen.next(),
+                        [vi_start, vi_end],
+                        Curve::Line {
+                            origin: p0,
+                            direction,
+                        },
+                        [0.0, 1.0],
+                        None,
+                    );
+                    e.insert(edge_idx);
+                }
             }
         }
     }
@@ -272,6 +311,41 @@ pub fn assemble(
             face_name,
         );
         face_indices.push(face_idx);
+
+        // Build inner loops for ring fragments (faces with circular holes)
+        for inner_vis in &frag_inner_vertex_indices[fi] {
+            if inner_vis.len() < 3 {
+                continue;
+            }
+            let m = inner_vis.len();
+            let mut inner_he_indices = Vec::with_capacity(m);
+            for k in 0..m {
+                let vi_start = inner_vis[k];
+                let vi_end = inner_vis[(k + 1) % m];
+                let key = normalize_edge_key(vi_start, vi_end);
+                let edge_idx = edge_map[&key];
+                let edge = &solid.edges[edge_idx];
+                let goes_forward = edge.vertices[0] == vi_start && edge.vertices[1] == vi_end;
+                let he_idx = if goes_forward {
+                    if let Some(&existing) = he_forward_created.get(&edge_idx) {
+                        existing
+                    } else {
+                        let idx = solid.add_half_edge(id_gen.next(), vi_start, edge_idx, true);
+                        he_forward_created.insert(edge_idx, idx);
+                        idx
+                    }
+                } else if let Some(&existing) = he_reverse_created.get(&edge_idx) {
+                    existing
+                } else {
+                    let idx = solid.add_half_edge(id_gen.next(), vi_start, edge_idx, false);
+                    he_reverse_created.insert(edge_idx, idx);
+                    idx
+                };
+                inner_he_indices.push(he_idx);
+            }
+            let inner_loop_idx = solid.add_loop(id_gen.next(), inner_he_indices);
+            solid.faces[face_idx].inner_loops.push(inner_loop_idx);
+        }
     }
 
     // Build shells by connected components
@@ -362,6 +436,46 @@ pub fn assemble(
     Ok(solid)
 }
 
+/// Build edge curve and t_range from an optional source Curve::Circle.
+/// If the source is a circle, computes per-chord arc angles from 3D positions.
+/// Falls back to Curve::Line otherwise.
+fn circle_curve_for_edge(src: Option<&Option<Curve>>, p0: &Point, p1: &Point) -> (Curve, [f64; 2]) {
+    if let Some(Some(Curve::Circle {
+        center,
+        normal,
+        radius,
+    })) = src
+    {
+        let (u_ax, v_ax) = orthonormal_basis(normal);
+        let d0 = p0.coords - center.coords;
+        let d1 = p1.coords - center.coords;
+        let t0 = d0.dot(&v_ax).atan2(d0.dot(&u_ax));
+        let mut t1 = d1.dot(&v_ax).atan2(d1.dot(&u_ax));
+        // Unwrap t1 so the arc goes in the shorter direction from t0.
+        // For a single chord (≤ π arc), this puts t1 just past t0.
+        if t1 < t0 {
+            t1 += 2.0 * std::f64::consts::PI;
+        }
+        (
+            Curve::Circle {
+                center: *center,
+                normal: *normal,
+                radius: *radius,
+            },
+            [t0, t1],
+        )
+    } else {
+        let direction = p1 - p0;
+        (
+            Curve::Line {
+                origin: *p0,
+                direction,
+            },
+            [0.0, 1.0],
+        )
+    }
+}
+
 fn normalize_edge_key(v0: usize, v1: usize) -> [usize; 2] {
     if v0 < v1 {
         [v0, v1]
@@ -425,14 +539,19 @@ fn find_connected_shells(solid: &Solid, face_indices: &[usize]) -> Vec<Vec<usize
 
     for &fi in face_indices {
         let face = &solid.faces[fi];
-        let lp = &solid.loops[face.outer_loop];
         let mut edges = Vec::new();
-        for &he_idx in &lp.half_edges {
-            let he = &solid.half_edges[he_idx];
-            let edge = &solid.edges[he.edge];
-            let v0 = edge.vertices[0].min(edge.vertices[1]);
-            let v1 = edge.vertices[0].max(edge.vertices[1]);
-            edges.push([v0, v1]);
+        // Include outer loop and all inner loops so ring faces connect
+        // to adjacent faces through inner-loop (hole) edges.
+        let all_loops = std::iter::once(face.outer_loop).chain(face.inner_loops.iter().copied());
+        for lp_idx in all_loops {
+            let lp = &solid.loops[lp_idx];
+            for &he_idx in &lp.half_edges {
+                let he = &solid.half_edges[he_idx];
+                let edge = &solid.edges[he.edge];
+                let v0 = edge.vertices[0].min(edge.vertices[1]);
+                let v1 = edge.vertices[0].max(edge.vertices[1]);
+                edges.push([v0, v1]);
+            }
         }
         face_edges.insert(fi, edges);
     }

@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": true,
+  "failed_reason": "cargo xtask ci failed — see features/39-plane-cyl-a1/ci.log",
+  "error_pattern": "test a1_determinism ... FAILED",
+  "error_pattern_kind": "test"
+}

@@ -1,21 +1,40 @@
+use crate::geometry::curve::Curve;
 use crate::geometry::math::{length_near, LENGTH_TOLERANCE};
+use crate::geometry::pcurve::Curve2D;
 use crate::geometry::surface::Surface;
 use crate::geometry::{Point, Vec3};
 use mycad_format::EntityRef;
 
 use super::types::BooleanOp;
 
+/// Number of chord segments for discretizing Circle intersection curves.
+const ANGULAR_SEGMENTS_DEFAULT: usize = 64;
+
 /// An intersection segment with provenance tracking (per-edge partner).
 #[derive(Clone)]
-pub struct IntersectionSegment {
+#[allow(dead_code)] // t_range / pcurve fields used by STEP η pcurve attach (not yet wired)
+pub(crate) struct IntersectionSegment {
     pub p_start: (f64, f64),
     pub p_end: (f64, f64),
     pub partner: EntityRef,
+    /// Analytical source curve (Some(Circle) for circle intersections, None for line).
+    pub source_curve_3d: Option<Curve>,
+    /// Parameter range on the 3D curve for this chord segment.
+    pub curve_3d_t_range: [f64; 2],
+    /// 2D curve on face A's UV space for this chord segment.
+    pub pcurve_on_a: Option<Curve2D>,
+    /// Parameter range on pcurve_on_a for this chord segment.
+    pub pcurve_on_a_t_range: [f64; 2],
+    /// 2D curve on face B's UV space for this chord segment.
+    pub pcurve_on_b: Option<Curve2D>,
+    /// Parameter range on pcurve_on_b for this chord segment.
+    pub pcurve_on_b_t_range: [f64; 2],
 }
 
-pub struct FaceFragment {
+pub(crate) struct FaceFragment {
     pub source_face_index: usize,
     pub polygon_3d: Vec<Point>,
+    pub inner_polygons_3d: Vec<Vec<Point>>,
     pub surface: Surface,
     pub parent_name: EntityRef,
     pub traversal_index: u32,
@@ -24,6 +43,16 @@ pub struct FaceFragment {
     /// Some(partner) means this edge was created by an intersection with the partner face.
     /// None means it originated from the outer loop of the source face.
     pub boundary_partners: Vec<Option<EntityRef>>,
+    pub boundary_curves: Vec<Option<Curve>>,
+    pub boundary_t_ranges: Vec<[f64; 2]>,
+    pub boundary_pcurves_a: Vec<Option<Curve2D>>,
+    pub boundary_pcurves_b: Vec<Option<Curve2D>>,
+    /// Inner loop boundary provenance (one Vec per inner loop).
+    pub inner_boundary_partners: Vec<Vec<Option<EntityRef>>>,
+    pub inner_boundary_curves: Vec<Vec<Option<Curve>>>,
+    pub inner_boundary_t_ranges: Vec<Vec<[f64; 2]>>,
+    pub inner_boundary_pcurves_a: Vec<Vec<Option<Curve2D>>>,
+    pub inner_boundary_pcurves_b: Vec<Vec<Option<Curve2D>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +239,38 @@ pub fn partition_faces(
         let face = &target.faces[fi];
         let surface = &face.surface;
 
+        // Degenerate polygon (circular face with <3 loop vertices) — pass through as-is
+        if polygon_2d.len() < 3 {
+            let name = face
+                .name
+                .clone()
+                .ok_or_else(|| format!("target face {} missing name", fi))?;
+            target_fragments.push(FaceFragment {
+                source_face_index: fi,
+                polygon_3d: polygon_3d.clone(),
+                inner_polygons_3d: vec![],
+                surface: surface.clone(),
+                parent_name: name,
+                traversal_index: 0,
+                is_tool_side: false,
+                boundary_partners: vec![None; polygon_3d.len()],
+                boundary_curves: vec![None; polygon_3d.len()],
+                boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                boundary_pcurves_a: vec![None; polygon_3d.len()],
+                boundary_pcurves_b: vec![None; polygon_3d.len()],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
+            });
+            continue;
+        }
+        let polygon_2d = &target_polygons_2d[fi];
+        let polygon_3d = &target_polygons_3d[fi];
+        let face = &target.faces[fi];
+        let surface = &face.surface;
+
         let mut segments: Vec<IntersectionSegment> = Vec::new();
 
         for ui in 0..tool.faces.len() {
@@ -314,11 +375,93 @@ pub fn partition_faces(
                             p_start: s_start_final,
                             p_end: s_end_final,
                             partner: tool_face_name.clone(),
+                            source_curve_3d: None,
+                            curve_3d_t_range: [0.0, 1.0],
+                            pcurve_on_a: None,
+                            pcurve_on_a_t_range: [0.0, 1.0],
+                            pcurve_on_b: None,
+                            pcurve_on_b_t_range: [0.0, 1.0],
                         });
                     }
                     crate::geometry::curve::Curve::Circle { .. } => {
-                        // Circle intersections handled in later steps
-                        continue;
+                        // Skip Plane×Sphere (deferred to #40)
+                        if is_sph || tool_is_sph {
+                            continue;
+                        }
+
+                        // For Plane×Cylinder: skip if the intersection plane is outside
+                        // the tool cylinder face's finite height range.
+                        if tool_is_cyl {
+                            if let Surface::Cylinder {
+                                origin: cyl_orig,
+                                axis: cyl_ax,
+                                ..
+                            } = tool_surface
+                            {
+                                if let Curve2D::Line2D { origin: o, .. } = &iloop.pcurve_on_b {
+                                    let ax = cyl_ax.normalize();
+                                    let v_cut = o.1;
+                                    let tool_poly = &tool_polygons_3d[ui];
+                                    let v_min = tool_poly
+                                        .iter()
+                                        .map(|p| (p.coords - cyl_orig.coords).dot(&ax))
+                                        .fold(f64::MAX, f64::min);
+                                    let v_max = tool_poly
+                                        .iter()
+                                        .map(|p| (p.coords - cyl_orig.coords).dot(&ax))
+                                        .fold(f64::MIN, f64::max);
+                                    if v_cut < v_min - len_eps || v_cut > v_max + len_eps {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+
+                        let n_chords = ANGULAR_SEGMENTS_DEFAULT;
+                        let t0 = iloop.t_range[0];
+                        let t1 = iloop.t_range[1];
+                        let dt = (t1 - t0) / n_chords as f64;
+                        let circle_3d = iloop.curve_3d.clone();
+                        let pc_a = iloop.pcurve_on_a.clone();
+                        let _pc_a_tr = iloop.pcurve_on_a_t_range;
+                        let pc_b = iloop.pcurve_on_b.clone();
+                        let _pc_b_tr = iloop.pcurve_on_b_t_range;
+
+                        for k in 0..n_chords {
+                            let ta = t0 + k as f64 * dt;
+                            let tb = t0 + (k + 1) as f64 * dt;
+                            let p3a = circle_3d.evaluate(ta);
+                            let p3b = circle_3d.evaluate(tb);
+                            let s_a = project_to_face_uv(surface, &p3a);
+                            let s_b = project_to_face_uv(surface, &p3b);
+                            let chord_len =
+                                ((s_b.0 - s_a.0).powi(2) + (s_b.1 - s_a.1).powi(2)).sqrt();
+                            if chord_len < len_eps {
+                                continue;
+                            }
+                            let Some((clipped_s, clipped_e)) =
+                                clip_line_to_polygon_2d_given_points(s_a, s_b, polygon_2d)
+                            else {
+                                continue;
+                            };
+                            let cl = ((clipped_e.0 - clipped_s.0).powi(2)
+                                + (clipped_e.1 - clipped_s.1).powi(2))
+                            .sqrt();
+                            if cl < len_eps {
+                                continue;
+                            }
+                            segments.push(IntersectionSegment {
+                                p_start: clipped_s,
+                                p_end: clipped_e,
+                                partner: tool_face_name.clone(),
+                                source_curve_3d: Some(circle_3d.clone()),
+                                curve_3d_t_range: [ta, tb],
+                                pcurve_on_a: Some(pc_a.clone()),
+                                pcurve_on_a_t_range: [ta, tb],
+                                pcurve_on_b: Some(pc_b.clone()),
+                                pcurve_on_b_t_range: [ta, tb],
+                            });
+                        }
                     }
                 }
             }
@@ -334,28 +477,136 @@ pub fn partition_faces(
             target_fragments.push(FaceFragment {
                 source_face_index: fi,
                 polygon_3d: polygon_3d.clone(),
+                inner_polygons_3d: vec![],
                 surface: surface.clone(),
                 parent_name: name,
                 traversal_index: 0,
                 is_tool_side: false,
                 boundary_partners: vec![None; polygon_3d.len()],
+                boundary_curves: vec![None; polygon_3d.len()],
+                boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                boundary_pcurves_a: vec![None; polygon_3d.len()],
+                boundary_pcurves_b: vec![None; polygon_3d.len()],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
             });
         } else if let Some(plane_data) = plane {
-            let sub_faces = pslg_subdivide(polygon_2d, &segments, plane_data);
-            for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
-                let poly_3d: Vec<Point> = sub_poly_2d
+            // Check if circle segments are interior (form a hole) vs boundary-crossing
+            let circle_segs: Vec<&IntersectionSegment> = segments
+                .iter()
+                .filter(|s| s.source_curve_3d.is_some())
+                .collect();
+            let line_segs: Vec<&IntersectionSegment> = segments
+                .iter()
+                .filter(|s| s.source_curve_3d.is_none())
+                .collect();
+
+            if !circle_segs.is_empty()
+                && line_segs.is_empty()
+                && segments_are_interior(&circle_segs, polygon_2d)
+            {
+                // Interior circle: single fragment with hole
+                let (inner_poly_2d, inner_partners, inner_curves, inner_tr, inner_pca, inner_pcb) =
+                    collect_ordered_circle_polygon(&circle_segs, surface);
+                let inner_poly_3d: Vec<Point> = inner_poly_2d
                     .iter()
                     .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
                     .collect();
+                let n_outer = polygon_3d.len();
                 target_fragments.push(FaceFragment {
                     source_face_index: fi,
-                    polygon_3d: poly_3d,
+                    polygon_3d: polygon_3d.clone(),
+                    inner_polygons_3d: vec![inner_poly_3d],
                     surface: surface.clone(),
                     parent_name: name.clone(),
-                    traversal_index: idx as u32,
+                    traversal_index: 0,
                     is_tool_side: false,
-                    boundary_partners: edge_partners,
+                    boundary_partners: vec![None; n_outer],
+                    boundary_curves: vec![None; n_outer],
+                    boundary_t_ranges: vec![[0.0, 1.0]; n_outer],
+                    boundary_pcurves_a: vec![None; n_outer],
+                    boundary_pcurves_b: vec![None; n_outer],
+                    inner_boundary_partners: vec![inner_partners],
+                    inner_boundary_curves: vec![inner_curves],
+                    inner_boundary_t_ranges: vec![inner_tr],
+                    inner_boundary_pcurves_a: vec![inner_pca],
+                    inner_boundary_pcurves_b: vec![inner_pcb],
                 });
+                // Also create a second fragment: the disc (tool side)
+                let disc_poly_3d: Vec<Point> = inner_poly_2d
+                    .iter()
+                    .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                    .collect();
+                let n_disc = disc_poly_3d.len();
+                let disc_curves: Vec<Option<Curve>> = (0..n_disc)
+                    .map(|_| circle_segs.first().and_then(|s| s.source_curve_3d.clone()))
+                    .collect();
+                let disc_tr: Vec<[f64; 2]> = (0..n_disc)
+                    .map(|_| [0.0, 2.0 * std::f64::consts::PI])
+                    .collect();
+                let disc_pca: Vec<Option<Curve2D>> = (0..n_disc)
+                    .map(|_| circle_segs.first().and_then(|s| s.pcurve_on_a.clone()))
+                    .collect();
+                let disc_pcb: Vec<Option<Curve2D>> = (0..n_disc)
+                    .map(|_| circle_segs.first().and_then(|s| s.pcurve_on_b.clone()))
+                    .collect();
+                let disc_partners: Vec<Option<EntityRef>> = if let Some(first) = circle_segs.first()
+                {
+                    vec![Some(first.partner.clone()); n_disc]
+                } else {
+                    vec![None; n_disc]
+                };
+                target_fragments.push(FaceFragment {
+                    source_face_index: fi,
+                    polygon_3d: disc_poly_3d,
+                    inner_polygons_3d: vec![],
+                    surface: surface.clone(),
+                    parent_name: name.clone(),
+                    traversal_index: 1,
+                    is_tool_side: false,
+                    boundary_partners: disc_partners,
+                    boundary_curves: disc_curves,
+                    boundary_t_ranges: disc_tr,
+                    boundary_pcurves_a: disc_pca,
+                    boundary_pcurves_b: disc_pcb,
+                    inner_boundary_partners: vec![],
+                    inner_boundary_curves: vec![],
+                    inner_boundary_t_ranges: vec![],
+                    inner_boundary_pcurves_a: vec![],
+                    inner_boundary_pcurves_b: vec![],
+                });
+            } else {
+                // Standard PSLG subdivision (line segments or circle segments crossing boundary)
+                let sub_faces = pslg_subdivide(polygon_2d, &segments, plane_data);
+                for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
+                    let poly_3d: Vec<Point> = sub_poly_2d
+                        .iter()
+                        .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                        .collect();
+                    let n = poly_3d.len();
+                    target_fragments.push(FaceFragment {
+                        source_face_index: fi,
+                        polygon_3d: poly_3d,
+                        inner_polygons_3d: vec![],
+                        surface: surface.clone(),
+                        parent_name: name.clone(),
+                        traversal_index: idx as u32,
+                        is_tool_side: false,
+                        boundary_partners: edge_partners,
+                        boundary_curves: vec![None; n],
+                        boundary_t_ranges: vec![[0.0, 1.0]; n],
+                        boundary_pcurves_a: vec![None; n],
+                        boundary_pcurves_b: vec![None; n],
+                        inner_boundary_partners: vec![],
+                        inner_boundary_curves: vec![],
+                        inner_boundary_t_ranges: vec![],
+                        inner_boundary_pcurves_a: vec![],
+                        inner_boundary_pcurves_b: vec![],
+                    });
+                }
             }
         }
     }
@@ -369,6 +620,34 @@ pub fn partition_faces(
         let polygon_3d = &tool_polygons_3d[fi];
         let face = &tool.faces[fi];
         let surface = &face.surface;
+
+        // Degenerate polygon (circular face with <3 loop vertices) — pass through as-is
+        if polygon_2d.len() < 3 {
+            let name = face
+                .name
+                .clone()
+                .ok_or_else(|| format!("tool face {} missing name", fi))?;
+            tool_fragments.push(FaceFragment {
+                source_face_index: fi,
+                polygon_3d: polygon_3d.clone(),
+                inner_polygons_3d: vec![],
+                surface: surface.clone(),
+                parent_name: name,
+                traversal_index: 0,
+                is_tool_side: true,
+                boundary_partners: vec![None; polygon_3d.len()],
+                boundary_curves: vec![None; polygon_3d.len()],
+                boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                boundary_pcurves_a: vec![None; polygon_3d.len()],
+                boundary_pcurves_b: vec![None; polygon_3d.len()],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
+            });
+            continue;
+        }
 
         let mut segments: Vec<IntersectionSegment> = Vec::new();
 
@@ -469,10 +748,84 @@ pub fn partition_faces(
                             p_start: s_start_final,
                             p_end: s_end_final,
                             partner: target_face_name.clone(),
+                            source_curve_3d: None,
+                            curve_3d_t_range: [0.0, 1.0],
+                            pcurve_on_a: None,
+                            pcurve_on_a_t_range: [0.0, 1.0],
+                            pcurve_on_b: None,
+                            pcurve_on_b_t_range: [0.0, 1.0],
                         });
                     }
                     crate::geometry::curve::Curve::Circle { .. } => {
-                        continue;
+                        // Skip Plane×Sphere (deferred to #40)
+                        if is_sph || target_is_sph {
+                            continue;
+                        }
+
+                        let n_chords = ANGULAR_SEGMENTS_DEFAULT;
+                        let t0 = iloop.t_range[0];
+                        let t1 = iloop.t_range[1];
+                        let dt = (t1 - t0) / n_chords as f64;
+                        let circle_3d = iloop.curve_3d.clone();
+                        let pc_a = iloop.pcurve_on_a.clone();
+                        let _pc_a_tr = iloop.pcurve_on_a_t_range;
+                        let pc_b = iloop.pcurve_on_b.clone();
+                        let _pc_b_tr = iloop.pcurve_on_b_t_range;
+
+                        for k in 0..n_chords {
+                            let ta = t0 + k as f64 * dt;
+                            let tb = t0 + (k + 1) as f64 * dt;
+                            let p3a = circle_3d.evaluate(ta);
+                            let p3b = circle_3d.evaluate(tb);
+                            let s_a = project_to_face_uv(surface, &p3a);
+                            let s_b = project_to_face_uv(surface, &p3b);
+                            let chord_len =
+                                ((s_b.0 - s_a.0).powi(2) + (s_b.1 - s_a.1).powi(2)).sqrt();
+                            if chord_len < len_eps {
+                                continue;
+                            }
+                            // For Cylinder tool faces, the UV polygon is self-intersecting
+                            // due to the seam (u = atan2 jumps at π). Skip the UV clip
+                            // check; the Cylinder branch reconstructs fragments directly
+                            // in 3D using the circle curve and height range.
+                            if !is_cyl {
+                                let Some((clipped_s, clipped_e)) =
+                                    clip_line_to_polygon_2d_given_points(s_a, s_b, polygon_2d)
+                                else {
+                                    continue;
+                                };
+                                let cl = ((clipped_e.0 - clipped_s.0).powi(2)
+                                    + (clipped_e.1 - clipped_s.1).powi(2))
+                                .sqrt();
+                                if cl < len_eps {
+                                    continue;
+                                }
+                                segments.push(IntersectionSegment {
+                                    p_start: clipped_s,
+                                    p_end: clipped_e,
+                                    partner: target_face_name.clone(),
+                                    source_curve_3d: Some(circle_3d.clone()),
+                                    curve_3d_t_range: [ta, tb],
+                                    pcurve_on_a: Some(pc_a.clone()),
+                                    pcurve_on_a_t_range: [ta, tb],
+                                    pcurve_on_b: Some(pc_b.clone()),
+                                    pcurve_on_b_t_range: [ta, tb],
+                                });
+                            } else {
+                                segments.push(IntersectionSegment {
+                                    p_start: s_a,
+                                    p_end: s_b,
+                                    partner: target_face_name.clone(),
+                                    source_curve_3d: Some(circle_3d.clone()),
+                                    curve_3d_t_range: [ta, tb],
+                                    pcurve_on_a: Some(pc_a.clone()),
+                                    pcurve_on_a_t_range: [ta, tb],
+                                    pcurve_on_b: Some(pc_b.clone()),
+                                    pcurve_on_b_t_range: [ta, tb],
+                                });
+                            }
+                        }
+                        let _ = (_pc_a_tr, _pc_b_tr);
                     }
                 }
             }
@@ -483,15 +836,26 @@ pub fn partition_faces(
             .clone()
             .ok_or_else(|| format!("tool face {} missing name", fi))?;
 
+        if matches!(surface, Surface::Cylinder { .. }) {}
         if segments.is_empty() {
             tool_fragments.push(FaceFragment {
                 source_face_index: fi,
                 polygon_3d: polygon_3d.clone(),
+                inner_polygons_3d: vec![],
                 surface: surface.clone(),
                 parent_name: name,
                 traversal_index: 0,
                 is_tool_side: true,
                 boundary_partners: vec![None; polygon_3d.len()],
+                boundary_curves: vec![None; polygon_3d.len()],
+                boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                boundary_pcurves_a: vec![None; polygon_3d.len()],
+                boundary_pcurves_b: vec![None; polygon_3d.len()],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
             });
         } else if let Some(plane_data) = PlaneData::from_surface(surface) {
             let sub_faces = pslg_subdivide(polygon_2d, &segments, &plane_data);
@@ -500,16 +864,190 @@ pub fn partition_faces(
                     .iter()
                     .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
                     .collect();
+                let n = poly_3d.len();
                 tool_fragments.push(FaceFragment {
                     source_face_index: fi,
                     polygon_3d: poly_3d,
+                    inner_polygons_3d: vec![],
                     surface: surface.clone(),
                     parent_name: name.clone(),
                     traversal_index: idx as u32,
                     is_tool_side: true,
                     boundary_partners: edge_partners,
+                    boundary_curves: vec![None; n],
+                    boundary_t_ranges: vec![[0.0, 1.0]; n],
+                    boundary_pcurves_a: vec![None; n],
+                    boundary_pcurves_b: vec![None; n],
+                    inner_boundary_partners: vec![],
+                    inner_boundary_curves: vec![],
+                    inner_boundary_t_ranges: vec![],
+                    inner_boundary_pcurves_a: vec![],
+                    inner_boundary_pcurves_b: vec![],
                 });
             }
+        } else if matches!(surface, Surface::Cylinder { .. }) {
+            // Cylinder lat-face trimmed by a plane intersection circle.
+            // UV space for a periodic surface is non-simple after seam-crossing — build
+            // the trimmed fragments directly in 3D instead of going through PSLG.
+            let (cyl_origin, cyl_axis_raw, cyl_radius) = match surface {
+                Surface::Cylinder {
+                    origin,
+                    axis,
+                    radius,
+                } => (*origin, *axis, *radius),
+                _ => unreachable!(),
+            };
+            let cyl_axis_norm = cyl_axis_raw.normalize();
+
+            let v_bot = polygon_3d
+                .iter()
+                .map(|p| (p.coords - cyl_origin.coords).dot(&cyl_axis_norm))
+                .fold(f64::MAX, f64::min);
+            let v_top = polygon_3d
+                .iter()
+                .map(|p| (p.coords - cyl_origin.coords).dot(&cyl_axis_norm))
+                .fold(f64::MIN, f64::max);
+
+            // Pick the intersection circle whose v_cut lies within [v_bot, v_top].
+            // intersect_plane_cylinder works on the infinite cylinder, so spurious
+            // circles outside the finite face height range may appear in segments.
+            let circle_seg = match segments.iter().find(|s| {
+                if s.source_curve_3d.is_none() {
+                    return false;
+                }
+                match &s.pcurve_on_b {
+                    Some(Curve2D::Line2D { origin, .. }) => {
+                        let v = origin.1;
+                        v >= v_bot - len_eps && v <= v_top + len_eps
+                    }
+                    _ => false,
+                }
+            }) {
+                Some(s) => s,
+                None => continue,
+            };
+            let circle_3d = match &circle_seg.source_curve_3d {
+                Some(c @ Curve::Circle { .. }) => c.clone(),
+                _ => continue,
+            };
+            let target_face_name = circle_seg.partner.clone();
+            let v_cut = match &circle_seg.pcurve_on_b {
+                Some(Curve2D::Line2D { origin, .. }) => origin.1,
+                _ => continue,
+            };
+
+            let seam_bot = surface.evaluate(0.0, v_bot);
+            let seam_cut = surface.evaluate(0.0, v_cut);
+            let seam_top = surface.evaluate(0.0, v_top);
+
+            let n_seg = ANGULAR_SEGMENTS_DEFAULT;
+            let dt = 2.0 * std::f64::consts::PI / n_seg as f64;
+
+            let bot_circle_3d = Curve::Circle {
+                center: Point::from(cyl_origin.coords + cyl_axis_norm * v_bot),
+                normal: cyl_axis_norm,
+                radius: cyl_radius,
+            };
+            let top_circle_3d = Curve::Circle {
+                center: Point::from(cyl_origin.coords + cyl_axis_norm * v_top),
+                normal: cyl_axis_norm,
+                radius: cyl_radius,
+            };
+
+            // Lower fragment: v_bot..v_cut
+            // polygon = [seam_bot, seam_cut, cut_circle_k1..k63, seam_cut, seam_bot, bot_circle_k1..k63]
+            let lower_total = 2 * n_seg + 2;
+            let mut lower_poly: Vec<Point> = Vec::with_capacity(lower_total);
+            lower_poly.push(seam_bot);
+            lower_poly.push(seam_cut);
+            for k in 1..n_seg {
+                lower_poly.push(circle_3d.evaluate(k as f64 * dt));
+            }
+            lower_poly.push(seam_cut);
+            lower_poly.push(seam_bot);
+            for k in 1..n_seg {
+                lower_poly.push(bot_circle_3d.evaluate(k as f64 * dt));
+            }
+            debug_assert_eq!(lower_poly.len(), lower_total);
+
+            let mut lower_partners: Vec<Option<EntityRef>> = vec![None; lower_total];
+            let mut lower_curves: Vec<Option<Curve>> = vec![None; lower_total];
+            // edges 1..=n_seg: seam_cut + cut_circle points (intersection with target)
+            for k in 1..=n_seg {
+                lower_partners[k] = Some(target_face_name.clone());
+                lower_curves[k] = Some(circle_3d.clone());
+            }
+            // edges (n_seg+2)..lower_total: seam_bot + bot_circle points (full bottom circle)
+            for curve in lower_curves.iter_mut().skip(n_seg + 2) {
+                *curve = Some(bot_circle_3d.clone());
+            }
+
+            tool_fragments.push(FaceFragment {
+                source_face_index: fi,
+                polygon_3d: lower_poly,
+                inner_polygons_3d: vec![],
+                surface: surface.clone(),
+                parent_name: name.clone(),
+                traversal_index: 0,
+                is_tool_side: true,
+                boundary_partners: lower_partners,
+                boundary_curves: lower_curves,
+                boundary_t_ranges: vec![[0.0, 1.0]; lower_total],
+                boundary_pcurves_a: vec![None; lower_total],
+                boundary_pcurves_b: vec![None; lower_total],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
+            });
+
+            // Upper fragment: v_cut..v_top (typically OutsideOther for CUT, discarded)
+            // polygon = [seam_cut, seam_top, top_circle_k1..k63, seam_top, seam_cut, cut_circle_k1..k63]
+            let upper_total = 2 * n_seg + 2;
+            let mut upper_poly: Vec<Point> = Vec::with_capacity(upper_total);
+            upper_poly.push(seam_cut);
+            upper_poly.push(seam_top);
+            for k in 1..n_seg {
+                upper_poly.push(top_circle_3d.evaluate(k as f64 * dt));
+            }
+            upper_poly.push(seam_top);
+            upper_poly.push(seam_cut);
+            for k in 1..n_seg {
+                upper_poly.push(circle_3d.evaluate(k as f64 * dt));
+            }
+            debug_assert_eq!(upper_poly.len(), upper_total);
+
+            let mut upper_partners: Vec<Option<EntityRef>> = vec![None; upper_total];
+            let mut upper_curves: Vec<Option<Curve>> = vec![None; upper_total];
+            // edges n_seg+2..=2*n_seg+1: seam_cut and cut_circle points (intersection boundary)
+            for k in (n_seg + 2)..upper_total {
+                upper_partners[k] = Some(target_face_name.clone());
+                upper_curves[k] = Some(circle_3d.clone());
+            }
+            // implicit closing edge (index 2*n_seg+1 → 0): also intersection
+            upper_partners[upper_total - 1] = Some(target_face_name.clone());
+            upper_curves[upper_total - 1] = Some(circle_3d.clone());
+
+            tool_fragments.push(FaceFragment {
+                source_face_index: fi,
+                polygon_3d: upper_poly,
+                inner_polygons_3d: vec![],
+                surface: surface.clone(),
+                parent_name: name.clone(),
+                traversal_index: 1,
+                is_tool_side: true,
+                boundary_partners: upper_partners,
+                boundary_curves: upper_curves,
+                boundary_t_ranges: vec![[0.0, 1.0]; upper_total],
+                boundary_pcurves_a: vec![None; upper_total],
+                boundary_pcurves_b: vec![None; upper_total],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
+            });
         }
     }
 
@@ -538,14 +1076,25 @@ pub fn partition_faces(
                 .iter()
                 .map(|(u, v)| tp.unproject_3d(*u, *v))
                 .collect();
+            let n = poly_3d.len();
             target_fragments.push(FaceFragment {
                 source_face_index: pair.target_face,
                 polygon_3d: poly_3d.clone(),
+                inner_polygons_3d: vec![],
                 surface: t_surface.clone(),
                 parent_name: tname.clone(),
                 traversal_index: 0,
                 is_tool_side: false,
-                boundary_partners: vec![None; poly_3d.len()],
+                boundary_partners: vec![None; n],
+                boundary_curves: vec![None; n],
+                boundary_t_ranges: vec![[0.0, 1.0]; n],
+                boundary_pcurves_a: vec![None; n],
+                boundary_pcurves_b: vec![None; n],
+                inner_boundary_partners: vec![],
+                inner_boundary_curves: vec![],
+                inner_boundary_t_ranges: vec![],
+                inner_boundary_pcurves_a: vec![],
+                inner_boundary_pcurves_b: vec![],
             });
         }
 
@@ -566,14 +1115,25 @@ pub fn partition_faces(
             if strip.len() >= 3 && signed_area_2d(&strip).abs() > area_eps {
                 let poly_3d: Vec<Point> =
                     strip.iter().map(|(u, v)| tp.unproject_3d(*u, *v)).collect();
+                let n = poly_3d.len();
                 target_fragments.push(FaceFragment {
                     source_face_index: pair.target_face,
                     polygon_3d: poly_3d.clone(),
+                    inner_polygons_3d: vec![],
                     surface: t_surface.clone(),
                     parent_name: tname.clone(),
                     traversal_index: strip_idx,
                     is_tool_side: false,
-                    boundary_partners: vec![None; poly_3d.len()],
+                    boundary_partners: vec![None; n],
+                    boundary_curves: vec![None; n],
+                    boundary_t_ranges: vec![[0.0, 1.0]; n],
+                    boundary_pcurves_a: vec![None; n],
+                    boundary_pcurves_b: vec![None; n],
+                    inner_boundary_partners: vec![],
+                    inner_boundary_curves: vec![],
+                    inner_boundary_t_ranges: vec![],
+                    inner_boundary_pcurves_a: vec![],
+                    inner_boundary_pcurves_b: vec![],
                 });
                 strip_idx += 1;
             }
@@ -583,6 +1143,105 @@ pub fn partition_faces(
     }
 
     Ok((target_fragments, tool_fragments))
+}
+
+/// Check if all circle chord endpoints lie strictly inside the outer polygon (not on boundary).
+fn segments_are_interior(
+    circle_segs: &[&IntersectionSegment],
+    outer_loop_2d: &[(f64, f64)],
+) -> bool {
+    let eps = LENGTH_TOLERANCE * 10.0;
+    circle_segs.iter().all(|seg| {
+        !point_on_polygon_boundary(seg.p_start, outer_loop_2d, eps)
+            && !point_on_polygon_boundary(seg.p_end, outer_loop_2d, eps)
+    })
+}
+
+/// Check if a 2D point lies on the boundary of a polygon.
+fn point_on_polygon_boundary(p: (f64, f64), polygon: &[(f64, f64)], eps: f64) -> bool {
+    let n = polygon.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        if point_on_segment_2d(p, polygon[i], polygon[j])
+            && dist_to_segment_2d(p, polygon[i], polygon[j]) < eps
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Distance from point p to the line segment a-b.
+fn dist_to_segment_2d(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let dx = b.0 - a.0;
+    let dy = b.1 - a.1;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < LENGTH_TOLERANCE * LENGTH_TOLERANCE {
+        return ((p.0 - a.0).powi(2) + (p.1 - a.1).powi(2)).sqrt();
+    }
+    let t = ((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len_sq;
+    let t = t.clamp(0.0, 1.0);
+    let proj_x = a.0 + t * dx;
+    let proj_y = a.1 + t * dy;
+    ((p.0 - proj_x).powi(2) + (p.1 - proj_y).powi(2)).sqrt()
+}
+
+/// Collect ordered circle polygon vertices from chord segments.
+/// Returns (polygon_2d, partners, curves, t_ranges, pcurves_a, pcurves_b).
+#[allow(clippy::type_complexity)]
+fn collect_ordered_circle_polygon(
+    circle_segs: &[&IntersectionSegment],
+    _surface: &Surface,
+) -> (
+    Vec<(f64, f64)>,
+    Vec<Option<EntityRef>>,
+    Vec<Option<Curve>>,
+    Vec<[f64; 2]>,
+    Vec<Option<Curve2D>>,
+    Vec<Option<Curve2D>>,
+) {
+    // Collect unique endpoints
+    let eps = LENGTH_TOLERANCE * 10.0;
+    let mut points: Vec<(f64, f64)> = Vec::new();
+    for seg in circle_segs {
+        for pt in &[seg.p_start, seg.p_end] {
+            let exists = points
+                .iter()
+                .any(|p| (p.0 - pt.0).abs() < eps && (p.1 - pt.1).abs() < eps);
+            if !exists {
+                points.push(*pt);
+            }
+        }
+    }
+
+    // Compute centroid for atan2 sorting
+    let cx: f64 = points.iter().map(|p| p.0).sum::<f64>() / points.len() as f64;
+    let cy: f64 = points.iter().map(|p| p.1).sum::<f64>() / points.len() as f64;
+
+    // Sort by atan2 from centroid (deterministic CCW ordering)
+    points.sort_by(|a, b| {
+        let angle_a = (a.1 - cy).atan2(a.0 - cx);
+        let angle_b = (b.1 - cy).atan2(b.0 - cx);
+        angle_a
+            .partial_cmp(&angle_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let n = points.len();
+
+    // Build provenance per edge by matching chord segments
+    let first_partner = circle_segs.first().map(|s| s.partner.clone());
+    let first_curve = circle_segs.first().and_then(|s| s.source_curve_3d.clone());
+    let first_pca = circle_segs.first().and_then(|s| s.pcurve_on_a.clone());
+    let first_pcb = circle_segs.first().and_then(|s| s.pcurve_on_b.clone());
+
+    let partners: Vec<Option<EntityRef>> = (0..n).map(|_| first_partner.clone()).collect();
+    let curves: Vec<Option<Curve>> = (0..n).map(|_| first_curve.clone()).collect();
+    let t_ranges: Vec<[f64; 2]> = (0..n).map(|_| [0.0, 2.0 * std::f64::consts::PI]).collect();
+    let pcurves_a: Vec<Option<Curve2D>> = (0..n).map(|_| first_pca.clone()).collect();
+    let pcurves_b: Vec<Option<Curve2D>> = (0..n).map(|_| first_pcb.clone()).collect();
+
+    (points, partners, curves, t_ranges, pcurves_a, pcurves_b)
 }
 
 fn angle_near(a: Vec3, b: Vec3) -> bool {
@@ -609,13 +1268,35 @@ fn get_all_face_polygons(solid: &crate::brep::topology::Solid) -> Vec<Vec<Point>
 
 fn get_loop_vertices(solid: &crate::brep::topology::Solid, loop_idx: usize) -> Vec<Point> {
     let lp = &solid.loops[loop_idx];
-    lp.half_edges
-        .iter()
-        .map(|&he_idx| {
-            let he = &solid.half_edges[he_idx];
-            solid.vertices[he.start_vertex].point
-        })
-        .collect()
+    // Self-adjacent seam loops (e.g. full sphere: 2 HEs on the SAME edge) must NOT
+    // be densified — the folded polygon (up and back down the same arc) has zero
+    // area and breaks signed_volume computation. signed_volume handles verts.len() < 3.
+    if lp.half_edges.len() == 2 {
+        let e0 = solid.half_edges[lp.half_edges[0]].edge;
+        let e1 = solid.half_edges[lp.half_edges[1]].edge;
+        if e0 == e1 {
+            return lp
+                .half_edges
+                .iter()
+                .map(|&he_idx| solid.vertices[solid.half_edges[he_idx].start_vertex].point)
+                .collect();
+        }
+    }
+    let mut pts = Vec::new();
+    for &he_idx in &lp.half_edges {
+        let he = &solid.half_edges[he_idx];
+        let edge = &solid.edges[he.edge];
+        pts.push(solid.vertices[he.start_vertex].point);
+        if let Curve::Circle { .. } = &edge.curve {
+            let [t0, t1] = edge.t_range;
+            let (ta, tb) = if he.forward { (t0, t1) } else { (t1, t0) };
+            for k in 1..ANGULAR_SEGMENTS_DEFAULT {
+                let t = ta + (tb - ta) * k as f64 / ANGULAR_SEGMENTS_DEFAULT as f64;
+                pts.push(edge.curve.evaluate(t));
+            }
+        }
+    }
+    pts
 }
 
 fn clip_line_to_polygon_2d(
@@ -1287,5 +1968,58 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// T08 — Circle PSLG interior detection: box×cylinder partition produces
+    /// a FaceFragment with inner_polygons_3d on the plane face.
+    #[test]
+    fn t16_circle_pslg_interior_detection() {
+        let mut gen = IdGenerator::new(0);
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let cylinder = make_cylinder(2.0, 6.0, &mut gen).unwrap();
+
+        let (target_frags, _tool_frags) = partition_faces(&box_solid, &cylinder, BooleanOp::Cut)
+            .expect("partition should succeed");
+
+        let has_inner = target_frags.iter().any(|frag| {
+            matches!(frag.surface, Surface::Plane { .. }) && !frag.inner_polygons_3d.is_empty()
+        });
+        assert!(
+            has_inner,
+            "A1 partition: at least one Plane fragment should have inner_polygons_3d (circular hole)"
+        );
+    }
+
+    /// Tx3 — segments_are_interior: circle chords inside a square are detected as interior.
+    #[test]
+    fn tx3_segments_are_interior_unit() {
+        // 4×4 square centered at origin
+        let outer: Vec<(f64, f64)> = vec![(-2.0, -2.0), (2.0, -2.0), (2.0, 2.0), (-2.0, 2.0)];
+
+        // Simulate circle chord endpoints at radius 1.0 inside the square
+        let n = 64;
+        let segs: Vec<IntersectionSegment> = (0..n)
+            .map(|k| {
+                let ta = k as f64 * 2.0 * std::f64::consts::PI / n as f64;
+                let tb = (k + 1) as f64 * 2.0 * std::f64::consts::PI / n as f64;
+                IntersectionSegment {
+                    p_start: (ta.cos(), ta.sin()),
+                    p_end: (tb.cos(), tb.sin()),
+                    partner: EntityRef::try_named("cyl", EntityKind::Face, "lateral").unwrap(),
+                    source_curve_3d: None,
+                    curve_3d_t_range: [ta, tb],
+                    pcurve_on_a: None,
+                    pcurve_on_a_t_range: [0.0, 0.0],
+                    pcurve_on_b: None,
+                    pcurve_on_b_t_range: [0.0, 0.0],
+                }
+            })
+            .collect();
+
+        let refs: Vec<&IntersectionSegment> = segs.iter().collect();
+        assert!(
+            segments_are_interior(&refs, &outer),
+            "circle r=1 inside 4×4 square should be interior"
+        );
     }
 }

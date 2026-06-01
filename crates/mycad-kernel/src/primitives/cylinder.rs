@@ -3,6 +3,7 @@ use crate::error::KernelError;
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::Surface;
 use crate::geometry::{Point, Vec3};
+use mycad_format::{EntityKind, EntityRef};
 
 /// Create a cylinder B-rep solid.
 ///
@@ -20,11 +21,20 @@ pub fn make_cylinder(
         return Err(KernelError::InvalidParameter { kind: "height" });
     }
 
+    let fid = "cylinder";
     let mut solid = Solid::new(id_gen.next());
 
     // 2 vertices: seam at bottom and top
-    let v_bot = solid.add_vertex(id_gen.next(), Point::new(0.0, radius, 0.0), None);
-    let v_top = solid.add_vertex(id_gen.next(), Point::new(0.0, radius, height), None);
+    let v_bot = solid.add_vertex(
+        id_gen.next(),
+        Point::new(0.0, radius, 0.0),
+        EntityRef::try_named(fid, EntityKind::Vertex, "seam_bot").ok(),
+    );
+    let v_top = solid.add_vertex(
+        id_gen.next(),
+        Point::new(0.0, radius, height),
+        EntityRef::try_named(fid, EntityKind::Vertex, "seam_top").ok(),
+    );
 
     // 3 edges
     let e_bot = solid.add_edge(
@@ -36,7 +46,7 @@ pub fn make_cylinder(
             radius,
         },
         [0.0, 2.0 * std::f64::consts::PI],
-        None,
+        EntityRef::try_named(fid, EntityKind::Edge, "bot_circle").ok(),
     );
 
     let e_top = solid.add_edge(
@@ -48,7 +58,7 @@ pub fn make_cylinder(
             radius,
         },
         [0.0, 2.0 * std::f64::consts::PI],
-        None,
+        EntityRef::try_named(fid, EntityKind::Edge, "top_circle").ok(),
     );
 
     let e_seam = solid.add_edge(
@@ -59,7 +69,7 @@ pub fn make_cylinder(
             direction: Vec3::new(0.0, 0.0, height),
         },
         [0.0, 1.0],
-        None,
+        EntityRef::try_named(fid, EntityKind::Edge, "seam").ok(),
     );
 
     // 3 faces: bottom cap, top cap, lateral
@@ -79,7 +89,7 @@ pub fn make_cylinder(
         loop_bot,
         vec![],
         true,
-        None,
+        EntityRef::try_named(fid, EntityKind::Face, "bot_face").ok(),
     );
     face_indices.push(f_bot);
 
@@ -97,7 +107,7 @@ pub fn make_cylinder(
         loop_top,
         vec![],
         true,
-        None,
+        EntityRef::try_named(fid, EntityKind::Face, "top_face").ok(),
     );
     face_indices.push(f_top);
 
@@ -120,7 +130,7 @@ pub fn make_cylinder(
         loop_lat,
         vec![],
         true,
-        None,
+        EntityRef::try_named(fid, EntityKind::Face, "lat_face").ok(),
     );
     face_indices.push(f_lat);
 
@@ -359,5 +369,20 @@ mod tests {
             s.tessellation_strategy(),
             TessellationStrategy::UvGridFullPatch
         );
+    }
+
+    #[test]
+    fn test_cylinder_entity_names() {
+        let mut gen = IdGenerator::new(0);
+        let s = make_cylinder(2.0, 6.0, &mut gen).unwrap();
+        for v in &s.vertices {
+            assert!(v.name.is_some(), "cylinder vertex missing name");
+        }
+        for e in &s.edges {
+            assert!(e.name.is_some(), "cylinder edge missing name");
+        }
+        for f in &s.faces {
+            assert!(f.name.is_some(), "cylinder face missing name");
+        }
     }
 }

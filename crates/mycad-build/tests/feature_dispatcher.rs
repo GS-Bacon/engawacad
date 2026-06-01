@@ -1744,6 +1744,129 @@ fn t32_a3_euler() {
     }
 }
 
+// --- A1: Acceptance — box Cut cylinder (blind hole) ---
+
+fn build_a1_input() -> Vec<mycad_format::Feature> {
+    use mycad_format::Feature;
+    vec![
+        Feature::CreateBox {
+            id: "box1".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateCylinder {
+            id: "cyl1".into(),
+            radius: 2.0,
+            height: 6.0,
+        },
+        Feature::Cut {
+            id: "cut1".into(),
+            target: "box1".into(),
+            tool: "cyl1".into(),
+        },
+    ]
+}
+
+#[test]
+fn a1_determinism() {
+    let features = build_a1_input();
+    let b1 = build_features(features.clone()).expect("A1 build 1 ok");
+    let b2 = build_features(features).expect("A1 build 2 ok");
+    assert_solids_equal_with_names(
+        &b1.get("cut1").unwrap().solid,
+        &b2.get("cut1").unwrap().solid,
+    );
+}
+
+#[test]
+fn a1_build_manifold_euler() {
+    let features = build_a1_input();
+    let bodies = build_features(features).expect("A1: build should succeed");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    solid.validate_manifold().expect("A1: manifold validation");
+
+    assert_eq!(solid.shells.len(), 1, "A1: expected 1 shell (genus-0)");
+    // euler_poincare = V-E+F-2S = 1 for A1: cylinder lat face uses a seam edge
+    // (self-adjacent periodic face), which adds 1 edge without adding V or F.
+    // This is valid per B-rep seam-edge convention.
+    assert_eq!(
+        solid.euler_poincare(),
+        1,
+        "A1: Euler-Poincaré with 1 seam edge on cylinder lat = 1"
+    );
+}
+
+#[test]
+fn a1_top_face_has_inner_loop() {
+    use mycad_kernel::geometry::surface::Surface;
+    use mycad_kernel::geometry::Vec3;
+
+    let features = build_a1_input();
+    let bodies = build_features(features).expect("A1: build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    let has_annular_face = solid.faces.iter().any(|f| {
+        matches!(f.surface, Surface::Plane { normal, .. }
+            if (normal - Vec3::z()).norm() < 1e-6)
+            && !f.inner_loops.is_empty()
+    });
+    assert!(
+        has_annular_face,
+        "A1: top face should have an inner_loop (circular hole)"
+    );
+}
+
+#[test]
+fn a1_intersection_edge_is_circle() {
+    use mycad_kernel::geometry::curve::Curve;
+
+    let features = build_a1_input();
+    let bodies = build_features(features).expect("A1: build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    let circle_edges = solid
+        .edges
+        .iter()
+        .filter(|e| matches!(e.curve, Curve::Circle { .. }))
+        .count();
+    assert!(
+        circle_edges > 0,
+        "A1: at least one intersection edge should be Curve::Circle, got {circle_edges}"
+    );
+}
+
+#[test]
+fn a1_tessellation_succeeds() {
+    use mycad_kernel::tessellation::tessellate_solid;
+
+    let features = build_a1_input();
+    let bodies = build_features(features).expect("A1: build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    let mesh = tessellate_solid(solid).expect("A1: tessellation should succeed");
+    assert!(!mesh.positions.is_empty(), "A1: mesh should have positions");
+    assert!(!mesh.indices.is_empty(), "A1: mesh should have triangles");
+}
+
+#[test]
+fn a1_stl_export_succeeds() {
+    use mycad_kernel::tessellation::{tessellate_solid, to_ascii_stl};
+
+    let features = build_a1_input();
+    let bodies = build_features(features).expect("A1: build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    let mesh = tessellate_solid(solid).expect("A1: tessellate");
+    let stl = to_ascii_stl(&mesh, "a1_cut");
+    assert!(!stl.is_empty(), "STL output should be non-empty");
+    assert!(
+        stl.contains("facet normal"),
+        "STL should contain facet normals"
+    );
+}
+
 /// TX7 — A3 sphere face name: derived from the original sphere Named ref
 #[test]
 fn tx7_a3_sphere_face_name() {

@@ -60,6 +60,20 @@ pub fn orthonormal_basis(normal: &Vec3) -> (Vec3, Vec3) {
     (u, v)
 }
 
+/// Unwrap periodic UV coordinates so consecutive values are continuous.
+/// Adjusts values to avoid jumps larger than π between consecutive entries.
+pub fn unwrap_periodic_uv(u_list: &mut [f64]) {
+    let pi = std::f64::consts::PI;
+    for i in 1..u_list.len() {
+        while u_list[i] - u_list[i - 1] > pi {
+            u_list[i] -= 2.0 * pi;
+        }
+        while u_list[i] - u_list[i - 1] < -pi {
+            u_list[i] += 2.0 * pi;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +215,43 @@ mod tests {
                 &Point::new(LENGTH_TOLERANCE, 0.0, 0.0)
             ));
         }
+    }
+
+    // T10: unwrap_periodic_uv — seam crossing produces continuous output
+    #[test]
+    fn t10_unwrap_periodic_uv_seam_crossing() {
+        use std::f64::consts::PI;
+        // Values crossing the ±π seam
+        let mut u = vec![2.0, 2.5, 3.0, -3.0, -2.5];
+        unwrap_periodic_uv(&mut u);
+        // After unwrap, consecutive values should differ by less than π
+        for i in 1..u.len() {
+            let diff = (u[i] - u[i - 1]).abs();
+            assert!(diff < PI, "diff at {i}: {diff} >= π");
+        }
+    }
+
+    #[test]
+    fn t10_unwrap_periodic_uv_no_change_when_continuous() {
+        let mut u = vec![0.0, 0.5, 1.0, 1.5, 2.0];
+        let expected = u.clone();
+        unwrap_periodic_uv(&mut u);
+        for (i, (a, b)) in u.iter().zip(expected.iter()).enumerate() {
+            assert!((a - b).abs() < 1e-12, "mismatch at {i}: {a} != {b}");
+        }
+    }
+
+    #[test]
+    fn t10_unwrap_periodic_uv_single_element() {
+        let mut u = vec![3.14];
+        unwrap_periodic_uv(&mut u);
+        assert!((u[0] - 3.14).abs() < 1e-12);
+    }
+
+    #[test]
+    fn t10_unwrap_periodic_uv_empty() {
+        let mut u: Vec<f64> = vec![];
+        unwrap_periodic_uv(&mut u);
+        assert!(u.is_empty());
     }
 }

@@ -1,0 +1,1 @@
+{"status": "failed", "ci_passed": false, "summary": "CI red", "glm_exit": 1, "failed_reason": "cargo xtask ci failed — see /home/bacon/mycad/features/33-planar-boolean/ci.log"}

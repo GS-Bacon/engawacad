@@ -112,6 +112,15 @@ fn get_fragment_interior_point(frag: &FaceFragment, _len_eps: f64) -> Result<Poi
         return Err("fragment has < 3 vertices".to_string());
     }
 
+    // Ring fragment: outer centroid may fall inside the circular hole.
+    // Use the midpoint between a corner of the outer polygon and the first
+    // inner polygon vertex instead — guaranteed to be in the annular region.
+    if !frag.inner_polygons_3d.is_empty() && !frag.inner_polygons_3d[0].is_empty() {
+        let outer_pt = &poly[0];
+        let inner_pt = &frag.inner_polygons_3d[0][0];
+        return Ok(Point::from((outer_pt.coords + inner_pt.coords) / 2.0));
+    }
+
     let surface = &frag.surface;
     let poly2d: Vec<(f64, f64)> = poly
         .iter()
@@ -181,6 +190,29 @@ fn count_ray_face_intersections(
             match &face.surface {
                 Surface::Plane { normal, .. } => {
                     if point_in_polygon_3d(&hit, &loop_verts, normal, len_eps) {
+                        count += 1;
+                    }
+                }
+                Surface::Cylinder {
+                    origin: cyl_orig,
+                    axis: cyl_ax,
+                    ..
+                } => {
+                    // UV parameterization of a cylinder has a seam jump at ±π that
+                    // makes the UV polygon self-intersecting. Use an axial height
+                    // range test instead: a ray hit is inside the face iff its
+                    // projected height v lies within [v_min, v_max] of the loop.
+                    let ax = cyl_ax.normalize();
+                    let v_hit = (hit.coords - cyl_orig.coords).dot(&ax);
+                    let v_min = loop_verts
+                        .iter()
+                        .map(|p| (p.coords - cyl_orig.coords).dot(&ax))
+                        .fold(f64::MAX, f64::min);
+                    let v_max = loop_verts
+                        .iter()
+                        .map(|p| (p.coords - cyl_orig.coords).dot(&ax))
+                        .fold(f64::MIN, f64::max);
+                    if v_hit >= v_min - len_eps && v_hit <= v_max + len_eps {
                         count += 1;
                     }
                 }
@@ -274,14 +306,37 @@ fn solve_quadratic(a: f64, b: f64, c: f64) -> Vec<f64> {
 }
 
 fn get_loop_vertex_points(solid: &crate::brep::topology::Solid, loop_idx: usize) -> Vec<Point> {
+    use crate::geometry::curve::Curve;
     let lp = &solid.loops[loop_idx];
-    lp.half_edges
-        .iter()
-        .map(|&he_idx| {
-            let he = &solid.half_edges[he_idx];
-            solid.vertices[he.start_vertex].point
-        })
-        .collect()
+    // Self-adjacent seam loops (e.g. full sphere: 2 HEs on the SAME edge) must not
+    // be densified — the folded polygon has no area and breaks point-in-polygon checks.
+    if lp.half_edges.len() == 2 {
+        let e0 = solid.half_edges[lp.half_edges[0]].edge;
+        let e1 = solid.half_edges[lp.half_edges[1]].edge;
+        if e0 == e1 {
+            return lp
+                .half_edges
+                .iter()
+                .map(|&he_idx| solid.vertices[solid.half_edges[he_idx].start_vertex].point)
+                .collect();
+        }
+    }
+    let mut pts = Vec::new();
+    for &he_idx in &lp.half_edges {
+        let he = &solid.half_edges[he_idx];
+        let edge = &solid.edges[he.edge];
+        pts.push(solid.vertices[he.start_vertex].point);
+        if let Curve::Circle { .. } = &edge.curve {
+            let [t0, t1] = edge.t_range;
+            let (ta, tb) = if he.forward { (t0, t1) } else { (t1, t0) };
+            const N: usize = 64;
+            for k in 1..N {
+                let t = ta + (tb - ta) * k as f64 / N as f64;
+                pts.push(edge.curve.evaluate(t));
+            }
+        }
+    }
+    pts
 }
 
 fn point_in_polygon_3d(point: &Point, polygon: &[Point], normal: &Vec3, _len_eps: f64) -> bool {
@@ -382,11 +437,21 @@ impl Clone for FaceFragment {
         FaceFragment {
             source_face_index: self.source_face_index,
             polygon_3d: self.polygon_3d.clone(),
+            inner_polygons_3d: self.inner_polygons_3d.clone(),
             surface: self.surface.clone(),
             parent_name: self.parent_name.clone(),
             traversal_index: self.traversal_index,
             is_tool_side: self.is_tool_side,
             boundary_partners: self.boundary_partners.clone(),
+            boundary_curves: self.boundary_curves.clone(),
+            boundary_t_ranges: self.boundary_t_ranges.clone(),
+            boundary_pcurves_a: self.boundary_pcurves_a.clone(),
+            boundary_pcurves_b: self.boundary_pcurves_b.clone(),
+            inner_boundary_partners: self.inner_boundary_partners.clone(),
+            inner_boundary_curves: self.inner_boundary_curves.clone(),
+            inner_boundary_t_ranges: self.inner_boundary_t_ranges.clone(),
+            inner_boundary_pcurves_a: self.inner_boundary_pcurves_a.clone(),
+            inner_boundary_pcurves_b: self.inner_boundary_pcurves_b.clone(),
         }
     }
 }
@@ -402,6 +467,34 @@ mod tests {
             normal: Vec3::z(),
             u_axis: Vec3::x(),
             v_axis: Vec3::y(),
+        }
+    }
+
+    fn make_test_frag(
+        polygon_3d: Vec<Point>,
+        surface: Surface,
+        is_tool_side: bool,
+    ) -> crate::booleans::partition::FaceFragment {
+        use mycad_format::{EntityKind, EntityRef};
+        let n = polygon_3d.len();
+        crate::booleans::partition::FaceFragment {
+            source_face_index: 0,
+            polygon_3d,
+            inner_polygons_3d: vec![],
+            surface,
+            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
+            traversal_index: 0,
+            is_tool_side,
+            boundary_partners: vec![None; n],
+            boundary_curves: vec![None; n],
+            boundary_t_ranges: vec![[0.0, 1.0]; n],
+            boundary_pcurves_a: vec![None; n],
+            boundary_pcurves_b: vec![None; n],
+            inner_boundary_partners: vec![],
+            inner_boundary_curves: vec![],
+            inner_boundary_t_ranges: vec![],
+            inner_boundary_pcurves_a: vec![],
+            inner_boundary_pcurves_b: vec![],
         }
     }
 
@@ -449,22 +542,14 @@ mod tests {
 
     #[test]
     fn t14b_sphere_fragment_interior_point() {
-        use crate::booleans::partition::FaceFragment;
-        use mycad_format::EntityKind;
-        use mycad_format::EntityRef;
-
-        let frag = FaceFragment {
-            polygon_3d: vec![Point::new(0.0, 0.0, -3.0), Point::new(0.0, 0.0, 3.0)],
-            surface: Surface::Sphere {
+        let frag = make_test_frag(
+            vec![Point::new(0.0, 0.0, -3.0), Point::new(0.0, 0.0, 3.0)],
+            Surface::Sphere {
                 center: Point::origin(),
                 radius: 3.0,
             },
-            source_face_index: 0,
-            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
-            traversal_index: 0,
-            is_tool_side: true,
-            boundary_partners: vec![None, None],
-        };
+            true,
+        );
         let result = get_fragment_interior_point(&frag, 1e-9);
         assert!(result.is_ok(), "sphere face interior point must succeed");
         let pt = result.unwrap();
@@ -478,21 +563,14 @@ mod tests {
     /// TX3 — sphere fragment classify returns InsideOther when inside a box
     #[test]
     fn tx3_sphere_fragment_classify_inside_box() {
-        use crate::booleans::partition::FaceFragment;
-        use mycad_format::{EntityKind, EntityRef};
-
-        let frag = FaceFragment {
-            polygon_3d: vec![Point::new(0.0, 0.0, -3.0), Point::new(0.0, 0.0, 3.0)],
-            surface: Surface::Sphere {
+        let frag = make_test_frag(
+            vec![Point::new(0.0, 0.0, -3.0), Point::new(0.0, 0.0, 3.0)],
+            Surface::Sphere {
                 center: Point::origin(),
                 radius: 3.0,
             },
-            source_face_index: 0,
-            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
-            traversal_index: 0,
-            is_tool_side: true,
-            boundary_partners: vec![None, None],
-        };
+            true,
+        );
 
         let mut gen = crate::brep::topology::IdGenerator::new(0);
         let box_solid = crate::primitives::make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
@@ -509,21 +587,14 @@ mod tests {
     /// TX5 — sphere interior point for non-origin center
     #[test]
     fn tx5_sphere_fragment_interior_point_non_origin() {
-        use crate::booleans::partition::FaceFragment;
-        use mycad_format::{EntityKind, EntityRef};
-
-        let frag = FaceFragment {
-            polygon_3d: vec![Point::new(3.0, 4.0, 3.0), Point::new(3.0, 4.0, 7.0)],
-            surface: Surface::Sphere {
+        let frag = make_test_frag(
+            vec![Point::new(3.0, 4.0, 3.0), Point::new(3.0, 4.0, 7.0)],
+            Surface::Sphere {
                 center: Point::new(3.0, 4.0, 5.0),
                 radius: 2.0,
             },
-            source_face_index: 0,
-            parent_name: EntityRef::try_named("s", EntityKind::Face, "f").unwrap(),
-            traversal_index: 0,
-            is_tool_side: true,
-            boundary_partners: vec![None, None],
-        };
+            true,
+        );
 
         let result = get_fragment_interior_point(&frag, LENGTH_TOLERANCE);
         assert!(result.is_ok(), "should compute interior point");

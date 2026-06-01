@@ -1,0 +1,18 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Box Cut Cylinder (Blind Hole)"
+  features:
+    - type: create_box
+      id: box1
+      width: 10.0
+      height: 10.0
+      depth: 10.0
+    - type: create_cylinder
+      id: cyl1
+      radius: 2.0
+      height: 6.0
+    - type: cut
+      id: cut1
+      target: box1
+      tool: cyl1

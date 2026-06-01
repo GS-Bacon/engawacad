@@ -1,0 +1,1 @@
+{"issue": 31, "slug": "pcurve-numeric-model", "steps": {"design_review": "passed", "glm_impl": "passed", "final_review": "passed", "merge": "passed"}, "loops": {"design_loops": 4, "glm_impl": 4, "final_loops": 2}, "judgments": [{"round": 1, "adopted": 2, "rejected": 0}, {"round": 2, "adopted": 3, "rejected": 0}, {"round": 3, "adopted": 3, "rejected": 1}]}
