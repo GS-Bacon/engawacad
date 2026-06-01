@@ -9,6 +9,15 @@
             "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/guard-crates.ts"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/guard-crates.ts"
+          }
+        ]
       }
     ]
   }

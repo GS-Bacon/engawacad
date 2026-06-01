@@ -48,6 +48,7 @@ bun .claude/skills/3ai/scripts/init-feature.ts --issue $ISSUE_NUM --slug $ISSUE_
 - **設計方針**: 決定性要件・B-rep トポロジー妥当性（Euler-Poincaré V-E+F=2）・退化幾何の扱い・derive 規約・エラーハンドリング・workspace.dependencies
 - **テスト計画（ID 付き）**: T01 決定性、T02〜正常系、エッジケース、golden YAML
 - **幾何的不変条件チェックリスト**: Boolean/Partition/Assemble 系のみ（非該当は N/A）
+- **既存関数を編集する場合**: plan.md の「実装対象」または「実装順序」セクションに、**修正箇所ごとに before / after コードスニペット**を含めること。新規ファイル・新規関数の追加のみで完結する Issue では不要。
 
 ---
 
@@ -161,10 +162,41 @@ git checkout -b cad/$ISSUE_NUM-$ISSUE_SLUG
 
 ---
 
+## STEP 5.5: Acceptance Test Skeleton 作成（Claude が書く）
+
+**目的**: plan.md のテスト計画（T01〜）を元に `#[ignore]` 付きスケルトンを先行して置くことで、「テストなしで CI グリーン」という偽陽性を排除する。
+
+**配置先**: `crates/<crate>/tests/<feature>_acceptance.rs`（integration test 限定）
+> ⚠️ inline `#[cfg(test)] mod tests` への書き込みはパスベース guard では緩和できないため対象外。inline test の追加は STEP 6 で GLM 担当。
+
+1. `features/$ISSUE_NUM-$ISSUE_SLUG/plan.md` のテスト計画 ID 表を読む
+2. 対象クレートの `crates/<crate>/tests/<feature>_acceptance.rs` を **Write** する（guard の `tests/` 緩和により Claude が直接書ける）:
+
+```rust
+#[test]
+#[ignore = "STEP 6 で実装後に解除"]
+fn t01_determinism() { todo!() }
+
+#[test]
+#[ignore = "STEP 6 で実装後に解除"]
+fn t02_build_manifold_euler() { todo!() }
+// テスト計画の全 ID 分を列挙する（関数名は t<NN>_<内容> に合わせる）
+```
+
+3. `cargo test --workspace 2>&1 | head -20` でスケルトンがコンパイルエラーなく通ることを確認（ignored は OK）
+4. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
+
+---
+
 ## STEP 6: GLM-5.1 コア実装（背景実行・自動エスカレーション付き）
 
 **目的**: コア機能の実装 + plan T01〜のうち決定性・正常系の最小テスト。  
 **ループ定数**: `GLM_MAX_LOOPS=3`（通常試行上限）、`ESC_MAX_LOOPS=1`（debug-spec 付き再 dispatch 上限）
+
+**ゲート:**
+```bash
+bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton
+```
 
 ### 6-A: コア実装ループ（最大 3 回）
 
@@ -183,6 +215,8 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
 
 **`run_in_background: true` で起動し、完了通知を待つ（ポーリングしない）。**
 
+**GLM 実装条件**: `tests/<feature>_acceptance.rs` のスケルトンをコンパイルエラーなく維持しつつ、実装完了したテスト関数から `#[ignore]` を外すこと。
+
 ### 6-B: 結果判定と早期エスカレーション判定
 
 `glm-result.json` を読んで:
@@ -196,7 +230,7 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
 ### 6-C: Claude デバッグアシスト（debug-spec 作成）
 
 `features/$ISSUE_NUM-$ISSUE_SLUG/ci.log` と `crates/**` の関連ファイルを **Read** して根本原因を分析する。  
-`features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` を **Write** する（セクション: **仮説 / 関連ファイル / 修正方針 / 追加で書いてほしいテスト**）。  
+`features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` を **追記** する（2 回目以降は既存内容を保持して `試した修正と結果` のチェックをつける）。セクション: **仮説 / 関連ファイル / 修正方針 / 試した修正と結果 / 次にやること / 追加で書いてほしいテスト**  
 6-A に戻り `--debug-spec` 付きで dispatch（ESC_MAX_LOOPS=1 のため 1 回まで）。
 
 ### 6-D: 終結判定
