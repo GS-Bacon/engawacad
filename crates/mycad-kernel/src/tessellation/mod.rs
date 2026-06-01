@@ -309,8 +309,11 @@ fn tessellate_face_earcut(
         mesh.normals.push(nm);
     }
 
-    for idx in indices {
-        mesh.indices.push(base_idx + idx as u32);
+    // Reverse earcut triangle winding to match fan tessellation convention (CW = negative signed vol)
+    for chunk in indices.chunks(3) {
+        mesh.indices.push(base_idx + chunk[0] as u32);
+        mesh.indices.push(base_idx + chunk[2] as u32);
+        mesh.indices.push(base_idx + chunk[1] as u32);
     }
 
     Ok(())
@@ -470,8 +473,9 @@ fn tessellate_face_sphere(
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
 ) -> Result<(), TessellationError> {
+    // If inner loops exist, delegate to trimmed sphere tessellation
     if !face.inner_loops.is_empty() {
-        return Err(TessellationError::TrimmedFaceUnsupported);
+        return tessellate_sphere_face_trimmed(solid, face, opts, mesh);
     }
 
     let outer_loop = &solid.loops[face.outer_loop];
@@ -664,6 +668,147 @@ fn tessellate_face_sphere(
         }
     }
 
+    Ok(())
+}
+
+/// Tessellate a sphere face with inner loops (trimmed by intersection).
+///
+/// Uses restricted v-range UV grid sampling. The latitude (v_lat) of the
+/// inner loop circle is extracted from the edge geometry. The trim direction
+/// is determined from the relative position of the cutting plane to the sphere center.
+fn tessellate_sphere_face_trimmed(
+    solid: &Solid,
+    face: &crate::brep::topology::Face,
+    opts: &TessellationOptions,
+    mesh: &mut TriangleMesh,
+) -> Result<(), TessellationError> {
+    let Surface::Sphere {
+        center: sph_center,
+        radius: sph_radius,
+    } = &face.surface
+    else {
+        return Err(TessellationError::UnsupportedSurface { kind: "non-sphere" });
+    };
+    let radius = *sph_radius;
+    let center = *sph_center;
+
+    // Validate inner loop structure: exactly 1 inner loop with ≥2 HEs
+    if face.inner_loops.len() != 1 {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+    let il_idx = face.inner_loops[0];
+    let il = &solid.loops[il_idx];
+    if il.half_edges.len() < 2 {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    }
+    let he = &solid.half_edges[il.half_edges[0]];
+    let edge = &solid.edges[he.edge];
+    let Curve::Circle {
+        center: circ_center,
+        normal: circ_normal,
+        radius: circ_radius,
+    } = &edge.curve
+    else {
+        return Err(TessellationError::TrimmedFaceUnsupported);
+    };
+
+    // The circle center z gives us the latitude
+    let center_z = circ_center.coords.z;
+    // v_lat = asin((center_z - sph_center_z) / R)
+    let rel_z = (center_z - center.coords.z) / radius;
+    let rel_z = rel_z.clamp(-1.0, 1.0);
+    let v_lat = rel_z.asin();
+
+    // Determine trim direction: if cutting plane normal is +Z and plane is above center,
+    // the lower cap remains. If below center, the upper cap remains.
+    // The circ_normal indicates the plane normal direction.
+    let trim_lower = circ_normal.z > 0.0;
+
+    let n_u = opts.angular_segments.max(3);
+    let n_v = (n_u / 2).max(2);
+
+    let base_idx = mesh.positions.len() as u32;
+    let du = 2.0 * PI / n_u as f64;
+
+    // Determine v range based on trim direction
+    let (v_boundary, pole_v) = if trim_lower {
+        (v_lat, -PI / 2.0) // lower cap: v_lat → south pole
+    } else {
+        (v_lat, PI / 2.0) // upper cap: v_lat → north pole
+    };
+
+    // Sample the latitude ring (v = v_lat boundary)
+    let ring_start = mesh.positions.len() as u32;
+    for iu in 0..n_u {
+        let u = du * iu as f64;
+        let p = face.surface.evaluate(u, v_boundary);
+        let normal = face.surface.normal_at(u, v_boundary);
+        mesh.positions.push([p.x, p.y, p.z]);
+        mesh.normals.push(normal_arr(&normal, face.same_sense));
+    }
+
+    // Sample internal rings between v_boundary and pole
+    for iv in 1..n_v {
+        let frac = iv as f64 / n_v as f64;
+        let v = v_boundary + (pole_v - v_boundary) * frac;
+        let ring_base = mesh.positions.len() as u32;
+        for iu in 0..n_u {
+            let u = du * iu as f64;
+            let p = face.surface.evaluate(u, v);
+            let normal = face.surface.normal_at(u, v);
+            mesh.positions.push([p.x, p.y, p.z]);
+            mesh.normals.push(normal_arr(&normal, face.same_sense));
+        }
+        // Triangles between this ring and previous ring (or boundary ring)
+        let prev_start = if iv == 1 {
+            ring_start
+        } else {
+            ring_base - n_u as u32
+        };
+        for iu in 0..n_u {
+            let a0 = prev_start + iu as u32;
+            let a1 = prev_start + ((iu + 1) % n_u) as u32;
+            let b0 = ring_base + iu as u32;
+            let b1 = ring_base + ((iu + 1) % n_u) as u32;
+            if face.same_sense {
+                push_triangle(mesh, a0, a1, b0);
+                push_triangle(mesh, a1, b1, b0);
+            } else {
+                push_triangle(mesh, a0, b0, a1);
+                push_triangle(mesh, a1, b0, b1);
+            }
+        }
+    }
+
+    // Pole vertex + fan
+    let pole_p = face.surface.evaluate(0.0, pole_v);
+    let pole_normal = face.surface.normal_at(0.0, pole_v);
+    let pole_idx = mesh.positions.len() as u32;
+    mesh.positions.push([pole_p.x, pole_p.y, pole_p.z]);
+    mesh.normals.push(normal_arr(&pole_normal, face.same_sense));
+
+    let last_ring_start = mesh.positions.len() as u32 - 1 - n_u as u32;
+    for iu in 0..n_u {
+        let cur = last_ring_start + iu as u32;
+        let next = last_ring_start + ((iu + 1) % n_u) as u32;
+        if trim_lower {
+            // south pole fan
+            if face.same_sense {
+                push_triangle(mesh, pole_idx, next, cur);
+            } else {
+                push_triangle(mesh, pole_idx, cur, next);
+            }
+        } else {
+            // north pole fan
+            if face.same_sense {
+                push_triangle(mesh, cur, next, pole_idx);
+            } else {
+                push_triangle(mesh, next, cur, pole_idx);
+            }
+        }
+    }
+
+    let _ = (circ_radius, base_idx);
     Ok(())
 }
 

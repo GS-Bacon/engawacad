@@ -201,8 +201,8 @@ pub fn assemble(
     }
 
     // Build edges for inner polygon boundaries (ring face holes)
-    for (fi, _cf) in selected.iter().enumerate() {
-        for inner_vis in &frag_inner_vertex_indices[fi] {
+    for (fi, cf) in selected.iter().enumerate() {
+        for (ii, inner_vis) in frag_inner_vertex_indices[fi].iter().enumerate() {
             let m = inner_vis.len();
             for k in 0..m {
                 let vi_start = inner_vis[k];
@@ -211,17 +211,14 @@ pub fn assemble(
                 if let std::collections::hash_map::Entry::Vacant(e) = edge_map.entry(key) {
                     let p0 = solid.vertices[vi_start].point;
                     let p1 = solid.vertices[vi_end].point;
-                    let direction = p1 - p0;
-                    let edge_idx = solid.add_edge(
-                        id_gen.next(),
-                        [vi_start, vi_end],
-                        Curve::Line {
-                            origin: p0,
-                            direction,
-                        },
-                        [0.0, 1.0],
-                        None,
-                    );
+                    let inner_curve_opt = cf
+                        .fragment
+                        .inner_boundary_curves
+                        .get(ii)
+                        .and_then(|curves| curves.get(k));
+                    let (curve, t_range) = circle_curve_for_edge(inner_curve_opt, &p0, &p1);
+                    let edge_idx =
+                        solid.add_edge(id_gen.next(), [vi_start, vi_end], curve, t_range, None);
                     e.insert(edge_idx);
                 }
             }
@@ -295,8 +292,8 @@ pub fn assemble(
             if let Surface::Plane { normal, .. } = &mut frag_surface {
                 *normal = -*normal;
             }
-            // Self-adjacent periodic sphere face: same_sense=false gives negative volume.
-            // reverse_face_orientation is skipped for sphere void faces (handled below).
+            // Sphere caps (trimmed sphere, same_sense=false) need outward-sphere normals
+            // so tessellation contributes negative signed volume (CW winding convention).
             !matches!(frag_surface, Surface::Sphere { .. })
         } else {
             true

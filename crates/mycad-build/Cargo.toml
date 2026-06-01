@@ -12,3 +12,4 @@ mycad-kernel = { workspace = true }
 
 [dev-dependencies]
 mycad-format = { workspace = true }
+serde_json = { workspace = true }

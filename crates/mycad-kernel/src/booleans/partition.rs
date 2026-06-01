@@ -227,6 +227,10 @@ pub fn partition_faces(
     // Phase A: For each face, collect intersection segments with all non-coplanar partner faces
     let mut target_fragments = Vec::new();
     let mut tool_fragments = Vec::new();
+    // Counts how many target plane faces produced an interior circle from each sphere tool face.
+    // Used to (a) detect multi-plane intersection and (b) skip the degenerate pass-through.
+    let mut sphere_plane_interior_count: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
 
     // Process target faces
     for fi in 0..target.faces.len() {
@@ -272,6 +276,7 @@ pub fn partition_faces(
         let surface = &face.surface;
 
         let mut segments: Vec<IntersectionSegment> = Vec::new();
+        let mut sphere_tool_face_ui: Option<usize> = None;
 
         for ui in 0..tool.faces.len() {
             if coplanar_tool_set[ui] {
@@ -302,6 +307,36 @@ pub fn partition_faces(
             };
             if isect_loops.is_empty() {
                 continue;
+            }
+
+            if tool_is_sph {
+                sphere_tool_face_ui = Some(ui);
+            }
+
+            // Guard: Plane×Sphere great circle (d ≈ 0) → reject
+            if (is_sph && matches!(tool_surface, Surface::Plane { .. }))
+                || (matches!(surface, Surface::Plane { .. }) && tool_is_sph)
+            {
+                if let (
+                    Surface::Plane {
+                        origin: pl_orig,
+                        normal: pl_norm,
+                        ..
+                    },
+                    Surface::Sphere { center: sph_c, .. },
+                ) = if matches!(surface, Surface::Plane { .. }) && tool_is_sph {
+                    (surface, tool_surface)
+                } else {
+                    (tool_surface, surface)
+                } {
+                    let d = (sph_c.coords - pl_orig.coords).dot(&pl_norm.normalize());
+                    if d.abs() < LENGTH_TOLERANCE {
+                        return Err(
+                            "unsupported boolean case: plane through sphere center (great circle)"
+                                .to_string(),
+                        );
+                    }
+                }
             }
 
             // Convert each intersection loop to line segments for the PSLG
@@ -384,11 +419,6 @@ pub fn partition_faces(
                         });
                     }
                     crate::geometry::curve::Curve::Circle { .. } => {
-                        // Skip Plane×Sphere (deferred to #40)
-                        if is_sph || tool_is_sph {
-                            continue;
-                        }
-
                         // For Plane×Cylinder: skip if the intersection plane is outside
                         // the tool cylinder face's finite height range.
                         if tool_is_cyl {
@@ -439,31 +469,57 @@ pub fn partition_faces(
                             if chord_len < len_eps {
                                 continue;
                             }
-                            let Some((clipped_s, clipped_e)) =
-                                clip_line_to_polygon_2d_given_points(s_a, s_b, polygon_2d)
-                            else {
-                                continue;
-                            };
-                            let cl = ((clipped_e.0 - clipped_s.0).powi(2)
-                                + (clipped_e.1 - clipped_s.1).powi(2))
-                            .sqrt();
-                            if cl < len_eps {
-                                continue;
+                            if !tool_is_cyl && !tool_is_sph {
+                                let Some((clipped_s, clipped_e)) =
+                                    clip_line_to_polygon_2d_given_points(s_a, s_b, polygon_2d)
+                                else {
+                                    continue;
+                                };
+                                let cl = ((clipped_e.0 - clipped_s.0).powi(2)
+                                    + (clipped_e.1 - clipped_s.1).powi(2))
+                                .sqrt();
+                                if cl < len_eps {
+                                    continue;
+                                }
+                                segments.push(IntersectionSegment {
+                                    p_start: clipped_s,
+                                    p_end: clipped_e,
+                                    partner: tool_face_name.clone(),
+                                    source_curve_3d: Some(circle_3d.clone()),
+                                    curve_3d_t_range: [ta, tb],
+                                    pcurve_on_a: Some(pc_a.clone()),
+                                    pcurve_on_a_t_range: [ta, tb],
+                                    pcurve_on_b: Some(pc_b.clone()),
+                                    pcurve_on_b_t_range: [ta, tb],
+                                });
+                            } else {
+                                segments.push(IntersectionSegment {
+                                    p_start: s_a,
+                                    p_end: s_b,
+                                    partner: tool_face_name.clone(),
+                                    source_curve_3d: Some(circle_3d.clone()),
+                                    curve_3d_t_range: [ta, tb],
+                                    pcurve_on_a: Some(pc_a.clone()),
+                                    pcurve_on_a_t_range: [ta, tb],
+                                    pcurve_on_b: Some(pc_b.clone()),
+                                    pcurve_on_b_t_range: [ta, tb],
+                                });
                             }
-                            segments.push(IntersectionSegment {
-                                p_start: clipped_s,
-                                p_end: clipped_e,
-                                partner: tool_face_name.clone(),
-                                source_curve_3d: Some(circle_3d.clone()),
-                                curve_3d_t_range: [ta, tb],
-                                pcurve_on_a: Some(pc_a.clone()),
-                                pcurve_on_a_t_range: [ta, tb],
-                                pcurve_on_b: Some(pc_b.clone()),
-                                pcurve_on_b_t_range: [ta, tb],
-                            });
                         }
                     }
                 }
+            }
+        }
+
+        // Guard: Sphere face intersected by multiple distinct plane faces → reject
+        if matches!(surface, Surface::Sphere { .. }) && !segments.is_empty() {
+            let mut partner_keys: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for seg in &segments {
+                partner_keys.insert(format!("{:?}", seg.partner));
+            }
+            if partner_keys.len() > 1 {
+                return Err("unsupported boolean case: multi-plane sphere intersection".to_string());
             }
         }
 
@@ -519,7 +575,7 @@ pub fn partition_faces(
                 target_fragments.push(FaceFragment {
                     source_face_index: fi,
                     polygon_3d: polygon_3d.clone(),
-                    inner_polygons_3d: vec![inner_poly_3d],
+                    inner_polygons_3d: vec![inner_poly_3d.clone()],
                     surface: surface.clone(),
                     parent_name: name.clone(),
                     traversal_index: 0,
@@ -578,6 +634,63 @@ pub fn partition_faces(
                     inner_boundary_pcurves_a: vec![],
                     inner_boundary_pcurves_b: vec![],
                 });
+                // Plane×Sphere: create sphere cap fragment and detect multi-plane
+                if let Some(sph_ui) = sphere_tool_face_ui {
+                    let count = sphere_plane_interior_count.entry(sph_ui).or_insert(0);
+                    *count += 1;
+                    if *count > 1 {
+                        return Err(
+                            "unsupported boolean case: multi-plane sphere intersection".to_string()
+                        );
+                    }
+                    let sph_face = &tool.faces[sph_ui];
+                    let sph_name = sph_face
+                        .name
+                        .clone()
+                        .ok_or_else(|| format!("tool sphere face {} missing name", sph_ui))?;
+                    let sph_polygon_3d = &tool_polygons_3d[sph_ui];
+                    let n_seam = sph_polygon_3d.len();
+                    let seam_curves: Vec<Option<Curve>> = {
+                        let ol = &tool.loops[sph_face.outer_loop];
+                        ol.half_edges
+                            .iter()
+                            .map(|he_idx| {
+                                let he = &tool.half_edges[*he_idx];
+                                Some(tool.edges[he.edge].curve.clone())
+                            })
+                            .collect()
+                    };
+                    let mut sphere_inner_poly_3d = inner_poly_3d.clone();
+                    sphere_inner_poly_3d.reverse();
+                    let n_inner = sphere_inner_poly_3d.len();
+                    let circle_curve_opt =
+                        circle_segs.first().and_then(|s| s.source_curve_3d.clone());
+                    let inner_curves: Vec<Option<Curve>> =
+                        (0..n_inner).map(|_| circle_curve_opt.clone()).collect();
+                    let inner_tr: Vec<[f64; 2]> = (0..n_inner)
+                        .map(|_| [0.0, 2.0 * std::f64::consts::PI])
+                        .collect();
+                    let inner_partners: Vec<Option<EntityRef>> = vec![Some(name.clone()); n_inner];
+                    tool_fragments.push(FaceFragment {
+                        source_face_index: sph_ui,
+                        polygon_3d: sph_polygon_3d.clone(),
+                        inner_polygons_3d: vec![sphere_inner_poly_3d],
+                        surface: sph_face.surface.clone(),
+                        parent_name: sph_name,
+                        traversal_index: 0,
+                        is_tool_side: true,
+                        boundary_partners: vec![None; n_seam],
+                        boundary_curves: seam_curves,
+                        boundary_t_ranges: vec![[0.0, 1.0]; n_seam],
+                        boundary_pcurves_a: vec![None; n_seam],
+                        boundary_pcurves_b: vec![None; n_seam],
+                        inner_boundary_partners: vec![inner_partners],
+                        inner_boundary_curves: vec![inner_curves],
+                        inner_boundary_t_ranges: vec![inner_tr],
+                        inner_boundary_pcurves_a: vec![vec![None; n_inner]],
+                        inner_boundary_pcurves_b: vec![vec![None; n_inner]],
+                    });
+                }
             } else {
                 // Standard PSLG subdivision (line segments or circle segments crossing boundary)
                 let sub_faces = pslg_subdivide(polygon_2d, &segments, plane_data);
@@ -623,6 +736,11 @@ pub fn partition_faces(
 
         // Degenerate polygon (circular face with <3 loop vertices) — pass through as-is
         if polygon_2d.len() < 3 {
+            // Sphere faces that already received an interior-circle cap in the first loop
+            // must not be pushed again as bare pass-through fragments.
+            if sphere_plane_interior_count.contains_key(&fi) {
+                continue;
+            }
             let name = face
                 .name
                 .clone()
@@ -757,11 +875,6 @@ pub fn partition_faces(
                         });
                     }
                     crate::geometry::curve::Curve::Circle { .. } => {
-                        // Skip Plane×Sphere (deferred to #40)
-                        if is_sph || target_is_sph {
-                            continue;
-                        }
-
                         let n_chords = ANGULAR_SEGMENTS_DEFAULT;
                         let t0 = iloop.t_range[0];
                         let t1 = iloop.t_range[1];
@@ -784,11 +897,11 @@ pub fn partition_faces(
                             if chord_len < len_eps {
                                 continue;
                             }
-                            // For Cylinder tool faces, the UV polygon is self-intersecting
+                            // For Cylinder / Sphere tool faces, the UV polygon is self-intersecting
                             // due to the seam (u = atan2 jumps at π). Skip the UV clip
-                            // check; the Cylinder branch reconstructs fragments directly
-                            // in 3D using the circle curve and height range.
-                            if !is_cyl {
+                            // check; the Cylinder/Sphere branch reconstructs fragments directly
+                            // in 3D using the circle curve.
+                            if !is_cyl && !is_sph {
                                 let Some((clipped_s, clipped_e)) =
                                     clip_line_to_polygon_2d_given_points(s_a, s_b, polygon_2d)
                                 else {
@@ -1941,7 +2054,18 @@ mod tests {
     fn t15_cyl_sph_face_pair_skipped() {
         let mut gen = IdGenerator::new(0);
         let mut cylinder = make_cylinder(2.0, 4.0, &mut gen).unwrap();
-        let sphere = make_sphere(3.0, &mut gen).unwrap();
+        // Sphere R=1 at z=2: sits inside the cylinder (cyl R=2), d=2 to each cap > R=1
+        // so sphere does not intersect the cylinder cap planes, only the lateral face is relevant.
+        let mut sphere = make_sphere(1.0, &mut gen).unwrap();
+        for v in &mut sphere.vertices {
+            v.point.coords.z += 2.0;
+        }
+        // Also offset sphere surface center
+        for f in &mut sphere.faces {
+            if let Surface::Sphere { center, .. } = &mut f.surface {
+                center.coords.z += 2.0;
+            }
+        }
         ensure_names(&mut cylinder, "cyl");
 
         let result = partition_faces(&cylinder, &sphere, BooleanOp::Cut);

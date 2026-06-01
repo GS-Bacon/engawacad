@@ -105,20 +105,30 @@ fn get_fragment_interior_point(frag: &FaceFragment, _len_eps: f64) -> Result<Poi
     let poly = &frag.polygon_3d;
     if poly.len() < 3 {
         // Self-adjacent periodic sphere face: outer_loop has only 2 vertices (poles).
-        // Use the equatorial point at u=π/2, v=0 (away from the +X seam) as interior point.
         if let Surface::Sphere { center, radius } = &frag.surface {
+            // Trimmed sphere cap: use the pole on the cap side (inside the target solid).
+            if !frag.inner_polygons_3d.is_empty() && !frag.inner_polygons_3d[0].is_empty() {
+                let inner_z: f64 = frag.inner_polygons_3d[0].iter().map(|p| p.z).sum::<f64>()
+                    / frag.inner_polygons_3d[0].len() as f64;
+                if inner_z < center.z {
+                    return Ok(Point::new(center.x, center.y, center.z - radius));
+                } else {
+                    return Ok(Point::new(center.x, center.y, center.z + radius));
+                }
+            }
             return Ok(Point::new(center.x, center.y + radius, center.z));
         }
         return Err("fragment has < 3 vertices".to_string());
     }
 
-    // Ring fragment: outer centroid may fall inside the circular hole.
-    // Use the midpoint between a corner of the outer polygon and the first
-    // inner polygon vertex instead — guaranteed to be in the annular region.
+    // Ring fragment: pick a point near the outer boundary to stay outside the carved region.
     if !frag.inner_polygons_3d.is_empty() && !frag.inner_polygons_3d[0].is_empty() {
         let outer_pt = &poly[0];
         let inner_pt = &frag.inner_polygons_3d[0][0];
-        return Ok(Point::from((outer_pt.coords + inner_pt.coords) / 2.0));
+        let t = 0.1_f64;
+        return Ok(Point::from(
+            outer_pt.coords * (1.0 - t) + inner_pt.coords * t,
+        ));
     }
 
     let surface = &frag.surface;
@@ -215,6 +225,10 @@ fn count_ray_face_intersections(
                     if v_hit >= v_min - len_eps && v_hit <= v_max + len_eps {
                         count += 1;
                     }
+                }
+                Surface::Sphere { .. } => {
+                    // Full sphere face covers the entire sphere surface — always count valid hits.
+                    count += 1;
                 }
                 _ => {
                     // Curved face: project to 2D using UV and do 2D point-in-polygon

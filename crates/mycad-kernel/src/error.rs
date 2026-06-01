@@ -73,4 +73,7 @@ pub enum KernelError {
 
     #[error("unsupported surface intersection: {reason}")]
     UnsupportedSurfaceIntersection { reason: &'static str },
+
+    #[error("unsupported boolean case: {reason}")]
+    UnsupportedBooleanCase { reason: &'static str },
 }
