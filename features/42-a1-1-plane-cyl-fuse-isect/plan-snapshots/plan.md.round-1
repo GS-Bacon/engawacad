@@ -1,0 +1,212 @@
+## Non-Goals
+
+- **Plane×Sphere の Fuse / Intersect** — A2.1 として別 Issue (`partition.rs` の sphere 経路は A2 で別実装、本 Issue では触らない)
+- **Cylinder×Cylinder / Cylinder×Sphere / Sphere×Sphere** — A3/A4 として別 Issue (`partition.rs:288-298` 等の `Cylinder × Cylinder` / `Cylinder × Sphere` skip は維持)
+- **非 Z-aligned plane** — `intersect_plane_cylinder` MVP 制約 (plane normal ⊥ cylinder axis 必須) を維持。違反は既存の `UnsupportedSurfaceIntersection`
+- **cylinder 軸が Z 以外** — A1 と同じ scope 防衛、`UnsupportedSurfaceIntersection`
+- **複数 plane で cylinder を切る分岐 (multi-plane intersection)** — `KernelError::UnsupportedBooleanCase` で reject (A1 と同扱い)
+- **Cylinder 側面に inner_loop が出るケース** — Plane×Cylinder Fuse/Intersect では cylinder lateral の outer_loop が trim 多角形になるだけで inner_loop は不要。万一発生したら `TrimmedFaceUnsupported`
+- **earcut 構造改修・既存 `tessellate_face_uv_grid` の I/F 変更** — 既存パスがそのまま機能する想定なので触らない。動かなければ最小修正
+- **partition.rs の `_op: BooleanOp` を `op` へ rename** — 引数名のみ変更、本質的な op 分岐は assemble に局在しているため partition では未使用維持
+- **viewer 目視確認** — #35 (Phase 4 close gate) に委譲、本 Issue では `mycad export` で STL > 1KB を確認
+
+## 実装対象
+
+<!-- Issue: #42 -->
+<!-- 影響クレート: mycad-kernel (検証目的の修正があれば), mycad-build (テスト), examples (新規 2 ファイル) -->
+
+**Phase 1 (テスト先行・検証)** — 既存コードを変えずに以下のみ追加:
+
+- `crates/mycad-build/tests/plane_cyl_fuse_isect_acceptance.rs` — A1.1 acceptance skeleton (`#[ignore]` 付き、STEP 5.5 で Claude が配置、STEP 6 で GLM が解除)
+- `crates/mycad-build/tests/feature_dispatcher.rs` — Fuse/Intersect 統合テスト 11 件追加 (T01-T11, 詳細は下記テスト計画)
+- `examples/boolean_fuse_box_cyl.mycad` — Fuse 用 example (T12 で smoke)
+- `examples/boolean_intersect_box_cyl.mycad` — Intersect 用 example (T12 で smoke)
+
+**Phase 2 (検証で炙り出された問題のみ修正)** — 以下は **発生時のみ** 触る (現時点では変更不要の見込み、想定箇所のみ列挙):
+
+- `crates/mycad-kernel/src/booleans/partition.rs:1098-1163` — Cylinder lower/upper fragment の boundary_curves/partners 整合 (現状は両方 push 済み、Cut でしか検証されていない)
+- `crates/mycad-kernel/src/booleans/assemble.rs:418` — void shell の `reverse_face_orientation` 経路で cylinder lateral が誤反転されないか
+- `crates/mycad-kernel/src/tessellation/mod.rs:368-462` (`tessellate_face_uv_grid`) — upper fragment (v=v_cut..v_top) で `total_circle_span` チェック・`v_min/v_max` corner 算出が正しく動くか
+
+### 既存関数の編集 — 新規追加のみで完結予定
+
+Phase 1 では既存関数の編集なし(テスト + example 新規追加のみ)。
+Phase 2 で修正が必要になった場合は、本ファイル末尾の「**Phase 2 修正履歴**」セクションに STEP β/γ/… として before/after を追記する。
+
+## 設計方針
+
+### 1. なぜ「変更不要」と判定したか — 調査結果
+
+以下のコードレビューに基づき、A1 で動いた経路は Fuse/Intersect でも動く想定:
+
+#### 1-A. partition.rs は op 中立
+
+- `partition_faces(target, tool, _op: BooleanOp)` (`partition.rs:131-135`) は `_op` 受け取るが未使用
+- Cylinder 経路 (`partition.rs:1001-1165`) は `lower_fragment` (v_bot..v_cut, `traversal_index: 0`) と `upper_fragment` (v_cut..v_top, `traversal_index: 1`) の **両方を常に `tool_fragments.push`** 済み
+- `boundary_partners` / `boundary_curves` も両 fragment で対称に設定済み (`:1086-1096` lower, `:1134-1143` upper)
+
+#### 1-B. assemble.rs selection matrix が全 op を網羅
+
+```rust
+// assemble.rs:26-45 (現状)
+matches!((op, is_tool, label),
+    (Cut,      false, OutsideOther)        // target の box 外側
+  | (Cut,      false, SharedOppositeDirection)
+  | (Cut,      true,  InsideOther)         // tool の cylinder lower (cap 化)
+  | (Fuse,     false, OutsideOther)        // target の box 外側
+  | (Fuse,     false, SharedSameDirection)
+  | (Fuse,     true,  OutsideOther)        // tool の cylinder upper (box 外側 lateral)
+  | (Intersect,false, InsideOther)         // target の box 内側
+  | (Intersect,false, SharedSameDirection)
+  | (Intersect,true,  InsideOther))        // tool の cylinder lower (box 内側 lateral)
+```
+
+- Fuse: tool 側 `OutsideOther` 採用 → cylinder upper fragment (box の上に飛び出した lateral) が結果に組み込まれる
+- Intersect: tool 側 `InsideOther` 採用 → cylinder lower fragment (box との重なり lateral) が結果に組み込まれる
+
+#### 1-C. flip_normals は Cut 専用 → Fuse/Intersect で cylinder lateral は外向き normal が維持される
+
+```rust
+// assemble.rs:245-248 (現状)
+let flip_normals = matches!((op, is_tool, label), (BooleanOp::Cut, true, _));
+```
+
+Fuse/Intersect では cylinder lateral の `same_sense = true` のまま、外向き normal が保たれる。これは結果ソリッドの outward orientation として正しい。
+
+#### 1-D. circle_curve_for_edge が chord arc を正しく復元
+
+```rust
+// assemble.rs:439-474 (現状)
+// boundary_curves[k] = Some(Circle{..}) なら p0/p1 の角度から t0, t1 を atan2 で逆算
+// → cylinder lateral の Circle edge は per-chord の正しい [t0, t1] を持つ
+```
+
+これにより `tessellate_face_uv_grid` の `total_circle_span` 加算が「Circle 1 周分 = 2π」「Circle 2 周分 = 4π」と正しい整数倍になる(lower / upper ともに cut_circle + bot/top_circle の 2 周構成)。
+
+#### 1-E. tessellate_face_uv_grid の v_min/v_max 算出が upper fragment でも機能
+
+```rust
+// tessellation/mod.rs:404-417 (現状)
+let corner_uvs = outer_loop.half_edges.iter().map(|he| surface.uv_of(...)).collect();
+let v_min = corner_uvs.iter().map(|(_, v)| *v).fold(f64::MAX, f64::min);
+let v_max = corner_uvs.iter().map(|(_, v)| *v).fold(f64::MIN, f64::max);
+```
+
+upper fragment では corner UV の v は `{v_cut, v_top}` の集合 → `v_min = v_cut, v_max = v_top` で正しい範囲。
+
+### 2. テスト先行で「動かないこと」を炙り出す戦略
+
+partition / assemble / tessellation がいずれも op-agnostic に設計されているため、**ペーパー上は何も変更不要**。しかし「動くと書いてあるが Cut でしかテストしていない」状態のため:
+
+1. **STEP 5.5 で acceptance skeleton (`#[ignore]`) を先に配置** — テストなしで CI 緑になる偽陽性を排除
+2. **STEP 6 で GLM がテスト解除 → 失敗箇所を debug-spec へ** — Phase 2 修正は GLM のループで自動駆動
+3. **Phase 2 修正は最小限** — 想定外の構造改修にはガード (Non-Goals)
+
+### 3. 決定性要件
+
+- `partition.rs` の `ANGULAR_SEGMENTS_DEFAULT = 32` は固定定数 → chord 数決定的
+- `assemble.rs` の `vertex_map` / `edge_map` 構築順は `selected` イテレーション順依存 → 入力 IdGenerator 固定で決定的
+- `tessellate_face_uv_grid` の n_u, n_v は `TessellationOptions` から決定的
+- → **既存 A1 の決定性保証がそのまま継承される**
+
+### 4. B-rep トポロジー妥当性 (Euler-Poincaré)
+
+- `box(10³) ∪ cylinder(r=2, h=15, center=top)` — closed manifold genus-0 想定、V-E+F=2
+- `box(10³) ∩ cylinder(同上)` — 短円柱(h=box ∩ cylinder の重なり高さ)、genus-0、V-E+F=2
+- `validate_manifold` で確認 (`assemble.rs:430` 経由で全 build pass 後に走る)
+
+### 5. 退化幾何の扱い
+
+| ケース | 期待 |
+|--------|------|
+| tangent (`|d| = 0` で plane に cylinder lateral が接する) | `intersect_plane_cylinder` が空 → Boolean no-op |
+| disjoint (cylinder が box と全く交差しない) | partition で segment 0 件 → no-op |
+| 全 plane で複数交差 (multi-plane) | `KernelError::UnsupportedBooleanCase` (A1 と同扱い、partition 末尾の guard) |
+| cylinder 軸が plane と平行 (alignment 違反) | 既存 `UnsupportedSurfaceIntersection` |
+| 非 Z plane | 既存 `UnsupportedSurfaceIntersection` |
+
+### 6. derive 規約
+
+新規 public 型なし。既存 `IntersectionSegment` / `FaceFragment` の `pub(crate)` 維持。新規エラー variant も追加しない (既存 `MultipleOuterShellsResult` / `DisjointFuseResult` / `UnsupportedBooleanCase` を活用)。
+
+### 7. workspace.dependencies
+
+変更なし。
+
+## テスト計画（ID 付き）
+
+`crates/mycad-build/tests/feature_dispatcher.rs` 末尾に追加。`a11_*` プレフィクスで命名 (A1 は `a1_*`、A2 は `a2_*` 既存)。
+acceptance skeleton (`tests/plane_cyl_fuse_isect_acceptance.rs`) は同じ ID 体系で `#[ignore]` 付きで配置し、STEP 6 で解除。
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | `box(10³) ∪ cyl(r=2, h=15, axis=Z, center top)` を 2 回 build → Solid byte-identical YAML | `assert_eq!` |
+| T02 | 正常系・体積 (Fuse) | 同上 Fuse: V = V_box + V_cyl_outside ≈ 1000 + π·4·(15-5) ≈ 1000 + 40π ≈ 1125.66 (cylinder の box から飛び出した部分 5..15 = 高さ 10) | volume ±1.5 |
+| T03 | manifold (Fuse) | T02 結果が `validate_manifold` 緑、V-E+F=2 | `assert!` |
+| T04 | 正常系・体積 (Intersect) | `box(10³) ∩ cyl(同上)`: 短円柱 h_overlap=5 (top 面 z=10 から bottom z=5)、V = π·4·5 ≈ 62.83 | volume ±1.0 |
+| T05 | manifold (Intersect) | T04 結果が `validate_manifold` 緑、V-E+F=2 (closed cylinder genus-0) | `assert!` |
+| T06 | edge curve (Fuse) | Fuse 結果の intersection edge (cylinder lateral と box top の交差円) が `Curve::Circle { normal ≈ +Z, .. }` | match パターン |
+| T07 | edge curve (Intersect) | 同上 Intersect で `Curve::Circle` を持つ | 同上 |
+| T08 | 退化 tangent (Fuse) | cylinder が box top に外接 (center z=10+R 配置で plane disjoint) → no-op、結果は box そのまま | volume ≈ 1000 |
+| T09 | 退化 disjoint (Intersect) | cylinder が box と完全に離れた位置 → `EmptyBooleanResult` (Intersect の no-overlap は empty) | `assert_matches!` |
+| T10 | multi-plane reject (Fuse) | cylinder が box の上下両面を貫通 → `UnsupportedBooleanCase` | `assert_matches!` |
+| T11 | 非 Z plane reject (Intersect) | plane normal X 方向 + cyl axis Z → `UnsupportedSurfaceIntersection` (A1 と同) | `assert_matches!` |
+| T12 | example smoke | `examples/boolean_fuse_box_cyl.mycad` / `boolean_intersect_box_cyl.mycad` が `mycad export` で動作、STL > 1KB 各 | `assert!` (file size) |
+
+**幾何計算の補足** (T02, T04):
+
+- 構成: box `[0,10]³`、cylinder `axis=Z, radius=2, origin=(5,5,5), height=15` → cylinder は z=5..20 の範囲、box との重なりは z=5..10 (高さ 5)
+- Fuse 結果: box 全体 + cylinder の z=10..20 部分 (= 高さ 10 の cap-less cylinder)
+  - cylinder z=20 の top cap は残る (full disc Plane face)
+  - cylinder z=5 の bottom cap は box の内部にあり Fuse 結果には残らない (target box の OutsideOther で除外)
+  - V_fuse = 1000 + π·4·10 = 1000 + 40π
+- Intersect 結果: cylinder の z=5..10 部分 (短円柱、bottom cap z=5 は box の z=5 内部に重ならない…要確認)
+  - 実際の体積計算: cylinder の lower lateral (z=5..10) + box top face の cylinder 内側部分 (z=10 の cap) + cylinder bottom cap (z=5 で box 内部、`InsideOther` の plane fragment)
+  - V_isect = π·4·5 = 20π
+
+(T02/T04 の理論値は実装時に厳密化、想定容積から ±5% 程度で assert)
+
+## 幾何的不変条件チェックリスト
+
+- [x] partition 出力の polygon 頂点順と assemble の normal 処理が整合 — A1 (Cut) で確認済み、Fuse/Intersect では flip_normals=false なので polygon CCW がそのまま使われる
+- [x] 各プリミティブ face の outer_loop 2D 向き (CW/CCW) — Plane CCW、Cylinder UV CCW (既存 cuboid/cylinder primitives で確立)
+- [x] flip_normals / same_sense の意味論 — Cut+tool のみ flip。Fuse/Intersect で tool 側は same_sense=true、normal はそのまま外向き
+- [x] pslg_subdivide の出力向き — A1 と同じ経路、変更なし
+
+## 実装順序
+
+各 STEP 完了後に `cargo xtask ci` 緑を期待。
+
+### Phase 1: テスト先行 + 動作確認
+
+1. **STEP α (acceptance skeleton 配置)** — STEP 5.5 で Claude が `crates/mycad-build/tests/plane_cyl_fuse_isect_acceptance.rs` に `#[ignore]` 付き 12 関数 (t01..t12) を Write。`cargo test --workspace 2>&1 | head -20` でコンパイル緑確認、`acceptance_skeleton passed` を state.json に記録。
+2. **STEP β (GLM 実装ループ #1)** — STEP 6 で GLM が `feature_dispatcher.rs` に T01-T12 を実装、acceptance skeleton の `#[ignore]` を順次解除。example YAML 2 本を新規作成。失敗時は debug-spec で 1 回再 dispatch。
+3. **STEP γ (test-spec → GLM テスト追加)** — STEP 6.5 で Claude が `git diff main..HEAD` を読み test-spec.md を Write。STEP 6.6 で GLM が不足テスト (主に decimal 退化・boundary case) を追加。
+
+### Phase 2: 検証で炙り出された問題のみ修正
+
+GLM の実装が partition/assemble/tessellation の修正を必要とした場合、本セクションを追記:
+
+- **STEP β修正履歴** — Phase 2 で実コード修正が入った箇所を before/after で記録 (現時点では未定、想定箇所のみ「実装対象」セクション末尾に列挙)
+
+### Phase 3: 最終 CI + マージ
+
+4. **STEP δ (Codex 最終レビュー)** — STEP 7 で `dispatch-codex-auto.ts --mode final`。Critical/High 0 確認、blocking 0 で final_review passed。
+5. **STEP ε (squash マージ)** — STEP 8 で `cargo xtask ci` 最終緑 → `git merge --squash cad/42-a1-1-plane-cyl-fuse-isect` → push → branch delete。
+
+## Verification
+
+```bash
+cargo xtask ci   # fmt → clippy → test → build all green
+
+mycad export examples/boolean_fuse_box_cyl.mycad -o /tmp/A11_fuse.stl
+mycad export examples/boolean_intersect_box_cyl.mycad -o /tmp/A11_isect.stl
+ls -lh /tmp/A11_*.stl    # 両方 > 1KB
+
+# 目視 (任意、Phase 4 close #35 で正式実施)
+mycad view examples/boolean_fuse_box_cyl.mycad
+#   期待: 10³ cube の z=10 面の中央から半径 2 高さ 10 の円柱が突き出した合体形状
+
+mycad view examples/boolean_intersect_box_cyl.mycad
+#   期待: 半径 2 高さ 5 の短円柱 (box top と cylinder の重なり部分のみ)
+```

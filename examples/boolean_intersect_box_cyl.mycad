@@ -1,0 +1,18 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Boolean Intersect Box + Cylinder"
+  features:
+    - type: create_box
+      id: box1
+      width: 10.0
+      height: 10.0
+      depth: 10.0
+    - type: create_cylinder
+      id: cyl1
+      radius: 2.0
+      height: 15.0
+    - type: intersect
+      id: result
+      target: box1
+      tool: cyl1

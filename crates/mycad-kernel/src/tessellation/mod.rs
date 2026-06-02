@@ -176,10 +176,35 @@ fn tessellate_face_fan_from_points(
         mesh.normals.push(n);
     }
 
+    // Check if the loop winding matches the face outward direction; flip if not.
+    let flip = if loop_points.len() >= 3 {
+        let p0 = &loop_points[0];
+        let p1 = &loop_points[1];
+        let p2 = &loop_points[2];
+        let e1 = p1 - p0;
+        let e2 = p2 - p0;
+        let tri_normal = e1.cross(&e2);
+        let face_outward = face.surface.normal_at_point(p0);
+        let outward = if face.same_sense {
+            face_outward
+        } else {
+            -face_outward
+        };
+        tri_normal.dot(&outward) < 0.0
+    } else {
+        false
+    };
+
     for i in 1..(loop_points.len() as u32 - 1) {
-        mesh.indices.push(base_idx);
-        mesh.indices.push(base_idx + i);
-        mesh.indices.push(base_idx + i + 1);
+        if flip {
+            mesh.indices.push(base_idx);
+            mesh.indices.push(base_idx + i + 1);
+            mesh.indices.push(base_idx + i);
+        } else {
+            mesh.indices.push(base_idx);
+            mesh.indices.push(base_idx + i);
+            mesh.indices.push(base_idx + i + 1);
+        }
     }
 
     Ok(())
@@ -309,11 +334,10 @@ fn tessellate_face_earcut(
         mesh.normals.push(nm);
     }
 
-    // Reverse earcut triangle winding to match fan tessellation convention (CW = negative signed vol)
     for chunk in indices.chunks(3) {
         mesh.indices.push(base_idx + chunk[0] as u32);
-        mesh.indices.push(base_idx + chunk[2] as u32);
         mesh.indices.push(base_idx + chunk[1] as u32);
+        mesh.indices.push(base_idx + chunk[2] as u32);
     }
 
     Ok(())
@@ -770,7 +794,7 @@ fn tessellate_sphere_face_trimmed(
             let a1 = prev_start + ((iu + 1) % n_u) as u32;
             let b0 = ring_base + iu as u32;
             let b1 = ring_base + ((iu + 1) % n_u) as u32;
-            if face.same_sense {
+            if !face.same_sense {
                 push_triangle(mesh, a0, a1, b0);
                 push_triangle(mesh, a1, b1, b0);
             } else {
@@ -793,14 +817,14 @@ fn tessellate_sphere_face_trimmed(
         let next = last_ring_start + ((iu + 1) % n_u) as u32;
         if trim_lower {
             // south pole fan
-            if face.same_sense {
+            if !face.same_sense {
                 push_triangle(mesh, pole_idx, next, cur);
             } else {
                 push_triangle(mesh, pole_idx, cur, next);
             }
         } else {
             // north pole fan
-            if face.same_sense {
+            if !face.same_sense {
                 push_triangle(mesh, cur, next, pole_idx);
             } else {
                 push_triangle(mesh, next, cur, pole_idx);
@@ -2163,6 +2187,156 @@ mod tests {
         assert_eq!(
             m1.indices, m2.indices,
             "tessellation indices differ after YAML roundtrip"
+        );
+    }
+
+    // --- #42 Phase 2 edge-case tests ---
+
+    /// Fan winding CW: cuboid side face has outward normals after tessellation.
+    /// The side face (-X) has a CW loop when viewed from outside; fan should flip to produce
+    /// outward normals.
+    #[test]
+    fn fan_winding_cw_box_face() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+
+        // Centroid at origin, all facet normals should point away
+        for tri in 0..mesh.triangle_count() {
+            let i0 = mesh.indices[tri * 3] as usize;
+            let i1 = mesh.indices[tri * 3 + 1] as usize;
+            let i2 = mesh.indices[tri * 3 + 2] as usize;
+            let p0 = mesh.positions[i0];
+            let p1 = mesh.positions[i1];
+            let p2 = mesh.positions[i2];
+            let fc = [
+                (p0[0] + p1[0] + p2[0]) / 3.0,
+                (p0[1] + p1[1] + p2[1]) / 3.0,
+                (p0[2] + p1[2] + p2[2]) / 3.0,
+            ];
+            let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+            let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+            let nx = u[1] * v[2] - u[2] * v[1];
+            let ny = u[2] * v[0] - u[0] * v[2];
+            let nz = u[0] * v[1] - u[1] * v[0];
+            let dot = nx * fc[0] + ny * fc[1] + nz * fc[2];
+            assert!(
+                dot > 0.0,
+                "cuboid facet {tri}: outward dot={dot} (fc=({:.2},{:.2},{:.2}))",
+                fc[0],
+                fc[1],
+                fc[2]
+            );
+        }
+    }
+
+    /// Fan winding CCW: cuboid tessellation produces positive signed volume (no abs needed),
+    /// confirming that CCW faces are not flipped.
+    #[test]
+    fn fan_winding_ccw_positive_signed_volume() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+
+        let mut vol = 0.0_f64;
+        for tri in 0..mesh.triangle_count() {
+            let i0 = mesh.indices[tri * 3] as usize;
+            let i1 = mesh.indices[tri * 3 + 1] as usize;
+            let i2 = mesh.indices[tri * 3 + 2] as usize;
+            let p0 = &mesh.positions[i0];
+            let p1 = &mesh.positions[i1];
+            let p2 = &mesh.positions[i2];
+            vol += (p0[0] * (p1[1] * p2[2] - p2[1] * p1[2])
+                + p1[0] * (p2[1] * p0[2] - p0[1] * p2[2])
+                + p2[0] * (p0[1] * p1[2] - p1[1] * p0[2]))
+                / 6.0;
+        }
+        assert!(
+            vol > 0.0,
+            "cuboid signed volume should be positive, got {vol}"
+        );
+        let expected = 10.0 * 10.0 * 10.0;
+        assert!(
+            (vol - expected).abs() < 0.01,
+            "cuboid volume: expected {expected}, got {vol}"
+        );
+    }
+
+    /// Shift all geometry in a solid by (dx, dy, dz).
+    fn shift_solid_for_test(solid: &mut crate::brep::topology::Solid, dx: f64, dy: f64, dz: f64) {
+        use crate::geometry::curve::Curve;
+        use crate::geometry::surface::Surface;
+
+        for v in &mut solid.vertices {
+            v.point.coords.x += dx;
+            v.point.coords.y += dy;
+            v.point.coords.z += dz;
+        }
+        for e in &mut solid.edges {
+            if let Curve::Circle { center, .. } = &mut e.curve {
+                center.coords.x += dx;
+                center.coords.y += dy;
+                center.coords.z += dz;
+            }
+        }
+        for f in &mut solid.faces {
+            match &mut f.surface {
+                Surface::Sphere { center, .. }
+                | Surface::Plane { origin: center, .. }
+                | Surface::Cylinder { origin: center, .. } => {
+                    center.coords.x += dx;
+                    center.coords.y += dy;
+                    center.coords.z += dz;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Raw signed mesh volume (no abs). Positive = outward-consistent winding.
+    fn raw_mesh_signed_volume(mesh: &TriangleMesh) -> f64 {
+        let mut vol = 0.0_f64;
+        for tri in 0..mesh.triangle_count() {
+            let i0 = mesh.indices[tri * 3] as usize;
+            let i1 = mesh.indices[tri * 3 + 1] as usize;
+            let i2 = mesh.indices[tri * 3 + 2] as usize;
+            let p0 = &mesh.positions[i0];
+            let p1 = &mesh.positions[i1];
+            let p2 = &mesh.positions[i2];
+            vol += (p0[0] * (p1[1] * p2[2] - p2[1] * p1[2])
+                + p1[0] * (p2[1] * p0[2] - p0[1] * p2[2])
+                + p2[0] * (p0[1] * p1[2] - p1[1] * p0[2]))
+                / 6.0;
+        }
+        vol
+    }
+
+    /// Sphere trimmed volume sign: box(10³) - sphere(r=3, center=(0,0,6)) dimple.
+    /// The sphere cap face has same_sense=false; verifies trimmed sphere winding
+    /// produces positive signed volume without abs.
+    #[test]
+    fn sphere_trimmed_volume_sign() {
+        use crate::booleans::{boolean, BooleanOp};
+
+        let mut gen = IdGenerator::new(0);
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let mut sphere = make_sphere(3.0, &mut gen).unwrap();
+        shift_solid_for_test(&mut sphere, 0.0, 0.0, 6.0);
+        let solid = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen)
+            .expect("box - sphere cut should succeed");
+
+        let mesh = tessellate_solid(&solid).expect("tessellate sphere dimple");
+        let vol = raw_mesh_signed_volume(&mesh);
+
+        assert!(
+            vol > 0.0,
+            "sphere-cut signed volume should be positive, got {vol}"
+        );
+        // V_cap = π·h²·(R - h/3) = π·4·(3 - 2/3) = 28π/3 ≈ 29.32
+        let expected = 1000.0 - 28.0 * PI / 3.0;
+        assert!(
+            (vol - expected).abs() < 2.0,
+            "volume ≈ {expected:.2}, got {vol:.2}"
         );
     }
 }

@@ -453,6 +453,9 @@ fn circle_curve_for_edge(src: Option<&Option<Curve>>, p0: &Point, p1: &Point) ->
         if t1 < t0 {
             t1 += 2.0 * std::f64::consts::PI;
         }
+        if t1 - t0 > std::f64::consts::PI {
+            t1 -= 2.0 * std::f64::consts::PI; // prefer shorter arc (handles CW boundary)
+        }
         (
             Curve::Circle {
                 center: *center,

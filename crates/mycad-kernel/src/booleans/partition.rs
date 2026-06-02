@@ -1121,7 +1121,7 @@ pub fn partition_faces(
             let mut upper_poly: Vec<Point> = Vec::with_capacity(upper_total);
             upper_poly.push(seam_cut);
             upper_poly.push(seam_top);
-            for k in 1..n_seg {
+            for k in (1..n_seg).rev() {
                 upper_poly.push(top_circle_3d.evaluate(k as f64 * dt));
             }
             upper_poly.push(seam_top);
