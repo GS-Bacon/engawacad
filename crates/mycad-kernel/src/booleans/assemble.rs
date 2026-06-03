@@ -292,9 +292,13 @@ pub fn assemble(
             if let Surface::Plane { normal, .. } = &mut frag_surface {
                 *normal = -*normal;
             }
-            // Sphere caps (trimmed sphere, same_sense=false) need outward-sphere normals
-            // so tessellation contributes negative signed volume (CW winding convention).
-            !matches!(frag_surface, Surface::Sphere { .. })
+            // Curved surfaces (sphere, cylinder) need inward-pointing face normals
+            // so they contribute negative signed volume for void regions.
+            // Plane normals are already negated above, so same_sense=true is correct for planes.
+            !matches!(
+                frag_surface,
+                Surface::Sphere { .. } | Surface::Cylinder { .. }
+            )
         } else {
             true
         };

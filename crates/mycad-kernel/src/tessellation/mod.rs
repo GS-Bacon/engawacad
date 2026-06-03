@@ -477,9 +477,16 @@ fn tessellate_face_uv_grid(
             let i01 = base_idx + ((iv + 1) * (n_u + 1) + iu) as u32;
             let i11 = base_idx + ((iv + 1) * (n_u + 1) + iu + 1) as u32;
 
-            // Two triangles per cell, orientation so ∂u×∂v points outward
-            push_triangle(mesh, i00, i10, i01);
-            push_triangle(mesh, i10, i11, i01);
+            // Two triangles per cell, orientation so ∂u×∂v points outward.
+            // When same_sense=false the face normal is reversed, so flip winding
+            // to keep triangle cross-product consistent with the face normal.
+            if face.same_sense {
+                push_triangle(mesh, i00, i10, i01);
+                push_triangle(mesh, i10, i11, i01);
+            } else {
+                push_triangle(mesh, i00, i01, i10);
+                push_triangle(mesh, i10, i01, i11);
+            }
         }
     }
 

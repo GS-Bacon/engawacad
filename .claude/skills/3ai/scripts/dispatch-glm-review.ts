@@ -174,7 +174,7 @@ async function main() {
   }
 
   // Z.AI env
-  const zaiEnv = process.env.ZAI_ENV ?? `${process.env.HOME}/.zai.env`;
+  const zaiEnv = process.env.ZAI_ENV ?? `${process.env.HOME}/AutoClaudeKMP/.env`;
   if (!existsSync(zaiEnv)) {
     console.error(`ERROR: ZAI_ENV file not found at ${zaiEnv}`);
     process.exit(1);

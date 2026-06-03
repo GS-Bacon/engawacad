@@ -1867,6 +1867,90 @@ fn a1_stl_export_succeeds() {
     );
 }
 
+// --- A1 close gate (#44): T22b + T27 ---
+
+fn a1_mesh_volume_abs(mesh: &mycad_kernel::tessellation::TriangleMesh) -> f64 {
+    let mut vol = 0.0_f64;
+    for tri in 0..mesh.triangle_count() {
+        let i0 = mesh.indices[tri * 3] as usize;
+        let i1 = mesh.indices[tri * 3 + 1] as usize;
+        let i2 = mesh.indices[tri * 3 + 2] as usize;
+        let p0 = &mesh.positions[i0];
+        let p1 = &mesh.positions[i1];
+        let p2 = &mesh.positions[i2];
+        vol += (p0[0] * (p1[1] * p2[2] - p2[1] * p1[2])
+            + p1[0] * (p2[1] * p0[2] - p0[1] * p2[2])
+            + p2[0] * (p0[1] * p1[2] - p1[1] * p0[2]))
+            / 6.0;
+    }
+    vol.abs()
+}
+
+#[test]
+fn a1_solid_invariant_across_angular_segments() {
+    use mycad_kernel::tessellation::{tessellate_solid_with, TessellationOptions};
+
+    let mut g1 = IdGenerator::new(0);
+    let b1 = build_bodies_from_features(&build_a1_input(), &mut g1).expect("build @8");
+    let solid1 = b1.get("cut1").unwrap().solid.clone();
+    let _mesh_low =
+        tessellate_solid_with(&solid1, &TessellationOptions::new(8, 1)).expect("tess @8");
+
+    let mut g2 = IdGenerator::new(0);
+    let b2 = build_bodies_from_features(&build_a1_input(), &mut g2).expect("build @64");
+    let solid2 = b2.get("cut1").unwrap().solid.clone();
+    let _mesh_high =
+        tessellate_solid_with(&solid2, &TessellationOptions::new(64, 1)).expect("tess @64");
+
+    assert_solids_equal_with_names(&solid1, &solid2);
+}
+
+/// T27 — A1 signed mesh volume matches analytical physical volume.
+///
+/// Physical volume = box(1000) - cylinder_hole(π × r² × h_overlap = π × 4 × 5 = 20π).
+/// With same_sense=false on the cylinder face, mesh normals point inward (into void),
+/// giving the correct physical volume ~937.17.
+#[test]
+fn a1_signed_volume_matches_theoretical() {
+    use mycad_kernel::tessellation::tessellate_solid;
+
+    let bodies = build_features(build_a1_input()).expect("A1 build");
+    let solid = &bodies.get("cut1").unwrap().solid;
+    let mesh = tessellate_solid(solid).expect("tessellate");
+
+    let vol = a1_mesh_volume_abs(&mesh);
+    let expected = 1000.0 - 20.0 * std::f64::consts::PI;
+    let rel_err = (vol - expected).abs() / expected;
+    assert!(
+        rel_err < 0.01,
+        "A1 volume: expected ~{expected:.3}, got {vol:.3} (rel_err={rel_err:.4})"
+    );
+}
+
+/// Verify that A1 Cut cylinder lateral face has same_sense=false
+/// (normals pointing inward toward the axis, into the hole void).
+/// If same_sense=true, the face normal points outward from the axis (into material),
+/// which is incorrect for a hole surface in a boolean Cut result.
+#[test]
+fn a1_cyl_face_same_sense_check() {
+    use mycad_kernel::geometry::surface::Surface;
+
+    let features = build_a1_input();
+    let bodies = build_features(features).expect("A1: build");
+    let solid = &bodies.get("cut1").expect("cut1 body").solid;
+
+    let cyl_face = solid
+        .faces
+        .iter()
+        .find(|f| matches!(f.surface, Surface::Cylinder { .. }))
+        .expect("A1: should have a cylinder lateral face");
+
+    assert!(
+        !cyl_face.same_sense,
+        "A1: cylinder lateral face should have same_sense=false (normals into void), got true"
+    );
+}
+
 /// TX7 — A3 sphere face name: derived from the original sphere Named ref
 #[test]
 fn tx7_a3_sphere_face_name() {

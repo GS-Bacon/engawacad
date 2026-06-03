@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "crates/mycad-build/tests/feature_dispatcher.rs"
+    line_hint: 1898
+    finding: "T22bテストで tessellate_solid_with により生成された mesh_low と mesh_high が未使用 (警告抑止に `_` プレフィックスを使用)"
+    suggestion: "これは意図的（tessellation副作用の検証ではなく、Solid entity name の比較が目的）であり、問題ない。 `_mesh_low`, `_mesh_high` の命名は適切"
+
+verdict: pass
