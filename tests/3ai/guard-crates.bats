@@ -17,7 +17,7 @@ teardown() {
 
 @test "TC6a: crates/** のパスは block される (exit=2)" {
   INPUT='{"tool_name":"Edit","tool_input":{"file_path":"crates/mycad-kernel/src/lib.rs"}}'
-  run bash -c "echo '$INPUT' | bun '$GUARD'"
+  run bash -c "unset CAD_WORKER; echo '$INPUT' | bun '$GUARD'"
   [ "$status" -eq 2 ]
   [[ "$output" == *"block"* ]]
 }

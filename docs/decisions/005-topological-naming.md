@@ -153,6 +153,13 @@ ext_1;F:side_seg_0       # Extrude のスケッチ要素 seg_0 から生じた�
 に導く規則を定義しなければならない。内部リファクタで別名化させないため、role 表はこの frame に従って
 固定する。具体 frame と role 表は各 primitive の role 付与実装 issue で確定する。
 
+**位置パラメータの扱い**: canonical local frame を導く feature パラメータには、形状パラメータ
+(radius/height 等) に加え位置パラメータ (`CreateCylinder` の origin、`CreateSphere` の center 等) を含む。
+position は frame の**原点を決めるだけ**で、role 名 (`lateral`/`cap_top`/`seam`/`surface` 等) や
+内部 canonical name grammar `<feature_id>;<kind>:<role>` には影響しない。position を省略した場合は
+canonical 原点 (0,0,0) にデフォルトし、既存の example YAML は不変のまま有効である。
+回転 (rotation) の扱いは別 Issue で決定する。
+
 **face role の例**:
 
 | Feature | face role |
