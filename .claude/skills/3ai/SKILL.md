@@ -54,15 +54,15 @@ bun .claude/skills/3ai/scripts/init-feature.ts --issue $ISSUE_NUM --slug $ISSUE_
 
 ---
 
-## STEP 2.5: プラン Draft をユーザーへ平易に提示（Codex レビュー前）
+## STEP 2.5: プラン Draft をユーザーへ情報共有（Codex レビュー前）
 
-プランファイルの記述が完成したら、**Codex に渡す前に**要点をユーザーへ提示する。
+プランファイルの記述が完成したら、要点をユーザーへ**情報共有として**提示する（承認は STEP 4 の `ExitPlanMode` で取るため、ここでは不要）。
 
 - 専門用語を避け、噛み砕いた言葉で
 - 「何を作るか」「主要な設計判断とその理由」「テスト方針の要点」の 3 点を番号付きで簡潔に
 - プランファイルの全文転記ではなく**要点の要約**
 
-フィードバックがあればプランを修正。修正がなければ STEP 3 へ（この提示では `ExitPlanMode` を呼ばない）。
+ユーザーから任意のフィードバックがあれば反映する。フィードバックの有無にかかわらず、常に STEP 3 へ進む。`ExitPlanMode` は呼ばない。
 
 ---
 
@@ -171,9 +171,13 @@ bun .claude/skills/3ai/scripts/state.ts set \
 
 ---
 
-## STEP 4: 確定プラン提出
+## STEP 4: 確定プラン提出（唯一の承認点）
 
-**`ExitPlanMode` を呼ぶ。** ユーザーに承認を求める。承認されたら STEP 5 へ。
+**`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点。**
+
+Codex レビュー反映後の plan を提示しユーザーに承認を求める。
+
+**承認後は STEP 5〜STEP 8 を自動進行する。** ユーザー介入が発生するのは失敗時エスカレーションのみ（STEP 6-D、STEP 6.5 期待値乖離、STEP 7 critical）。
 
 ---
 
@@ -274,7 +278,16 @@ Claude が以下を実行する（crates/** の **Read のみ**）:
 1. `git diff main..HEAD` で実装差分を読む
 2. plan のテスト計画 ID 表と突き合わせ、未実装のものを特定する
 3. 実装差分を見て「plan に書いていなかったが生じた分岐・ケース」を特定する
-4. `features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md` を **Write** する（セクション: **不足テスト（plan 計画分） / 実装差分から追加すべきテスト / エッジケース・退化入力 / 数値境界 / 決定性**）
+4. **期待値乖離チェック**: 以下を実行し、plan の T ID 期待値と実装の assertion 値が一致するか確認する:
+   ```bash
+   bun .claude/skills/3ai/scripts/check-spec-divergence.ts \
+     --plan-file <プランファイルパス> \
+     --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG
+   ```
+   出力を読み、各 T ID で plan の期待値と実装 assertion が一致するか Claude が判定する。
+   - **乖離検出時**: test-spec.md に「## 期待値乖離」セクションを追加 + **停止してユーザーへエスカレーション**（STEP 6.6 に進まない）
+   - **乖離なし時**: 手順 5 へ進む
+5. `features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md` を **Write** する（セクション: **不足テスト（plan 計画分） / 実装差分から追加すべきテスト / エッジケース・退化入力 / 数値境界 / 決定性**）
 
 ---
 
