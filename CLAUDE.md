@@ -17,6 +17,17 @@
 - ただし PR を作る場合は作成直後にセルフマージしてブランチを削除する
 - 実装完了後は Issue・マイルストーンの後処理を自己判断で行う: Issue が自動クローズされているか確認し、されていなければ閉じる。Phase の `type: feature` Issue が全 closed になったら ADR-002 の手続きに従い ROADMAP を ✅ に更新してマイルストーンを close する
 
+## 新 Phase 着手 / 新 Issue 起票時のチェックリスト
+
+**Issue を新たに作成する前に** ADR-006 の粒度ガードを適用する (`docs/decisions/006-issue-decomposition.md`)。
+主なルール: 1 Issue = GLM 1 サイクルで通せるサイズ / ADR 決定と実装を混在させない / 軸 × op マトリクスで分解する。
+
+1. ADR-006 §1 の粒度チェックリストを全項目 ✓ にする
+2. `dispatch-codex-intent.ts` で Codex intent-check を実施:
+   - `aligned: yes` → `gh issue create` で起票
+   - `aligned: no` → ユーザーと相談して Issue 案を修正 → 再チェック
+3. Phase 着手時は当 Phase の ADR にペルソナ構成を記載する (Common 3 + Phase オプション)
+
 ## Project Overview
 
 MyCadはRust製のオープンソースB-rep (Boundary Representation) CADカーネル。

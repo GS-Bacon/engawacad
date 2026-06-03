@@ -87,6 +87,15 @@ export function checkFullAdoptionWarning(path: string): boolean {
   return j.slice(-2).every((x) => x.rejected === 0);
 }
 
+// 2 連続 round で全指摘を棄却 (adopted = 0) → early-stop シグナル
+// exit 1 = early-stop すべき, exit 0 = 続行可
+export function checkEarlyStop(path: string): boolean {
+  const data = readState(path);
+  const j = data.judgments ?? [];
+  if (j.length < 2) return false;
+  return j.slice(-2).every((x) => x.adopted === 0 && x.rejected > 0);
+}
+
 export function assertCriticalZero(statePath: string, verdictPath: string): boolean {
   try {
     const v = JSON.parse(readFileSync(verdictPath, "utf-8"));
@@ -127,6 +136,9 @@ if (import.meta.main) {
       break;
     case "check-full-adoption-warning":
       process.exit(checkFullAdoptionWarning(file) ? 1 : 0);
+      break;
+    case "check-early-stop":
+      process.exit(checkEarlyStop(file) ? 1 : 0);
       break;
     default:
       console.error(`unknown cmd: ${cmd}`);

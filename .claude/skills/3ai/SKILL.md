@@ -44,8 +44,10 @@ bun .claude/skills/3ai/scripts/init-feature.ts --issue $ISSUE_NUM --slug $ISSUE_
 
 `features/$ISSUE_NUM-$ISSUE_SLUG/plan.md` の各セクションに設計を記述する（セクション見出しは plan.md 内コメントを参照）。必須事項:
 
+- **In-Scope / Out-of-Scope 表**: 本 Issue でやること / やらないことを表形式で明記（GLM SCOPE ペルソナが存在を検証する）
 - **Non-Goals**: 本 Issue で実装しない項目を列挙（「該当なし」でも明記、空欄禁止）
 - **設計方針**: 決定性要件・B-rep トポロジー妥当性（Euler-Poincaré V-E+F=2）・退化幾何の扱い・derive 規約・エラーハンドリング・workspace.dependencies
+- **数値モデル** (Phase 4/6+ のみ必須、不要なら削除): tolerance/ε 値・退化判定基準・ADR-004 準拠方針
 - **テスト計画（ID 付き）**: T01 決定性、T02〜正常系、エッジケース、golden YAML
 - **幾何的不変条件チェックリスト**: Boolean/Partition/Assemble 系のみ（非該当は N/A）
 - **既存関数を編集する場合**: plan.md の「実装対象」または「実装順序」セクションに、**修正箇所ごとに before / after コードスニペット**を含めること。新規ファイル・新規関数の追加のみで完結する Issue では不要。
@@ -64,44 +66,84 @@ bun .claude/skills/3ai/scripts/init-feature.ts --issue $ISSUE_NUM --slug $ISSUE_
 
 ---
 
-## STEP 3: Codex 設計レビュー（プランモード内）
+## STEP 3: GLM 設計レビュー（多ペルソナ・収束ループ）
 
-ループ上限: **wrapper が自動判定**（code=3 / docs=2）。超過時は wrapper が exit 3 で終了。
+**ループ上限**: Issue サイズで決定 — light=3, standard=5, heavy=10。  
+`design_loops` カウンタが上限を超えたらユーザーに確認する。
 
-### 3-A: dispatch（初回）
+### 3-A: plan 前提チェック
+
+plan.md に `## In-Scope / Out-of-Scope` と `## Non-Goals` が存在するか確認。
+なければ追記してから次へ（`## In-Scope / Out-of-Scope` がない場合 GLM SCOPE が critical を出す）。
 
 `adr-context.md` が必要な場合（plan が特定 ADR を参照）は dispatch 前に Claude が抜粋して `features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md` に書く。
 
+### 3-B: ペルソナ一覧確定
+
+基本: `scope` / `invariant` / `ambig`  
+以下の条件で `numeric` を追加:
+- Phase 4/6+ の Issue、または
+- `plan.md` に `### 数値モデル` セクションが存在する、または
+- Codex intent-check で「数値判断含む」と判定された場合
+
+### 3-C: GLM ペルソナ並列 dispatch（`run_in_background: true` で各ペルソナを起動）
+
+ラウンド番号 N = `design_loops` に 1 を加えた値:
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex-auto.ts \
-  --issue $ISSUE_NUM \
-  --mode design \
-  --input <プランファイルパス> \
-  --plan <プランファイルパス> \
-  --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md \
-  --plan-snapshot-dir features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots \
-  [--adr-context features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md]
+bun .claude/skills/3ai/scripts/state.ts inc \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json design_loops
 ```
 
-> `## Non-Goals` セクションがない場合、wrapper が exit 1 で停止する。プランに追記してから再実行。
+**plan スナップショット保存**:
+```bash
+mkdir -p features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots
+cp <プランファイルパス> features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots/plan.md.round-N
+```
 
-### 3-B: 棄却 gate（毎 round 必須）
+各ペルソナを **並列バックグラウンド** で起動（`run_in_background: true`）:
+```bash
+bun .claude/skills/3ai/scripts/dispatch-glm-review.ts \
+  --persona scope \
+  --issue $ISSUE_NUM --round N \
+  --input <プランファイルパス> \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/review-scope-rN.yaml \
+  [--adr-context features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md] \
+  [--rejection features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md] \
+  [--judgment-summary features/$ISSUE_NUM-$ISSUE_SLUG/judgment-summary.md] \
+  [--plan-snapshot-dir features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots]
 
-**完了通知を待つ（ポーリングしない）。** `design-review.md` を読んで各 issue を判定:
+# 同様に --persona invariant, ambig [, numeric] を並列起動
+```
 
-1. **採用** → plan を修正
-2. **棄却** → `features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md` に `## Round N` で追記
-3. **部分採用** → plan 一部修正 + rejection.md に残り件を追記
+**全ペルソナの完了通知を待つ（ポーリングしない）。**
 
-採用数・棄却数を記録する:
+### 3-D: 集約・棄却 gate（毎 round 必須）
+
+1. 全ペルソナの `review-*-rN.yaml` を読む
+2. **重複除去**: 同一論点を複数ペルソナが指摘している場合、最も高 severity の 1 件に統合
+3. 各 issue を Claude が判定:
+   - **採用** → plan を直接修正
+   - **棄却** → `features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md` に `## Round N` で追記
+   - **部分採用** → plan 一部修正 + rejection.md に残り件を追記
+
+採用数・棄却数を記録:
 ```bash
 bun .claude/skills/3ai/scripts/state.ts judge \
   features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  <round番号> <adopted_count> <rejected_count>
+  N <adopted_count> <rejected_count>
 ```
 
 `features/$ISSUE_NUM-$ISSUE_SLUG/judgment-summary.md` に採用・棄却の一覧を `## Round N` で追記する。
+
+**early-stop チェック**（次 round dispatch 前に必ず実行）:
+```bash
+bun .claude/skills/3ai/scripts/state.ts check-early-stop \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json
+```
+exit 1 が返った場合（2 round 連続で全指摘を棄却）は **停止してユーザーにエスカレーション**:
+> 2 round 連続で全 GLM 指摘を棄却しています。設計そのものに問題がある可能性があります。  
+> rejection.md を提示します。設計を見直してから再開してください。
 
 **全採用警告チェック**（次 round dispatch 前に必ず実行）:
 ```bash
@@ -112,38 +154,19 @@ exit 1 が返った場合は停止してユーザーへ表示:
 > 2 round 連続で棄却が 0 件です。scope 防衛できていますか?  
 > Non-Goals に含まれる指摘や medium 以下で受容すべき指摘は棄却 log に記録してから次 round に進んでください。
 
-### 3-C: 再 dispatch（round 2 以降）
+### 3-E: 収束判定・再 dispatch
 
-Critical/High が残っていれば再 dispatch する（rejection.md がある場合は `--rejection` を追加）:
+- **全 Critical/High が 0** かつ **2 round 連続で C/H = 0** → STEP 3-F へ
+- **Critical/High が残る** → 3-C に戻って再 dispatch（N++）
+- **design_loops が上限超過** → Critical の数を確認:
+  - critical = 0: Claude 裁量で残 high/medium を「採用→修正」「棄却→rejection.md」で処理 → 3-F へ
+  - critical ≥ 1: 停止してユーザーにエスカレーション
+
+### 3-F: 通過
 
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex-auto.ts \
-  --issue $ISSUE_NUM \
-  --mode design \
-  --input <プランファイルパス> \
-  --plan <プランファイルパス> \
-  --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  --result features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md \
-  --plan-snapshot-dir features/$ISSUE_NUM-$ISSUE_SLUG/plan-snapshots \
-  --rejection features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md \
-  --judgment-summary features/$ISSUE_NUM-$ISSUE_SLUG/judgment-summary.md \
-  [--adr-context features/$ISSUE_NUM-$ISSUE_SLUG/adr-context.md]
-```
-
-**exit 3（上限超過）フォールバック**:
-```bash
-bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
-  features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  features/$ISSUE_NUM-$ISSUE_SLUG/design-review.md.verdict.json
-```
-- **critical ≥ 1** → 停止してユーザーにエスカレーション（design-review.md と rejection.md を提示）
-- **critical = 0** → Claude 裁量で受け切る: 残 high/medium/low を 1 件ずつ「採用 → plan 修正」「棄却 → rejection.md 追記」で処理 → `state.ts set ... design_review passed` → 対応内訳を報告して STEP 4 へ
-
-### 3-D: 通過
-
-全 Critical/High 解消後:
-```bash
-bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json design_review passed
+bun .claude/skills/3ai/scripts/state.ts set \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json design_review passed
 ```
 
 ---
@@ -280,14 +303,12 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
 
 ---
 
-## STEP 7: Codex 最終レビュー（背景実行・完了通知）
+## STEP 7: GLM 最終レビュー（背景実行・完了通知）
 
 **ゲート:**
 ```bash
 bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
 ```
-
-ループ上限: **wrapper が自動判定**（code=2 / docs=1）。超過時は wrapper が exit 3 で終了。
 
 **dispatch 前に test-summary.json を生成する:**
 ```bash
@@ -296,27 +317,30 @@ bun .claude/skills/3ai/scripts/extract-test-summary.ts \
   --output features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
 ```
 
+**GLM final レビュアーを起動** (`run_in_background: true`):
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex-auto.ts \
+bun .claude/skills/3ai/scripts/dispatch-glm-review.ts \
+  --persona final \
   --issue $ISSUE_NUM \
-  --mode final \
-  --state features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  --result features/$ISSUE_NUM-$ISSUE_SLUG/final-review.md \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/final-review.yaml \
   --test-summary features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
 ```
 
-**完了通知を待つ。** `final-review.md.verdict.json` の `blocking` が 0 かつ `verdict: pass` なら:
+**完了通知を待つ（ポーリングしない）。**
+
+`final-review.yaml.verdict.json` を読んで `blocking` が 0 かつ `verdict: pass` なら:
 ```bash
 bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review passed
 ```
 
-Critical/High があれば GLM 修正 dispatch → Codex 再レビュー（ループ +1）。
+Critical/High があれば GLM 修正 dispatch → GLM final 再レビュー（ループ +1、上限 2）。
 
-**exit 3（上限超過）フォールバック**:
+**ループ上限超過フォールバック** (`final_loops` が 2 を超えた場合):
 ```bash
 bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
   features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  features/$ISSUE_NUM-$ISSUE_SLUG/final-review.md.verdict.json
+  features/$ISSUE_NUM-$ISSUE_SLUG/final-review.yaml.verdict.json
 ```
 - **critical ≥ 1** → 停止してユーザーにエスカレーション
 - **critical = 0**、blocking が **docs-only**（コードファイル変更を伴わない）→ Claude 裁量で受け切る: 残 high/medium を直接修正（docs への Edit/Write）または棄却 → `cargo xtask ci` green 確認 → `state.ts set ... final_review passed` → 内訳報告して STEP 8 へ
