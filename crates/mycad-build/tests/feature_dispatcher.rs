@@ -117,6 +117,7 @@ fn t02_multi_create_box_cylinder() {
             id: "cyl1".to_string(),
             radius: 5.0,
             height: 10.0,
+            origin: [0.0, 0.0, 0.0],
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -1295,6 +1296,7 @@ fn t21_nonplanar_input_cone_rejected() {
             id: "cyl1".into(),
             radius: 1.0,
             height: 2.0,
+            origin: [0.0, 0.0, 0.0],
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1644,6 +1646,7 @@ fn build_a3_input() -> Vec<mycad_format::Feature> {
         Feature::CreateSphere {
             id: "sphere".into(),
             radius: 3.0,
+            center: [0.0, 0.0, 0.0],
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1759,6 +1762,7 @@ fn build_a1_input() -> Vec<mycad_format::Feature> {
             id: "cyl1".into(),
             radius: 2.0,
             height: 6.0,
+            origin: [0.0, 0.0, 0.0],
         },
         Feature::Cut {
             id: "cut1".into(),

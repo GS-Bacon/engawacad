@@ -3,6 +3,7 @@ use mycad_kernel::booleans::boolean;
 use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::error::KernelError;
 use mycad_kernel::geometry::Plane;
+use mycad_kernel::geometry::Point;
 use mycad_kernel::primitives::{make_cuboid, make_cylinder, make_extrusion, make_sphere};
 use mycad_kernel::BooleanOp;
 use std::collections::{HashMap, HashSet};
@@ -129,12 +130,22 @@ pub fn build_bodies_from_features(
                 id: _,
                 radius,
                 height,
+                origin,
             } => {
-                let solid = make_cylinder(*radius, *height, gen)?;
+                let solid = make_cylinder(
+                    *radius,
+                    *height,
+                    Point::new(origin[0], origin[1], origin[2]),
+                    gen,
+                )?;
                 built.register(id.to_string(), solid);
             }
-            Feature::CreateSphere { id: _, radius } => {
-                let solid = make_sphere(*radius, gen)?;
+            Feature::CreateSphere {
+                id: _,
+                radius,
+                center,
+            } => {
+                let solid = make_sphere(*radius, Point::new(center[0], center[1], center[2]), gen)?;
                 built.register(id.to_string(), solid);
             }
             Feature::Cut {

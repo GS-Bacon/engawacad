@@ -1,0 +1,10 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Offset Cylinder"
+  features:
+    - type: create_cylinder
+      id: cyl_1
+      radius: 5.0
+      height: 20.0
+      origin: [0.0, 0.0, -10.0]

@@ -2014,7 +2014,7 @@ mod tests {
     fn t14_sphere_face_partition_no_panic() {
         let mut gen = IdGenerator::new(0);
         let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
-        let sphere = make_sphere(3.0, &mut gen).unwrap();
+        let sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
 
         let result = partition_faces(&box_solid, &sphere, BooleanOp::Cut);
         assert!(
@@ -2031,7 +2031,7 @@ mod tests {
     fn tx2_box_sphere_partition_fragment_counts() {
         let mut gen = IdGenerator::new(0);
         let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
-        let sphere = make_sphere(3.0, &mut gen).unwrap();
+        let sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
 
         let result = partition_faces(&box_solid, &sphere, BooleanOp::Cut);
         assert!(result.is_ok(), "partition should succeed");
@@ -2053,10 +2053,10 @@ mod tests {
     #[test]
     fn t15_cyl_sph_face_pair_skipped() {
         let mut gen = IdGenerator::new(0);
-        let mut cylinder = make_cylinder(2.0, 4.0, &mut gen).unwrap();
+        let mut cylinder = make_cylinder(2.0, 4.0, Point::origin(), &mut gen).unwrap();
         // Sphere R=1 at z=2: sits inside the cylinder (cyl R=2), d=2 to each cap > R=1
         // so sphere does not intersect the cylinder cap planes, only the lateral face is relevant.
-        let mut sphere = make_sphere(1.0, &mut gen).unwrap();
+        let mut sphere = make_sphere(1.0, Point::origin(), &mut gen).unwrap();
         for v in &mut sphere.vertices {
             v.point.coords.z += 2.0;
         }
@@ -2100,7 +2100,7 @@ mod tests {
     fn t16_circle_pslg_interior_detection() {
         let mut gen = IdGenerator::new(0);
         let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
-        let cylinder = make_cylinder(2.0, 6.0, &mut gen).unwrap();
+        let cylinder = make_cylinder(2.0, 6.0, Point::origin(), &mut gen).unwrap();
 
         let (target_frags, _tool_frags) = partition_faces(&box_solid, &cylinder, BooleanOp::Cut)
             .expect("partition should succeed");

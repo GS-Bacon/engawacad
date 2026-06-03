@@ -1,0 +1,9 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Offset Sphere"
+  features:
+    - type: create_sphere
+      id: sphere_1
+      radius: 5.0
+      center: [2.0, 0.0, 0.0]

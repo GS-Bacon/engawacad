@@ -7,27 +7,34 @@ use mycad_format::{EntityKind, EntityRef};
 
 /// Create a sphere B-rep solid.
 ///
-/// Center at origin, given radius. Seam on the +X meridian (XZ half-plane).
+/// Center at `center`, given radius. Seam on the +X meridian (XZ half-plane).
 /// Topology: 2 vertices (poles), 1 edge (seam half-circle), 2 half-edges,
 /// 1 loop, 1 face (self-adjacent periodic), 1 closed shell.
-pub fn make_sphere(radius: f64, id_gen: &mut IdGenerator) -> Result<Solid, KernelError> {
+pub fn make_sphere(
+    radius: f64,
+    center: Point,
+    id_gen: &mut IdGenerator,
+) -> Result<Solid, KernelError> {
     if !radius.is_finite() || radius <= 0.0 {
         return Err(KernelError::InvalidParameter { kind: "radius" });
+    }
+    if ![center.x, center.y, center.z].iter().all(|v| v.is_finite()) {
+        return Err(KernelError::InvalidParameter { kind: "center" });
     }
 
     let fid = "sphere";
     let mut solid = Solid::new(id_gen.next());
 
-    let origin = Point::origin();
+    let origin = center;
 
     let v_south = solid.add_vertex(
         id_gen.next(),
-        Point::new(0.0, 0.0, -radius),
+        origin + Vec3::new(0.0, 0.0, -radius),
         EntityRef::try_named(fid, EntityKind::Vertex, "south_pole").ok(),
     );
     let v_north = solid.add_vertex(
         id_gen.next(),
-        Point::new(0.0, 0.0, radius),
+        origin + Vec3::new(0.0, 0.0, radius),
         EntityRef::try_named(fid, EntityKind::Vertex, "north_pole").ok(),
     );
 
@@ -75,8 +82,8 @@ mod tests {
     fn test_sphere_deterministic() {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
-        let s1 = make_sphere(5.0, &mut gen1).unwrap();
-        let s2 = make_sphere(5.0, &mut gen2).unwrap();
+        let s1 = make_sphere(5.0, Point::origin(), &mut gen1).unwrap();
+        let s2 = make_sphere(5.0, Point::origin(), &mut gen2).unwrap();
 
         assert_eq!(s1.vertices.len(), s2.vertices.len());
         assert_eq!(s1.edges.len(), s2.edges.len());
@@ -155,7 +162,7 @@ mod tests {
     #[test]
     fn test_sphere_topology() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(5.0, &mut gen).unwrap();
+        let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
 
         assert_eq!(s.vertices.len(), 2, "2 poles");
         assert_eq!(s.edges.len(), 1, "1 seam edge");
@@ -169,7 +176,7 @@ mod tests {
     #[test]
     fn test_sphere_euler() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(5.0, &mut gen).unwrap();
+        let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
 
         let v = s.vertices.len() as i64;
         let e = s.edges.len() as i64;
@@ -181,7 +188,7 @@ mod tests {
     #[test]
     fn test_sphere_manifold_and_loop_closure() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(5.0, &mut gen).unwrap();
+        let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let eps = 1e-10;
 
         let mut edge_he_count: std::collections::HashMap<usize, Vec<bool>> =
@@ -230,7 +237,7 @@ mod tests {
     #[test]
     fn test_sphere_geometry() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(5.0, &mut gen).unwrap();
+        let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let eps = 1e-10;
 
         assert!((s.vertices[0].point - Point::new(0.0, 0.0, -5.0)).norm() < eps);
@@ -268,37 +275,37 @@ mod tests {
     fn test_sphere_degenerate_inputs() {
         let mut gen = IdGenerator::new(0);
 
-        let err = make_sphere(0.0, &mut gen).unwrap_err();
+        let err = make_sphere(0.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_sphere(-5.0, &mut gen).unwrap_err();
+        let err = make_sphere(-5.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_sphere(f64::NAN, &mut gen).unwrap_err();
+        let err = make_sphere(f64::NAN, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_sphere(f64::INFINITY, &mut gen).unwrap_err();
+        let err = make_sphere(f64::INFINITY, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_sphere(f64::NEG_INFINITY, &mut gen).unwrap_err();
+        let err = make_sphere(f64::NEG_INFINITY, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_sphere(f64::MIN_POSITIVE, &mut gen);
+        let err = make_sphere(f64::MIN_POSITIVE, Point::origin(), &mut gen);
         assert!(err.is_ok(), "tiny but positive radius should succeed");
     }
 
@@ -314,7 +321,7 @@ mod tests {
     #[test]
     fn test_sphere_self_adjacent_validate_manifold() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(5.0, &mut gen).unwrap();
+        let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         assert!(
             s.validate_manifold().is_ok(),
             "full sphere must pass manifold validation"
@@ -325,11 +332,11 @@ mod tests {
     fn test_sphere_100_run_determinism() {
         let first = {
             let mut gen = IdGenerator::new(0);
-            make_sphere(3.0, &mut gen).unwrap()
+            make_sphere(3.0, Point::origin(), &mut gen).unwrap()
         };
         for i in 1..100 {
             let mut gen = IdGenerator::new(0);
-            let s = make_sphere(3.0, &mut gen).unwrap();
+            let s = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
             for (v1, v2) in first.vertices.iter().zip(s.vertices.iter()) {
                 assert_eq!(v1.id, v2.id, "run {i}: vertex id mismatch");
                 assert_eq!(v1.point, v2.point, "run {i}: vertex point mismatch");
@@ -345,7 +352,7 @@ mod tests {
     #[test]
     fn test_sphere_roundtrip_serde() {
         let mut gen = IdGenerator::new(0);
-        let original = make_sphere(7.0, &mut gen).unwrap();
+        let original = make_sphere(7.0, Point::origin(), &mut gen).unwrap();
         let json = serde_json::to_string(&original).unwrap();
         let restored: Solid = serde_json::from_str(&json).unwrap();
 
@@ -365,21 +372,21 @@ mod tests {
     #[test]
     fn test_sphere_tiny_radius() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(1e-10, &mut gen).unwrap();
+        let s = make_sphere(1e-10, Point::origin(), &mut gen).unwrap();
         assert_eq!(s.vertices.len(), 2);
     }
 
     #[test]
     fn test_sphere_large_radius() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(1e10, &mut gen).unwrap();
+        let s = make_sphere(1e10, Point::origin(), &mut gen).unwrap();
         assert_eq!(s.vertices.len(), 2);
     }
 
     #[test]
     fn test_sphere_negative_zero_radius() {
         let mut gen = IdGenerator::new(0);
-        let err = make_sphere(-0.0, &mut gen).unwrap_err();
+        let err = make_sphere(-0.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
@@ -389,7 +396,7 @@ mod tests {
     #[test]
     fn test_sphere_entity_names() {
         let mut gen = IdGenerator::new(0);
-        let s = make_sphere(5.0, &mut gen).unwrap();
+        let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
 
         let v_south_name = s.vertices[0].name.as_ref().expect("south pole name");
         match v_south_name {
@@ -452,8 +459,8 @@ mod tests {
     fn test_sphere_name_determinism() {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
-        let s1 = make_sphere(5.0, &mut gen1).unwrap();
-        let s2 = make_sphere(5.0, &mut gen2).unwrap();
+        let s1 = make_sphere(5.0, Point::origin(), &mut gen1).unwrap();
+        let s2 = make_sphere(5.0, Point::origin(), &mut gen2).unwrap();
 
         for (i, (v1, v2)) in s1.vertices.iter().zip(s2.vertices.iter()).enumerate() {
             assert_eq!(v1.name, v2.name, "vertex {i} name mismatch");

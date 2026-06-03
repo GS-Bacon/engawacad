@@ -7,11 +7,12 @@ use mycad_format::{EntityKind, EntityRef};
 
 /// Create a cylinder B-rep solid.
 ///
-/// Axis = +Z, bottom center at origin, bottom z=0 / top z=height.
-/// Seam vertex at (0, radius, z) — angle u=0 in the orthonormal_basis(+Z) = (+Y, -X) frame.
+/// Axis = +Z, bottom center at `origin`, bottom z=origin.z / top z=origin.z+height.
+/// Seam vertex at (origin.x, origin.y+radius, z) — angle u=0 in the orthonormal_basis(+Z) = (+Y, -X) frame.
 pub fn make_cylinder(
     radius: f64,
     height: f64,
+    origin: Point,
     id_gen: &mut IdGenerator,
 ) -> Result<Solid, KernelError> {
     if !radius.is_finite() || radius <= 0.0 {
@@ -20,6 +21,9 @@ pub fn make_cylinder(
     if !height.is_finite() || height <= 0.0 {
         return Err(KernelError::InvalidParameter { kind: "height" });
     }
+    if ![origin.x, origin.y, origin.z].iter().all(|v| v.is_finite()) {
+        return Err(KernelError::InvalidParameter { kind: "origin" });
+    }
 
     let fid = "cylinder";
     let mut solid = Solid::new(id_gen.next());
@@ -27,12 +31,12 @@ pub fn make_cylinder(
     // 2 vertices: seam at bottom and top
     let v_bot = solid.add_vertex(
         id_gen.next(),
-        Point::new(0.0, radius, 0.0),
+        origin + Vec3::new(0.0, radius, 0.0),
         EntityRef::try_named(fid, EntityKind::Vertex, "seam_bot").ok(),
     );
     let v_top = solid.add_vertex(
         id_gen.next(),
-        Point::new(0.0, radius, height),
+        origin + Vec3::new(0.0, radius, height),
         EntityRef::try_named(fid, EntityKind::Vertex, "seam_top").ok(),
     );
 
@@ -41,7 +45,7 @@ pub fn make_cylinder(
         id_gen.next(),
         [v_bot, v_bot],
         Curve::Circle {
-            center: Point::origin(),
+            center: origin,
             normal: Vec3::z(),
             radius,
         },
@@ -53,7 +57,7 @@ pub fn make_cylinder(
         id_gen.next(),
         [v_top, v_top],
         Curve::Circle {
-            center: Point::new(0.0, 0.0, height),
+            center: origin + Vec3::new(0.0, 0.0, height),
             normal: Vec3::z(),
             radius,
         },
@@ -65,7 +69,7 @@ pub fn make_cylinder(
         id_gen.next(),
         [v_bot, v_top],
         Curve::Line {
-            origin: Point::new(0.0, radius, 0.0),
+            origin: origin + Vec3::new(0.0, radius, 0.0),
             direction: Vec3::new(0.0, 0.0, height),
         },
         [0.0, 1.0],
@@ -81,7 +85,7 @@ pub fn make_cylinder(
     let f_bot = solid.add_face(
         id_gen.next(),
         Surface::Plane {
-            origin: Point::origin(),
+            origin,
             normal: -Vec3::z(),
             u_axis: Vec3::x(),
             v_axis: Vec3::y(),
@@ -99,7 +103,7 @@ pub fn make_cylinder(
     let f_top = solid.add_face(
         id_gen.next(),
         Surface::Plane {
-            origin: Point::new(0.0, 0.0, height),
+            origin: origin + Vec3::new(0.0, 0.0, height),
             normal: Vec3::z(),
             u_axis: Vec3::x(),
             v_axis: Vec3::y(),
@@ -123,7 +127,7 @@ pub fn make_cylinder(
     let f_lat = solid.add_face(
         id_gen.next(),
         Surface::Cylinder {
-            origin: Point::origin(),
+            origin,
             axis: Vec3::z(),
             radius,
         },
@@ -149,8 +153,8 @@ mod tests {
     fn test_cylinder_deterministic() {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
-        let s1 = make_cylinder(5.0, 20.0, &mut gen1).unwrap();
-        let s2 = make_cylinder(5.0, 20.0, &mut gen2).unwrap();
+        let s1 = make_cylinder(5.0, 20.0, Point::origin(), &mut gen1).unwrap();
+        let s2 = make_cylinder(5.0, 20.0, Point::origin(), &mut gen2).unwrap();
 
         assert_eq!(s1.vertices.len(), s2.vertices.len());
         assert_eq!(s1.edges.len(), s2.edges.len());
@@ -176,7 +180,7 @@ mod tests {
     #[test]
     fn test_cylinder_topology() {
         let mut gen = IdGenerator::new(0);
-        let s = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let s = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
 
         assert_eq!(s.vertices.len(), 2, "2 seam vertices");
         assert_eq!(
@@ -195,7 +199,7 @@ mod tests {
     #[test]
     fn test_cylinder_euler() {
         let mut gen = IdGenerator::new(0);
-        let s = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let s = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
 
         let v = s.vertices.len();
         let e = s.edges.len();
@@ -215,7 +219,7 @@ mod tests {
     #[test]
     fn test_cylinder_manifold_and_loop_closure() {
         let mut gen = IdGenerator::new(0);
-        let s = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let s = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
         let eps = 1e-10;
 
         let mut edge_he_count: std::collections::HashMap<usize, Vec<bool>> =
@@ -267,7 +271,7 @@ mod tests {
     #[test]
     fn test_cylinder_geometry() {
         let mut gen = IdGenerator::new(0);
-        let s = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let s = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
         let eps = 1e-10;
 
         assert!((s.vertices[0].point - Point::new(0.0, 5.0, 0.0)).norm() < eps);
@@ -309,49 +313,49 @@ mod tests {
     fn test_cylinder_degenerate_inputs() {
         let mut gen = IdGenerator::new(0);
 
-        let err = make_cylinder(0.0, 20.0, &mut gen).unwrap_err();
+        let err = make_cylinder(0.0, 20.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_cylinder(-5.0, 20.0, &mut gen).unwrap_err();
+        let err = make_cylinder(-5.0, 20.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_cylinder(f64::NAN, 20.0, &mut gen).unwrap_err();
+        let err = make_cylinder(f64::NAN, 20.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_cylinder(f64::INFINITY, 20.0, &mut gen).unwrap_err();
+        let err = make_cylinder(f64::INFINITY, 20.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "radius" }
         ));
 
-        let err = make_cylinder(5.0, 0.0, &mut gen).unwrap_err();
+        let err = make_cylinder(5.0, 0.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
         ));
 
-        let err = make_cylinder(5.0, -10.0, &mut gen).unwrap_err();
+        let err = make_cylinder(5.0, -10.0, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
         ));
 
-        let err = make_cylinder(5.0, f64::NAN, &mut gen).unwrap_err();
+        let err = make_cylinder(5.0, f64::NAN, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
         ));
 
-        let err = make_cylinder(5.0, f64::INFINITY, &mut gen).unwrap_err();
+        let err = make_cylinder(5.0, f64::INFINITY, Point::origin(), &mut gen).unwrap_err();
         assert!(matches!(
             err,
             KernelError::InvalidParameter { kind: "height" }
@@ -374,7 +378,7 @@ mod tests {
     #[test]
     fn test_cylinder_entity_names() {
         let mut gen = IdGenerator::new(0);
-        let s = make_cylinder(2.0, 6.0, &mut gen).unwrap();
+        let s = make_cylinder(2.0, 6.0, Point::origin(), &mut gen).unwrap();
         for v in &s.vertices {
             assert!(v.name.is_some(), "cylinder vertex missing name");
         }

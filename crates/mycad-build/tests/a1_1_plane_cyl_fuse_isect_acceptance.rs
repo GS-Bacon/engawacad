@@ -35,6 +35,7 @@ fn box_cyl_features(op: &str) -> Vec<Feature> {
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
+            origin: [0.0, 0.0, 0.0],
         },
         boolean_feature,
     ]
@@ -212,6 +213,7 @@ fn t08_disjoint_fuse_returns_disjoint_error() {
             id: "cyl1".into(),
             radius: 2.0,
             height: 7.0, // h=7 so cylinder top (z=7) is inside box (z=-5..5) — no coincident faces
+            origin: [0.0, 0.0, 0.0],
         },
         Feature::Fuse {
             id: "result".into(),
@@ -244,6 +246,7 @@ fn t09_disjoint_intersect_returns_empty_error() {
             id: "cyl1".into(),
             radius: 2.0,
             height: 7.0, // h=7 so cylinder top (z=7) is inside box — no coincident faces
+            origin: [0.0, 0.0, 0.0],
         },
         Feature::Intersect {
             id: "result".into(),
@@ -282,6 +285,7 @@ fn t10_multi_plane_fuse_returns_unsupported() {
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
+            origin: [0.0, 0.0, 0.0],
         },
         Feature::Fuse {
             id: "result".into(),
@@ -314,6 +318,7 @@ fn t11_non_z_plane_intersect_returns_unsupported() {
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
+            origin: [0.0, 0.0, 0.0],
         },
         Feature::Intersect {
             id: "result".into(),
@@ -384,6 +389,7 @@ fn t15_sphere_cut_signed_volume_positive() {
         Feature::CreateSphere {
             id: "sph".into(),
             radius: 5.0,
+            center: [0.0, 0.0, 0.0],
         },
         Feature::CreateBox {
             id: "box".into(),

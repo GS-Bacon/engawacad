@@ -924,7 +924,7 @@ mod tests {
     #[test]
     fn test_tessellate_cylinder_triangle_count() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let solid = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         // Lateral: 32 angular segments × 1 axial × 2 triangles = 64
@@ -945,8 +945,8 @@ mod tests {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
 
-        let s1 = make_cylinder(5.0, 20.0, &mut gen1).unwrap();
-        let s2 = make_cylinder(5.0, 20.0, &mut gen2).unwrap();
+        let s1 = make_cylinder(5.0, 20.0, Point::origin(), &mut gen1).unwrap();
+        let s2 = make_cylinder(5.0, 20.0, Point::origin(), &mut gen2).unwrap();
 
         let m1 = tessellate_solid(&s1).unwrap();
         let m2 = tessellate_solid(&s2).unwrap();
@@ -990,7 +990,7 @@ mod tests {
     #[test]
     fn test_cylinder_outward_normals() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let solid = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         // Centroid of cylinder: (0, 0, 10)
@@ -1044,7 +1044,7 @@ mod tests {
     #[test]
     fn test_different_resolution_different_count() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let solid = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
 
         let mesh_default = tessellate_solid(&solid).unwrap();
         let mesh_low = tessellate_solid_with(&solid, &TessellationOptions::new(8, 1)).unwrap();
@@ -1134,7 +1134,7 @@ mod tests {
     #[test]
     fn test_zero_segments_clamped_at_use() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cylinder(5.0, 20.0, &mut gen).unwrap();
+        let solid = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
         let opts = TessellationOptions {
             angular_segments: 0,
             axial_segments: 0,
@@ -1195,7 +1195,7 @@ mod tests {
     #[test]
     fn test_sphere_triangle_count() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         let n_u = 32;
@@ -1214,8 +1214,8 @@ mod tests {
     fn test_sphere_tessellation_deterministic() {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
-        let s1 = make_sphere(5.0, &mut gen1).unwrap();
-        let s2 = make_sphere(5.0, &mut gen2).unwrap();
+        let s1 = make_sphere(5.0, Point::origin(), &mut gen1).unwrap();
+        let s2 = make_sphere(5.0, Point::origin(), &mut gen2).unwrap();
 
         let m1 = tessellate_solid(&s1).unwrap();
         let m2 = tessellate_solid(&s2).unwrap();
@@ -1229,7 +1229,7 @@ mod tests {
     #[test]
     fn test_sphere_watertight() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         let mut edge_count: std::collections::HashMap<[u32; 2], usize> =
@@ -1262,7 +1262,7 @@ mod tests {
     #[test]
     fn test_sphere_pole_integrity() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         let eps = 1e-10;
@@ -1470,7 +1470,7 @@ mod tests {
     #[test]
     fn test_sphere_outward_normals() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         let center = [0.0f64, 0.0, 0.0];
@@ -1513,7 +1513,7 @@ mod tests {
     fn test_sphere_various_angular_segments() {
         for &angular in &[3, 4, 5, 7, 32] {
             let mut gen = IdGenerator::new(0);
-            let solid = make_sphere(5.0, &mut gen).unwrap();
+            let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
             let opts = TessellationOptions {
                 angular_segments: angular,
                 axial_segments: 1,
@@ -1585,7 +1585,7 @@ mod tests {
     #[test]
     fn test_sphere_zero_segments_clamped() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let opts = TessellationOptions {
             angular_segments: 0,
             axial_segments: 0,
@@ -1608,7 +1608,7 @@ mod tests {
     #[test]
     fn test_sphere_large_radius_tessellation() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(1e6, &mut gen).unwrap();
+        let solid = make_sphere(1e6, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid);
         assert!(
             mesh.is_ok(),
@@ -1622,12 +1622,12 @@ mod tests {
     fn test_sphere_tessellation_100_runs() {
         let first = {
             let mut gen = IdGenerator::new(0);
-            let s = make_sphere(5.0, &mut gen).unwrap();
+            let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
             tessellate_solid(&s).unwrap()
         };
         for i in 1..100 {
             let mut gen = IdGenerator::new(0);
-            let s = make_sphere(5.0, &mut gen).unwrap();
+            let s = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
             let m = tessellate_solid(&s).unwrap();
             assert_eq!(first.indices, m.indices, "run {i}: indices mismatch");
             assert_eq!(
@@ -1642,7 +1642,7 @@ mod tests {
     #[test]
     fn test_sphere_tiny_radius_tessellation() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(1e-10, &mut gen).unwrap();
+        let solid = make_sphere(1e-10, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
         assert!(
             mesh.positions
@@ -1662,7 +1662,7 @@ mod tests {
     #[test]
     fn test_sphere_extreme_large_radius_tessellation() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(1e10, &mut gen).unwrap();
+        let solid = make_sphere(1e10, Point::origin(), &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
         assert!(
             mesh.positions
@@ -1677,7 +1677,7 @@ mod tests {
     #[test]
     fn test_sphere_minimum_angular_watertight() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_sphere(5.0, &mut gen).unwrap();
+        let solid = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         let opts = TessellationOptions {
             angular_segments: 3,
             axial_segments: 1,
@@ -2327,7 +2327,7 @@ mod tests {
 
         let mut gen = IdGenerator::new(0);
         let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
-        let mut sphere = make_sphere(3.0, &mut gen).unwrap();
+        let mut sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
         shift_solid_for_test(&mut sphere, 0.0, 0.0, 6.0);
         let solid = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen)
             .expect("box - sphere cut should succeed");

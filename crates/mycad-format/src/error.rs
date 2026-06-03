@@ -22,4 +22,7 @@ pub enum FormatError {
 
     #[error("empty provenance in derived reference with op {op:?}")]
     EmptyProvenance { op: String },
+
+    #[error("non-finite position in feature {id:?}: {reason}")]
+    InvalidPosition { id: String, reason: &'static str },
 }

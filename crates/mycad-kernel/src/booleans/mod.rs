@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn t13_analytic_circle_loop_accepted() {
         let mut gen = IdGenerator::new(0);
-        let cyl = crate::primitives::make_cylinder(2.0, 4.0, &mut gen).unwrap();
+        let cyl = crate::primitives::make_cylinder(2.0, 4.0, Point::origin(), &mut gen).unwrap();
         // Find a planar face (cap) with Circle outer loop
         for face in &cyl.faces {
             if matches!(face.surface, Surface::Plane { .. }) {
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn t_validate_sphere_passes() {
         let mut gen = IdGenerator::new(0);
-        let sphere = make_sphere(5.0, &mut gen).unwrap();
+        let sphere = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
         assert!(validate_boolean_input(&sphere, "test").is_ok());
     }
 
@@ -408,7 +408,7 @@ mod tests {
     fn tx1_validate_mixed_sphere_cuboid_solid() {
         let mut gen = IdGenerator::new(0);
         let cuboid = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
-        let sphere = make_sphere(3.0, &mut gen).unwrap();
+        let sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
 
         let mut mixed = cuboid;
 

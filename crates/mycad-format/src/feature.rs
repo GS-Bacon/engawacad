@@ -277,11 +277,18 @@ pub enum Feature {
         id: String,
         radius: f64,
         height: f64,
+        #[serde(default, skip_serializing_if = "is_origin")]
+        origin: [f64; 3],
     },
 
     /// Create a sphere primitive.
     #[serde(rename = "create_sphere")]
-    CreateSphere { id: String, radius: f64 },
+    CreateSphere {
+        id: String,
+        radius: f64,
+        #[serde(default, skip_serializing_if = "is_origin")]
+        center: [f64; 3],
+    },
 
     /// Create a sketch (2D closed profile on a plane).
     #[serde(rename = "create_sketch")]
@@ -322,6 +329,10 @@ pub enum Feature {
         target: String,
         tool: String,
     },
+}
+
+fn is_origin(p: &[f64; 3]) -> bool {
+    *p == [0.0, 0.0, 0.0]
 }
 
 impl Feature {
@@ -366,6 +377,7 @@ mod tests {
         let feature = Feature::CreateSphere {
             id: "sphere_1".to_string(),
             radius: 5.0,
+            center: [0.0, 0.0, 0.0],
         };
         let yaml = serde_yaml::to_string(&feature).unwrap();
         // Byte-identical golden for schema drift detection

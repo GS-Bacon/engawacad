@@ -108,6 +108,16 @@ fn validate_identifier(value: &str, _field: &'static str) -> Result<(), FormatEr
     Ok(())
 }
 
+fn check_finite_position(id: &str, p: &[f64; 3]) -> Result<(), FormatError> {
+    if p.iter().any(|v| !v.is_finite()) {
+        return Err(FormatError::InvalidPosition {
+            id: id.to_string(),
+            reason: "position components must be finite (no NaN/Inf)",
+        });
+    }
+    Ok(())
+}
+
 fn validate_component(component: &Component, component_name: &str) -> Result<(), FormatError> {
     if let Some(reference) = &component.reference {
         match reference {
@@ -142,6 +152,15 @@ fn validate_component(component: &Component, component_name: &str) -> Result<(),
                 id: id.to_string(),
                 component: component_name.to_string(),
             });
+        }
+        match feature {
+            crate::feature::Feature::CreateCylinder { origin, .. } => {
+                check_finite_position(id, origin)?
+            }
+            crate::feature::Feature::CreateSphere { center, .. } => {
+                check_finite_position(id, center)?
+            }
+            _ => {}
         }
     }
     for child in &component.children {
@@ -608,6 +627,7 @@ root_component:
         doc.root_component.features.push(Feature::CreateSphere {
             id: "box_1".to_string(),
             radius: 5.0,
+            center: [0.0, 0.0, 0.0],
         });
         let result = doc.to_yaml();
         assert!(matches!(
@@ -933,5 +953,171 @@ root_component:
             .join("simple_box.mycad");
         let doc = Document::from_path(&path).unwrap();
         assert!(doc.validate().is_ok());
+    }
+
+    // --- Position parameter validation tests (Issue #48) ---
+
+    /// NaN in cylinder origin rejected with InvalidPosition.
+    #[test]
+    fn test_nan_cylinder_origin_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_cylinder
+      id: c1
+      radius: 5.0
+      height: 10.0
+      origin: [.nan, 0.0, 0.0]
+";
+        let result = Document::from_yaml(yaml);
+        assert!(
+            matches!(result, Err(FormatError::InvalidPosition { .. })),
+            "expected InvalidPosition, got {result:?}"
+        );
+    }
+
+    /// Infinity in cylinder origin rejected with InvalidPosition.
+    #[test]
+    fn test_inf_cylinder_origin_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_cylinder
+      id: c1
+      radius: 5.0
+      height: 10.0
+      origin: [0.0, .inf, 0.0]
+";
+        let result = Document::from_yaml(yaml);
+        assert!(
+            matches!(result, Err(FormatError::InvalidPosition { .. })),
+            "expected InvalidPosition, got {result:?}"
+        );
+    }
+
+    /// NaN in sphere center rejected with InvalidPosition.
+    #[test]
+    fn test_nan_sphere_center_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_sphere
+      id: s1
+      radius: 5.0
+      center: [0.0, 0.0, .nan]
+";
+        let result = Document::from_yaml(yaml);
+        assert!(
+            matches!(result, Err(FormatError::InvalidPosition { .. })),
+            "expected InvalidPosition, got {result:?}"
+        );
+    }
+
+    /// Negative infinity in sphere center rejected.
+    #[test]
+    fn test_neg_inf_sphere_center_rejected() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_sphere
+      id: s1
+      radius: 5.0
+      center: [-.inf, 0.0, 0.0]
+";
+        let result = Document::from_yaml(yaml);
+        assert!(
+            matches!(result, Err(FormatError::InvalidPosition { .. })),
+            "expected InvalidPosition, got {result:?}"
+        );
+    }
+
+    /// Valid large finite coordinates pass validation.
+    #[test]
+    fn test_large_finite_origin_accepted() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_cylinder
+      id: c1
+      radius: 5.0
+      height: 10.0
+      origin: [1e15, -1e15, 0.0]
+";
+        let doc = Document::from_yaml(yaml).expect("large finite values should be accepted");
+        assert_eq!(doc.root_component.features.len(), 1);
+    }
+
+    /// Negative coordinates are accepted (only NaN/Inf are rejected).
+    #[test]
+    fn test_negative_origin_accepted() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_sphere
+      id: s1
+      radius: 5.0
+      center: [-100.0, -50.0, -200.0]
+";
+        let doc = Document::from_yaml(yaml).expect("negative coordinates should be accepted");
+        assert_eq!(doc.root_component.features.len(), 1);
+    }
+
+    /// Omitted origin/center defaults to [0,0,0] and passes validation.
+    #[test]
+    fn test_omitted_origin_defaults_and_validates() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: test
+  features:
+    - type: create_cylinder
+      id: c1
+      radius: 5.0
+      height: 10.0
+";
+        let doc = Document::from_yaml(yaml).expect("omitted origin should default and pass");
+        match &doc.root_component.features[0] {
+            Feature::CreateCylinder { origin, .. } => {
+                assert_eq!(*origin, [0.0, 0.0, 0.0]);
+            }
+            other => panic!("expected CreateCylinder, got {other:?}"),
+        }
+    }
+
+    /// Determinism: NaN rejection is consistent over 100 attempts.
+    #[test]
+    fn test_nan_rejection_deterministic_100() {
+        for _ in 0..100 {
+            let mut doc = Document::new("Test");
+            doc.root_component.features.push(Feature::CreateCylinder {
+                id: "c".into(),
+                radius: 5.0,
+                height: 10.0,
+                origin: [f64::NAN, 0.0, 0.0],
+            });
+            assert!(matches!(
+                doc.to_yaml().unwrap_err(),
+                FormatError::InvalidPosition { .. }
+            ));
+        }
     }
 }

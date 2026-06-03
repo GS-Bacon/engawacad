@@ -51,7 +51,7 @@ fn shift_solid(solid: &mut mycad_kernel::brep::topology::Solid, dx: f64, dy: f64
 /// Box is centered at origin (top face at z=5). Sphere center at (0,0,6), d=1 < R=3.
 fn build_a2_dimple(gen: &mut IdGenerator) -> mycad_kernel::brep::topology::Solid {
     let box_solid = make_cuboid(10.0, 10.0, 10.0, gen).unwrap();
-    let mut sphere = make_sphere(3.0, gen).unwrap();
+    let mut sphere = make_sphere(3.0, Point::origin(), gen).unwrap();
     shift_solid(&mut sphere, 0.0, 0.0, 6.0);
     boolean(&box_solid, &sphere, BooleanOp::Cut, gen).unwrap()
 }
@@ -249,7 +249,7 @@ fn t07_degenerate_tangent_noop() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
     // box top face at z=5, sphere center at (0,0,8): d = 8-5 = 3 = R → tangent
-    let mut sphere = make_sphere(3.0, &mut gen).unwrap();
+    let mut sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sphere, 0.0, 0.0, 8.0);
 
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen);
@@ -281,7 +281,7 @@ fn t08_degenerate_disjoint_noop() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
     // box top face at z=5, sphere center at (0,0,9): d = 9-5 = 4 > R=3 → disjoint
-    let mut sphere = make_sphere(3.0, &mut gen).unwrap();
+    let mut sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sphere, 0.0, 0.0, 9.0);
 
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen);
@@ -310,7 +310,7 @@ fn t09_degenerate_great_circle_rejected() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
     // Sphere center exactly on box top face (z=5) → d=0 → great circle
-    let mut sphere = make_sphere(3.0, &mut gen).unwrap();
+    let mut sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sphere, 0.0, 0.0, 5.0);
 
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen);
@@ -335,7 +335,7 @@ fn t10_multi_plane_intersection_rejected() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
     // sphere R=6 at origin: d_top=5 < R=6, d_bottom=5 < R=6 → both Z-faces intersected
-    let sphere = make_sphere(6.0, &mut gen).unwrap();
+    let sphere = make_sphere(6.0, Point::origin(), &mut gen).unwrap();
 
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen);
     assert!(
