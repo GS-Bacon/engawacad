@@ -231,6 +231,14 @@ pub fn partition_faces(
     // Used to (a) detect multi-plane intersection and (b) skip the degenerate pass-through.
     let mut sphere_plane_interior_count: std::collections::HashMap<usize, usize> =
         std::collections::HashMap::new();
+    // Tracks sphere tool faces whose caps were already built during cyl×sph processing
+    // in the target loop, so the tool loop doesn't push a duplicate pass-through.
+    let mut cyl_sph_sphere_processed: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
+    // Tracks cylinder target faces that were already split into bands during cyl×sph processing
+    // in the target loop, so the tool loop doesn't push duplicate cylinder fragments.
+    let mut cyl_sph_cyl_target_processed: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
 
     // Process target faces
     for fi in 0..target.faces.len() {
@@ -290,20 +298,20 @@ pub fn partition_faces(
                 .clone()
                 .ok_or_else(|| format!("tool face {} missing name", ui))?;
 
-            // Skip cylinder×sphere face pairs — deferred to #39
             let is_cyl = matches!(surface, Surface::Cylinder { .. });
             let is_sph = matches!(surface, Surface::Sphere { .. });
             let tool_is_cyl = matches!(tool_surface, Surface::Cylinder { .. });
             let tool_is_sph = matches!(tool_surface, Surface::Sphere { .. });
-            if (is_cyl && tool_is_sph) || (is_sph && tool_is_cyl) {
-                continue;
-            }
+            let is_cyl_sph_pair = (is_cyl && tool_is_sph) || (is_sph && tool_is_cyl);
 
-            // Intersect surfaces via the unified dispatcher
             let isect_result =
                 crate::geometry::surface_intersect::intersect_surfaces(surface, tool_surface);
-            let Ok(isect_loops) = isect_result else {
-                continue;
+            let isect_loops = match isect_result {
+                Ok(loops) => loops,
+                Err(e) if is_cyl_sph_pair => {
+                    return Err(format!("unsupported boolean case: {e}"));
+                }
+                Err(_) => continue,
             };
             if isect_loops.is_empty() {
                 continue;
@@ -721,6 +729,272 @@ pub fn partition_faces(
                     });
                 }
             }
+        } else if matches!(surface, Surface::Cylinder { .. })
+            && sphere_tool_face_ui.is_some()
+            && segments.iter().any(|s| s.source_curve_3d.is_some())
+        {
+            // Cylinder target face intersected by a sphere tool face.
+            // Collect intersection circles and split into bands.
+            let (cyl_origin, cyl_axis_raw, cyl_radius) = match surface {
+                Surface::Cylinder {
+                    origin,
+                    axis,
+                    radius,
+                } => (*origin, *axis, *radius),
+                _ => unreachable!(),
+            };
+            let cyl_axis = cyl_axis_raw.normalize();
+
+            let v_bot = polygon_3d
+                .iter()
+                .map(|p| (p.coords - cyl_origin.coords).dot(&cyl_axis))
+                .fold(f64::MAX, f64::min);
+            let v_top = polygon_3d
+                .iter()
+                .map(|p| (p.coords - cyl_origin.coords).dot(&cyl_axis))
+                .fold(f64::MIN, f64::max);
+
+            // Collect distinct intersection circles (by v height) sorted ascending
+            let mut circle_vs: Vec<(f64, Curve, EntityRef)> = Vec::new();
+            for seg in &segments {
+                if seg.source_curve_3d.is_none() {
+                    continue;
+                }
+                let v = match &seg.pcurve_on_a {
+                    Some(Curve2D::Line2D { origin, .. }) => origin.1,
+                    _ => continue,
+                };
+                // Skip circles outside the face height range
+                if v < v_bot - len_eps || v > v_top + len_eps {
+                    continue;
+                }
+                // Dedup by v
+                if circle_vs.iter().any(|(vv, _, _)| (vv - v).abs() < len_eps) {
+                    continue;
+                }
+                let curve_3d = match &seg.source_curve_3d {
+                    Some(c @ Curve::Circle { .. }) => c.clone(),
+                    _ => continue,
+                };
+                let partner = seg.partner.clone();
+                circle_vs.push((v, curve_3d, partner));
+            }
+            circle_vs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+            if circle_vs.is_empty() {
+                // No valid circles — pass through as-is
+                target_fragments.push(FaceFragment {
+                    source_face_index: fi,
+                    polygon_3d: polygon_3d.clone(),
+                    inner_polygons_3d: vec![],
+                    surface: surface.clone(),
+                    parent_name: name.clone(),
+                    traversal_index: 0,
+                    is_tool_side: false,
+                    boundary_partners: vec![None; polygon_3d.len()],
+                    boundary_curves: vec![None; polygon_3d.len()],
+                    boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                    boundary_pcurves_a: vec![None; polygon_3d.len()],
+                    boundary_pcurves_b: vec![None; polygon_3d.len()],
+                    inner_boundary_partners: vec![],
+                    inner_boundary_curves: vec![],
+                    inner_boundary_t_ranges: vec![],
+                    inner_boundary_pcurves_a: vec![],
+                    inner_boundary_pcurves_b: vec![],
+                });
+            } else {
+                // Build bands between v_bot, each circle v, and v_top
+                let n_seg = ANGULAR_SEGMENTS_DEFAULT;
+                let dt = 2.0 * std::f64::consts::PI / n_seg as f64;
+                let mut band_idx: u32 = 0;
+
+                let mut boundaries: Vec<f64> = vec![v_bot];
+                for (v, _, _) in &circle_vs {
+                    boundaries.push(*v);
+                }
+                boundaries.push(v_top);
+
+                for band in 0..boundaries.len() - 1 {
+                    let v_lo = boundaries[band];
+                    let v_hi = boundaries[band + 1];
+                    if (v_hi - v_lo).abs() < len_eps {
+                        continue;
+                    }
+
+                    let _is_bottom = band == 0;
+                    let _is_top = band == boundaries.len() - 2;
+
+                    let seam_lo = surface.evaluate(0.0, v_lo);
+                    let seam_hi = surface.evaluate(0.0, v_hi);
+
+                    let lo_circle_3d = Curve::Circle {
+                        center: Point::from(cyl_origin.coords + cyl_axis * v_lo),
+                        normal: cyl_axis,
+                        radius: cyl_radius,
+                    };
+                    let hi_circle_3d = Curve::Circle {
+                        center: Point::from(cyl_origin.coords + cyl_axis * v_hi),
+                        normal: cyl_axis,
+                        radius: cyl_radius,
+                    };
+
+                    let total_pts = 2 * n_seg + 2;
+                    let mut poly: Vec<Point> = Vec::with_capacity(total_pts);
+                    poly.push(seam_lo);
+                    poly.push(seam_hi);
+                    for k in 1..n_seg {
+                        poly.push(hi_circle_3d.evaluate(k as f64 * dt));
+                    }
+                    poly.push(seam_hi);
+                    poly.push(seam_lo);
+                    for k in 1..n_seg {
+                        poly.push(lo_circle_3d.evaluate(k as f64 * dt));
+                    }
+
+                    let mut partners: Vec<Option<EntityRef>> = vec![None; total_pts];
+                    let mut curves: Vec<Option<Curve>> = vec![None; total_pts];
+
+                    // Upper boundary (first half, indices 1..=n_seg)
+                    if band < circle_vs.len() {
+                        // Intersection circle — partner + curve
+                        let (_, ref circle_c, ref partner_c) = circle_vs[band];
+                        for k in 1..=n_seg {
+                            partners[k] = Some(partner_c.clone());
+                            curves[k] = Some(circle_c.clone());
+                        }
+                    }
+                    // else: top rim — no curve, no partner (matches original)
+
+                    // Lower boundary (second half, indices n_seg+2..total_pts-1)
+                    if band > 0 {
+                        // Intersection circle — partner + curve
+                        let (_, ref circle_c, ref partner_c) = circle_vs[band - 1];
+                        for curve in curves.iter_mut().skip(n_seg + 2) {
+                            *curve = Some(circle_c.clone());
+                        }
+                        for partner in partners.iter_mut().skip(n_seg + 2) {
+                            *partner = Some(partner_c.clone());
+                        }
+                    } else {
+                        // Bottom rim — curve only (no partner)
+                        for curve in curves.iter_mut().skip(n_seg + 2) {
+                            *curve = Some(lo_circle_3d.clone());
+                        }
+                    }
+
+                    target_fragments.push(FaceFragment {
+                        source_face_index: fi,
+                        polygon_3d: poly,
+                        inner_polygons_3d: vec![],
+                        surface: surface.clone(),
+                        parent_name: name.clone(),
+                        traversal_index: band_idx,
+                        is_tool_side: false,
+                        boundary_partners: partners,
+                        boundary_curves: curves,
+                        boundary_t_ranges: vec![[0.0, 1.0]; total_pts],
+                        boundary_pcurves_a: vec![None; total_pts],
+                        boundary_pcurves_b: vec![None; total_pts],
+                        inner_boundary_partners: vec![],
+                        inner_boundary_curves: vec![],
+                        inner_boundary_t_ranges: vec![],
+                        inner_boundary_pcurves_a: vec![],
+                        inner_boundary_pcurves_b: vec![],
+                    });
+                    band_idx += 1;
+                }
+
+                // Mark this cylinder face as processed
+                cyl_sph_cyl_target_processed.insert(fi);
+
+                // Also create sphere cap fragments (tool side)
+                if let Some(&sph_ui) = sphere_tool_face_ui.as_ref() {
+                    if !cyl_sph_sphere_processed.contains(&sph_ui) {
+                        let sph_face = &tool.faces[sph_ui];
+                        let sph_name = sph_face
+                            .name
+                            .clone()
+                            .ok_or_else(|| format!("tool sphere face {} missing name", sph_ui))?;
+                        let sph_polygon_3d = &tool_polygons_3d[sph_ui];
+                        let sph_surface = &sph_face.surface;
+                        let _n_seam = sph_polygon_3d.len();
+
+                        // Extract the sphere surface properties
+                        let (sph_center, sph_radius) = match sph_surface {
+                            Surface::Sphere { center, radius } => (*center, *radius),
+                            _ => unreachable!(),
+                        };
+
+                        // Build one cap per intersection circle
+                        for (cap_idx, (v, circle_c, _partner_c)) in circle_vs.iter().enumerate() {
+                            let circle_center_on_axis = cyl_origin.coords + cyl_axis * (*v);
+                            let is_top_cap = (*v - sph_center.coords.dot(&cyl_axis)).abs()
+                                > len_eps
+                                && *v > sph_center.coords.dot(&cyl_axis);
+
+                            // Interior point: pole on the side away from cylinder center
+                            let pole_z = if is_top_cap {
+                                sph_center.coords + sph_radius * cyl_axis
+                            } else {
+                                sph_center.coords - sph_radius * cyl_axis
+                            };
+                            let _interior = Point::from((pole_z + circle_center_on_axis) * 0.5);
+
+                            // Full sphere polygon (seam)
+                            let cap_poly_3d: Vec<Point> = sph_polygon_3d.clone();
+                            let n_cap = cap_poly_3d.len();
+
+                            // Build inner polygon from the circle
+                            let mut inner_poly_3d: Vec<Point> = Vec::with_capacity(n_seg);
+                            for k in 0..n_seg {
+                                inner_poly_3d.push(circle_c.evaluate(k as f64 * dt));
+                            }
+                            inner_poly_3d.reverse();
+                            let n_inner = inner_poly_3d.len();
+
+                            let inner_curves: Vec<Option<Curve>> =
+                                (0..n_inner).map(|_| Some(circle_c.clone())).collect();
+                            let inner_tr: Vec<[f64; 2]> = (0..n_inner)
+                                .map(|_| [0.0, 2.0 * std::f64::consts::PI])
+                                .collect();
+                            let inner_partners: Vec<Option<EntityRef>> =
+                                (0..n_inner).map(|_| Some(name.clone())).collect();
+
+                            let seam_curves: Vec<Option<Curve>> = {
+                                let ol = &tool.loops[sph_face.outer_loop];
+                                ol.half_edges
+                                    .iter()
+                                    .map(|he_idx| {
+                                        let he = &tool.half_edges[*he_idx];
+                                        Some(tool.edges[he.edge].curve.clone())
+                                    })
+                                    .collect()
+                            };
+
+                            tool_fragments.push(FaceFragment {
+                                source_face_index: sph_ui,
+                                polygon_3d: cap_poly_3d,
+                                inner_polygons_3d: vec![inner_poly_3d],
+                                surface: sph_surface.clone(),
+                                parent_name: sph_name.clone(),
+                                traversal_index: cap_idx as u32,
+                                is_tool_side: true,
+                                boundary_partners: vec![None; n_cap],
+                                boundary_curves: seam_curves,
+                                boundary_t_ranges: vec![[0.0, 1.0]; n_cap],
+                                boundary_pcurves_a: vec![None; n_cap],
+                                boundary_pcurves_b: vec![None; n_cap],
+                                inner_boundary_partners: vec![inner_partners],
+                                inner_boundary_curves: vec![inner_curves],
+                                inner_boundary_t_ranges: vec![inner_tr],
+                                inner_boundary_pcurves_a: vec![vec![None; n_inner]],
+                                inner_boundary_pcurves_b: vec![vec![None; n_inner]],
+                            });
+                        }
+                        cyl_sph_sphere_processed.insert(sph_ui);
+                    }
+                }
+            }
         }
     }
 
@@ -738,7 +1012,9 @@ pub fn partition_faces(
         if polygon_2d.len() < 3 {
             // Sphere faces that already received an interior-circle cap in the first loop
             // must not be pushed again as bare pass-through fragments.
-            if sphere_plane_interior_count.contains_key(&fi) {
+            if sphere_plane_interior_count.contains_key(&fi)
+                || cyl_sph_sphere_processed.contains(&fi)
+            {
                 continue;
             }
             let name = face
@@ -778,20 +1054,21 @@ pub fn partition_faces(
                 .clone()
                 .ok_or_else(|| format!("target face {} missing name", ti))?;
 
-            // Skip cylinder×sphere face pairs — deferred to #39
             let target_surface = &target.faces[ti].surface;
             let is_cyl = matches!(surface, Surface::Cylinder { .. });
             let is_sph = matches!(surface, Surface::Sphere { .. });
             let target_is_cyl = matches!(target_surface, Surface::Cylinder { .. });
             let target_is_sph = matches!(target_surface, Surface::Sphere { .. });
-            if (is_cyl && target_is_sph) || (is_sph && target_is_cyl) {
-                continue;
-            }
+            let is_cyl_sph_pair = (is_cyl && target_is_sph) || (is_sph && target_is_cyl);
 
             let isect_result =
                 crate::geometry::surface_intersect::intersect_surfaces(surface, target_surface);
-            let Ok(isect_loops) = isect_result else {
-                continue;
+            let isect_loops = match isect_result {
+                Ok(loops) => loops,
+                Err(e) if is_cyl_sph_pair => {
+                    return Err(format!("unsupported boolean case: {e}"));
+                }
+                Err(_) => continue,
             };
             if isect_loops.is_empty() {
                 continue;
@@ -999,7 +1276,7 @@ pub fn partition_faces(
                 });
             }
         } else if matches!(surface, Surface::Cylinder { .. }) {
-            // Cylinder lat-face trimmed by a plane intersection circle.
+            // Cylinder lat-face trimmed by intersection circle(s).
             // UV space for a periodic surface is non-simple after seam-crossing — build
             // the trimmed fragments directly in 3D instead of going through PSLG.
             let (cyl_origin, cyl_axis_raw, cyl_radius) = match surface {
@@ -1021,146 +1298,139 @@ pub fn partition_faces(
                 .map(|p| (p.coords - cyl_origin.coords).dot(&cyl_axis_norm))
                 .fold(f64::MIN, f64::max);
 
-            // Pick the intersection circle whose v_cut lies within [v_bot, v_top].
-            // intersect_plane_cylinder works on the infinite cylinder, so spurious
-            // circles outside the finite face height range may appear in segments.
-            let circle_seg = match segments.iter().find(|s| {
-                if s.source_curve_3d.is_none() {
-                    return false;
+            // Collect distinct intersection circles (by v height) sorted ascending
+            let mut circle_vs: Vec<(f64, Curve, EntityRef)> = Vec::new();
+            for seg in &segments {
+                if seg.source_curve_3d.is_none() {
+                    continue;
                 }
-                match &s.pcurve_on_b {
-                    Some(Curve2D::Line2D { origin, .. }) => {
-                        let v = origin.1;
-                        v >= v_bot - len_eps && v <= v_top + len_eps
-                    }
-                    _ => false,
+                let v = match &seg.pcurve_on_b {
+                    Some(Curve2D::Line2D { origin, .. }) => origin.1,
+                    _ => continue,
+                };
+                if v < v_bot - len_eps || v > v_top + len_eps {
+                    continue;
                 }
-            }) {
-                Some(s) => s,
-                None => continue,
-            };
-            let circle_3d = match &circle_seg.source_curve_3d {
-                Some(c @ Curve::Circle { .. }) => c.clone(),
-                _ => continue,
-            };
-            let target_face_name = circle_seg.partner.clone();
-            let v_cut = match &circle_seg.pcurve_on_b {
-                Some(Curve2D::Line2D { origin, .. }) => origin.1,
-                _ => continue,
-            };
+                if circle_vs.iter().any(|(vv, _, _)| (vv - v).abs() < len_eps) {
+                    continue;
+                }
+                let curve_3d = match &seg.source_curve_3d {
+                    Some(c @ Curve::Circle { .. }) => c.clone(),
+                    _ => continue,
+                };
+                circle_vs.push((v, curve_3d, seg.partner.clone()));
+            }
+            circle_vs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-            let seam_bot = surface.evaluate(0.0, v_bot);
-            let seam_cut = surface.evaluate(0.0, v_cut);
-            let seam_top = surface.evaluate(0.0, v_top);
+            if circle_vs.is_empty() {
+                continue;
+            }
 
             let n_seg = ANGULAR_SEGMENTS_DEFAULT;
             let dt = 2.0 * std::f64::consts::PI / n_seg as f64;
+            let mut band_idx: u32 = 0;
 
-            let bot_circle_3d = Curve::Circle {
-                center: Point::from(cyl_origin.coords + cyl_axis_norm * v_bot),
-                normal: cyl_axis_norm,
-                radius: cyl_radius,
-            };
-            let top_circle_3d = Curve::Circle {
-                center: Point::from(cyl_origin.coords + cyl_axis_norm * v_top),
-                normal: cyl_axis_norm,
-                radius: cyl_radius,
-            };
+            let mut boundaries: Vec<f64> = vec![v_bot];
+            for (v, _, _) in &circle_vs {
+                boundaries.push(*v);
+            }
+            boundaries.push(v_top);
 
-            // Lower fragment: v_bot..v_cut
-            // polygon = [seam_bot, seam_cut, cut_circle_k1..k63, seam_cut, seam_bot, bot_circle_k1..k63]
-            let lower_total = 2 * n_seg + 2;
-            let mut lower_poly: Vec<Point> = Vec::with_capacity(lower_total);
-            lower_poly.push(seam_bot);
-            lower_poly.push(seam_cut);
-            for k in 1..n_seg {
-                lower_poly.push(circle_3d.evaluate(k as f64 * dt));
-            }
-            lower_poly.push(seam_cut);
-            lower_poly.push(seam_bot);
-            for k in 1..n_seg {
-                lower_poly.push(bot_circle_3d.evaluate(k as f64 * dt));
-            }
-            debug_assert_eq!(lower_poly.len(), lower_total);
+            for band in 0..boundaries.len() - 1 {
+                let v_lo = boundaries[band];
+                let v_hi = boundaries[band + 1];
+                if (v_hi - v_lo).abs() < len_eps {
+                    continue;
+                }
 
-            let mut lower_partners: Vec<Option<EntityRef>> = vec![None; lower_total];
-            let mut lower_curves: Vec<Option<Curve>> = vec![None; lower_total];
-            // edges 1..=n_seg: seam_cut + cut_circle points (intersection with target)
-            for k in 1..=n_seg {
-                lower_partners[k] = Some(target_face_name.clone());
-                lower_curves[k] = Some(circle_3d.clone());
-            }
-            // edges (n_seg+2)..lower_total: seam_bot + bot_circle points (full bottom circle)
-            for curve in lower_curves.iter_mut().skip(n_seg + 2) {
-                *curve = Some(bot_circle_3d.clone());
-            }
+                let _is_bottom = band == 0;
+                let _is_top = band == boundaries.len() - 2;
 
-            tool_fragments.push(FaceFragment {
-                source_face_index: fi,
-                polygon_3d: lower_poly,
-                inner_polygons_3d: vec![],
-                surface: surface.clone(),
-                parent_name: name.clone(),
-                traversal_index: 0,
-                is_tool_side: true,
-                boundary_partners: lower_partners,
-                boundary_curves: lower_curves,
-                boundary_t_ranges: vec![[0.0, 1.0]; lower_total],
-                boundary_pcurves_a: vec![None; lower_total],
-                boundary_pcurves_b: vec![None; lower_total],
-                inner_boundary_partners: vec![],
-                inner_boundary_curves: vec![],
-                inner_boundary_t_ranges: vec![],
-                inner_boundary_pcurves_a: vec![],
-                inner_boundary_pcurves_b: vec![],
-            });
+                let seam_lo = surface.evaluate(0.0, v_lo);
+                let seam_hi = surface.evaluate(0.0, v_hi);
 
-            // Upper fragment: v_cut..v_top (typically OutsideOther for CUT, discarded)
-            // polygon = [seam_cut, seam_top, top_circle_k1..k63, seam_top, seam_cut, cut_circle_k1..k63]
-            let upper_total = 2 * n_seg + 2;
-            let mut upper_poly: Vec<Point> = Vec::with_capacity(upper_total);
-            upper_poly.push(seam_cut);
-            upper_poly.push(seam_top);
-            for k in (1..n_seg).rev() {
-                upper_poly.push(top_circle_3d.evaluate(k as f64 * dt));
-            }
-            upper_poly.push(seam_top);
-            upper_poly.push(seam_cut);
-            for k in 1..n_seg {
-                upper_poly.push(circle_3d.evaluate(k as f64 * dt));
-            }
-            debug_assert_eq!(upper_poly.len(), upper_total);
+                let lo_circle_3d = Curve::Circle {
+                    center: Point::from(cyl_origin.coords + cyl_axis_norm * v_lo),
+                    normal: cyl_axis_norm,
+                    radius: cyl_radius,
+                };
+                let hi_circle_3d = Curve::Circle {
+                    center: Point::from(cyl_origin.coords + cyl_axis_norm * v_hi),
+                    normal: cyl_axis_norm,
+                    radius: cyl_radius,
+                };
 
-            let mut upper_partners: Vec<Option<EntityRef>> = vec![None; upper_total];
-            let mut upper_curves: Vec<Option<Curve>> = vec![None; upper_total];
-            // edges n_seg+2..=2*n_seg+1: seam_cut and cut_circle points (intersection boundary)
-            for k in (n_seg + 2)..upper_total {
-                upper_partners[k] = Some(target_face_name.clone());
-                upper_curves[k] = Some(circle_3d.clone());
-            }
-            // implicit closing edge (index 2*n_seg+1 → 0): also intersection
-            upper_partners[upper_total - 1] = Some(target_face_name.clone());
-            upper_curves[upper_total - 1] = Some(circle_3d.clone());
+                // Lower half of band polygon: seam_lo → seam_hi → hi_circle_k1..k63
+                // Upper half: seam_hi → seam_lo → lo_circle_k1..k63
+                let total_pts = 2 * n_seg + 2;
+                let mut poly: Vec<Point> = Vec::with_capacity(total_pts);
+                poly.push(seam_lo);
+                poly.push(seam_hi);
+                // Top rim (no intersection circle above): reverse hi_circle to match
+                // original winding — consistent with cap face boundary direction.
+                if band >= circle_vs.len() {
+                    for k in (1..n_seg).rev() {
+                        poly.push(hi_circle_3d.evaluate(k as f64 * dt));
+                    }
+                } else {
+                    for k in 1..n_seg {
+                        poly.push(hi_circle_3d.evaluate(k as f64 * dt));
+                    }
+                }
+                poly.push(seam_hi);
+                poly.push(seam_lo);
+                for k in 1..n_seg {
+                    poly.push(lo_circle_3d.evaluate(k as f64 * dt));
+                }
 
-            tool_fragments.push(FaceFragment {
-                source_face_index: fi,
-                polygon_3d: upper_poly,
-                inner_polygons_3d: vec![],
-                surface: surface.clone(),
-                parent_name: name.clone(),
-                traversal_index: 1,
-                is_tool_side: true,
-                boundary_partners: upper_partners,
-                boundary_curves: upper_curves,
-                boundary_t_ranges: vec![[0.0, 1.0]; upper_total],
-                boundary_pcurves_a: vec![None; upper_total],
-                boundary_pcurves_b: vec![None; upper_total],
-                inner_boundary_partners: vec![],
-                inner_boundary_curves: vec![],
-                inner_boundary_t_ranges: vec![],
-                inner_boundary_pcurves_a: vec![],
-                inner_boundary_pcurves_b: vec![],
-            });
+                let mut partners: Vec<Option<EntityRef>> = vec![None; total_pts];
+                let mut curves: Vec<Option<Curve>> = vec![None; total_pts];
+
+                // Upper boundary (first half, indices 1..=n_seg)
+                if band < circle_vs.len() {
+                    let (_, ref circle_c, ref partner_c) = circle_vs[band];
+                    for k in 1..=n_seg {
+                        partners[k] = Some(partner_c.clone());
+                        curves[k] = Some(circle_c.clone());
+                    }
+                }
+
+                // Lower boundary (second half, indices n_seg+2..total_pts-1)
+                if band > 0 {
+                    let (_, ref circle_c, ref partner_c) = circle_vs[band - 1];
+                    for curve in curves.iter_mut().skip(n_seg + 2) {
+                        *curve = Some(circle_c.clone());
+                    }
+                    for partner in partners.iter_mut().skip(n_seg + 2) {
+                        *partner = Some(partner_c.clone());
+                    }
+                } else {
+                    for curve in curves.iter_mut().skip(n_seg + 2) {
+                        *curve = Some(lo_circle_3d.clone());
+                    }
+                }
+
+                tool_fragments.push(FaceFragment {
+                    source_face_index: fi,
+                    polygon_3d: poly,
+                    inner_polygons_3d: vec![],
+                    surface: surface.clone(),
+                    parent_name: name.clone(),
+                    traversal_index: band_idx,
+                    is_tool_side: true,
+                    boundary_partners: partners,
+                    boundary_curves: curves,
+                    boundary_t_ranges: vec![[0.0, 1.0]; total_pts],
+                    boundary_pcurves_a: vec![None; total_pts],
+                    boundary_pcurves_b: vec![None; total_pts],
+                    inner_boundary_partners: vec![],
+                    inner_boundary_curves: vec![],
+                    inner_boundary_t_ranges: vec![],
+                    inner_boundary_pcurves_a: vec![],
+                    inner_boundary_pcurves_b: vec![],
+                });
+                band_idx += 1;
+            }
         }
     }
 
