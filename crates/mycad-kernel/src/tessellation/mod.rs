@@ -750,10 +750,11 @@ fn tessellate_sphere_face_trimmed(
     let rel_z = rel_z.clamp(-1.0, 1.0);
     let v_lat = rel_z.asin();
 
-    // Determine trim direction: if cutting plane normal is +Z and plane is above center,
-    // the lower cap remains. If below center, the upper cap remains.
-    // The circ_normal indicates the plane normal direction.
-    let trim_lower = circ_normal.z > 0.0;
+    // Both intersection circles share normal +Z, so circ_normal cannot tell the
+    // upper cap from the lower cap. Decide from the circle's position relative to
+    // the sphere center (same criterion as classify::get_fragment_interior_point):
+    // a cutting circle below the center keeps the lower (south-pole) cap.
+    let trim_lower = center_z < center.coords.z;
 
     let n_u = opts.angular_segments.max(3);
     let n_v = (n_u / 2).max(2);
@@ -839,7 +840,7 @@ fn tessellate_sphere_face_trimmed(
         }
     }
 
-    let _ = (circ_radius, base_idx);
+    let _ = (circ_radius, circ_normal, base_idx);
     Ok(())
 }
 

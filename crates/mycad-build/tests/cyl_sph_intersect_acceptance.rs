@@ -443,3 +443,148 @@ fn ec02_build_yaml_rebuild_roundtrip() {
     let yaml2 = doc2.to_yaml().expect("second serialize should succeed");
     assert_eq!(yaml, yaml2, "YAML must be idempotent across round-trips");
 }
+
+/// T08: tessellate_solid result spans z ≈ -5.0 to +5.0 (both caps present in mesh).
+/// Regression guard for issue #54 (upper cap missing, max_z was stuck at +4.0).
+#[test]
+fn t08_mesh_z_range_covers_both_caps() {
+    let solid = build_intersect();
+    let mesh = tessellate_solid(&solid).expect("tessellate_solid should succeed");
+
+    let min_z = mesh
+        .positions
+        .iter()
+        .map(|p| p[2])
+        .fold(f64::INFINITY, f64::min);
+    let max_z = mesh
+        .positions
+        .iter()
+        .map(|p| p[2])
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    // Sphere radius=5, center=(0,0,0) ⇒ caps extend to z=±5
+    assert!(
+        (max_z - 5.0).abs() < 1e-3,
+        "max_z should be ≈+5.0 (north pole), got {max_z}"
+    );
+    assert!(
+        (min_z + 5.0).abs() < 1e-3,
+        "min_z should be ≈-5.0 (south pole), got {min_z}"
+    );
+}
+
+/// T09: upper cap has multiple vertices above z=4.0 (not just the rim).
+/// Confirms the north-pole fan triangles are actually generated.
+#[test]
+fn t09_upper_cap_vertices_exist() {
+    let solid = build_intersect();
+    let mesh = tessellate_solid(&solid).expect("tessellate_solid should succeed");
+
+    let above = mesh.positions.iter().filter(|p| p[2] > 4.0 + 1e-3).count();
+
+    assert!(
+        above >= 12,
+        "expected ≥12 vertices above z=4.0+ε (north-pole fan), got {above}"
+    );
+}
+
+/// EC03: 100× tessellation determinism — tessellate the same solid 100 times,
+/// all meshes produce identical positions, normals, and indices.
+#[test]
+fn ec03_tessellate_100x_determinism() {
+    let solid = build_intersect();
+    let first = tessellate_solid(&solid).expect("tessellate should succeed");
+
+    for i in 1..=99 {
+        let cur = tessellate_solid(&solid).unwrap_or_else(|e| panic!("tess {i} failed: {e}"));
+        assert_eq!(
+            first.positions.len(),
+            cur.positions.len(),
+            "tess {i}: position count"
+        );
+        for (j, (a, b)) in first.positions.iter().zip(cur.positions.iter()).enumerate() {
+            assert_eq!(a, b, "tess {i}: position[{j}] mismatch");
+        }
+        assert_eq!(
+            first.normals.len(),
+            cur.normals.len(),
+            "tess {i}: normal count"
+        );
+        for (j, (a, b)) in first.normals.iter().zip(cur.normals.iter()).enumerate() {
+            assert_eq!(a, b, "tess {i}: normal[{j}] mismatch");
+        }
+        assert_eq!(
+            first.indices.len(),
+            cur.indices.len(),
+            "tess {i}: index count"
+        );
+        assert_eq!(first.indices, cur.indices, "tess {i}: indices mismatch");
+    }
+}
+
+/// EC04: Lower cap symmetry — multiple vertices below z=-4.0 (south-pole fan).
+/// Mirror of T09 to confirm the lower cap is also correctly tessellated.
+#[test]
+fn ec04_lower_cap_vertices_exist() {
+    let solid = build_intersect();
+    let mesh = tessellate_solid(&solid).expect("tessellate_solid should succeed");
+
+    let below = mesh.positions.iter().filter(|p| p[2] < -4.0 - 1e-3).count();
+
+    assert!(
+        below >= 12,
+        "expected ≥12 vertices below z=-4.0-ε (south-pole fan), got {below}"
+    );
+}
+
+/// EC05: Both caps present even at minimum angular_segments (3).
+/// Verifies the trim-direction fix works at the lowest viable resolution.
+#[test]
+fn ec05_both_caps_at_minimum_segments() {
+    let solid = build_intersect();
+    let opts = TessellationOptions::new(3, 1);
+    let mesh =
+        tessellate_solid_with(&solid, &opts).expect("tessellate with min segments should succeed");
+
+    let max_z = mesh
+        .positions
+        .iter()
+        .map(|p| p[2])
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_z = mesh
+        .positions
+        .iter()
+        .map(|p| p[2])
+        .fold(f64::INFINITY, f64::min);
+
+    assert!(
+        (max_z - 5.0).abs() < 1e-3,
+        "min-segments max_z should be ≈+5.0, got {max_z}"
+    );
+    assert!(
+        (min_z + 5.0).abs() < 1e-3,
+        "min-segments min_z should be ≈-5.0, got {min_z}"
+    );
+    assert!(
+        mesh.triangle_count() > 0,
+        "min-segments mesh should have triangles"
+    );
+}
+
+/// EC06: No NaN or Inf in tessellated mesh positions or normals.
+#[test]
+fn ec06_mesh_no_nan_nor_inf() {
+    let solid = build_intersect();
+    let mesh = tessellate_solid(&solid).expect("tessellate_solid should succeed");
+
+    for (i, p) in mesh.positions.iter().enumerate() {
+        for (c, axis) in p.iter().zip(['x', 'y', 'z']) {
+            assert!(c.is_finite(), "position[{i}].{axis} is not finite: {c}");
+        }
+    }
+    for (i, n) in mesh.normals.iter().enumerate() {
+        for (c, axis) in n.iter().zip(['x', 'y', 'z']) {
+            assert!(c.is_finite(), "normal[{i}].{axis} is not finite: {c}");
+        }
+    }
+}
