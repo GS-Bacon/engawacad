@@ -1,0 +1,17 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Boolean Intersect Cylinder + Sphere"
+  features:
+    - type: create_cylinder
+      id: cyl1
+      radius: 3.0
+      height: 20.0
+      origin: [0.0, 0.0, -10.0]
+    - type: create_sphere
+      id: sph1
+      radius: 5.0
+    - type: intersect
+      id: result
+      target: cyl1
+      tool: sph1
