@@ -34,8 +34,7 @@ pub(crate) async fn get_mesh(
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(&root.features, &mut gen)?;
     let out: Vec<BodyMesh> = bodies
-        .all()
-        .iter()
+        .live()
         .map(|b| -> Result<BodyMesh, TessellationError> {
             Ok(BodyMesh {
                 feature_id: b.feature_id.clone(),

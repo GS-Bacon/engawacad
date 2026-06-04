@@ -78,7 +78,7 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 
 ---
 
-## Phase 4: Boolean 演算ができる
+## ✅ Phase 4: Boolean 演算ができる
 
 **外から見た成果**: 形状の足し引きを `.mycad` で記述できる
 
@@ -87,6 +87,8 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 - 演算結果が `export` / `view` で確認できる
 
 **備考**: 曲面同士の Boolean は交線として自由曲線を、フィレット・面取りは自由曲面を必要とする (交線は一般に円・直線でない)。自由曲面/NURBS は専用 Phase を立てず、本 Phase が要求する範囲から漸進的に導入する。数値モデル (トレラント vs 厳密) もここで決定する。詳細は ADR-004 参照。
+
+**状態**: 完了 (2026-06-04)
 
 ---
 
