@@ -291,3 +291,24 @@ async fn t18_extrude_determinism() {
     let (_, body2) = send_mesh_request(file).await;
     assert_eq!(body1, body2, "extrude mesh responses must be deterministic");
 }
+
+// T19: Boolean cut — API returns only the live result body (consumed bodies excluded).
+// Regression guard for #51 (handler.rs was using bodies.all() instead of bodies.live()).
+#[tokio::test]
+async fn t19_boolean_cut_live_bodies_only() {
+    let file = example_path("boolean_box_cut.mycad");
+    let (status, body) = send_mesh_request(file).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    // boolean_box_cut.mycad: target + tool + cut1 → consumed=2, live=1
+    assert_eq!(
+        bodies.len(),
+        1,
+        "only the live result body should be returned"
+    );
+    assert_eq!(bodies[0].feature_id, "cut1");
+    assert!(
+        !bodies[0].mesh.positions.is_empty(),
+        "result mesh non-empty"
+    );
+}
