@@ -1073,6 +1073,16 @@ pub fn partition_faces(
                 .name
                 .clone()
                 .ok_or_else(|| format!("tool face {} missing name", fi))?;
+            let seam_curves: Vec<Option<Curve>> = {
+                let ol = &tool.loops[face.outer_loop];
+                ol.half_edges
+                    .iter()
+                    .map(|he_idx| {
+                        let he = &tool.half_edges[*he_idx];
+                        Some(tool.edges[he.edge].curve.clone())
+                    })
+                    .collect()
+            };
             tool_fragments.push(FaceFragment {
                 source_face_index: fi,
                 polygon_3d: polygon_3d.clone(),
@@ -1082,7 +1092,7 @@ pub fn partition_faces(
                 traversal_index: 0,
                 is_tool_side: true,
                 boundary_partners: vec![None; polygon_3d.len()],
-                boundary_curves: vec![None; polygon_3d.len()],
+                boundary_curves: seam_curves,
                 boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
                 boundary_pcurves_a: vec![None; polygon_3d.len()],
                 boundary_pcurves_b: vec![None; polygon_3d.len()],

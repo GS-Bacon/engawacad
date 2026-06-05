@@ -1,6 +1,7 @@
 use mycad_build::build_bodies_from_features;
 use mycad_format::Document;
 use mycad_kernel::brep::topology::IdGenerator;
+use mycad_kernel::tessellation::tessellate_solid;
 
 fn smoke(yaml: &str) {
     let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
@@ -81,6 +82,19 @@ fn boolean_cut_sphere_dimple() {
     smoke(include_str!(
         "../../../examples/boolean_cut_sphere_dimple.mycad"
     ));
+}
+
+/// Issue #50: build + tessellate must both succeed (was: TrimmedFaceUnsupported).
+#[test]
+fn boolean_cut_sphere_dimple_tessellate() {
+    let yaml = include_str!("../../../examples/boolean_cut_sphere_dimple.mycad");
+    let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
+    let mut gen = IdGenerator::new(0);
+    let bodies =
+        build_bodies_from_features(&doc.root_component.features, &mut gen).expect("build failed");
+    for body in bodies.live() {
+        tessellate_solid(&body.solid).expect("tessellate failed for boolean_cut_sphere_dimple");
+    }
 }
 
 #[test]
