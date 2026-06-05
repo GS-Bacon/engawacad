@@ -60,6 +60,17 @@ pub fn orthonormal_basis(normal: &Vec3) -> (Vec3, Vec3) {
     (u, v)
 }
 
+/// Arc-proportional segment count.
+///
+/// Returns a segment count proportional to the arc's angular span `|t_end - t_start|`
+/// relative to a full revolution (2π), using `base_segments` as the target count for 2π.
+/// The result is at least 1.
+pub fn arc_segment_count(t_start: f64, t_end: f64, base_segments: usize) -> usize {
+    let span = (t_end - t_start).abs();
+    let n = (base_segments as f64 * span / (2.0 * std::f64::consts::PI)).ceil() as usize;
+    n.max(1)
+}
+
 /// Unwrap periodic UV coordinates so consecutive values are continuous.
 /// Adjusts values to avoid jumps larger than π between consecutive entries.
 pub fn unwrap_periodic_uv(u_list: &mut [f64]) {
@@ -253,5 +264,110 @@ mod tests {
         let mut u: Vec<f64> = vec![];
         unwrap_periodic_uv(&mut u);
         assert!(u.is_empty());
+    }
+
+    // --- arc_segment_count tests (T05) ---
+
+    use std::f64::consts::PI;
+
+    #[test]
+    fn t05_arc_segment_count_full_circle() {
+        assert_eq!(arc_segment_count(0.0, 2.0 * PI, 32), 32);
+    }
+
+    #[test]
+    fn t05_arc_segment_count_quarter_circle() {
+        assert_eq!(arc_segment_count(0.0, PI / 2.0, 32), 8);
+    }
+
+    #[test]
+    fn t05_arc_segment_count_tiny_arc() {
+        // 2π/64 arc with base=32 → ceil(32/64) = 1
+        assert_eq!(arc_segment_count(0.0, 2.0 * PI / 64.0, 32), 1);
+    }
+
+    #[test]
+    fn t05_arc_segment_count_zero_span() {
+        assert_eq!(arc_segment_count(0.0, 0.0, 32), 1);
+    }
+
+    #[test]
+    fn t05_arc_segment_count_determinism() {
+        for _ in 0..100 {
+            assert_eq!(arc_segment_count(0.0, 2.0 * PI, 32), 32);
+            assert_eq!(arc_segment_count(0.0, PI / 2.0, 32), 8);
+        }
+    }
+
+    // --- Edge-case tests for arc_segment_count (adversarial persona) ---
+
+    /// base_segments = 0: ceil(0·span/2π) = 0, max(1) = 1
+    #[test]
+    fn edge_arc_base_segments_zero() {
+        assert_eq!(arc_segment_count(0.0, PI, 0), 1);
+    }
+
+    /// Reversed range (t_start > t_end) produces same result as forward.
+    #[test]
+    fn edge_arc_reversed_range() {
+        let fwd = arc_segment_count(0.0, PI, 32);
+        let rev = arc_segment_count(PI, 0.0, 32);
+        assert_eq!(fwd, rev);
+    }
+
+    /// NaN inputs must not panic; result >= 1.
+    #[test]
+    fn edge_arc_nan_no_panic() {
+        let r = arc_segment_count(f64::NAN, 0.0, 32);
+        assert!(r >= 1, "NaN start: expected >= 1, got {r}");
+        let r2 = arc_segment_count(0.0, f64::NAN, 32);
+        assert!(r2 >= 1, "NaN end: expected >= 1, got {r2}");
+    }
+
+    /// Infinity inputs must not panic; result >= 1.
+    #[test]
+    fn edge_arc_inf_no_panic() {
+        let r = arc_segment_count(0.0, f64::INFINITY, 32);
+        assert!(r >= 1, "Inf end: expected >= 1, got {r}");
+        let r2 = arc_segment_count(f64::NEG_INFINITY, 0.0, 32);
+        assert!(r2 >= 1, "NegInf start: expected >= 1, got {r2}");
+    }
+
+    /// f64::MIN_POSITIVE span: too small to produce even 1 segment → 1.
+    #[test]
+    fn edge_arc_min_positive_span() {
+        assert_eq!(arc_segment_count(0.0, f64::MIN_POSITIVE, 32), 1);
+    }
+
+    /// -0.0 to +0.0: zero span → 1.
+    #[test]
+    fn edge_arc_neg_zero() {
+        assert_eq!(arc_segment_count(-0.0, 0.0, 32), 1);
+    }
+
+    /// Span > 2π → proportional (4π with base=32 → 64).
+    #[test]
+    fn edge_arc_span_over_2pi() {
+        assert_eq!(arc_segment_count(0.0, 4.0 * PI, 32), 64);
+    }
+
+    /// f64::MAX span: must not panic, result >= 1.
+    #[test]
+    fn edge_arc_f64_max_span() {
+        let r = arc_segment_count(0.0, f64::MAX, 32);
+        assert!(r >= 1, "f64::MAX span: expected >= 1, got {r}");
+    }
+
+    /// 100-run determinism for edge-case inputs.
+    #[test]
+    fn edge_arc_determinism_100_runs() {
+        for _ in 0..100 {
+            assert_eq!(arc_segment_count(0.0, 2.0 * PI, 32), 32);
+            assert_eq!(arc_segment_count(0.0, PI / 2.0, 32), 8);
+            assert_eq!(arc_segment_count(0.0, 0.0, 32), 1);
+            assert_eq!(arc_segment_count(-0.0, 0.0, 32), 1);
+            assert_eq!(arc_segment_count(0.0, f64::MIN_POSITIVE, 32), 1);
+            assert_eq!(arc_segment_count(0.0, 4.0 * PI, 32), 64);
+        }
     }
 }

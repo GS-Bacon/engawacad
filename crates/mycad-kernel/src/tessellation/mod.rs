@@ -5,8 +5,8 @@ use crate::brep::topology::Solid;
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::{Surface, TessellationStrategy};
 use crate::geometry::{
-    angle_near, length_near, point_near, point_near_scaled, Point, ANGLE_TOLERANCE,
-    LENGTH_TOLERANCE,
+    angle_near, arc_segment_count, length_near, point_near, point_near_scaled, Point,
+    ANGLE_TOLERANCE, LENGTH_TOLERANCE,
 };
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
@@ -365,7 +365,11 @@ fn collect_loop_points(
                 Curve2D::Line2D { .. } => {
                     vec![pcurve.evaluate(pcurve.t_range()[0])]
                 }
-                Curve2D::Circle2D { .. } => pcurve.sample(segments),
+                Curve2D::Circle2D { .. } => {
+                    let [ts, te] = pcurve.t_range();
+                    let n = arc_segment_count(ts, te, segments);
+                    pcurve.sample(n)
+                }
             };
             uv_samples
                 .into_iter()
@@ -377,7 +381,11 @@ fn collect_loop_points(
             } else {
                 (edge.t_range[1], edge.t_range[0])
             };
-            edge.curve.sample_segment(t_start, t_end, segments)
+            let n = match &edge.curve {
+                Curve::Circle { .. } => arc_segment_count(t_start, t_end, segments),
+                Curve::Line { .. } => segments,
+            };
+            edge.curve.sample_segment(t_start, t_end, n)
         };
 
         for p in seg_points {
@@ -2082,14 +2090,15 @@ mod tests {
         );
         s.add_shell(17, vec![0, 1], true);
 
-        // With default angular_segments=32, circle pcurve should produce 32 points
+        // With default angular_segments=32, half-circle pcurve (span=π) produces
+        // arc_segment_count(π, 0, 32) = ceil(32·π/2π) = 16 points
         let mesh = tessellate_solid(&s).unwrap();
-        // Face 0: circle_pcurve(32 pts) + 2 Line HEs(1 pt each) = 34 points
+        // Face 0: circle_pcurve(16 pts) + 2 Line HEs(1 pt each) = 18 points
         // Face 1: 3 Line HEs × 1 pt each = 3 points
         assert_eq!(
             mesh.positions.len(),
-            34 + 3,
-            "expected 37 vertices, got {}",
+            18 + 3,
+            "expected 21 vertices, got {}",
             mesh.positions.len()
         );
     }
@@ -2346,5 +2355,139 @@ mod tests {
             (vol - expected).abs() < 2.0,
             "volume ≈ {expected:.2}, got {vol:.2}"
         );
+    }
+
+    // --- Edge-case tests (adversarial persona) ---
+
+    /// Empty solid (0 faces) → empty mesh, no panic.
+    #[test]
+    fn edge_empty_solid_empty_mesh() {
+        let s = Solid::new(0);
+        let mesh = tessellate_solid(&s).unwrap();
+        assert_eq!(
+            mesh.positions.len(),
+            0,
+            "empty solid should have 0 positions"
+        );
+        assert_eq!(mesh.indices.len(), 0, "empty solid should have 0 indices");
+        assert_eq!(mesh.triangle_count(), 0);
+    }
+
+    /// All mesh coordinates are finite (no NaN/Inf) for cylinder.
+    #[test]
+    fn edge_all_cylinder_coords_finite() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
+        let mesh = tessellate_solid(&solid).unwrap();
+        for (i, p) in mesh.positions.iter().enumerate() {
+            for (j, &x) in p.iter().enumerate() {
+                assert!(x.is_finite(), "position[{i}][{j}] = {x} is not finite");
+            }
+        }
+        for (i, n) in mesh.normals.iter().enumerate() {
+            for (j, &x) in n.iter().enumerate() {
+                assert!(x.is_finite(), "normal[{i}][{j}] = {x} is not finite");
+            }
+        }
+    }
+
+    /// Arc-proportional sampling with low angular_segments still produces valid mesh.
+    #[test]
+    fn edge_low_angular_segments_cylinder() {
+        let mut gen = IdGenerator::new(0);
+        let solid = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
+        let opts = TessellationOptions::new(3, 1);
+        let mesh = tessellate_solid_with(&solid, &opts).unwrap();
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "low angular mesh must not contain NaN/Inf"
+        );
+        assert!(
+            mesh.triangle_count() > 0,
+            "low angular mesh should have triangles"
+        );
+    }
+
+    /// Coincident vertices in a degenerate triangle face: tessellation does not panic.
+    #[test]
+    fn edge_coincident_vertices_no_panic() {
+        let mut s = Solid::new(0);
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(0.0, 0.0, 0.0), None); // Coincident with v0
+        let v2 = s.add_vertex(3, Point::new(0.0, 0.0, 1.0), None);
+        let e0 = s.add_edge(
+            4,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::origin(),
+                direction: Vec3::z(),
+            },
+            [0.0, 0.0], // Zero-length
+            None,
+        );
+        let e1 = s.add_edge(
+            5,
+            [v1, v2],
+            Curve::Line {
+                origin: Point::origin(),
+                direction: Vec3::z(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e2 = s.add_edge(
+            6,
+            [v2, v0],
+            Curve::Line {
+                origin: Point::new(0.0, 0.0, 1.0),
+                direction: -Vec3::z(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let he0 = s.add_half_edge(7, v0, e0, true);
+        let he1 = s.add_half_edge(8, v1, e1, true);
+        let he2 = s.add_half_edge(9, v2, e2, true);
+        let lp = s.add_loop(10, vec![he0, he1, he2]);
+        s.add_face(
+            11,
+            Surface::Plane {
+                origin: Point::origin(),
+                normal: Vec3::x(),
+                u_axis: Vec3::y(),
+                v_axis: Vec3::z(),
+            },
+            lp,
+            vec![],
+            true,
+            None,
+        );
+        s.add_shell(12, vec![0], true);
+
+        let mesh = tessellate_solid(&s).unwrap();
+        for p in &mesh.positions {
+            for &x in p {
+                assert!(x.is_finite());
+            }
+        }
+    }
+
+    /// 100-run determinism for hole tessellation via kernel-level construction.
+    #[test]
+    fn edge_tessellation_100_run_determinism() {
+        let first = {
+            let mut gen = IdGenerator::new(0);
+            let s = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
+            tessellate_solid(&s).unwrap()
+        };
+        for i in 1..100 {
+            let mut gen = IdGenerator::new(0);
+            let s = make_cylinder(5.0, 20.0, Point::origin(), &mut gen).unwrap();
+            let m = tessellate_solid(&s).unwrap();
+            assert_eq!(first.positions, m.positions, "run {i}: positions mismatch");
+            assert_eq!(first.indices, m.indices, "run {i}: indices mismatch");
+        }
     }
 }

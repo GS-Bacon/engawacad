@@ -9,8 +9,8 @@ use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
 pub use math::{
-    angle_near, length_near, point_near, point_near_scaled, ANGLE_TOLERANCE, LENGTH_TOLERANCE,
-    RELATIVE_TOLERANCE,
+    angle_near, arc_segment_count, length_near, point_near, point_near_scaled, ANGLE_TOLERANCE,
+    LENGTH_TOLERANCE, RELATIVE_TOLERANCE,
 };
 
 /// A 3D point with f64 precision.
