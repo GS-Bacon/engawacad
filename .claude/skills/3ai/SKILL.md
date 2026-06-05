@@ -387,7 +387,12 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 git push origin main
 git branch -d cad/$ISSUE_NUM-$ISSUE_SLUG
 bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json merge passed
+bun .claude/skills/3ai/scripts/finalize-feature.ts --issue $ISSUE_NUM --slug $ISSUE_SLUG
 ```
+
+> `finalize-feature.ts` は `features/$ISSUE_NUM-$ISSUE_SLUG/` を git に追加してコミットする。
+> 既に追跡済み・差分なしの場合は何もしない（冪等）。
+> 取りこぼし一括回収: `bun .claude/skills/3ai/scripts/finalize-feature.ts --sweep [--dry-run]`
 
 ---
 
@@ -397,4 +402,5 @@ bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/stat
 - `claude -p` ワーカーを spawn **しない**（課金制約: Z.AI/Codex は可、Anthropic claude は不可）
 - GLM が詰まっても Anthropic claude へ自動フォールバック**しない**
 - dispatch 完了をポーリング**しない** — 背景実行 + 完了通知で受け取る
-- git commit/push は STEP 8 以外で行わない
+- git commit/push は STEP 8 以外で行わない（`finalize-feature.ts` の commit は STEP 8 の一部として許可）
+- `features/$ISSUE/` の手動 `git add` は行わない — 必ず `finalize-feature.ts` 経由にする
