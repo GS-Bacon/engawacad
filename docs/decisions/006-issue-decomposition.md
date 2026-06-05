@@ -114,6 +114,7 @@ bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
 
 `## In-Scope / Out-of-Scope` がない場合、GLM SCOPE ペルソナが critical 指摘を出す。
 `### 数値モデル` がない場合、GLM NUMERIC ペルソナが high 指摘を出す (Phase 4/6+)。
+テスト計画 ID 表に退化/境界ケース専用の ID（`_degen_` / `_boundary_` / `_degenerate_` を含む ID、または `T_DEG` 系）が最低 1 件ない場合、STEP 5.5 で警告が出る（Phase 4 で退化バグ #46/#50–#55 が acceptance 初回をすり抜けた教訓）。
 
 ---
 

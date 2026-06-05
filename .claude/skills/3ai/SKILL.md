@@ -197,6 +197,15 @@ git checkout -b cad/$ISSUE_NUM-$ISSUE_SLUG
 > ⚠️ inline `#[cfg(test)] mod tests` への書き込みはパスベース guard では緩和できないため対象外。inline test の追加は STEP 6 で GLM 担当。
 
 1. `features/$ISSUE_NUM-$ISSUE_SLUG/plan.md` のテスト計画 ID 表を読む
+
+   **退化/境界ケース ID チェック**: テスト計画 ID 表に退化・境界ケース専用の ID が最低 1 件あるか確認する:
+   ```bash
+   grep -qiE '_degen_|_boundary_|_degenerate_|T_DEG' \
+     features/$ISSUE_NUM-$ISSUE_SLUG/plan.md \
+     || echo "⚠️  WARNING: 退化/境界ケース ID が plan.md のテスト計画表に見当たりません。最低 1 件追加してからスケルトンを生成してください。"
+   ```
+   警告が出た場合は plan.md のテスト計画 ID 表に退化/境界テスト ID（例: `T02_degen_zero_length_edge`）を追記してから次へ進む（強制ではないが省略禁止）。
+
 2. 対象クレートの `crates/<crate>/tests/<feature>_acceptance.rs` を **Write** する（guard の `tests/` 緩和により Claude が直接書ける）:
 
 ```rust
