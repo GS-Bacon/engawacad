@@ -168,7 +168,7 @@ describe("determinism", () => {
 // --- Edge case tests (adversarial persona) ---
 
 describe("edge cases", () => {
-  it("handles mesh with a single degenerate triangle (zero area)", () => {
+  it("rejects degenerate triangle (all vertices at same point)", () => {
     const mesh = makeMesh({
       positions: [
         [1, 1, 1],
@@ -182,9 +182,15 @@ describe("edge cases", () => {
       ],
       indices: [0, 1, 2],
     });
-    expect(() => validateMesh(mesh)).not.toThrow();
-    const geo = meshToGeometry(mesh);
-    expect(geo.getAttribute("position").count).toBe(3);
+    expect(() => validateMesh(mesh)).toThrow(MeshValidationError);
+  });
+
+  it("rejects degenerate triangle (collinear vertices)", () => {
+    expect(() =>
+      validateMesh(
+        makeMesh({ positions: [[0, 0, 0], [1, 1, 1], [2, 2, 2]] }),
+      ),
+    ).toThrow(MeshValidationError);
   });
 
   it("handles large coordinate values", () => {
@@ -202,12 +208,15 @@ describe("edge cases", () => {
   });
 
   it("handles very small (subnormal) coordinate values", () => {
+    // 5e-324 is the smallest subnormal double; (5e-324)^2 underflows to 0,
+    // so positions [[0,0,0],[tiny,0,0],[0,tiny,0]] would form a zero-area triangle
+    // in float64. Use a non-degenerate triangle that still exercises subnormal values.
     const tiny = 5e-324;
     const mesh = makeMesh({
       positions: [
         [0, 0, 0],
-        [tiny, 0, 0],
-        [0, tiny, 0],
+        [1, 0, 0],
+        [0, 0, tiny],
       ],
     });
     expect(() => validateMesh(mesh)).not.toThrow();
@@ -244,8 +253,9 @@ describe("edge cases", () => {
     const normals: [number, number, number][] = [];
     const indices: number[] = [];
     for (let i = 0; i < n; i++) {
-      positions.push([i, i * 2, i * 3]);
-      normals.push([1, 0, 0]);
+      // zig-zag in y so consecutive triples are never collinear
+      positions.push([i, i % 2, 0]);
+      normals.push([0, 0, 1]);
     }
     for (let i = 0; i < n - 2; i++) {
       indices.push(i, i + 1, i + 2);

@@ -43,6 +43,23 @@ export function validateMesh(mesh: TriangleMesh): void {
       );
     }
   }
+
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
+    const [x0, y0, z0] = positions[i0];
+    const [x1, y1, z1] = positions[i1];
+    const [x2, y2, z2] = positions[i2];
+    const ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
+    const fx = x2 - x0, fy = y2 - y0, fz = z2 - z0;
+    const cx = ey * fz - ez * fy;
+    const cy = ez * fx - ex * fz;
+    const cz = ex * fy - ey * fx;
+    if (cx === 0 && cy === 0 && cz === 0) {
+      throw new MeshValidationError(
+        `degenerate triangle at indices [${i0}, ${i1}, ${i2}]: zero area`,
+      );
+    }
+  }
 }
 
 export function meshToGeometry(mesh: TriangleMesh): BufferGeometry {
