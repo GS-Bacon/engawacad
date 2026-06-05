@@ -78,6 +78,8 @@ if (parseFailed) process.exit(0);
 if (/(?:^|\/)crates\//.test(filePath)) {
   // crates/<crate>/tests/ 配下は Claude も書ける（STEP 5.5 acceptance test skeleton 用）
   if (/(?:^|\/)crates\/[^/]+\/tests\//.test(filePath)) process.exit(0);
+  // xtask はビルドツールであり CAD カーネルコードではないため直接編集を許可
+  if (/(?:^|\/)crates\/xtask\//.test(filePath)) process.exit(0);
   blockEdit();
 }
 

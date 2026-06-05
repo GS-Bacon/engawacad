@@ -70,6 +70,10 @@ fn web() -> ExitCode {
 }
 
 fn gen_ts() -> ExitCode {
+    gen_ts_to(&workspace_root().join("web/src/generated"))
+}
+
+pub(crate) fn gen_ts_to(out_dir: &std::path::Path) -> ExitCode {
     use mycad_api::transport::BodyMesh;
     use mycad_api::ErrorResponse;
     use mycad_format::feature::EntityRef;
@@ -77,20 +81,18 @@ fn gen_ts() -> ExitCode {
     use mycad_kernel::tessellation::TriangleMesh;
     use ts_rs::TS;
 
-    let out_dir = workspace_root().join("web/src/generated");
-
     if out_dir.exists() {
-        if let Err(e) = std::fs::remove_dir_all(&out_dir) {
+        if let Err(e) = std::fs::remove_dir_all(out_dir) {
             eprintln!("Failed to clean output directory: {e}");
             return ExitCode::FAILURE;
         }
     }
-    if let Err(e) = std::fs::create_dir_all(&out_dir) {
+    if let Err(e) = std::fs::create_dir_all(out_dir) {
         eprintln!("Failed to create output directory: {e}");
         return ExitCode::FAILURE;
     }
 
-    std::env::set_var("TS_RS_EXPORT_DIR", &out_dir);
+    std::env::set_var("TS_RS_EXPORT_DIR", out_dir);
     let cfg = ts_rs::Config::from_env();
 
     type ExportFn = Box<dyn FnOnce(&ts_rs::Config) -> Result<(), ts_rs::ExportError>>;
@@ -474,6 +476,28 @@ export type ErrorResponse = { error: string, };
                 let actual = read_generated(&dir, name);
                 assert_eq!(actual, *expected, "run {i}: {name} differs");
             }
+        }
+    }
+
+    /// T07: gen_ts_to() が workspace_root / web/src/generated を経由せず
+    /// 指定ディレクトリへ実際にファイルを書き出すことを検証する（実経路テスト）。
+    #[test]
+    fn t07_real_path_gen_ts_to() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let code = gen_ts_to(dir.path());
+        assert_eq!(code, ExitCode::SUCCESS, "gen_ts_to should succeed");
+        for name in &[
+            "Document.ts",
+            "Feature.ts",
+            "TriangleMesh.ts",
+            "BodyMesh.ts",
+            "ErrorResponse.ts",
+        ] {
+            assert!(
+                dir.path().join(name).exists(),
+                "{name} missing from gen_ts_to output"
+            );
         }
     }
 }
