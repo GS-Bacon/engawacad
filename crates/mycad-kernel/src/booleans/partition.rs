@@ -573,17 +573,64 @@ pub fn partition_faces(
                 && segments_are_interior(&circle_segs, polygon_2d)
             {
                 // Interior circle: single fragment with hole
-                let (inner_poly_2d, inner_partners, inner_curves, inner_tr, inner_pca, inner_pcb) =
-                    collect_ordered_circle_polygon(&circle_segs, surface);
-                let inner_poly_3d: Vec<Point> = inner_poly_2d
-                    .iter()
-                    .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                // Obtain provenance (partners/curves/pcurses) from
+                // collect_ordered_circle_polygon — we only use it for metadata,
+                // not for 3D vertex positions.
+                let (
+                    inner_poly_2d,
+                    inner_partners_proto,
+                    inner_curves_proto,
+                    _inner_tr_proto,
+                    inner_pca_proto,
+                    inner_pcb_proto,
+                ) = collect_ordered_circle_polygon(&circle_segs, surface);
+
+                // Generate ring inner-loop 3D points using the SAME
+                // Circle::evaluate(k*dt) discretisation as the cylinder band
+                // boundary, so that vertex-map merging in assemble produces
+                // exact matches.  The ring loop is reversed (k=0, k=63, …, k=1)
+                // so that each shared edge gets opposite half-edges → manifold OK.
+                let n_inner = ANGULAR_SEGMENTS_DEFAULT; // 64
+                let dt = 2.0 * std::f64::consts::PI / n_inner as f64;
+                let circle_opt = circle_segs.first().and_then(|s| s.source_curve_3d.as_ref());
+                let ring_inner_poly_3d: Vec<Point> = if let Some(circle) = circle_opt {
+                    let mut pts = Vec::with_capacity(n_inner);
+                    pts.push(circle.evaluate(0.0));
+                    for k in (1..n_inner).rev() {
+                        pts.push(circle.evaluate(k as f64 * dt));
+                    }
+                    pts
+                } else {
+                    // Fallback: legacy unproject path (no circle curve available)
+                    inner_poly_2d
+                        .iter()
+                        .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                        .collect()
+                };
+
+                // Pad provenance arrays to 64 entries (all edges share the same
+                // circle segment provenance — same partner, curve, t-range).
+                let first_partner = inner_partners_proto.first().and_then(|p| p.clone());
+                let first_curve = inner_curves_proto.first().and_then(|c| c.clone());
+                let first_pca = inner_pca_proto.first().and_then(|c| c.clone());
+                let first_pcb = inner_pcb_proto.first().and_then(|c| c.clone());
+                let inner_partners: Vec<Option<EntityRef>> =
+                    (0..n_inner).map(|_| first_partner.clone()).collect();
+                let inner_curves: Vec<Option<Curve>> =
+                    (0..n_inner).map(|_| first_curve.clone()).collect();
+                let inner_tr: Vec<[f64; 2]> = (0..n_inner)
+                    .map(|_| [0.0, 2.0 * std::f64::consts::PI])
                     .collect();
+                let inner_pca: Vec<Option<Curve2D>> =
+                    (0..n_inner).map(|_| first_pca.clone()).collect();
+                let inner_pcb: Vec<Option<Curve2D>> =
+                    (0..n_inner).map(|_| first_pcb.clone()).collect();
+
                 let n_outer = polygon_3d.len();
                 target_fragments.push(FaceFragment {
                     source_face_index: fi,
                     polygon_3d: polygon_3d.clone(),
-                    inner_polygons_3d: vec![inner_poly_3d.clone()],
+                    inner_polygons_3d: vec![ring_inner_poly_3d],
                     surface: surface.clone(),
                     parent_name: name.clone(),
                     traversal_index: 0,
@@ -644,6 +691,11 @@ pub fn partition_faces(
                 });
                 // Plane×Sphere: create sphere cap fragment and detect multi-plane
                 if let Some(sph_ui) = sphere_tool_face_ui {
+                    // Reconstruct inner_poly_3d from UV for sphere cap (independent discretisation)
+                    let inner_poly_3d: Vec<Point> = inner_poly_2d
+                        .iter()
+                        .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                        .collect();
                     let count = sphere_plane_interior_count.entry(sph_ui).or_insert(0);
                     *count += 1;
                     if *count > 1 {
@@ -1346,9 +1398,11 @@ pub fn partition_faces(
                 let _is_bottom = band == 0;
                 let _is_top = band == boundaries.len() - 2;
 
-                let seam_lo = surface.evaluate(0.0, v_lo);
-                let seam_hi = surface.evaluate(0.0, v_hi);
-
+                // Build evaluation circles for each boundary.
+                // For intersection boundaries (those with a circle_vs entry),
+                // use the intersection circle directly so that vertices match
+                // the ring fragment on the plane face.  For cap boundaries
+                // (top/bottom of cylinder), use the locally-constructed circle.
                 let lo_circle_3d = Curve::Circle {
                     center: Point::from(cyl_origin.coords + cyl_axis_norm * v_lo),
                     normal: cyl_axis_norm,
@@ -1360,6 +1414,26 @@ pub fn partition_faces(
                     radius: cyl_radius,
                 };
 
+                // Pick the circle to evaluate for each boundary.
+                // Intersection boundaries must use the intersection circle
+                // (source_curve_3d) so that vertex positions are bit-exact
+                // matches with the ring fragment's inner loop on the partner face.
+                let lo_eval: &Curve = if band > 0 {
+                    &circle_vs[band - 1].1
+                } else {
+                    &lo_circle_3d
+                };
+                let hi_eval: &Curve = if band < circle_vs.len() {
+                    &circle_vs[band].1
+                } else {
+                    &hi_circle_3d
+                };
+
+                // Seam points must also come from the evaluation circle so the
+                // polygon closes consistently (seam = circle.evaluate(0)).
+                let seam_lo = lo_eval.evaluate(0.0);
+                let seam_hi = hi_eval.evaluate(0.0);
+
                 // Lower half of band polygon: seam_lo → seam_hi → hi_circle_k1..k63
                 // Upper half: seam_hi → seam_lo → lo_circle_k1..k63
                 let total_pts = 2 * n_seg + 2;
@@ -1370,17 +1444,17 @@ pub fn partition_faces(
                 // original winding — consistent with cap face boundary direction.
                 if band >= circle_vs.len() {
                     for k in (1..n_seg).rev() {
-                        poly.push(hi_circle_3d.evaluate(k as f64 * dt));
+                        poly.push(hi_eval.evaluate(k as f64 * dt));
                     }
                 } else {
                     for k in 1..n_seg {
-                        poly.push(hi_circle_3d.evaluate(k as f64 * dt));
+                        poly.push(hi_eval.evaluate(k as f64 * dt));
                     }
                 }
                 poly.push(seam_hi);
                 poly.push(seam_lo);
                 for k in 1..n_seg {
-                    poly.push(lo_circle_3d.evaluate(k as f64 * dt));
+                    poly.push(lo_eval.evaluate(k as f64 * dt));
                 }
 
                 let mut partners: Vec<Option<EntityRef>> = vec![None; total_pts];

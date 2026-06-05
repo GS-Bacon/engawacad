@@ -59,7 +59,9 @@ fn boolean_box_fuse() {
 
 #[test]
 fn boolean_box_intersect() {
-    smoke(include_str!("../../../examples/boolean_box_intersect.mycad"));
+    smoke(include_str!(
+        "../../../examples/boolean_box_intersect.mycad"
+    ));
 }
 
 #[test]
@@ -69,28 +71,35 @@ fn boolean_box_void() {
 
 #[test]
 fn boolean_cut_cylinder_hole() {
-    smoke(include_str!("../../../examples/boolean_cut_cylinder_hole.mycad"));
+    smoke(include_str!(
+        "../../../examples/boolean_cut_cylinder_hole.mycad"
+    ));
 }
 
 #[test]
 fn boolean_cut_sphere_dimple() {
-    smoke(include_str!("../../../examples/boolean_cut_sphere_dimple.mycad"));
+    smoke(include_str!(
+        "../../../examples/boolean_cut_sphere_dimple.mycad"
+    ));
 }
 
 #[test]
-#[ignore = "known bug: #55 — Fuse(box, cylinder) manifold violation"]
 fn boolean_fuse_box_cyl() {
     smoke(include_str!("../../../examples/boolean_fuse_box_cyl.mycad"));
 }
 
 #[test]
 fn boolean_intersect_box_cyl() {
-    smoke(include_str!("../../../examples/boolean_intersect_box_cyl.mycad"));
+    smoke(include_str!(
+        "../../../examples/boolean_intersect_box_cyl.mycad"
+    ));
 }
 
 #[test]
 fn boolean_intersect_cyl_sphere() {
-    smoke(include_str!("../../../examples/boolean_intersect_cyl_sphere.mycad"));
+    smoke(include_str!(
+        "../../../examples/boolean_intersect_cyl_sphere.mycad"
+    ));
 }
 
 #[test]
