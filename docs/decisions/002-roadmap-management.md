@@ -65,6 +65,21 @@ STL は三角メッシュの単純な ASCII/バイナリ形式で、`tessellate_
 - `type: refactor` — 内部リファクタ。完了判定に含めない。
 - `type: foundation` — 設計・横断的な土台作業。完了判定に含めない。
 - `bug` / `docs` ラベルは既存のものを流用。
+- `needs-review` — `/3ai` バッチ自動処理を一時停止するためのフラグ。このラベルがついた Issue は `gate: pause` となり B-3 で人間確認が入る。  
+  初期化コマンド: `gh label create needs-review --description "/3ai batch mode の自動進行を止める" --color "FBCA04"`
+
+### ラベル運用: batch 軸（ファイル競合グループ）
+
+`/3ai` バッチモードが Issue をグルーピングするための軸。crate 軸・type 軸と直交し、どのファイル群を変更するかで分類する:
+
+| ラベル | 対象 |
+|---|---|
+| `batch:kernel` | Rust クレート (`crates/**`) を変更する Issue |
+| `batch:viewer` | Web フロントエンド (`web/`) を変更する Issue |
+| `batch:data` | YAML サンプル・テストデータのみを変更する Issue |
+| `batch:skill` | `.claude/` スキル・dispatch スクリプトを変更する Issue |
+
+グループ間は逐次処理（v1 シングルツリー実行）、グループ内は Issue body の `#N` 参照で依存順ソートする。グループ間の処理優先度: `kernel` → `data` → `viewer` → `skill`。
 
 solo 開発でも type 軸を設けた理由: 保守・設計・差し込み作業が機能 Milestone に混入すると Phase が偽 closed になる (Phase 2 Milestone がこれで崩れた)。type ラベルにより「Phase 完了 = その Phase の `type: feature` Issue が全 closed」と明確に定義できる。
 

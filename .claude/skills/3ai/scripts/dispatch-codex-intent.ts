@@ -13,28 +13,47 @@ import { dispatchCodex } from "./dispatch-codex.ts";
 
 async function main() {
   const args = process.argv.slice(2);
-  let issueDraftFile = "", resultFile = "", roadmapFile = "ROADMAP.md";
+  let issueDraftFile = "", issueNum = "", resultFile = "", roadmapFile = "ROADMAP.md";
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case "--issue-draft": issueDraftFile = args[++i]; break;
+      case "--issue":       issueNum = args[++i]; break;
       case "--result":      resultFile = args[++i]; break;
       case "--roadmap":     roadmapFile = args[++i]; break;
       default: console.error(`Unknown arg: ${args[i]}`); process.exit(1);
     }
   }
 
-  if (!issueDraftFile || !resultFile) {
-    console.error("Usage: dispatch-codex-intent.ts --issue-draft <file> --result <file>");
+  if ((!issueDraftFile && !issueNum) || !resultFile) {
+    console.error("Usage: dispatch-codex-intent.ts (--issue-draft <file> | --issue N) --result <file>");
+    process.exit(1);
+  }
+  if (issueDraftFile && issueNum) {
+    console.error("--issue-draft と --issue は排他的です");
     process.exit(1);
   }
 
-  if (!existsSync(issueDraftFile)) {
-    console.error(`Issue draft not found: ${issueDraftFile}`);
-    process.exit(1);
+  // draft テキストの取得
+  let draftText: string;
+  if (issueNum) {
+    const proc = Bun.spawn(
+      ["gh", "issue", "view", issueNum, "--json", "body", "-q", ".body"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    draftText = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+    if (!draftText) {
+      console.error(`Issue #${issueNum} の本文を取得できませんでした`);
+      process.exit(1);
+    }
+  } else {
+    if (!existsSync(issueDraftFile)) {
+      console.error(`Issue draft not found: ${issueDraftFile}`);
+      process.exit(1);
+    }
+    draftText = readFileSync(issueDraftFile, "utf-8");
   }
-
-  const draftText = readFileSync(issueDraftFile, "utf-8");
 
   // ROADMAP コンテキストを追加 (Phase 完了条件と整合しているか判定に使う)
   let roadmapCtx = "";
@@ -55,10 +74,11 @@ async function main() {
 
   const fullInput = `${roadmapCtx}${numericNote}\n以下は新規 Issue の草案です。意図・スコープの明確さを審査してください。\n\n${draftText}`;
 
-  const tmpInput = `/tmp/intent-check-input-${Date.now()}.txt`;
+  const tmpInput = `/tmp/intent-check-input-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
   writeFileSync(tmpInput, fullInput, "utf-8");
 
-  process.stderr.write(`=== dispatch-codex-intent: ${issueDraftFile} ===\n`);
+  const src = issueNum ? `#${issueNum}` : issueDraftFile;
+  process.stderr.write(`=== dispatch-codex-intent: ${src} ===\n`);
 
   try {
     await dispatchCodex({

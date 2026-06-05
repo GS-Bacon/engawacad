@@ -11,4 +11,5 @@ web/dist/
 .env
 features/**/*.raw
 features/**/*.log
+features/.batch/
 .claude/scheduled_tasks.lock

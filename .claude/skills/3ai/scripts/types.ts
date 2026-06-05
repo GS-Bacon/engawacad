@@ -42,3 +42,41 @@ export interface ReviewConfig {
   maxLoops: number;
   scopeHint: string;
 }
+
+// --- バッチモード型 ---
+
+export type BatchFlowType = "light" | "full";
+export type BatchGateType = "auto" | "pause";
+export type BatchTierType = "bug-batch" | "enh-batch" | "phase-feature";
+
+export interface BatchIssue {
+  number: number;
+  slug: string;
+  title: string;
+  labels: string[];
+  deliverable: Deliverable;
+  flow: BatchFlowType;
+  gate: BatchGateType;
+  pause_reasons: string[];
+  ambiguous: boolean;
+  intent_check_required: boolean;
+  keep_codex_gate: boolean;
+  deps: number[];
+  raw_refs: number[];
+}
+
+export interface BatchGroup {
+  group: string;
+  order: number;
+  issues: BatchIssue[];
+}
+
+export interface BatchPlan {
+  generated_at: string;
+  batch_start_sha: string;
+  tier: BatchTierType;
+  batch_arg: "fixes" | "phase" | null;
+  current_phase: number | null;
+  groups: BatchGroup[];
+  warnings: string[];
+}

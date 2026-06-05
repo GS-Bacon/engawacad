@@ -10,6 +10,102 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 
 ---
 
+## 引数解釈（最初に判定）
+
+- `/3ai --issue N` → **単一 Issue モード**。STEP 0 へ直行（既存フロー、変更なし）。  
+- `/3ai`（引数なし）→ **バッチモード**。STEP B へ。  
+- `/3ai --batch fixes` → **バッチモード**（bug+batch:* に絞る）。STEP B へ。  
+- `/3ai --batch phase` → **バッチモード**（現 Phase milestone の type:feature に絞る）。STEP B へ。  
+
+---
+
+## STEP B: バッチ実行（バッチモード専用）
+
+> 引数なし、または `--batch` 付きで呼ばれた場合のみ実行する。`--issue N` の場合は STEP 0 へ直行。
+
+### B-1: 実行プラン生成
+
+```bash
+bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
+```
+
+`features/.batch/plan.json` を読み込む。`groups` が空なら「対象 Issue が見つかりませんでした」を報告して終了する。
+
+`batch_start_sha`（plan.json に含まれる）は B-6 横断レビューで使う。
+
+### B-2: プラン提示（情報共有 + slug 確認）
+
+`plan.json` の内容を平易な言葉でユーザーに提示する:
+- 選択した tier・グループ一覧・各 Issue の `flow`（light/full）・`gate`（auto/pause）・実行順序
+- 導出した slug を Issue ごとに一覧し、修正があれば **ここで一括受付**する（後から変えられない）
+
+**全件 `flow: light` のバッチ**はここで一括着手確認を行う（`ExitPlanMode` なし、承認=ユーザーの返答）。
+
+### B-3: pause の front-load（実装前に人間介在を集約）
+
+`gate: pause` または `intent_check_required: true` の Issue がある場合、実装ループ前にまとめて処理する:
+
+- **`needs-review` ラベルあり / ambiguous** → ユーザーに要件を確認。解決したら続行、解決しなければバッチから除外する
+- **`intent_check_required: true`** → Codex intent-check を実行:
+  ```bash
+  bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
+    --issue $N \
+    --result features/.batch/intent-$N.yaml
+  ```
+  `aligned: no` → ユーザーと相談し、スコープ修正またはバッチから除外する
+
+**B-3 完了後の残 Issue は無人で自動進行する。**
+
+### B-4: グループ・Issue ループ（auto 実行）
+
+`plan.json` の `groups[].order` 順、各グループ内は `deps` 依存順に Issue を処理する:
+
+1. `main` ブランチ上でクリーンな状態を確認する
+2. `bun .claude/skills/3ai/scripts/init-feature.ts --issue $N --slug $SLUG` を実行する  
+   （`features/$N-$SLUG/` が既存の場合はスキップ → 完了済みとして continue）
+3. `flow: full` の Issue → 既存 STEP 1（ディレクトリ作成済み、Issue 確定のみ）→ STEP 2 … STEP 8 を当該 Issue で実行。`ExitPlanMode`（唯一の承認点）は full Issue でも維持する
+4. `flow: light` の Issue → **B-5 へ**
+
+### B-5: Lightweight フロー（機械的 Issue）
+
+**スキップ**: STEP 2（壁打ち）/ STEP 2.5 / STEP 3（GLM 多ペルソナ設計レビュー全体）/ STEP 4（ExitPlanMode）
+
+**実行（順序通り）**:
+
+1. **light STEP 2'**: Claude が `features/$N-$SLUG/plan.md` を自動生成する（壁打ちなし）。  
+   必須セクション: `## In-Scope / Out-of-Scope` 表、`## Non-Goals`、実装対象、テスト計画 ID 表（normal ≥1 + `_degen_/_boundary_` ガード行）
+2. **STEP 5**: ブランチ作成 (`git checkout -b cad/$N-$SLUG`)
+3. **STEP 5.5**: Acceptance Test Skeleton 作成（**保持** — 偽陽性ガード、機械的 Issue でも省略しない）
+4. **STEP 6 / 6.5 / 6.6**: GLM コア実装 → test-spec 作成 → GLM テスト実装（既存フローをそのまま実行）
+5. **STEP 7**: GLM 最終レビュー
+6. **STEP 7.5**: Codex 独立技術ゲート  
+   - `keep_codex_gate: true`（= batch:kernel）→ **STEP 7.5 を保持する**（幾何不変量リスクが高いため）  
+   - `keep_codex_gate: false`（= それ以外の light）→ **STEP 7.5 をスキップし B-6 横断レビューに集約する**  
+   - **state shim**: 7.5 をスキップする Issue は STEP 7 末で以下を実行し STEP 8 の assert ゲートを通す:  
+     ```bash
+     bun .claude/skills/3ai/scripts/state.ts set \
+       features/$N-$SLUG/state.json codex_review passed
+     ```
+7. **STEP 8**: squash マージ + `finalize-feature.ts`（逐次実行のため単一ツリーで安全）
+
+### B-6: 横断 Codex レビュー（全グループ完了後）
+
+`batch_start_sha`（plan.json に記録）を base に全バッチコミットを一括レビューする:
+
+```bash
+bun .claude/skills/3ai/scripts/dispatch-codex.ts \
+  --mode review \
+  --base <batch_start_sha> \
+  --instruction .claude/skills/3ai/agents/codex-final-reviewer.md \
+  --result features/.batch/codex-crosscut.yaml
+```
+
+- `blocking ≥ 1` → ユーザーに報告（バッチ全体の自動ループはせずエスカレーション）
+- medium/low のみ → `features/.batch/codex-crosscut-findings.md` に記録
+- 任意: `bun .claude/skills/3ai/scripts/finalize-feature.ts --sweep --dry-run` で取りこぼしを確認する
+
+---
+
 ## STEP 0: プランモードへ移行
 
 **`EnterPlanMode` を呼ぶ。**
@@ -26,7 +122,8 @@ gh issue list --state open
 ```
 
 ROADMAP.md の現 Phase に紐づく Milestone の未着手 Issue を提案し、ユーザーに選んでもらう。  
-選んだ Issue 番号を `$ISSUE_NUM`、スラッグを `$ISSUE_SLUG` とする（例: `42-make-cylinder`）。
+選んだ Issue 番号を `$ISSUE_NUM`、スラッグを `$ISSUE_SLUG` とする（例: `42-make-cylinder`）。  
+`--issue N` 指定時（バッチから呼ばれる場合を含む）はこの一覧表示と対話選択を飛ばし、N を `$ISSUE_NUM` に使う。
 
 作業ディレクトリと状態ファイルを一括生成（`features/$ISSUE_NUM-$ISSUE_SLUG/` に plan.md / rejection.md / judgment-summary.md / state.json が作られる）:
 

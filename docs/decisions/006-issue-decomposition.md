@@ -185,3 +185,4 @@ dispatch: `dispatch-codex.ts --mode review --instruction agents/codex-final-revi
 | Phase オプションペルソナの追加忘れ | Codex intent-check に「数値判断を含むか」チェックを追加。yes なら NUMERIC 強制 |
 | Issue 更新の軽微/中の判定が曖昧 | 本 ADR の §5 表を参照。迷ったら中 (Codex 再投入) を選ぶ |
 | Codex 最終ゲートで throughput 低下 | severity 閾値 block (critical/high のみ) と `codex_loops` 上限 2 で抑制 |
+| バッチモードで粒度ガードが崩れる | バッチモードは機械的 Issue に light フロー、`type:feature` に full フローを適用し、**§1 粒度ガード (1 Issue = GLM 1 サイクル) を Issue 単位で維持する**。batch:kernel の light Issue は STEP 7.5 (Codex 個別ゲート) を保持し幾何不変量を守る |
