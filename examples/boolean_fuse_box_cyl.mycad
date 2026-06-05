@@ -12,6 +12,7 @@ root_component:
       id: cyl1
       radius: 2.0
       height: 15.0
+      origin: [0.0, 0.0, -7.5]
     - type: fuse
       id: result
       target: box1
