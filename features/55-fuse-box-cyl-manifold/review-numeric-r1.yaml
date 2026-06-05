@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: medium
+    section: "テスト計画"
+    finding: "数値境界テスト（ε 近傍の入力・縮退ケース）が含まれていない。plan は既定の ε 値(1e-9)を使用するため致命的ではないが、T01-T06 だけでは 'ε_snap 境界上の頂点が正しくマージされるか' が検証されない"
+    suggestion: "数値境界テストを追加するか、Non-Goals に「数値境界テストは別 Phase/Issue で対応」と明記すること"
+
+verdict: pass

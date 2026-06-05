@@ -1,0 +1,108 @@
+## In-Scope / Out-of-Scope
+<!-- ADR-006 §plan.md 必須セクション。GLM SCOPE ペルソナが存在を検証する。 -->
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| TOOL 側 degenerate pass-through (`partition.rs` L1064-1096) が球面 seam の `Curve::Circle` を捨てている欠陥の修正 | TARGET 側 対称分岐 (`partition.rs` L255-279) — sphere を target にして tool を内包する逆ケース。検証用 example が無いため別 Issue |
+| 完全内包された球 void 面 (交線なし) が full-sphere validator を通り、既存 `tessellate_face_sphere` で内向き法線メッシュ化される | tessellation 側の新規コードパス追加 (既存 `tessellate_face_sphere` が `same_sense:false` を既にサポート済みのため不要) |
+| `boolean_cut_sphere_dimple.mycad` の `mycad export` 成功 + 受け入れテスト群 | Sphere×Sphere / Cone など他サーフェス Boolean、multi-plane sphere intersection |
+| void 球面の watertight・符号付き体積・内向き法線の検証テスト | trimmed sphere cap パス (`tessellate_sphere_face_trimmed`, #54 で対応済み) の変更 |
+
+## Non-Goals
+<!-- Out-of-Scope と同内容でも重複 OK。dispatch-codex-auto.ts の guard が参照する。 -->
+- TARGET 側 degenerate pass-through (`partition.rs` L269) の同型バグ修正: sphere-as-target の example が存在せず未検証スコープ追加になるため本 Issue では行わない (twin bug として記録)
+- `tessellate_face_sphere` / `tessellate_sphere_face_trimmed` 本体の改変: 既存実装で足りる
+- 新しい tolerance/ε 定数の導入: 既存 validator の許容誤差をそのまま使う
+- 部分交差 (shallow dimple, center オフセット) ケース: 既に `sphere_trimmed_volume_sign` で通っており本 Issue 対象外
+
+## 実装対象
+<!-- Issue: #50 -->
+<!-- 影響クレート/ファイル: crates/mycad-kernel/src/booleans/partition.rs -->
+
+**根本原因**: box(中心原点 [-5,5]³) − sphere(r=3 原点) では球が完全に箱内部に収まり交線が生じない。Boolean Cut はこの球面を「内向き法線の void 面」として 1 フラグメントでパススルーするが、`partition.rs` の TOOL degenerate 分岐 (L1064-1096) が seam edge の `Curve::Circle` 由来情報を捨てて `boundary_curves: vec![None; ...]` を渡している。その結果、`assemble.rs::circle_curve_for_edge` (L443-481) が `else` 分岐に落ちて seam を `Curve::Line { t_range:[0,1] }` に降格させる。tessellation の full-sphere validator `tessellate_face_sphere` (`tessellation/mod.rs` L533-540) は seam が `Curve::Circle` であることを要求するため最初の `let-else` で `TrimmedFaceUnsupported` を返す。
+
+**修正** (`crates/mycad-kernel/src/booleans/partition.rs`, TOOL 側 degenerate 分岐 L1076-1094):
+
+before:
+```rust
+            tool_fragments.push(FaceFragment {
+                source_face_index: fi,
+                polygon_3d: polygon_3d.clone(),
+                inner_polygons_3d: vec![],
+                surface: surface.clone(),
+                parent_name: name,
+                traversal_index: 0,
+                is_tool_side: true,
+                boundary_partners: vec![None; polygon_3d.len()],
+                boundary_curves: vec![None; polygon_3d.len()],
+                boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                ...
+            });
+```
+
+after (seam 由来 curve を source 面の outer_loop から取得して carry。L711-722 の cyl×sph パスと同型):
+```rust
+            let seam_curves: Vec<Option<Curve>> = {
+                let ol = &tool.loops[face.outer_loop];
+                ol.half_edges
+                    .iter()
+                    .map(|he_idx| {
+                        let he = &tool.half_edges[*he_idx];
+                        Some(tool.edges[he.edge].curve.clone())
+                    })
+                    .collect()
+            };
+            tool_fragments.push(FaceFragment {
+                source_face_index: fi,
+                polygon_3d: polygon_3d.clone(),
+                inner_polygons_3d: vec![],
+                surface: surface.clone(),
+                parent_name: name,
+                traversal_index: 0,
+                is_tool_side: true,
+                boundary_partners: vec![None; polygon_3d.len()],
+                boundary_curves: seam_curves,
+                boundary_t_ranges: vec![[0.0, 1.0]; polygon_3d.len()],
+                ...
+            });
+```
+
+> `seam_curves.len()` は `outer_loop.half_edges.len()` = `polygon_3d.len()` (degenerate sphere は 2 極頂点 ↔ 2 half-edge) と一致する (`get_loop_vertices` L1731-1740 が self-adjacent ループを HE ごと 1 頂点で返すため)。`Curve` は partition.rs で既に import 済み。
+
+**修正後の経路 (新規コード不要)**:
+1. `circle_curve_for_edge` が carry された `Curve::Circle{center, normal:-Y, radius}` を受け取り、極 2 頂点 (南極/北極=円上の対蹠点) から t_range span=π を再計算する。
+2. validator `tessellate_face_sphere` の全チェック通過: 2 HE/同一 edge/逆向き ✓、`Curve::Circle` ✓、`vertices[0]`=南極(v≈-π/2)/`vertices[1]`=北極(v≈+π/2) ✓ (polygon 順 [south,north])、seam normal=-Y ✓、span=π ✓。
+3. `assemble.rs` は void 面に `same_sense:false` を付与 (L289-304)。`tessellate_face_sphere` は `same_sense` を巻き方向 (`push_triangle` 引数順) と法線 (`normal_arr`) の両方に反映済み (`tessellation/mod.rs` L664-700) → void が内向き法線で正しくメッシュ化される。
+
+## 設計方針
+- **決定性要件**: 既存 `IdGenerator` 経路のみ。carry する curve は source 面の確定値の clone で、入力依存の分岐や浮動小数しきい値判定を新規追加しない → 同一入力で同一 ID・座標・三角形列。
+- **B-rep トポロジー妥当性**: cut 結果 = box 外殻 (6 面) + 球 void 面 (1 面, 別 closed shell)。球面は自己隣接周期面 (V=2,E=1,F=1, 1 shell) で Euler-Poincaré V-E+F=2 成立。kernel CLAUDE.md「自己隣接周期面を許容」と整合。
+- **退化幾何の扱い**: 本修正は degenerate (<3 頂点) フラグメント分岐そのもの。ゼロ長エッジ・面積ゼロ面は生成しない (極 2 頂点間の seam は半径分の弧長を持つ)。
+- **derive 規約**: 新規型の追加なし。`FaceFragment` の既存フィールド値を変えるのみ。
+- **エラーハンドリング**: 既存の `Result<_, String>` (partition) / `TessellationError` を踏襲。新規エラー variant 追加なし。
+- **workspace.dependencies**: 依存追加なし。
+
+### 数値モデル
+<!-- 新規 tolerance の導入なし。既存 validator の許容誤差を利用するのみ。 -->
+- tolerance: 新規追加なし。validator が使う `LENGTH_TOLERANCE` / `angle_near` / `point_near_scaled` (既存) をそのまま利用。
+- 退化判定基準: seam の t_range span ≈ π (南極/北極は -Y 法線円上の対蹠点 → atan2 差 = π)。`circle_curve_for_edge` の「短い弧を選ぶ」正規化により span は π ちょうどに収束。
+- ADR-004 準拠: exact。primitive 由来の `Curve::Circle` を厳密に保持し、Line への降格を防ぐ。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | box−sphere cut→tessellate を 2 回実行し positions/normals/indices 完全一致。加えて中間データ検証として、cut 結果 Solid の void 球面 seam edge の `Curve::Circle{center, normal, radius}` が 2 回とも完全一致することを assert (carry 経路の決定性を直接検証) | assert_eq! (mesh 全体 + seam Circle の center/normal/radius) |
+| T02 | 正常系(回帰) | `make_cuboid(10³)` − `make_sphere(r=3,原点)` を `tessellate_solid` | `Ok` を返す (旧: `TrimmedFaceUnsupported`) |
+| T03 | watertight | T02 の mesh の全エッジが 2 三角形で共有される (閉多様体) | watertight |
+| T04 | 法線方向 | void 球面三角形の法線が球中心を向く (内向き=cavity) | 各三角形 normal·(center−centroid) > 0 |
+| T05 | 符号付き体積 | T02 結果の符号付き体積 expected = 1000 − (4/3)π·3³ = 1000 − 36π ≈ 886.90。faceted な球 void は真球より僅かに小さく carve するため vol は expected をやや上回る | `vol > expected` かつ `(vol − expected).abs() < 8.0` (絶対閾値。既存 `sphere_trimmed_volume_sign` の `< 2.0` を完全球の faceting 不足分に合わせて拡大。実装時に実 mesh で確定) |
+| T06 | トポロジー | cut 結果が box 6 面 + sphere void 1 面、void 面 `same_sense==false`、seam edge が `Curve::Circle{normal:-Y}` かつ span≈π | assert |
+| T07 | example smoke | `mycad export examples/boolean_cut_sphere_dimple.mycad` 相当 (build→tessellate) が成功 | エラーなし |
+
+> 受け入れスケルトンは `crates/mycad-kernel/tests/box_sphere_void_acceptance.rs` に配置 (integration test)。example 経路の smoke は `crates/mycad-build/tests/examples_smoke.rs` の `boolean_cut_sphere_dimple` が現状 build のみで tessellation 未実施のため、T07 として tessellation まで行うエントリを追加検討。
+
+## 幾何的不変条件チェックリスト
+<!-- Boolean/Partition/Assemble 系の Issue。 -->
+- [x] partition 出力の polygon 頂点順と assemble の normal 処理が整合: `get_loop_vertices` が `[south, north]` 順を返し、assemble の edge.vertices=[south,north] となり validator の極判定 (#3/#4) を満たす
+- [x] 各 face の outer_loop 2D 向き: 球 seam は degenerate 2 頂点 (2D 多角形を成さない) のため CW/CCW 概念は N/A。極順序のみが意味を持ち上で確認済み
+- [x] flip_normals / same_sense の意味論: void 球面は `same_sense:false`。`tessellate_face_sphere` が巻き方向と法線の両方を反転 (頂点座標は不変、三角形 index 順と normal を反転) → 内向き cavity として正しい
+- [ ] pslg_subdivide の出力向き: N/A (degenerate sphere は subdivide 経路を通らない)

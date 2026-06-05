@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "設計方針 > 数値モデル"
+    finding: "T08 テストで `tol 1e-3` を使用しているが、この値の根拠（ADR-004 §ε_mesh_pos の再利用など）が記載されていない"
+    suggestion: "「tol 1e-3 は ADR-004 §ε_mesh_pos を再利用」または「想定されるメッシュ生成誤差より十分大きい」を追記すること"
+
+verdict: pass

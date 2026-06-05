@@ -1,0 +1,8 @@
+issues:
+  - id: NU02
+    severity: medium
+    section: "設計方針 > 数値モデル"
+    finding: "ε_angle(角度/パラメータ判定)が明記されていない。ADR-004 §公開公差定数では ANGLE_TOLERANCE=1e-9 が定義されているが、plan.md に記載がない。円フレーム・向き判定・パラメータ比较で角度誤差が関与する経路(band 分類、orientationチェック)での誤差許容が不明確"
+    suggestion: "「### 数値モデル」セクションに ε_angle = ANGLE_TOLERANCE = 1e-9 を追加し、用途(例: band 分類での normal 比較、円パラメータの同一判定等)を明記すること"
+
+verdict: pass

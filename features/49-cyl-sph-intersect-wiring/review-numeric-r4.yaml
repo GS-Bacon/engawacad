@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "数値モデル"
+    finding: "r_sq 判定の ε が LENGTH_TOLERANCE(1e-9) と明記されているが、r_sq 自体は「距離の二乗」であり次元が length²。物理的には √(r_sq) と ε の比較が自然だが、現在の実装（surface_intersect.rs:288,291）は r_sq と ε² を比較しているか確認が必要"
+    suggestion: "幾何コア実装（surface_intersect.rs:288-291）が r_sq と ε² 比較を採用していることを確認し、設計書コメントに「r_sq は ε²=1e-18 と比較」と次元補足を追記すること（既に正しく実装済みなら文脈明示の為のみ）"
+
+verdict: pass

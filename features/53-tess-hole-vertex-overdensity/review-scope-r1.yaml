@@ -1,0 +1,13 @@
+issues:
+  - id: SC01
+    severity: critical
+    section: "In-Scope / Out-of-Scope"
+    finding: "## In-Scope / Out-of-Scope セクションが存在しない"
+    suggestion: "ADR-006 §plan.md 必須セクションに従って表を追加すること"
+  - id: SC02
+    severity: high
+    section: "Issue 整合"
+    finding: "Issue #42 の Acceptance test T03 (Intersect) に対応する設計が plan にない"
+    suggestion: "Intersect op の設計方針を設計方針セクションに追加すること"
+
+verdict: pass

@@ -1,0 +1,6 @@
+```yaml
+aligned: yes
+comment: |
+  タイトル、Acceptance tests、In-Scope/Out-of-Scope、依存関係が揃っており、1 軸 × 1 op の粒度で意図が明確。
+  Phase 4 完了条件への寄与も本文で明示され、数値判断を伴うため `### 数値モデル` セクションも適切に定義されている。
+```

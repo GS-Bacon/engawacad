@@ -1,0 +1,97 @@
+# Issue #49 — Cylinder×Sphere Boolean A3: Intersect の partition trim/エラー伝播 配線
+
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `partition.rs:298,787` の cyl×sph skip `continue` 除去 | 統合テスト hardening（T18/T20/T33/T34/T22b/T23）→ #43 |
+| 曲面×曲面 2 円トリムのフラグメント再構成（円柱 3 帯→中央保持 / 球 2 キャップ） | Cyl×Sph の Cut / Fuse（Phase 4 は他ペアでカバー済み） |
+| trimmed 円柱/球面の pcurve・共有円エッジ綴じ（共有 `Curve::Circle` 同一サンプリング） | 非軸整列 cyl×sph（axis≠±Z）→ reject 維持（MVP 外） |
+| 非同軸時 `UnsupportedSurfaceIntersection` の boolean エラー伝播（cyl×sph 限定） | ビューア目視確認（#35）、ADR-004 追記（別途） |
+
+## Non-Goals
+- フル退化検出・tangent hardening（T07 は panic しないことのみ確認、厳密挙動は #43）
+- Cyl×Sph Cut/Fuse の配線（本 Issue は Intersect のみ）
+- 非 ±Z 軸の cyl×sph 対応（幾何コアが reject、それを伝播するのみ）
+- classify/assemble の新規アルゴリズム追加（既存の球キャップ・帯ロジックに委譲）
+
+## 実装対象
+<!-- Issue: #49 / 影響クレート: mycad-kernel（booleans/partition.rs 中心、classify/assemble は委譲） -->
+
+### 結果ソリッドの幾何（A2: cyl r=3 axis+Z origin=(0,0,-10) h=20, sph r=5 center原点）
+交線 = z=±4 の 2 円（半径=cyl_radius=3、円柱上かつ球上）。Intersect 結果境界 3 面:
+1. 円柱中央帯 z∈[-4,4]、2. 球トップキャップ z>4、3. 球ボトムキャップ z<-4。
+3 面が 2 本の共有円エッジ（z=±4）で綴じて watertight。
+
+### A. skip 除去 + エラー伝播（target/tool 対称 2 箇所）
+**before**（`partition.rs:293-307`）:
+```rust
+// Skip cylinder×sphere face pairs — deferred to #39
+let is_cyl = matches!(surface, Surface::Cylinder { .. });
+let is_sph = matches!(surface, Surface::Sphere { .. });
+let tool_is_cyl = matches!(tool_surface, Surface::Cylinder { .. });
+let tool_is_sph = matches!(tool_surface, Surface::Sphere { .. });
+if (is_cyl && tool_is_sph) || (is_sph && tool_is_cyl) {
+    continue;
+}
+let isect_result = crate::geometry::surface_intersect::intersect_surfaces(surface, tool_surface);
+let Ok(isect_loops) = isect_result else { continue; };
+```
+**after**（概略）:
+```rust
+let is_cyl = matches!(surface, Surface::Cylinder { .. });
+let is_sph = matches!(surface, Surface::Sphere { .. });
+let tool_is_cyl = matches!(tool_surface, Surface::Cylinder { .. });
+let tool_is_sph = matches!(tool_surface, Surface::Sphere { .. });
+let is_cyl_sph_pair = (is_cyl && tool_is_sph) || (is_sph && tool_is_cyl);
+let isect_result = crate::geometry::surface_intersect::intersect_surfaces(surface, tool_surface);
+let isect_loops = match isect_result {
+    Ok(loops) => loops,
+    Err(e) if is_cyl_sph_pair => return Err(format!("unsupported boolean case: {e}")),
+    Err(_) => continue,
+};
+```
+tool loop `781-795` も `surface`/`target_surface` の role 逆転に注意して対称適用。
+
+### B. 曲面×曲面 2 円トリム再構成（既存帯/キャップ生成の一般化 + 両ループ対応ヘルパ）
+- **円柱帯**: 既存 `1001-1164`（1 円 find）を「host 円柱を貫く全交線円(≤2)を h 昇順で取り 3 帯に分割」へ一般化。各帯 cut 境界に共有円 + partner=球面名。
+- **球キャップ**: 既存 `637-693`（平面ホスト副産物）のキャップ構築（full-sphere outer + reversed inner loop）を関数化し、交線円ごとに 1 キャップ生成。inner loop に partner=円柱面名 + 共有円。
+- **両ループ対応**: 円柱/球は target にも tool にもなり得る。target loop の面放出分岐（`532-724`、現状 curved host は素通りで面消失）に cyl×sph 分岐を追加。tool loop は既存 cyl 分岐一般化 + sph 分岐追加。
+- **二重生成防止**: 球面・円柱面が pass-through として重複 push されないようガード（既存 `sphere_plane_interior_count` 抑止を踏襲）。
+
+### C. classify / assemble は委譲（変更最小）
+- `classify.rs:104 get_fragment_interior_point` が球キャップ（極を内点採用）・リング/帯を既に特別扱い。
+- `assemble.rs:13` Intersect 選択は target/tool 両側 `InsideOther` を採用 → 中央帯 + 両キャップが残る（役割非依存）。
+
+## 設計方針
+- **決定性**: 全 EntityID は `IdGenerator` で決定的。2 円は幾何コアで h 昇順ソート済み（R04）。帯/キャップ生成は固定セグメント数(64)・固定順序で決定的に。
+- **B-rep 妥当性**: 結果 3 面 + 2 共有円エッジで Euler V−E+F=2 / watertight。`validate_manifold` の loop closure・pcurve 検証を通す。
+- **最重要の正しさ制約**: 円柱帯と球キャップは**同一 `Curve::Circle`（center=z±offset, normal=+Z, radius=cyl_radius）を同一 `ANGULAR_SEGMENTS_DEFAULT=64`・同一 `evaluate`** でサンプリング。これで `assemble` の vertex dedup（len_eps）が共有円を 1 エッジ環に統合 → watertight。ズレると manifold 検証で落ちる。
+- **derive 規約**: 既存 `FaceFragment`/`IntersectionSegment` を踏襲（新規公開型なし）。
+- **エラーハンドリング**: `partition_faces` は `Result<_, String>` → reason 文字列で `return Err` → `boolean()` が `KernelError::BooleanInternal` でラップ → build 伝播。
+- **workspace.dependencies**: 新規依存なし。
+
+### 数値モデル
+- tolerance: `LENGTH_TOLERANCE = 1e-9`（`Tolerance::DEFAULT`）— 点同一判定・頂点 dedup・帯 v 範囲判定。
+- 同軸/tangent 判定: 幾何コア委譲。判定 ε = `LENGTH_TOLERANCE`(1e-9)（`surface_intersect.rs:288,291`）。`r_sq = sph_r²−cyl_r²` の符号で `r_sq<-ε` 交線なし / `-ε≤r_sq<ε` tangent → `Ok(vec![])` / `r_sq≥ε` で 2 円。
+- 退化判定: 帯/キャップの面積ゼロ・ゼロ長エッジは既存 `len_eps`/`area_eps` ガード踏襲。
+- ADR-004 準拠: tolerant 方式継続（#31 で確立）。
+
+## テスト計画（ID 付き / mycad-build integration test）
+配置: `crates/mycad-build/tests/cyl_sph_intersect_acceptance.rs`。`a1_1_...` 流で `CreateCylinder + CreateSphere + Intersect` を `build_bodies_from_features` に通す。
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一 Intersect を 2 回 build し全 EntityID・座標一致 | assert_eq! |
+| T02 | 正常系(A2) | coaxial Intersect → `validate_manifold()` | Ok |
+| T03 | 正常系(A2) | 結果に z=±4 の 2 円エッジ（`Curve::Circle` radius=3） | 2 本存在 |
+| T04 | 不変条件(A2) | Euler-Poincaré V−E+F（inner loop 補正） | ==2（tolerant 1\|2 許容） |
+| T05 | 正常系(A2) | 結果 shell が closed・面構成 = 円柱帯1 + 球キャップ2 | assert |
+| T06 | エラー(A4b) | 非同軸（sph center=(1,0,0)）Intersect | `Err`（Unsupported が build 伝播） |
+| T07 | 退化 | tangent（sph_r==cyl_r）→ 交線なし | panic しない（厳密挙動は #43） |
+
+## 幾何的不変条件チェックリスト
+<!-- 各項目: 設計上の担保メカニズム + 検証テスト ID。実装完了時に [x] を確定する。 -->
+- [x] **共有エッジ溶接（最重要）**: 円柱帯と球キャップが同一 `Curve::Circle`（幾何コア由来）を同一 `ANGULAR_SEGMENTS_DEFAULT=64`・同一 `evaluate` でサンプリング → `assemble` の vertex dedup（len_eps）が共有円を 1 エッジ環に統合。**検証: T02（manifold）/ T05（closed shell）**。
+- [x] **頂点順・normal/same_sense 整合**: 円柱帯=既存 `1001-1164` 規約、球キャップ=既存 `637-693` 規約を踏襲（plane×cyl/plane×sph と同一）。`assemble` の `flip_normals`/`reverse_face_orientation` がそのまま適用。**検証: T02 / T05 + コードレビュー（既存規約との一致）**。
+- [x] **2 円 h 昇順（R04）伝播・決定性**: 幾何コアが h 昇順ソート済み。帯/キャップ生成は固定セグメント数・固定順序。**検証: T01（決定性）/ T03（z=±4 の 2 円エッジ）**。
+- [x] **二重生成抑止**: 球面・円柱面が cyl×sph 経路で再構成された場合、pass-through fragment を push しないガード（既存 `sphere_plane_interior_count` 抑止を踏襲）。**検証: T04（Euler）/ T05（面構成=円柱帯1+球キャップ2）でフラグメント過剰がないこと**。

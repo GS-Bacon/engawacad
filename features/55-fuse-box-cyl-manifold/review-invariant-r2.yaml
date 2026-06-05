@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "設計方針 > 決定性"
+    finding: "候補2(マージ判定緩和)で `point_near_scaled` を使用する場合、scale 引数の決定方法が未定義。同一入力であっても scale 計算に非決定的要素（例: 境界ボックスの寸法計算順）が含まれると決定性が破れる可能性がある。"
+    suggestion: "候補2を採用する場合、scale を円の半径（固定値）にするか、あるいは `point_near`（固定許容）のみを使用するよう明記すること。"
+
+verdict: pass

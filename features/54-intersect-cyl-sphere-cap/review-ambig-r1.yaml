@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > T09"
+    finding: "期待結果「vertex_count_above_4 >= n_u」で n_u が未定義"
+    suggestion: "具体的な最小頂点数を明記すること（例: >= 12）"
+
+verdict: pass

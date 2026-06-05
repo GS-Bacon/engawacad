@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "実装対象 > collect_loop_points after"
+    finding: "else ブロンチ内で `let n = match &edge.curve { Curve::Circle { .. } => arc_segment_count(t_start, t_end, segments), Curve::Line { .. } => segments, };` としているが、直線エッジの場合 `segments` 変数は元から `edge.curve.sample_segment(t_start, t_end, segments)` に渡されていた。今回 `Line` 分岐で `segments` を返す `n` 変数を導入しているが、この `segments` は未使用変数にはならないよう `sample_segment` の第3引数として正しく使用されている"
+    suggestion: "実装コードは正しい。説明として補足：`segments` は `Line` 分岐でも必要で、`sample_segment` に渡される引数として意図されている"
+
+verdict: pass

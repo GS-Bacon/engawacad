@@ -1,0 +1,107 @@
+# #55 Fuse(box + cylinder) manifold validation エラー修正
+
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| 円柱が box を**完全貫通**(二重貫通=3バンド)する Fuse で `validate_manifold` が通る B-rep を生成 | テッセレーション品質(白エッジ・頂点集中 #53系)の改善 |
+| `examples/boolean_fuse_box_cyl.mycad` の smoke テスト `#[ignore]` 解除→green | Cut / Intersect の二重貫通対応(本 Issue は Fuse のみ。回帰のみ確認) |
+| 二重貫通 Fuse の manifold/Euler 受け入れテスト追加 | 球×平面の多面貫通(`partition.rs:649` の既存エラー)・#50 |
+| 根本原因を計装で確定してから最小修正 (diagnostic-first) | 一般 n 貫通(n≥3 円)の網羅。本 Issue は 2 円(3バンド)まで |
+
+## Non-Goals
+- テッセレーションの見た目品質(白い線・頂点集中)の解消: #53 系で対応
+- Cut/Intersect の二重貫通サポート拡張: 必要なら別 Issue
+- 円柱以外の曲面 tool(球など)の二重貫通: 別 Issue
+- partition/assemble の全面リファクタ: 本 Issue は二重貫通 Fuse を通す最小変更に限定
+- ε_snap 値そのもの(1e-9)の変更や per-entity Tolerance 移行: ADR-004 段階移行(#34 以降)に委譲。本 Issue は円弦マージ経路の局所判定のみ
+
+## 実装対象
+<!-- Issue: #55 -->
+<!-- 影響クレート/ファイル:
+     crates/mycad-kernel/src/booleans/partition.rs (cyl×plane tool パス: 1278-1434, ring+disc: 560-701, collect_ordered_circle_polygon: 1575-1628)
+     crates/mycad-kernel/src/booleans/assemble.rs (頂点マージ: 73-85, edge/HE ペアリング: 180-282)
+     crates/mycad-kernel/src/booleans/classify.rs (band 内外判定: 95-101) ※確認用、変更は診断次第
+     crates/mycad-build/tests/examples_smoke.rs (#[ignore] 解除)
+     crates/mycad-build/tests/fuse_box_cyl_acceptance.rs (新規 acceptance) -->
+
+### 確定済みの事実(調査結果)
+- 再現: `cargo test -p mycad-build --test examples_smoke boolean_fuse_box_cyl -- --ignored` →
+  `BooleanInternal("manifold validation failed: manifold violation: edge must have exactly 2 half-edges")`。
+- 経路: 円柱が tool 側で box の z=-5 と z=+5 の **2 平面**と交差 → `partition.rs:1339` band ループが
+  `circle_vs.len()==2` で **3 バンド**(下端=外, 中間=box内, 上端=外)を生成。
+  既存の通過例(cut/intersect の box×cyl)は片側貫通=2バンドのみで、3バンドは**通過実績ゼロの未テスト経路**。
+- 分類は妥当: 中間バンド(box 内部)は `InsideOther`(`classify.rs:97`)で Fuse から除外され、
+  各交線円(z=±5)は「box 面のリング内ループ + 端バンド円」のちょうど 2 フラグメントが供給するはず。
+- 残る疑い(計装で確定する): リング内ループ円(`collect_ordered_circle_polygon` 1575-1628、交線セグメント端点由来)と
+  band 円(`partition.rs:1383` の 64 分割 `evaluate`)が**独立に離散化**され、頂点マージ
+  (`assemble.rs:76` の `(vp-point).norm() < 1e-9`)で一部の弦頂点が一致せず、half-edge 供給数が崩れている可能性。
+
+### STEP A: 計装で不正エッジを確定(一時コード・最終的に除去)
+- `assemble.rs` の `validate_manifold` 失敗直前(行 433 付近)、または `topology.rs:240` の
+  `forwards.len() != 2` 分岐に、デバッグ出力を一時挿入:
+  不正 edge の 2 頂点の座標、参照しているフラグメント(parent_name/traversal_index/is_tool_side)、
+  forward/reverse HE 数。`eprintln!` で `RUST_LOG` 不要のダンプ。
+- これにより「どの円・どの弦・どの供給フラグメントが欠けている/重複しているか」を**目視確定**してから STEP B へ。
+- 計装コードは STEP B 完了後に必ず削除する(diff に残さない)。
+
+### STEP B: 最小修正(箇所は STEP A の診断で確定)
+以下を**診断結果に応じて**適用する。最有力候補(頂点マージ整合)の before/after を例示:
+
+- 候補1 — リング内ループ円と band 円の頂点を同一生成元に揃える。
+  例: ring 内ループも band と同じ `Curve::Circle::evaluate(k*dt)` 由来の 64 点で構築し、
+  座標が `1e-9` 内で一致するようにする。
+  該当: `partition.rs:576-601`(`collect_ordered_circle_polygon` の戻り値を使う箇所)。
+  - before(概略): `inner_poly_2d` = 交線セグメント端点(可変個・atan2 ソート)を unproject。
+  - after(概略): band と共通の円フレーム・同一角度サンプル(k=0..63, dt=2π/64)で内ループ 3D 点を生成し、
+    両者が同じ点集合になるよう統一。
+- 候補2 — 頂点マージ許容の整合。`assemble.rs:76` の `len_eps`(1e-9)が
+  独立計算間の丸め差より厳しい場合、円弦頂点に対してのみ既存 `point_near`/`point_near_scaled`
+  (geometry::math)で局所的にマージ判定を緩める(ADR-004 tolerant 方針に沿う、新規許容値は発明しない)。
+  scale 引数は円の半径(固定値)を用い非決定要素を排除する(迷う場合は固定許容の `point_near` のみ使用)。診断で「座標は近いがマージされず」が確定した場合のみ採用。
+- 候補3 — band 0/2 と中間 band の境界円の向き整合(`partition.rs:1369-1411`)。
+  診断で供給数ではなく**向き**("opposite orientation" 側)の問題と判明した場合に限り適用。
+
+> 実際にどの候補を採るかは STEP A の診断後に確定し、確定 before/after を本節へ追記する。
+> 新規ファイル(acceptance test)は Claude が STEP 5.5 で先行作成。
+
+## 設計方針
+- **決定性**: 修正は既存の `IdGenerator` 順序を変えない。円のサンプリング角度・頂点順は固定式
+  (k=0..63, dt=2π/64)で生成し、`Math.random`/HashMap 反復順に依存しない。
+  候補2(マージ判定緩和)を採用してもマージ判定は決定的(同一入力なら同一マージ結果・同一頂点数・
+  同一 IdGenerator 消費順)であり、決定性は保たれる。T01 で同一入力 2 回実行→全 EntityID・座標一致を検証。
+- **B-rep トポロジー妥当性**: 結果 Solid は `validate_manifold` を通す(全 edge ちょうど 2 HE・逆向き)。
+  Euler-Poincaré: 二重貫通 Fuse(穴2つの貫通体)は球面同相ではなく**genus 0 のまま**
+  (穴は貫通せず stub が塞ぐ)なので V-E+F=2 が成立するはず。acceptance で実測値を assert。
+- **退化幾何**: ゼロ長エッジ(`v_hi-v_lo < len_eps` の band は `partition.rs:1342` で既に skip)・
+  面積ゼロ面を生成しない。計装で degenerate な弦が出ていないか併せて確認。
+- **derive 規約**: 既存型のみ使用、新規公開型なし(derive 追加不要)。
+- **エラーハンドリング**: 既存 `KernelError`(thiserror)を踏襲。新規エラー種別は追加しない。
+- **workspace.dependencies**: 新規依存なし。
+
+### 数値モデル (Phase 4 必須)
+- ε_snap(点同一判定) = `LENGTH_TOLERANCE` = 1e-9 — `assemble.rs:76` の頂点マージ。
+  円端点重複判定は `collect_ordered_circle_polygon` で `LENGTH_TOLERANCE*10` = 1e-8(`partition.rs:1587`)。
+  → この**2 つの許容の不整合**が原因の場合、候補2 で統一する。
+- ε_len(エッジ退化) = `LENGTH_TOLERANCE` = 1e-9 — `partition.rs:1342` の band skip。
+- ε_area(面積ゼロ) = `LENGTH_TOLERANCE^2` = 1e-18 — `assemble.rs:19` の `area_eps`。
+- ε_angle(角度・パラメータ同一判定) = `ANGLE_TOLERANCE` = 1e-9 — band 分類の normal 比較・円パラメータ(t)同一判定で使用。
+- ADR-004 準拠方針: 既定は exact 寄りの 1e-9。候補2 を採る場合のみ、円弦頂点マージに限り
+  tolerant(相対許容)を既存 `point_near_scaled` で局所適用し、ADR-004 の tolerant 節に沿う。
+  グローバル `LENGTH_TOLERANCE` の値自体は変更しない(決定性回帰リスク)。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | `boolean_fuse_box_cyl` 相当の入力を 2 回 build し全頂点座標・面数・EntityID が一致 | assert_eq! で完全一致 |
+| T02 | 正常系(manifold) | 二重貫通 Fuse の結果 Solid が `validate_manifold()` を通る | `is_ok()` |
+| T03 | 正常系(Euler) | 結果 Solid の V-E+F を計測 | `V - E + F == 2` |
+| T04 | smoke 解除 | `examples/boolean_fuse_box_cyl.mycad` の smoke `#[ignore]` を外し build 成功 | パニックせず通過 |
+| T05 | 回帰 | 下記の既存 boolean テストが引き続き green: `examples_smoke.rs`(`boolean_box_fuse`/`boolean_box_cut`/`boolean_box_intersect`/`boolean_box_void`/`boolean_cut_cylinder_hole`/`boolean_cut_sphere_dimple`/`boolean_intersect_box_cyl`/`boolean_intersect_cyl_sphere`)、`cyl_sph_intersect_acceptance.rs`、`a1_1_plane_cyl_fuse_isect_acceptance.rs`、`surface_boolean_a2_acceptance.rs` | 全テスト pass |
+| T06 | エッジ(片側貫通) | 片側貫通の Fuse(円柱の片端が box 内)でも manifold 通過 | `is_ok()`(回帰防止) |
+| T07 | 数値境界 | 交線円が box 面 ε_snap 近傍を通る配置(例: cylinder 上端を box 上面 z=+5 に対し ±1e-8 ずらす)で、頂点マージ後も manifold が成立し弦が欠落しない | `is_ok()` かつ HE 供給数=2 |
+
+## 幾何的不変条件チェックリスト
+- [x] partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか — STEP A 計装で band/ring の向きを確認
+- [x] 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか — cuboid.rs/cylinder.rs のコメントで確認済み
+- [x] flip_normals / same_sense の意味論が明確か — `assemble.rs:245,289` を変更しない(Fuse は flip 対象外)ことを確認
+- [x] pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか — 本 Issue は interior-circle 分岐(560-701)が主経路、PSLG 分岐は不変

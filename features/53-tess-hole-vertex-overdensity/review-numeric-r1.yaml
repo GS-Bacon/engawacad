@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: critical
+    section: "テスト計画 > T04"
+    finding: "ε_area（退化三角形の面積判定閾値）が「要確認: 実装時に既存 ε を grep」となっており確定していない。実装者が閾値を独断で決める状態。"
+    suggestion: "設計時点で既存の ε 値を調査し、T04 の ε_area を確定値として明記すること（既存値があればその値、なければ 1e-12 等を指定）。"
+
+verdict: fail

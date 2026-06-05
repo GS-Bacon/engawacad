@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "T01 決定性テストが「2回実行して一致」だが、検証するエンティティが不十分。同一 ID だけでなく、中間データである FaceFragment.boundary_curves の同一性も検証する必要がある"
+    suggestion: "T01 に ID 決定性に加え、boundary_curves に carry された Curve::Circle の center/normal/radius が 2 回とも完全一致することを assert に追加すること"
+
+verdict: pass

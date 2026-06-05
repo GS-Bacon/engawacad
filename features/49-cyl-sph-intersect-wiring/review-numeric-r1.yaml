@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "数値モデル > 同軸/tangent 判定"
+    finding: "「幾何コア委譲」と記載されているが、r_sq 判定に使用される ε の具体値が明記されていない（`r_sq<ε` の ε が何か）"
+    suggestion: "幾何コアが LENGTH_TOLERANCE を使用しているなら、明記すると実装者にとってより明確になる（ただし既存コード参照で可読性は確保済みと判断できるため low）"
+
+verdict: pass

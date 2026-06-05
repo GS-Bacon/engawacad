@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "crates/mycad-build/tests/fuse_box_cyl_acceptance.rs"
+    line_hint: 1
+    finding: "Issue #55 の Acceptance test である「mycad view で表示されること」を検証するテストが実装されていない。smoke テストの #[ignore] 解除は build 成功の検証に過ぎず、manifold validation エラーの解消を確認していない"
+    suggestion: "fuse_box_cyl_acceptance.rs または同等のテストで、fuse_box_cyl.mycad を load して tessellate_solid → manifold validation が成功することを assert する acceptance test を追加すること"
+
+verdict: fail

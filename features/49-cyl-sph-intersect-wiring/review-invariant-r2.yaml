@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: high
+    section: "幾何的不変条件チェックリスト"
+    finding: "チェックリストが空（全項目 [ ] 未完了）。本番実装前にこれらの不変条件を検証する計画が必要"
+    suggestion: "各チェックリスト項目を [x] または N/A に更新し、検証方法を T02-T05 またはコードレビューで紐付けること"
+
+verdict: pass

@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "テスト計画"
+    finding: "T05 回帰テストの説明が「既存テスト green」とのみ書かれ、対象テスト名が特定されていない"
+    suggestion: "どの既存テストファイル・テストケースを回帰対象とするかを特定すること（例: boolean_*.rs のうち cut/intersect 系）"
+
+verdict: pass

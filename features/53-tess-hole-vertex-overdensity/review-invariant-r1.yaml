@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: high
+    section: "設計方針 > 決定性"
+    finding: "T01 決定性テストの記述が「全 positions/indices 一致」とされているが、本修正はサンプリング点数を削減する変更であるため、修正前後で結果が一致することは期待できない"
+    suggestion: "T01 の期待結果を「同一入力を2回 build+tessellate し全 positions/indices 一致」に修正すること（修正前との回帰ではなく、修正後の決定性を検証する）"
+
+verdict: pass
