@@ -1,6 +1,6 @@
 ---
 name: 3ai
-description: Claude × Codex × GLM マルチエージェント CAD 開発フロー。GitHub Issue を起点に設計(Claude)→設計レビュー(Codex)→実装+テスト(GLM)→最終レビュー(Codex)を一周する。
+description: Claude × Codex × GLM マルチエージェント CAD 開発フロー。GitHub Issue を起点に設計(Claude)→設計レビュー(GLM多ペルソナ)→実装+テスト(GLM)→最終レビュー(GLM)→独立技術レビュー(Codex)を一周する。
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -15,7 +15,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 **`EnterPlanMode` を呼ぶ。**
 
 > プランモードでも **Bash dispatch は通る**（Edit/Write 等のファイル変更のみ deny）。  
-> STEP 3 の Codex 設計レビューは ExitPlanMode 前に実行すること（後ろ倒し禁止）。
+> STEP 3 の GLM 設計レビューは ExitPlanMode 前に実行すること（後ろ倒し禁止）。
 
 ---
 
@@ -54,7 +54,7 @@ bun .claude/skills/3ai/scripts/init-feature.ts --issue $ISSUE_NUM --slug $ISSUE_
 
 ---
 
-## STEP 2.5: プラン Draft をユーザーへ情報共有（Codex レビュー前）
+## STEP 2.5: プラン Draft をユーザーへ情報共有（GLM レビュー前）
 
 プランファイルの記述が完成したら、要点をユーザーへ**情報共有として**提示する（承認は STEP 4 の `ExitPlanMode` で取るため、ここでは不要）。
 
@@ -175,9 +175,9 @@ bun .claude/skills/3ai/scripts/state.ts set \
 
 **`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点。**
 
-Codex レビュー反映後の plan を提示しユーザーに承認を求める。
+GLM レビュー反映後の plan を提示しユーザーに承認を求める。
 
-**承認後は STEP 5〜STEP 8 を自動進行する。** ユーザー介入が発生するのは失敗時エスカレーションのみ（STEP 6-D、STEP 6.5 期待値乖離、STEP 7 critical）。
+**承認後は STEP 5〜STEP 8 を自動進行する。** ユーザー介入が発生するのは失敗時エスカレーションのみ（STEP 6-D、STEP 6.5 期待値乖離、STEP 7 critical、STEP 7.5 critical）。
 
 ---
 
@@ -366,11 +366,75 @@ bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
 
 ---
 
-## STEP 8: 確定・squash マージ
+## STEP 7.5: Codex 独立技術最終ゲート
+
+**目的**: 実装者 GLM とレビュアー GLM が同系であることによる相関盲点を、別モデル系 (Codex/gpt-5.4) の独立視点で破る。diff 全体を技術的観点でレビューし、critical/high は merge 前にブロックする。
 
 **ゲート:**
 ```bash
 bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review
+```
+
+### 7.5-A: テストサマリを Codex 入力に整形
+
+`test-summary.json` を `===== TEST SUMMARY =====` ヘッダ付きで `codex-input.md` に書き出す（`codex-final-reviewer.md` がこのヘッダを参照する）:
+
+```bash
+{
+  echo "===== TEST SUMMARY ====="
+  cat features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
+  echo ""
+  echo "===== END TEST SUMMARY ====="
+} > features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
+```
+
+### 7.5-B: Codex 技術レビュー dispatch
+
+```bash
+bun .claude/skills/3ai/scripts/dispatch-codex.ts \
+  --mode review \
+  --instruction .claude/skills/3ai/agents/codex-final-reviewer.md \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/codex-final.yaml \
+  --extra-input features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
+```
+
+`base` は `origin/HEAD` から自動検出し、`git diff <base>...HEAD` を Codex に渡す。
+
+### 7.5-C: 判定（`codex-final.yaml.verdict.json` を読む）
+
+**`blocking == 0`**（critical/high なし）の場合:
+```bash
+bun .claude/skills/3ai/scripts/state.ts set \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_review passed
+```
+medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-findings.md` に記録のみ（非 block）→ **STEP 8 へ**。
+
+**`blocking >= 1`**（critical/high あり）の場合:
+```bash
+bun .claude/skills/3ai/scripts/state.ts inc \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_loops
+```
+`codex-final.yaml` の critical/high 指摘を `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` に転記し、GLM 実装へ再 dispatch（指摘内容がコア実装なら `--mode core`、テスト関連なら `--mode test`）→ `cargo xtask ci` green 確認 → **7.5-A に戻って Codex 再レビュー**（`codex_loops` 上限 2）。
+
+### 7.5-D: ループ上限超過フォールバック（`codex_loops > 2`）
+
+```bash
+bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
+  features/$ISSUE_NUM-$ISSUE_SLUG/codex-final.yaml.verdict.json
+```
+
+- **critical ≥ 1** → 停止してユーザーにエスカレーション。
+- **critical = 0** かつ残 high が docs-only（コードファイル変更を伴わない）→ Claude 裁量で受け切る: 残 high/medium を直接修正（docs への Edit/Write）または棄却 → `cargo xtask ci` green 確認 → `state.ts set ... codex_review passed` → 内訳報告して STEP 8 へ。
+- **critical = 0** だが code 系 high が残る → 停止してユーザーにエスカレーション。
+
+---
+
+## STEP 8: 確定・squash マージ
+
+**ゲート:**
+```bash
+bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_review
 ```
 
 ```bash

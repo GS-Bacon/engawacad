@@ -149,14 +149,29 @@ bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
 
 ## Codex の役割
 
-Codex は **Issue 起票時の intent-check のみ**:
+Codex は以下の **2 つの独立ゲート** を担当する:
+
+### ① Issue 起票時の intent-check（従来通り）
 
 1. Claude が Issue 案を作成 (§1 粒度チェックを確認済み)
 2. Codex に「Issue 本文の意図・スコープが明確か」だけを判定させる
 3. `aligned: yes` → 自動起票
 4. `aligned: no` → Claude がユーザーに相談 → Issue 修正 → Codex 再投入
 
-Codex が見るのは **意図の整合性 (intent)** のみ。技術的正しさは GLM ペルソナが担当。
+### ② STEP 7.5 マージ前の独立技術最終レビュー（Phase 4 教訓から追加）
+
+GLM final レビュー (STEP 7) 通過後・squash マージ (STEP 8) 前に、`git diff <base>...HEAD` 全体を Codex が技術的観点でレビューする。
+
+**背景**: 実装者 GLM とレビュアー GLM が同系であることによる相関盲点を、別モデル系 (Codex/gpt-5.4) の独立視点で破る設計。Phase 4 (Boolean) では曲面 Boolean の退化バグ #46/#50–#55 が GLM レビューを通過してしまった教訓による。
+
+**設計段階**の技術検証は GLM 多ペルソナ (SCOPE/INVARIANT/AMBIG/NUMERIC) が担当し、**マージ前の最終独立検証**は別モデル系の Codex が担当する（分担の明確化）。
+
+**ポリシー**:
+- severity **critical/high** → merge ブロック・GLM 実装へ差し戻し（ループ上限 `codex_loops` = 2）
+- severity **medium/low** → `codex-findings.md` に記録のみ（非 block）
+- GLM 指摘と Codex 指摘が衝突した場合は Claude が既存の judgment-summary 方式で裁定
+
+dispatch: `dispatch-codex.ts --mode review --instruction agents/codex-final-reviewer.md`
 
 ---
 
@@ -168,3 +183,4 @@ Codex が見るのは **意図の整合性 (intent)** のみ。技術的正し�
 | NUMERIC ペルソナが plan テンプレ不備で空振り | plan.md の `### 数値モデル` セクション必須化 |
 | Phase オプションペルソナの追加忘れ | Codex intent-check に「数値判断を含むか」チェックを追加。yes なら NUMERIC 強制 |
 | Issue 更新の軽微/中の判定が曖昧 | 本 ADR の §5 表を参照。迷ったら中 (Codex 再投入) を選ぶ |
+| Codex 最終ゲートで throughput 低下 | severity 閾値 block (critical/high のみ) と `codex_loops` 上限 2 で抑制 |
