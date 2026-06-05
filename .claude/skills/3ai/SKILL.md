@@ -211,7 +211,12 @@ fn t02_build_manifold_euler() { todo!() }
 ```
 
 3. `cargo test --workspace 2>&1 | head -20` でスケルトンがコンパイルエラーなく通ることを確認（ignored は OK）
-4. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
+4. **examples/ smoke テストチェック**: plan.md または Issue の変更対象を確認し、`examples/*.mycad` を新規追加・変更する場合は `crates/mycad-build/tests/examples_smoke.rs` にも対応エントリを追加する:
+   - 新規追加: 新しい関数を追加し `smoke(include_str!("../../../examples/<file>.mycad"))` を呼ぶ
+   - 変更のみ（既存 example の修正）: 既存テストがあれば追加不要
+   - このステップで追加したテストを `cargo test -p mycad-build --test examples_smoke` で確認する
+   - 現時点で build が通らないことが既知の場合は `#[ignore = "known bug: #<N>"]` を付ける
+5. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
 
 ---
 
