@@ -76,12 +76,10 @@ test("T02 screenshot - simple_box", async ({ page }) => {
   });
 });
 
-// T03: Console no error - boolean examples
-const BOOLEAN_EXAMPLES = NON_ASSEMBLY_EXAMPLES.filter((n) =>
-  n.startsWith("boolean_"),
-);
+// T03: Console no error - all non-assembly examples
+const LOOPED_EXAMPLES = NON_ASSEMBLY_EXAMPLES.filter((n) => n !== "simple_box");
 
-for (const name of BOOLEAN_EXAMPLES) {
+for (const name of LOOPED_EXAMPLES) {
   test(`T03 console no error - ${name}`, async ({ page }) => {
     const consoleErrors = await setupPageWithFixture(page, name);
     await page.goto("/");
