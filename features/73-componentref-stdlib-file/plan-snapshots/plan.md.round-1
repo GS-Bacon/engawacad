@@ -1,0 +1,174 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `build_assembly` 新規関数（Component ツリー再帰走査 + reference 解決） | transform（平行移動）の幾何適用 = Solid::translate 呼び出し (#74) |
+| `ComponentRef::StdLib` の解決（stdlib_root から .mycad ロード） | stdlib パーツの実幾何ファイル作成 (#75) |
+| `ComponentRef::File` の解決（親 .mycad ディレクトリ基準の相対ロード） | 回転 transform (#77) |
+| 循環参照検出（visit-set）・深さ上限（16段） | CLI/API のアセンブリ拒否ガード除去 (#76) |
+| `KernelError` に `CircularReference` / `MaxDepthExceeded` / `ReferenceResolution` 追加 | `examples/assembly.mycad` の実ビルド通し (#76/#78) |
+| 統合テスト（tmpdir に .mycad 配置） | |
+
+## Non-Goals
+- transform（position/rotation）の幾何への適用 — #74 で Component ツリーの transform 合成として実装。本 Issue の `build_assembly` は transform フィールドを**読まず**、全 Body を原点座標のまま集約する。
+- stdlib 実パーツ（M5x20.mycad 等）の作成 — #75
+- 回転 — #77
+- CLI/API のガード除去・assembly.mycad 実ビルド — #76/#78
+- 本 Issue は #72(translate) に依存しない（Issue deps 定義通り）。transform 適用を含めないことで #72 完了前でも独立に成立する。
+
+## 実装対象
+<!-- Issue: #73 -->
+影響クレート/ファイル:
+- `crates/mycad-kernel/src/error.rs` — `KernelError` に 3 variant 追加
+- `crates/mycad-build/src/lib.rs` — `build_assembly` + 再帰ヘルパー + stdlib_root/参照パス解決
+- `crates/mycad-build/Cargo.toml` — dev-dependencies に `tempfile = { workspace = true }` 追加
+- `crates/mycad-build/tests/assembly_acceptance.rs` — **新規** 統合テスト
+
+新規シグネチャ:
+
+`error.rs`（KernelError に追加）:
+```rust
+#[error("circular reference detected while resolving: {path}")]
+CircularReference { path: String },
+
+#[error("maximum reference depth ({max}) exceeded at: {path}")]
+MaxDepthExceeded { max: usize, path: String },
+
+#[error("failed to resolve reference '{path}': {reason}")]
+ReferenceResolution { path: String, reason: String },
+```
+
+`lib.rs`（新規公開関数 + 内部ヘルパー）:
+```rust
+use std::path::{Path, PathBuf};
+
+/// 参照解決の深さ上限（ADR-007 §3）
+const MAX_REFERENCE_DEPTH: usize = 16;
+
+/// アセンブリ Document をビルドする。Component ツリーを走査し、
+/// ComponentRef を解決してツリーを展開し、各 Component の確定 Body を集約する。
+/// base_dir: File 参照の相対解決の基点（doc を読み込んだ .mycad の親ディレクトリ）。
+/// 注: transform の幾何適用は行わない（#74 のスコープ）。
+/// 戻り値は集約した `Vec<Body>`（Body は既存 pub struct {feature_id, solid}）。
+/// BuiltBodies は feature_id をキーに index/consumed を持つ Document 内ローカル型で、
+/// register/consume は private・公開コンストラクタも無い。アセンブリ横断では
+/// feature_id 衝突が起こりうるため、index は畳んで各 Document の確定 Body（live()）
+/// のみをフラットに集める。
+pub fn build_assembly(
+    doc: &Document,
+    base_dir: &Path,
+    gen: &mut IdGenerator,
+) -> Result<Vec<Body>, KernelError> {
+    let mut bodies: Vec<Body> = Vec::new();
+    let mut visiting: Vec<PathBuf> = Vec::new();
+    build_component_tree(&doc.root_component, base_dir, &mut visiting, 0, gen, &mut bodies)?;
+    Ok(bodies)
+}
+
+fn build_component_tree(
+    component: &Component,
+    base_dir: &Path,
+    visiting: &mut Vec<PathBuf>,
+    depth: usize,
+    gen: &mut IdGenerator,
+    out: &mut Vec<Body>,
+) -> Result<(), KernelError> {
+    if depth > MAX_REFERENCE_DEPTH {
+        return Err(KernelError::MaxDepthExceeded {
+            max: MAX_REFERENCE_DEPTH,
+            path: component.name.clone(),
+        });
+    }
+    // 1. このコンポーネント自身の features をビルド
+    //    features 空（純参照/純コンテナ Component）では build_bodies_from_features を
+    //    呼ばない — 空 features は EmptyFeatureList エラーになるため。
+    if !component.features.is_empty() {
+        let built = build_bodies_from_features(&component.features, gen)?;
+        // 確定 Body（consume されていない live() のみ）を集約。live() は &Body を返す。
+        out.extend(built.live().cloned());
+    }
+    // 2. reference があれば解決して展開
+    if let Some(reference) = &component.reference {
+        let (resolved_path, child_base_dir) = resolve_reference(reference, base_dir)?;
+        let canonical = std::fs::canonicalize(&resolved_path)
+            .unwrap_or_else(|_| resolved_path.clone());
+        if visiting.contains(&canonical) {
+            return Err(KernelError::CircularReference {
+                path: resolved_path.display().to_string(),
+            });
+        }
+        let ref_doc = Document::from_path(&resolved_path).map_err(|e| {
+            KernelError::ReferenceResolution {
+                path: resolved_path.display().to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+        visiting.push(canonical);
+        build_component_tree(&ref_doc.root_component, &child_base_dir, visiting, depth + 1, gen, out)?;
+        visiting.pop();
+    }
+    // 3. 子コンポーネントを順に走査
+    for child in &component.children {
+        build_component_tree(child, base_dir, visiting, depth + 1, gen, out)?;
+    }
+    Ok(())
+}
+
+/// ComponentRef を実ファイルパスに解決し、(解決パス, 参照先の親ディレクトリ) を返す。
+fn resolve_reference(reference: &ComponentRef, base_dir: &Path) -> Result<(PathBuf, PathBuf), KernelError> {
+    let path = match reference {
+        ComponentRef::StdLib(rel) => {
+            let root = resolve_stdlib_root().ok_or_else(|| KernelError::ReferenceResolution {
+                path: format!("stdlib://{rel}"),
+                reason: "stdlib root not found (set MYCAD_STDLIB_PATH or provide stdlib/)".into(),
+            })?;
+            root.join(format!("{rel}.mycad"))
+        }
+        ComponentRef::File(rel) => base_dir.join(rel),
+    };
+    let parent = path.parent().map(Path::to_path_buf).unwrap_or_else(|| base_dir.to_path_buf());
+    Ok((path, parent))
+}
+
+/// stdlib_root を決定: env MYCAD_STDLIB_PATH → repo 内 stdlib/（CARGO_MANIFEST_DIR 起点）。
+fn resolve_stdlib_root() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("MYCAD_STDLIB_PATH") {
+        if !p.is_empty() { return Some(PathBuf::from(p)); }
+    }
+    // crates/mycad-build から見て 2 階層上が repo root
+    let repo_stdlib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join("stdlib");
+    if repo_stdlib.is_dir() { Some(repo_stdlib) } else { None }
+}
+```
+
+> **API メモ**: `BuiltBodies`（mycad-build/src/lib.rs:17）は `bodies`/`index`/`consumed` を持ち、
+> `register`/`consume` は private、公開コンストラクタは無い。新規メソッドは追加せず、
+> 既存 public な `live() -> impl Iterator<Item=&Body>`（consume 済みを除く確定 Body）を使って集約する。
+> `Body`（lib.rs:11）は `pub struct { pub feature_id: String, pub solid: Solid }` で Clone 可能。
+
+## 設計方針
+- **決定性要件**: `IdGenerator` を再帰全体で 1 つ共有し、走査順を固定（①自 features → ②reference 展開 → ③children 順）。同一アセンブリ入力は常に同一の EntityID 列・Body 列を生成する。
+- **B-rep トポロジー妥当性**: 本 Issue は新規トポロジーを生成しない。各 Body は既存の `build_bodies_from_features` が生成し、その Euler-Poincaré 妥当性は既存実装で保証済み。`build_assembly` は Body を集約するのみ。
+- **退化幾何の扱い**: 参照解決は幾何を生成しないため幾何的退化は発生しない。「退化」相当のケースは循環参照（自己参照含む）と深さ超過であり、それぞれ `CircularReference` / `MaxDepthExceeded` で即時エラーにする。
+- **循環検出**: 解決パスを `std::fs::canonicalize` で正規化し visit-set（`Vec<PathBuf>`、ネスト段数は浅いため線形検索で十分）で管理。再帰の入口で push、出口で pop。
+- **相対パス解決**: File 参照は「現在処理中の .mycad の親ディレクトリ」基準。再帰で参照先 .mycad をロードしたら、その親を新しい base_dir として子の解決に使う。
+- **stdlib_root 探索**: env `MYCAD_STDLIB_PATH`（非空）優先、なければ `CARGO_MANIFEST_DIR/../../stdlib`。見つからず stdlib 参照がある場合は `ReferenceResolution` エラー。
+- **derive 規約**: 既存型を変更しない（KernelError に variant 追加のみ、`thiserror::Error` の `#[error(...)]` 属性を付与）。
+- **エラーハンドリング**: `thiserror`。`Document::from_path` が返す `FormatError` は `ReferenceResolution { path, reason }` でラップして `KernelError` に統一する。
+- **workspace.dependencies**: `tempfile` は既に `[workspace.dependencies]` に定義済み。`mycad-build` の `[dev-dependencies]` に `tempfile = { workspace = true }` を追加するのみ。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一アセンブリ Document を 2 回ビルドし、全 Body の EntityID・座標が一致 | `assert` で ID・point 全一致 |
+| T02 | 正常系(stdlib) | tmpdir に `stdlib/part.mycad` を置き `MYCAD_STDLIB_PATH` を向け、`ref: stdlib://part` を持つ親をビルド → 参照先の Body が集約される | Body 数が増え、参照先の feature が含まれる |
+| T03 | 正常系(file) | tmpdir に親 .mycad と `./child.mycad` を置き、File 参照を相対解決 | child の Body が集約される |
+| T04 | 正常系(features+children) | features を持つルート + children をビルドし、全ノードの Body が走査順に集約される | Body 数・順序が期待通り |
+| T05 | エラー(循環) | A→B→A の循環参照 | `Err(KernelError::CircularReference { .. })` |
+| T06_boundary_self_reference | 境界(自己循環) | A→A の自己参照 | `Err(KernelError::CircularReference { .. })` |
+| T07_boundary_depth_16_vs_17 | 境界(深さ) | 16 段ネストは成功、17 段で失敗 | 16段:Ok / 17段:`Err(MaxDepthExceeded { max: 16, .. })` |
+| T08 | エラー(stdlib未設定) | `MYCAD_STDLIB_PATH` 未設定 & repo stdlib/ 不在で stdlib 参照 | `Err(KernelError::ReferenceResolution { .. })` |
+
+> T08 はテスト環境依存（repo に stdlib/ が無い前提）。env を確実に unset し、`#[serial]` か env guard で他テストとの干渉を防ぐ。env を触るテスト（T02, T08）は `MYCAD_STDLIB_PATH` の set/unset 競合を避けるため直列実行する設計とする（test-spec で詳細指定）。
+
+## 幾何的不変条件チェックリスト
+- [x] N/A — 本 Issue は assemble 系だが、新規トポロジーを生成せず既存 Body を集約するのみ。transform 合成（normal/向き処理）は #74 のスコープ。polygon 向き・pslg・flip_normals 等の不変条件は本 Issue では非該当。

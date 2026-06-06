@@ -1,0 +1,8 @@
+issues:
+  - id: AS01
+    severity: high
+    section: "深さ上限ガード"
+    finding: "depth チェックが `depth > MAX_REFERENCE_DEPTH` となっており、depth=16 の時点でチェックを通過してしまう。結果として 17 段まで許可され、T07 期待値「16段:Ok / 17段:Err」と不整合"
+    suggestion: "チェックを `depth >= MAX_REFERENCE_DEPTH` に修正。または depth が 1-indexed であることを明記するなら、それに合わせてテスト期待値または実装を整合させる"
+
+verdict: fail

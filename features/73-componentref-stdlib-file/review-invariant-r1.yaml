@@ -1,0 +1,14 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "実装対象 > resolve_stdlib_root"
+    finding: "env 変数の空文字列チェック `is_empty()` は空白のみの文字列（\"  \"）を通してしまう"
+    suggestion: "trim().is_empty() にするか、PathBuf::from(p) 後に exists チェックを追加すること。ただし機能的に stdlib/ がない場合は ReferenceResolution エラーになるため実害は軽微"
+
+  - id: IN02
+    severity: low
+    section: "実装対象 > build_component_tree"
+    finding: "canonicalize 失敗時のフォールバック（unwrap_or_else）により、シンボリックリンク等で正規化に失敗したパスが visit-set に追加される可能性がある"
+    suggestion: "canonicalize 失敗時もエラー扱いとするか、少なくともドキュメントに「正規化失敗時は文字列比較でフォールバック」と記載すること。ただし実用上は軽微な問題"
+
+verdict: pass
