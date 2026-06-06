@@ -1,0 +1,8 @@
+issues:
+  - id: AS01
+    severity: low
+    section: "resolve_reference 実装の明示"
+    finding: "ComponentRef 参照解決で stdlib:// と File 参照が同一コードパスで共通化されていると記載されているが、`resolve_reference` 関数の仕様（引数・戻り値・stdlib_root 解決順）が本設計書に明示されていない。#73 実装を再利用するとの記載はあるが、参照先 Component の transform.position が total_offset に加算されることが `build_component_tree` の再帰呼び出しで正しく行われているか確認できない。"
+    suggestion: "`resolve_reference` 関数シグネチャと stdlib_root 決定順（env MYCAD_STDLIB_PATH → リポジトリ内 stdlib/）を本設計書に明示するか、#73 の該当箇所を引用する。"
+
+verdict: pass

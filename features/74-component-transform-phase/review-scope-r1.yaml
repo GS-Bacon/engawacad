@@ -1,0 +1,13 @@
+issues:
+  - id: SC01
+    severity: critical
+    section: "Issue 整合"
+    finding: "Issue 完了条件の「統合テスト: 入れ子2段」「決定性テスト: 同一 Document を 2 回」が plan.md In-Scope に含まれていない"
+    suggestion: "In-Scope 表に「統合テスト（入れ子2段）」「決定性テスト（2回ビルド）」を追加すること"
+  - id: SC02
+    severity: high
+    section: "Issue 整合"
+    finding: "Issue 完了条件は「ComponentRef は Err を返す stub でよい」としているが、plan は「#73 完了済みの参照解決に委譲」と記述しており矛盾"
+    suggestion: "Issue 完了条件を優先して stub 実装とするか、#73 完了前提にするか統一すること"
+
+verdict: fail

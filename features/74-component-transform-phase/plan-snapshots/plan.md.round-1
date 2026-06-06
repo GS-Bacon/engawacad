@@ -1,0 +1,164 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `build_assembly` の既実装（#73）に transform 合成（translation）を追加 | 回転 transform の合成 (#77) |
+| `build_component_tree` に `accumulated_offset: Vec3` を追加し、DFS 走査中に position を累積 | ComponentRef 参照解決 (#73 完了済み) |
+| 各 Component の `transform.position` を `Vec3` に変換して累積 offset に加算 | CLI/API のアセンブリ拒否ガード除去 (#76) |
+| ビルド後の全 Body に `Solid::translate(accumulated_offset)` を適用 | stdlib 実パーツ作成 (#75) |
+| `transform.rotation` は無視（全ゼロ前提で動作、非ゼロでも警告のみ or 無視） | assembly.mycad 実ビルド (#78) |
+| features 空 Component のスキップ（エラーにしない） | |
+| 統合テスト: ネスト2段・単一 transform・決定性 | |
+
+## Non-Goals
+- 回転 transform の幾何適用 — #77 で実装。本 Issue の `transform.rotation` は全ゼロ前提。非ゼロ値は無視する（将来 #77 で有効化）。
+- ComponentRef 参照解決 — #73 で完了済み（`build_assembly` 内で既に動作）。
+- CLI/API の変更 — #76 で対応。
+- `examples/assembly.mycad` の実ビルド通し — #78。
+
+## 実装対象
+<!-- Issue: #74 -->
+影響クレート/ファイル:
+- `crates/mycad-build/src/lib.rs` — `build_assembly` と `build_component_tree` を変更（accumulated_offset 追加）
+
+既存関数の修正（before/after）:
+
+**`build_assembly`（before）**:
+```rust
+pub fn build_assembly(
+    doc: &Document,
+    base_dir: &Path,
+    gen: &mut IdGenerator,
+) -> Result<Vec<Body>, KernelError> {
+    let mut bodies: Vec<Body> = Vec::new();
+    let mut visiting: Vec<PathBuf> = Vec::new();
+    build_component_tree(&doc.root_component, base_dir, &mut visiting, 0, gen, &mut bodies)?;
+    Ok(bodies)
+}
+```
+
+**`build_assembly`（after）**:
+```rust
+pub fn build_assembly(
+    doc: &Document,
+    base_dir: &Path,
+    gen: &mut IdGenerator,
+) -> Result<Vec<Body>, KernelError> {
+    let mut bodies: Vec<Body> = Vec::new();
+    let mut visiting: Vec<PathBuf> = Vec::new();
+    build_component_tree(
+        &doc.root_component,
+        base_dir,
+        &mut visiting,
+        0,
+        Vec3::zeros(),  // accumulated_offset
+        gen,
+        &mut bodies,
+    )?;
+    Ok(bodies)
+}
+```
+
+**`build_component_tree`（before）**:
+```rust
+fn build_component_tree(
+    component: &Component,
+    base_dir: &Path,
+    visiting: &mut Vec<PathBuf>,
+    depth: usize,
+    gen: &mut IdGenerator,
+    out: &mut Vec<Body>,
+) -> Result<(), KernelError> {
+    if !component.features.is_empty() {
+        let built = build_bodies_from_features(&component.features, gen)?;
+        out.extend(built.live().cloned());
+    }
+    if let Some(reference) = &component.reference { ... }  // 参照解決（変更なし）
+    for child in &component.children { build_component_tree(child, base_dir, visiting, depth, gen, out)?; }
+    Ok(())
+}
+```
+
+**`build_component_tree`（after）**:
+```rust
+fn build_component_tree(
+    component: &Component,
+    base_dir: &Path,
+    visiting: &mut Vec<PathBuf>,
+    depth: usize,
+    accumulated_offset: Vec3,  // 親から伝播した累積 translation
+    gen: &mut IdGenerator,
+    out: &mut Vec<Body>,
+) -> Result<(), KernelError> {
+    // この Component の position を累積に加算（rotation は無視）
+    let p = &component.transform.position;
+    let local_offset = Vec3::new(p[0], p[1], p[2]);
+    let total_offset = accumulated_offset + local_offset;
+
+    // 1. features をビルドし、translate を適用
+    if !component.features.is_empty() {
+        let built = build_bodies_from_features(&component.features, gen)?;
+        for mut body in built.live().cloned() {
+            if total_offset != Vec3::zeros() {
+                body.solid.translate(total_offset);
+            }
+            out.push(body);
+        }
+    }
+
+    // 2. reference を解決（既存: 参照先の root_component を再帰展開）
+    //    参照先にも total_offset を伝播する。
+    if let Some(reference) = &component.reference {
+        if depth >= MAX_REFERENCE_DEPTH {
+            return Err(KernelError::MaxDepthExceeded { max: MAX_REFERENCE_DEPTH, path: component.name.clone() });
+        }
+        let (resolved_path, child_base_dir) = resolve_reference(reference, base_dir)?;
+        let canonical = std::fs::canonicalize(&resolved_path).unwrap_or_else(|_| resolved_path.clone());
+        if visiting.contains(&canonical) {
+            return Err(KernelError::CircularReference { path: resolved_path.display().to_string() });
+        }
+        let ref_doc = Document::from_path(&resolved_path).map_err(|e| KernelError::ReferenceResolution {
+            path: resolved_path.display().to_string(), reason: e.to_string(),
+        })?;
+        visiting.push(canonical);
+        // 参照先の root_component にも total_offset を伝播（子の transform と合成）
+        build_component_tree(&ref_doc.root_component, &child_base_dir, visiting, depth + 1, total_offset, gen, out)?;
+        visiting.pop();
+    }
+
+    // 3. children を走査（total_offset を子に伝播）
+    for child in &component.children {
+        build_component_tree(child, base_dir, visiting, depth, total_offset, gen, out)?;
+    }
+    Ok(())
+}
+```
+
+追加 import:
+```rust
+use mycad_kernel::geometry::Vec3;
+```
+
+## 設計方針
+- **決定性要件**: `accumulated_offset` の加算は commutative ではないため、走査順（①features → ②reference → ③children）を固定して常に同一結果を保証する。`IdGenerator` は再帰全体で共有（既存）。
+- **B-rep トポロジー妥当性**: `Solid::translate` はトポロジー不変（EntityID・接続を保持）。#72 で証明済み。
+- **退化幾何の扱い**: ゼロ offset の場合は `Solid::translate` を省略してコストを避ける（`total_offset != Vec3::zeros()` ガード）。有限チェックは #72 の T07 で保証済み。
+- **rotation の扱い**: `transform.rotation` は現時点で全ゼロを前提とする。非ゼロでも警告を出さず無視する（#77 で有効化）。
+- **`Vec3` の比較**: `Vec3::zeros()` との比較で厳密な `==` を使う（Rust の f64 `PartialEq`）。全ゼロは正確に 0.0 として格納されているため実用上安全。
+- **エラーハンドリング**: 新規エラー variant なし。既存の `CircularReference` / `MaxDepthExceeded` / `ReferenceResolution` を継続使用。
+- **workspace.dependencies**: 新規依存なし（`nalgebra` Vec3 は既存）。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一 Document を 2 回ビルドし、全 Body の EntityID・座標が一致 | 全座標 `assert_eq!` |
+| T02 | 正常系(単一 transform) | root_component に position=[5,0,0] の transform を持つ 1 部品をビルド | Body の vertex が x+5 ずれている |
+| T03 | 正常系(ネスト2段合成) | parent position=[5,0,0]、child position=[0,3,0] → child の Body は world [5,3,0] ずれ | vertex を座標値で検証 |
+| T04 | 正常系(transform なし) | デフォルト transform（全ゼロ）のアセンブリ → 座標変化なし | 元の vertex と厳密一致 |
+| T05 | 正常系(features 空) | features 空、children 1 つ（有効 Body）の親 → エラーにならず children の Body が返る | Ok, len==1 |
+| T06_boundary_zero_offset | 境界(ゼロ) | position=[0,0,0] を明示した Component → 変化なし | 元の vertex と厳密一致 |
+| T07_boundary_translate_then_verify | 境界(大きな offset) | position=[1e6, -1e6, 1e6] → 全座標有限 | `is_finite()` |
+
+## 幾何的不変条件チェックリスト
+- [x] `Solid::translate` はトポロジー不変（#72 T04 EntityID 不変テスト済み）。
+- [x] 平行移動は Euler-Poincaré V-E+F=2 を変えない（幾何のみ移動、接続は維持）。
+- [x] polygon 向き・normal 処理・pslg — translate は法線方向を変えないため非該当（#72 設計方針確認済み）。
