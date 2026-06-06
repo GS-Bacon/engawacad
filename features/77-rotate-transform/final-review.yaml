@@ -1,0 +1,16 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "crates/mycad-kernel/src/brep/topology.rs"
+    line_hint: 413
+    finding: "未使用の変数 `rotate_vec` が `_` で抑制されているが clippy 警告の可能性"
+    suggestion: "使用していない import を削除するか、将来使用予定ならコメントを付ける"
+
+  - id: FN02
+    severity: low
+    file: "crates/mycad-kernel/src/brep/topology.rs"
+    line_hint: 1387
+    finding: "T02 テストの法線アライメントチェックが `(n.dot(a) - 1.0).abs() < 1e-12` ではなく `1.0 - n.dot(a) < 1e-12` で評価している（符号付誤差を許容）"
+    suggestion: "厳密なアライメント検証には `(n.dot(a).abs() - 1.0).abs() < 1e-12` を使用し、±方向両方を正しく検証する"
+
+verdict: pass

@@ -1,0 +1,188 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `euler_to_matrix(rx, ry, rz: f64) -> [[f64;3];3]` を `transform.rs` に追加 | build 層への回転合成 (Phase 6) |
+| `rotate_point` / `rotate_vec` ユーティリティを `transform.rs` に追加 | Sphere シームの完全再縫合 |
+| `Surface::rotate`, `Curve::rotate`, `Plane::rotate` メソッド追加 | pcurve 回転 (UV空間は変更不要) |
+| `Solid::rotate(&mut self, matrix: [[f64;3];3], pivot: Point)` 追加 | Component 階層への回転組み込み |
+| 決定性・逆変換・90°回転テスト | |
+
+## Non-Goals
+- build 層への回転 transform 合成（Phase 6 対応）
+- Sphere シームの完全再縫合
+- pcurve の回転
+- Component transform への回転組み込み
+
+## 実装対象
+<!-- Issue: #77 -->
+影響クレート/ファイル:
+- `crates/mycad-kernel/src/geometry/transform.rs` — `euler_to_matrix`, `rotate_point`, `rotate_vec` 追加
+- `crates/mycad-kernel/src/geometry/surface.rs` — `Surface::rotate` 追加
+- `crates/mycad-kernel/src/geometry/curve.rs` — `Curve::rotate` 追加
+- `crates/mycad-kernel/src/geometry/mod.rs` — `Plane::rotate` 追加
+- `crates/mycad-kernel/src/brep/topology.rs` — `Solid::rotate` 追加
+
+### geometry/transform.rs への追加（新規関数のみ）
+
+```rust
+/// 90°/180°/270° の数値誤差を丸める (しきい値: 1e-15)
+#[inline]
+fn snap(v: f64) -> f64 {
+    if v.abs() < 1e-15 { 0.0 }
+    else if (v - 1.0).abs() < 1e-15 { 1.0 }
+    else if (v + 1.0).abs() < 1e-15 { -1.0 }
+    else { v }
+}
+
+/// Euler角 (度) → 3x3 回転行列 (ZYX 順: R = Rx(rx) * Ry(ry) * Rz(rz))
+pub fn euler_to_matrix(rx_deg: f64, ry_deg: f64, rz_deg: f64) -> [[f64; 3]; 3] {
+    let to_rad = std::f64::consts::PI / 180.0;
+    let (sx, cx) = (snap((rx_deg * to_rad).sin()), snap((rx_deg * to_rad).cos()));
+    let (sy, cy) = (snap((ry_deg * to_rad).sin()), snap((ry_deg * to_rad).cos()));
+    let (sz, cz) = (snap((rz_deg * to_rad).sin()), snap((rz_deg * to_rad).cos()));
+    [
+        [cy*cz,           -cy*sz,           sy    ],
+        [sx*sy*cz+cx*sz,  -sx*sy*sz+cx*cz,  -sx*cy],
+        [-cx*sy*cz+sx*sz,  cx*sy*sz+sx*cz,   cx*cy],
+    ]
+}
+
+/// 点を pivot 周りに回転行列 M で回転する
+pub fn rotate_point(p: Point, matrix: [[f64; 3]; 3], pivot: Point) -> Point {
+    let dp = p - pivot;
+    let [r0, r1, r2] = matrix;
+    let x = r0[0]*dp.x + r0[1]*dp.y + r0[2]*dp.z;
+    let y = r1[0]*dp.x + r1[1]*dp.y + r1[2]*dp.z;
+    let z = r2[0]*dp.x + r2[1]*dp.y + r2[2]*dp.z;
+    pivot + Vec3::new(x, y, z)
+}
+
+/// ベクトル（法線・軸・方向）を回転行列 M で回転する (平行移動なし)
+pub fn rotate_vec(v: Vec3, matrix: [[f64; 3]; 3]) -> Vec3 {
+    let [r0, r1, r2] = matrix;
+    Vec3::new(
+        r0[0]*v.x + r0[1]*v.y + r0[2]*v.z,
+        r1[0]*v.x + r1[1]*v.y + r1[2]*v.z,
+        r2[0]*v.x + r2[1]*v.y + r2[2]*v.z,
+    )
+}
+```
+
+### geometry/surface.rs の変更
+
+**before:** `translate` メソッドのみ
+
+**after:** `rotate` メソッドを追加:
+```rust
+pub fn rotate(&self, matrix: [[f64; 3]; 3], pivot: Point) -> Surface {
+    use super::transform::{rotate_point, rotate_vec};
+    match self {
+        Surface::Plane { origin, normal, u_axis, v_axis } => Surface::Plane {
+            origin: rotate_point(*origin, matrix, pivot),
+            normal: rotate_vec(*normal, matrix),
+            u_axis: rotate_vec(*u_axis, matrix),
+            v_axis: rotate_vec(*v_axis, matrix),
+        },
+        Surface::Cylinder { origin, axis, radius } => Surface::Cylinder {
+            origin: rotate_point(*origin, matrix, pivot),
+            axis: rotate_vec(*axis, matrix),
+            radius: *radius,
+        },
+        Surface::Sphere { center, radius } => Surface::Sphere {
+            center: rotate_point(*center, matrix, pivot),
+            radius: *radius,
+        },
+        Surface::Cone { apex, axis, half_angle } => Surface::Cone {
+            apex: rotate_point(*apex, matrix, pivot),
+            axis: rotate_vec(*axis, matrix),
+            half_angle: *half_angle,
+        },
+    }
+}
+```
+
+### geometry/curve.rs の変更
+
+**after:** `rotate` メソッドを追加:
+```rust
+pub fn rotate(&self, matrix: [[f64; 3]; 3], pivot: Point) -> Curve {
+    use super::transform::{rotate_point, rotate_vec};
+    match self {
+        Curve::Line { origin, direction } => Curve::Line {
+            origin: rotate_point(*origin, matrix, pivot),
+            direction: rotate_vec(*direction, matrix),
+        },
+        Curve::Circle { center, normal, radius } => Curve::Circle {
+            center: rotate_point(*center, matrix, pivot),
+            normal: rotate_vec(*normal, matrix),
+            radius: *radius,
+        },
+    }
+}
+```
+
+### geometry/mod.rs の変更 (Plane::rotate)
+
+**after:** `rotate` メソッドを追加:
+```rust
+pub fn rotate(&self, matrix: [[f64; 3]; 3], pivot: Point) -> Plane {
+    Plane {
+        origin: transform::rotate_point(self.origin, matrix, pivot),
+        normal: transform::rotate_vec(self.normal, matrix),
+        u_axis: transform::rotate_vec(self.u_axis, matrix),
+        v_axis: transform::rotate_vec(self.v_axis, matrix),
+    }
+}
+```
+
+### brep/topology.rs の変更 (Solid::rotate)
+
+**after:** `Solid` の impl ブロックに `rotate` 追加:
+```rust
+pub fn rotate(&mut self, matrix: [[f64; 3]; 3], pivot: crate::geometry::Point) {
+    use crate::geometry::transform::{rotate_point, rotate_vec};
+    for v in &mut self.vertices {
+        v.point = rotate_point(v.point, matrix, pivot);
+    }
+    for e in &mut self.edges {
+        e.curve = e.curve.rotate(matrix, pivot);
+    }
+    for f in &mut self.faces {
+        f.surface = f.surface.rotate(matrix, pivot);
+    }
+    // half_edges.pcurve は UV 空間のため不変
+}
+```
+
+## 設計方針
+- **ZYX 順**: R = Rx(rx) * Ry(ry) * Rz(rz)。入力は度数法 (degrees)、内部でラジアンに変換。
+- **snap()**: 各 sin/cos に 1e-15 しきい値で 0/1/-1 の特別丸めを適用。
+- **pivot**: Point 型で渡す。`Point::origin()` で原点中心。
+- **pcurve 不変**: `translate` と同様に UV 空間パラメータは変換しない。
+- **決定性**: `euler_to_matrix` は純粋関数（状態なし）。
+- **workspace.dependencies**: 新規依存なし。
+
+### 数値モデル
+- Euler角 ZYX 順: R = Rx * Ry * Rz
+- snap しきい値: ε = 1e-15（sin/cos の各要素に適用）
+- 整合テスト精度: 1e-12
+- 逆変換行列: `M^T`（直交行列なので逆行列 = 転置）
+- ADR-004 準拠: exact（回転行列要素はスナップ済み整数値に近い）
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一 Solid を 100 回 rotate、全頂点座標が完全一致 | assert_eq! |
+| T02 | 正常系(90°) | x軸90°回転でCuboidの面法線が軸に揃う | 精度1e-12 |
+| T03 | 逆変換 | rotate(M) → rotate(M^T) で元の幾何に戻る | 精度1e-12 |
+| T04 | 正常系(恒等) | euler_to_matrix(0,0,0) → 単位行列 | exact |
+| T05 | 正常系(snap) | euler_to_matrix(90,0,0) の各要素がスナップ済み値 | snap値確認 |
+| T06 | 正常系(Cylinder) | Cylinder 90°回転後の orthonormal_basis(new_axis) が元の基底の回転と一致 | 精度1e-12 |
+| T07_boundary_zero_rotation | 境界 | (0,0,0) 回転した Solid が元と完全一致 | assert_eq! |
+| T08_boundary_180 | 境界 | x軸180°回転で y/z 座標が符号反転 | 精度1e-12 |
+| T09_degen_pivot_at_vertex | 退化 | pivot を頂点上に置いて回転、その頂点座標が不変 | 精度1e-15 |
+
+## 幾何的不変条件チェックリスト
+- [x] 回転は等長変換（行ベクトルの長さ = 1、各行が直交）
+- [x] Euler-Poincaré V-E+F=2 は保存（頂点数・辺数・面数は変化しない）
+- [x] pcurve は UV 空間のため不変（`translate` と同様の方針）

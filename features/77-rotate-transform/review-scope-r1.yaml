@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "Non-Goals"
+    finding: "Non-Goals に \"pcurve の回転（UV空間パラメータは回転不変）\" があるが、これは In-Scope にも \"pcurve 回転 (UV空間は変更不要)\" として Out-of-Scope 側に記載がある"
+    suggestion: "Non-Goals は「やらないこと」を列挙するセクション。「UV空間は変更不要」という設計判断は Non-Goals ではなく設計方針に記述すべき（pcurve を回転させないこと自体は Out-of-Scope だが、その理由付けが設計方針側にあるべき）"
+
+verdict: pass
