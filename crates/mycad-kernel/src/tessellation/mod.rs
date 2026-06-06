@@ -810,7 +810,7 @@ fn tessellate_sphere_face_trimmed(
             let a1 = prev_start + ((iu + 1) % n_u) as u32;
             let b0 = ring_base + iu as u32;
             let b1 = ring_base + ((iu + 1) % n_u) as u32;
-            if !face.same_sense {
+            if face.same_sense != trim_lower {
                 push_triangle(mesh, a0, a1, b0);
                 push_triangle(mesh, a1, b1, b0);
             } else {
@@ -833,14 +833,14 @@ fn tessellate_sphere_face_trimmed(
         let next = last_ring_start + ((iu + 1) % n_u) as u32;
         if trim_lower {
             // south pole fan
-            if !face.same_sense {
+            if face.same_sense {
                 push_triangle(mesh, pole_idx, next, cur);
             } else {
                 push_triangle(mesh, pole_idx, cur, next);
             }
         } else {
             // north pole fan
-            if !face.same_sense {
+            if face.same_sense {
                 push_triangle(mesh, cur, next, pole_idx);
             } else {
                 push_triangle(mesh, next, cur, pole_idx);

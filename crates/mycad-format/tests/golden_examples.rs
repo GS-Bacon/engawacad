@@ -8,8 +8,8 @@ fn examples_dir() -> PathBuf {
 
 fn assert_golden(filename: &str, golden: &str) {
     let path = examples_dir().join(filename);
-    let doc = Document::from_path(&path)
-        .unwrap_or_else(|e| panic!("failed to load {filename}: {e}"));
+    let doc =
+        Document::from_path(&path).unwrap_or_else(|e| panic!("failed to load {filename}: {e}"));
     let yaml = doc.to_yaml().unwrap();
     assert_eq!(yaml, golden, "{filename} YAML golden mismatch");
 }
