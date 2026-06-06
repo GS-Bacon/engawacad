@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "設計方針 > 退化幾何の扱い"
+    finding: "NaN/Inf を含む offset の検証は「呼び出し側責務（Non-Goal）」と記載されているが、translate 関数が NaN/Inf 入力を受けた際の挙動（propagate させるか、事前にエラーにするか）が明記されていない。Rust の浮動小数点演算はデフォルトで propagate するため事実上の動作は決まっているが、ADR-004 §3.2 の「退化入力は KernelError::DegenerateInput を返す」との方針との整合性が明確でない"
+    suggestion: "設計方針に「translate 演算自体は NaN/Inf を propagate する（検証・エラーは呼び出し側責務）。translate 自体は KernelError を返さない」を明記するか、あるいは「ADR-004 §3.2 は Boolean 等の複雑演算向けであり、点の加算のような基本演算には適用しない」と注記すること。ただし実装挙動には影響しないため修正は任意"
+
+verdict: pass

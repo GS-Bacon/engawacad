@@ -1,0 +1,134 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| 幾何型への平行移動 `translate` 追加 (`Plane` struct / `Surface` enum / `Curve` enum) | 回転 `rotate` の実装 (#77) |
+| `Solid::translate(&mut self, offset)` 実装 (vertices/edges/faces の幾何を一括移動) | build 層のツリー走査・transform 合成 (#74) |
+| 共有ヘルパー `geometry/transform.rs` (新規) | ComponentRef 参照解決 (#73) |
+| 単体テスト (決定性 / EntityID 不変 / 逆変換 / 境界) | CLI/API のアセンブリ開放 (#76) |
+| | `Pcurve`/`Curve2D` の変換 (UV パラメータ空間のため平行移動の対象外) |
+
+## Non-Goals
+- 回転 (rotate) の実装 — #77 で対応
+- build 層の Component ツリー走査・transform 合成 — #74 で対応
+- ComponentRef 参照解決 — #73 で対応
+- CLI/API のアセンブリ拒否ガード除去 — #76 で対応
+- `Pcurve`/`Curve2D` (UV 空間) への変換 — 平行移動では UV パラメータ空間は不変のため変換不要
+
+## 実装対象
+<!-- Issue: #72 -->
+影響クレート/ファイル:
+- `crates/mycad-kernel/src/geometry/transform.rs` (**新規**) — 平行移動の共有ヘルパー
+- `crates/mycad-kernel/src/geometry/mod.rs` — `pub mod transform;` 追加 + `Plane::translate` 実装
+- `crates/mycad-kernel/src/geometry/surface.rs` — `Surface::translate` 実装
+- `crates/mycad-kernel/src/geometry/curve.rs` — `Curve::translate` 実装
+- `crates/mycad-kernel/src/brep/topology.rs` — `Solid::translate` 実装
+
+新規追加する関数・メソッドのシグネチャ:
+
+`geometry/transform.rs` (新規ファイル、共有ヘルパー):
+```rust
+use crate::geometry::{Point, Vec3};
+
+/// 点を平行移動する。これが平行移動の唯一の基本演算。
+/// 軸・法線・方向ベクトル・半径・角度は平行移動で不変なので、
+/// 本モジュールはベクトル変換ヘルパーを持たない (回転 #77 で追加)。
+#[inline]
+pub fn translate_point(p: Point, offset: Vec3) -> Point {
+    p + offset
+}
+```
+
+`Plane::translate` (mod.rs, origin のみ移動):
+```rust
+impl Plane {
+    pub fn translate(&self, offset: Vec3) -> Plane {
+        Plane {
+            origin: crate::geometry::transform::translate_point(self.origin, offset),
+            normal: self.normal,
+            u_axis: self.u_axis,
+            v_axis: self.v_axis,
+        }
+    }
+}
+```
+
+`Surface::translate` (surface.rs, 各バリアントの基準点のみ移動):
+```rust
+impl Surface {
+    pub fn translate(&self, offset: Vec3) -> Surface {
+        use crate::geometry::transform::translate_point as t;
+        match self {
+            Surface::Plane { origin, normal, u_axis, v_axis } =>
+                Surface::Plane { origin: t(*origin, offset), normal: *normal, u_axis: *u_axis, v_axis: *v_axis },
+            Surface::Cylinder { origin, axis, radius } =>
+                Surface::Cylinder { origin: t(*origin, offset), axis: *axis, radius: *radius },
+            Surface::Sphere { center, radius } =>
+                Surface::Sphere { center: t(*center, offset), radius: *radius },
+            Surface::Cone { apex, axis, half_angle } =>
+                Surface::Cone { apex: t(*apex, offset), axis: *axis, half_angle: *half_angle },
+        }
+    }
+}
+```
+
+`Curve::translate` (curve.rs):
+```rust
+impl Curve {
+    pub fn translate(&self, offset: Vec3) -> Curve {
+        use crate::geometry::transform::translate_point as t;
+        match self {
+            Curve::Line { origin, direction } =>
+                Curve::Line { origin: t(*origin, offset), direction: *direction },
+            Curve::Circle { center, normal, radius } =>
+                Curve::Circle { center: t(*center, offset), normal: *normal, radius: *radius },
+        }
+    }
+}
+```
+
+`Solid::translate` (topology.rs, in-place で EntityID/トポロジーを保持):
+```rust
+impl Solid {
+    pub fn translate(&mut self, offset: Vec3) {
+        for v in &mut self.vertices {
+            v.point = crate::geometry::transform::translate_point(v.point, offset);
+        }
+        for e in &mut self.edges {
+            e.curve = e.curve.translate(offset);
+        }
+        for f in &mut self.faces {
+            f.surface = f.surface.translate(offset);
+        }
+        // half_edges.pcurve は UV 空間なので不変。loops/shells はインデックスのみで幾何を持たない。
+    }
+}
+```
+
+## 設計方針
+- **決定性要件**: 平行移動は座標への純粋な加算のみ。`IdGenerator` は使わない（新規エンティティを生成しない）。EntityID・トポロジーインデックス（`vertices[i]` 等の usize 参照）は変換前後で完全に保持される。同一 offset の translate は常に同一出力。
+- **B-rep トポロジー妥当性**: 平行移動は頂点・辺・面の幾何のみ動かし、接続関係を一切変えないため Euler-Poincaré V−E+F=2 は変換前後で不変（トポロジー不変条件は自明に保たれる）。
+- **退化幾何の扱い**: 有限な offset による平行移動は退化（ゼロ長エッジ・面積ゼロ面）を新たに生成しない。NaN/Inf を含む offset の検証は呼び出し側責務（Non-Goal）。本 Issue では変換が幾何の有限性を保つことをテスト（T07）で確認するに留める。**`translate` 演算自体は NaN/Inf を Rust 標準の浮動小数点挙動に従って propagate し、`KernelError` を返さない**（ADR-004 の退化入力エラー方針は Boolean 等の複雑演算向けであり、点加算のような基本演算には適用しない）。
+- **API 設計**: 幾何型（`Plane`/`Surface`/`Curve`）は値型のため `translate(&self, offset) -> Self`（新値を返す純粋関数）とし、`translate(v).translate(-v)` の逆変換テストを書きやすくする。`Solid` は大きく頻繁にクローンしたくないため `translate(&mut self, offset)`（in-place）とする。
+- **孤児ルール対応**: `Point`/`Vec3` は nalgebra 型エイリアスのため inherent method を付けられない。点の平行移動は `transform::translate_point(p, offset)` 自由関数で提供し、各幾何 enum/struct の `translate` メソッドがこれを呼ぶ。
+- **derive 規約**: 既存型のフィールドを変更しないため derive の追加は不要。
+- **エラーハンドリング**: `translate` は失敗しえない純粋演算のため `Result` を返さない（`thiserror` 不使用）。
+- **workspace.dependencies**: 新規依存なし（`nalgebra` は既存）。
+
+### 数値モデル
+- **演算**: 平行移動は `Point + Vec3` の厳密な浮動小数点加算のみ。回転のような行列合成・三角関数を含まず、丸め処理は不要（exact、ADR-004 準拠の exact 側）。
+- **逆変換テスト精度**: `translate(v).translate(-v)` は浮動小数点加算の往復により厳密一致しない可能性があるため、精度 `1e-12`（`assert_relative_eq!` の epsilon）で検証する。実際には `+v` の直後に `-v` を足すため誤差は事実上 0 だが、安全側に 1e-12 を採る。
+- **比較公差**: 座標比較は既存の `LENGTH_TOLERANCE = 1e-9`（`geometry::math`）または `approx::assert_relative_eq!(epsilon = 1e-12)` を使用。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同じ offset で translate した `Solid` を 100 回シリアライズ（serde_yaml）し、全出力が同一文字列 | 全 round で `assert_eq!` |
+| T02 | 正常系 | `Plane`/`Surface`(4 variant)/`Curve`(2 variant) を translate し、基準点が offset 分だけ移動 | 移動後の点が `point_near` 一致 |
+| T03 | 不変性 | translate で軸/法線/方向/半径/half_angle が不変であること | `assert_eq!` |
+| T04 | EntityID不変 | translate 後の `Solid` の全 vertex/edge/face/...の EntityID とトポロジーインデックスが変換前と一致 | id・接続を全比較（座標除く） |
+| T05 | 逆変換 | `translate(v).translate(-v)` が元の幾何と一致（精度 1e-12） | `assert_relative_eq!(epsilon=1e-12)` |
+| T06_boundary_zero_offset | 境界 | offset=`[0,0,0]` で幾何が完全不変 | `assert_eq!`（厳密一致） |
+| T07_degen_large_offset | 境界/退化 | 非常に大きな offset（例 1e9）でも座標が有限を保ち NaN/Inf を生じない | 全座標 `is_finite()` |
+
+## 幾何的不変条件チェックリスト
+- [x] N/A — 本 Issue は Boolean/Partition/Assemble 系ではなく、トポロジーを変更しない純粋な幾何平行移動のため、polygon 向き・normal 処理・pslg 関連の不変条件はすべて非該当。
