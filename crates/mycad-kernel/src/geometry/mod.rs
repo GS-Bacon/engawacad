@@ -65,4 +65,13 @@ impl Plane {
             v_axis: self.v_axis,
         }
     }
+
+    pub fn rotate(&self, matrix: [[f64; 3]; 3], pivot: Point) -> Plane {
+        Plane {
+            origin: transform::rotate_point(self.origin, matrix, pivot),
+            normal: transform::rotate_vec(self.normal, matrix),
+            u_axis: transform::rotate_vec(self.u_axis, matrix),
+            v_axis: transform::rotate_vec(self.v_axis, matrix),
+        }
+    }
 }

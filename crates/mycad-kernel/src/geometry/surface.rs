@@ -225,6 +225,45 @@ impl Surface {
             },
         }
     }
+
+    pub fn rotate(&self, matrix: [[f64; 3]; 3], pivot: Point) -> Surface {
+        use super::transform::{rotate_point, rotate_vec};
+        match self {
+            Surface::Plane {
+                origin,
+                normal,
+                u_axis,
+                v_axis,
+            } => Surface::Plane {
+                origin: rotate_point(*origin, matrix, pivot),
+                normal: rotate_vec(*normal, matrix),
+                u_axis: rotate_vec(*u_axis, matrix),
+                v_axis: rotate_vec(*v_axis, matrix),
+            },
+            Surface::Cylinder {
+                origin,
+                axis,
+                radius,
+            } => Surface::Cylinder {
+                origin: rotate_point(*origin, matrix, pivot),
+                axis: rotate_vec(*axis, matrix),
+                radius: *radius,
+            },
+            Surface::Sphere { center, radius } => Surface::Sphere {
+                center: rotate_point(*center, matrix, pivot),
+                radius: *radius,
+            },
+            Surface::Cone {
+                apex,
+                axis,
+                half_angle,
+            } => Surface::Cone {
+                apex: rotate_point(*apex, matrix, pivot),
+                axis: rotate_vec(*axis, matrix),
+                half_angle: *half_angle,
+            },
+        }
+    }
 }
 
 #[cfg(test)]

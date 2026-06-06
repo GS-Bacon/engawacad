@@ -72,4 +72,23 @@ impl Curve {
             },
         }
     }
+
+    pub fn rotate(&self, matrix: [[f64; 3]; 3], pivot: Point) -> Curve {
+        use super::transform::{rotate_point, rotate_vec};
+        match self {
+            Curve::Line { origin, direction } => Curve::Line {
+                origin: rotate_point(*origin, matrix, pivot),
+                direction: rotate_vec(*direction, matrix),
+            },
+            Curve::Circle {
+                center,
+                normal,
+                radius,
+            } => Curve::Circle {
+                center: rotate_point(*center, matrix, pivot),
+                normal: rotate_vec(*normal, matrix),
+                radius: *radius,
+            },
+        }
+    }
 }

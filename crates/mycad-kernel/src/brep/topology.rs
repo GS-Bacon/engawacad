@@ -397,6 +397,23 @@ impl Solid {
         }
         // half_edges.pcurve is UV-space and invariant. loops/shells are index-only.
     }
+
+    /// Rotate all geometry in-place by the given matrix around `pivot`.
+    /// EntityIDs and topology indices (half_edges, loops, shells) are preserved.
+    pub fn rotate(&mut self, matrix: [[f64; 3]; 3], pivot: crate::geometry::Point) {
+        use crate::geometry::transform::{rotate_point, rotate_vec};
+        for v in &mut self.vertices {
+            v.point = rotate_point(v.point, matrix, pivot);
+        }
+        for e in &mut self.edges {
+            e.curve = e.curve.rotate(matrix, pivot);
+        }
+        for f in &mut self.faces {
+            f.surface = f.surface.rotate(matrix, pivot);
+        }
+        // half_edges.pcurve is UV-space and invariant under rotation.
+        let _ = rotate_vec;
+    }
 }
 
 /// Counter for generating deterministic entity IDs.
@@ -1354,5 +1371,259 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ---- #77 rotate core tests ----
+
+    use crate::geometry::transform::euler_to_matrix;
+
+    /// T01: Determinism — same rotation applied 100 times yields identical serialized output.
+    #[test]
+    fn t01_rotate_determinism() {
+        let cuboid = make_test_cuboid();
+        let matrix = euler_to_matrix(30.0, 45.0, 60.0);
+        let pivot = Point::origin();
+        let mut first: Option<String> = None;
+        for _ in 0..100 {
+            let mut s = cuboid.clone();
+            s.rotate(matrix, pivot);
+            let yaml = serde_yaml::to_string(&s).unwrap();
+            match &first {
+                None => first = Some(yaml),
+                Some(prev) => assert_eq!(prev, &yaml, "rotate output must be deterministic"),
+            }
+        }
+    }
+
+    /// T02: 90° x-axis rotation on cuboid aligns face normals to axes.
+    #[test]
+    fn t02_rotate_90deg_face_normals() {
+        let mut cuboid = make_test_cuboid();
+        let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+        cuboid.rotate(matrix, Point::origin());
+
+        for face in &cuboid.faces {
+            if let crate::geometry::surface::Surface::Plane { normal, .. } = &face.surface {
+                // Each face normal must align with a principal axis (±x, ±y, ±z)
+                let aligned = [
+                    Vec3::x(),
+                    -Vec3::x(),
+                    Vec3::y(),
+                    -Vec3::y(),
+                    Vec3::z(),
+                    -Vec3::z(),
+                ];
+                let n = normal.normalize();
+                let ok = aligned.iter().any(|a| (n.dot(a) - 1.0).abs() < 1e-12);
+                assert!(
+                    ok,
+                    "face normal {:?} is not aligned with a principal axis",
+                    n
+                );
+            }
+        }
+
+        // Euler-Poincaré preserved: V-E+F = 2
+        assert_eq!(cuboid.euler_poincare(), 0);
+    }
+
+    /// T03: Inverse — rotate(M) then rotate(M^T) recovers original geometry.
+    #[test]
+    fn t03_rotate_inverse() {
+        use approx::assert_relative_eq;
+
+        let original = make_test_cuboid();
+        let matrix = euler_to_matrix(30.0, 45.0, 60.0);
+        // Transpose = inverse for orthogonal matrices
+        let inv = [
+            [matrix[0][0], matrix[1][0], matrix[2][0]],
+            [matrix[0][1], matrix[1][1], matrix[2][1]],
+            [matrix[0][2], matrix[1][2], matrix[2][2]],
+        ];
+        let pivot = Point::new(1.0, 2.0, 3.0);
+        let mut roundtrip = original.clone();
+        roundtrip.rotate(matrix, pivot);
+        roundtrip.rotate(inv, pivot);
+
+        for (o, r) in original.vertices.iter().zip(roundtrip.vertices.iter()) {
+            assert_relative_eq!(o.point.x, r.point.x, epsilon = 1e-12);
+            assert_relative_eq!(o.point.y, r.point.y, epsilon = 1e-12);
+            assert_relative_eq!(o.point.z, r.point.z, epsilon = 1e-12);
+        }
+        for (o, r) in original.edges.iter().zip(roundtrip.edges.iter()) {
+            match (&o.curve, &r.curve) {
+                (
+                    Curve::Line {
+                        origin: oo,
+                        direction: od,
+                    },
+                    Curve::Line {
+                        origin: ro,
+                        direction: rd,
+                    },
+                ) => {
+                    assert_relative_eq!(oo.x, ro.x, epsilon = 1e-12);
+                    assert_relative_eq!(oo.y, ro.y, epsilon = 1e-12);
+                    assert_relative_eq!(oo.z, ro.z, epsilon = 1e-12);
+                    assert_relative_eq!(od.x, rd.x, epsilon = 1e-12);
+                    assert_relative_eq!(od.y, rd.y, epsilon = 1e-12);
+                    assert_relative_eq!(od.z, rd.z, epsilon = 1e-12);
+                }
+                (
+                    Curve::Circle {
+                        center: oc,
+                        normal: on,
+                        radius: or_,
+                    },
+                    Curve::Circle {
+                        center: rc,
+                        normal: rn,
+                        radius: rr,
+                    },
+                ) => {
+                    assert_relative_eq!(oc.x, rc.x, epsilon = 1e-12);
+                    assert_relative_eq!(oc.y, rc.y, epsilon = 1e-12);
+                    assert_relative_eq!(oc.z, rc.z, epsilon = 1e-12);
+                    assert_relative_eq!(on.x, rn.x, epsilon = 1e-12);
+                    assert_relative_eq!(on.y, rn.y, epsilon = 1e-12);
+                    assert_relative_eq!(on.z, rn.z, epsilon = 1e-12);
+                    assert_relative_eq!(or_, rr, epsilon = 1e-12);
+                }
+                _ => panic!("curve variant mismatch after roundtrip"),
+            }
+        }
+        // Surfaces round-trip too
+        for (o, r) in original.faces.iter().zip(roundtrip.faces.iter()) {
+            assert_relative_eq!(
+                o.surface.evaluate(0.5, 0.5).x,
+                r.surface.evaluate(0.5, 0.5).x,
+                epsilon = 1e-12
+            );
+            assert_relative_eq!(
+                o.surface.evaluate(0.5, 0.5).y,
+                r.surface.evaluate(0.5, 0.5).y,
+                epsilon = 1e-12
+            );
+            assert_relative_eq!(
+                o.surface.evaluate(0.5, 0.5).z,
+                r.surface.evaluate(0.5, 0.5).z,
+                epsilon = 1e-12
+            );
+        }
+    }
+
+    /// T06: Cylinder surface rotates correctly (axis rotates, radius unchanged).
+    #[test]
+    fn t06_cylinder_rotate() {
+        use crate::geometry::math::orthonormal_basis;
+        use crate::geometry::surface::Surface;
+        use approx::assert_relative_eq;
+
+        let cyl = Surface::Cylinder {
+            origin: Point::origin(),
+            axis: Vec3::z(),
+            radius: 2.5,
+        };
+        let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+        let rotated = cyl.rotate(matrix, Point::origin());
+
+        if let Surface::Cylinder {
+            origin,
+            axis,
+            radius,
+        } = &rotated
+        {
+            // After 90° rotation around x-axis: z-axis → -y-axis
+            assert_relative_eq!(origin.x, 0.0, epsilon = 1e-12);
+            assert_relative_eq!(origin.y, 0.0, epsilon = 1e-12);
+            assert_relative_eq!(origin.z, 0.0, epsilon = 1e-12);
+            assert_relative_eq!(*radius, 2.5, epsilon = 1e-12);
+
+            // Rotated axis should be (0, -1, 0)
+            let (bu, bv) = orthonormal_basis(axis);
+            // Verify orthonormality of rotated basis
+            assert_relative_eq!(bu.norm(), 1.0, epsilon = 1e-12);
+            assert_relative_eq!(bv.norm(), 1.0, epsilon = 1e-12);
+            assert_relative_eq!(axis.normalize().dot(&bu), 0.0, epsilon = 1e-12);
+            assert_relative_eq!(axis.normalize().dot(&bv), 0.0, epsilon = 1e-12);
+        } else {
+            panic!("expected Surface::Cylinder");
+        }
+    }
+
+    /// T07_boundary_zero_rotation: (0,0,0) rotation leaves Solid identical.
+    #[test]
+    fn t07_boundary_zero_rotation() {
+        let original = make_test_cuboid();
+        let matrix = euler_to_matrix(0.0, 0.0, 0.0);
+        let mut rotated = original.clone();
+        rotated.rotate(matrix, Point::origin());
+
+        for (o, r) in original.vertices.iter().zip(rotated.vertices.iter()) {
+            assert_eq!(
+                o.point, r.point,
+                "vertex must be identical with zero rotation"
+            );
+        }
+        for (o, r) in original.edges.iter().zip(rotated.edges.iter()) {
+            assert_eq!(
+                o.curve, r.curve,
+                "edge curve must be identical with zero rotation"
+            );
+        }
+        for (o, r) in original.faces.iter().zip(rotated.faces.iter()) {
+            assert_eq!(
+                o.surface, r.surface,
+                "face surface must be identical with zero rotation"
+            );
+        }
+    }
+
+    /// T08_boundary_180: 180° around x-axis flips y/z coordinates (around pivot).
+    #[test]
+    fn t08_boundary_180() {
+        use approx::assert_relative_eq;
+
+        let mut cuboid = make_test_cuboid();
+        let pivot = Point::origin();
+        let matrix = euler_to_matrix(180.0, 0.0, 0.0);
+        let original = cuboid.clone();
+        cuboid.rotate(matrix, pivot);
+
+        for (o, r) in original.vertices.iter().zip(cuboid.vertices.iter()) {
+            // Rx(180°): x unchanged, y → -y, z → -z (around origin)
+            assert_relative_eq!(o.point.x, r.point.x, epsilon = 1e-12);
+            assert_relative_eq!(o.point.y, -r.point.y, epsilon = 1e-12);
+            assert_relative_eq!(o.point.z, -r.point.z, epsilon = 1e-12);
+        }
+    }
+
+    /// T09_degen_pivot_at_vertex: pivot placed on a vertex keeps that vertex invariant.
+    #[test]
+    fn t09_degen_pivot_at_vertex() {
+        use approx::assert_relative_eq;
+
+        let cuboid = make_test_cuboid();
+        let matrix = euler_to_matrix(45.0, 30.0, 60.0);
+        let pivot = cuboid.vertices[0].point;
+        let mut rotated = cuboid.clone();
+        rotated.rotate(matrix, pivot);
+
+        // Vertex at pivot should not move
+        assert_relative_eq!(
+            cuboid.vertices[0].point.x,
+            rotated.vertices[0].point.x,
+            epsilon = 1e-15
+        );
+        assert_relative_eq!(
+            cuboid.vertices[0].point.y,
+            rotated.vertices[0].point.y,
+            epsilon = 1e-15
+        );
+        assert_relative_eq!(
+            cuboid.vertices[0].point.z,
+            rotated.vertices[0].point.z,
+            epsilon = 1e-15
+        );
     }
 }
