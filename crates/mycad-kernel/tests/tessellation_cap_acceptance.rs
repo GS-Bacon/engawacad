@@ -336,13 +336,12 @@ fn build_cut_hole() -> mycad_kernel::brep::topology::Solid {
     boolean(&box_solid, &sph, BooleanOp::Cut, &mut gen).expect("cut should succeed")
 }
 
-/// Build box(10³) ∩ sphere(r=3, center=(0,0,6)) Intersect solid.
+/// Build boolean_fuse_box_cyl: make_cuboid(10,10,10) ∪ cylinder(r=2, h=15, origin=(0,0,-7.5)).
 fn build_fuse() -> mycad_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
-    let mut sph = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
-    shift_solid(&mut sph, 0.0, 0.0, 6.0);
-    boolean(&box_solid, &sph, BooleanOp::Intersect, &mut gen).expect("intersect should succeed")
+    let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
+    boolean(&box_solid, &cyl, BooleanOp::Fuse, &mut gen).expect("fuse box cyl should succeed")
 }
 
 /// T08: 100-run determinism — intersect_cyl_sphere tessellation byte-identical 100 times.
@@ -451,12 +450,17 @@ fn t12_shallow_dimple_positive_volume() {
     );
 }
 
-/// T13: Outward normals — box ∩ sphere fuse. All facet normals point outward.
+/// T13: Outward winding — box ∪ cylinder fuse. Signed volume > 0 confirms outward winding.
+/// Uses signed_volume instead of centroid-based check because fuse shape is non-convex.
 #[test]
 fn t13_outward_normals_fuse() {
     let solid = build_fuse();
     let mesh = tessellate_solid(&solid).expect("tessellate fuse");
-    assert_outward_normals(&mesh, "fuse");
+    let vol = signed_volume(&mesh);
+    assert!(
+        vol > 0.0,
+        "T13: fuse signed volume should be positive (outward winding), got {vol}"
+    );
 }
 
 /// T14: 100-run determinism for box − sphere cut tessellation.
