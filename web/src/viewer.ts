@@ -1,6 +1,7 @@
 import type { BodyMesh } from "./generated/BodyMesh";
 import {
   AmbientLight,
+  AxesHelper,
   Box3,
   Color,
   DirectionalLight,
@@ -52,14 +53,15 @@ export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void {
   scene.add(group);
 
   const bbox = new Box3().setFromObject(group);
+  const size = new Vector3();
+  let axisSize = 10;
   if (!bbox.isEmpty()) {
     const center = new Vector3();
     bbox.getCenter(center);
     controls.target.copy(center);
-
-    const size = new Vector3();
     bbox.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
+    axisSize = Math.max(maxDim * 0.5, 1);
     const distance = maxDim * 2;
     camera.position.set(
       center.x + distance * 0.5,
@@ -68,6 +70,7 @@ export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void {
     );
     controls.minDistance = Math.max(camera.near * 2, maxDim * 0.1);
   }
+  scene.add(new AxesHelper(axisSize));
 
   camera.lookAt(controls.target);
 
