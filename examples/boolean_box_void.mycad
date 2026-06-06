@@ -5,14 +5,13 @@ root_component:
   features:
     - type: create_box
       id: outer
-      width: 4.0
-      height: 4.0
-      depth: 4.0
-    - type: create_box
+      width: 6.0
+      height: 6.0
+      depth: 6.0
+    - type: create_sphere
       id: inner
-      width: 2.0
-      height: 2.0
-      depth: 2.0
+      radius: 2.0
+      center: [0.0, 0.0, 3.5]
     - type: cut
       id: cut1
       target: outer

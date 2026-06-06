@@ -58,8 +58,8 @@ fn golden_boolean_box_cut() {
         "boolean_box_cut.mycad",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Boolean Box Cut\n  features:\n",
-            "  - type: create_box\n    id: target\n    width: 2.0\n    height: 2.0\n    depth: 2.0\n",
-            "  - type: create_box\n    id: tool\n    width: 1.0\n    height: 1.0\n    depth: 1.0\n",
+            "  - type: create_box\n    id: target\n    width: 4.0\n    height: 4.0\n    depth: 4.0\n",
+            "  - type: create_cylinder\n    id: tool\n    radius: 1.0\n    height: 6.0\n    origin:\n    - 0.0\n    - 0.0\n    - -3.0\n",
             "  - type: cut\n    id: cut1\n    target: target\n    tool: tool\n",
         ),
     );
@@ -71,8 +71,8 @@ fn golden_boolean_box_fuse() {
         "boolean_box_fuse.mycad",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Boolean Box Fuse\n  features:\n",
-            "  - type: create_box\n    id: box_a\n    width: 2.0\n    height: 2.0\n    depth: 2.0\n",
-            "  - type: create_box\n    id: box_b\n    width: 2.0\n    height: 2.0\n    depth: 2.0\n",
+            "  - type: create_box\n    id: box_a\n    width: 6.0\n    height: 2.0\n    depth: 2.0\n",
+            "  - type: create_box\n    id: box_b\n    width: 2.0\n    height: 6.0\n    depth: 2.0\n",
             "  - type: fuse\n    id: fuse1\n    target: box_a\n    tool: box_b\n",
         ),
     );
@@ -84,9 +84,9 @@ fn golden_boolean_box_intersect() {
         "boolean_box_intersect.mycad",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Boolean Box Intersect\n  features:\n",
-            "  - type: create_box\n    id: box_a\n    width: 2.0\n    height: 2.0\n    depth: 2.0\n",
-            "  - type: create_box\n    id: box_b\n    width: 2.0\n    height: 2.0\n    depth: 2.0\n",
-            "  - type: intersect\n    id: int1\n    target: box_a\n    tool: box_b\n",
+            "  - type: create_box\n    id: box_a\n    width: 4.0\n    height: 4.0\n    depth: 2.0\n",
+            "  - type: create_cylinder\n    id: cyl_b\n    radius: 1.5\n    height: 6.0\n    origin:\n    - 0.0\n    - 0.0\n    - -3.0\n",
+            "  - type: intersect\n    id: int1\n    target: box_a\n    tool: cyl_b\n",
         ),
     );
 }
@@ -97,8 +97,8 @@ fn golden_boolean_box_void() {
         "boolean_box_void.mycad",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Boolean Box Void Shell\n  features:\n",
-            "  - type: create_box\n    id: outer\n    width: 4.0\n    height: 4.0\n    depth: 4.0\n",
-            "  - type: create_box\n    id: inner\n    width: 2.0\n    height: 2.0\n    depth: 2.0\n",
+            "  - type: create_box\n    id: outer\n    width: 6.0\n    height: 6.0\n    depth: 6.0\n",
+            "  - type: create_sphere\n    id: inner\n    radius: 2.0\n    center:\n    - 0.0\n    - 0.0\n    - 3.5\n",
             "  - type: cut\n    id: cut1\n    target: outer\n    tool: inner\n",
         ),
     );
@@ -124,7 +124,7 @@ fn golden_boolean_cut_sphere_dimple() {
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Box Cut Sphere (Dimple)\n  features:\n",
             "  - type: create_box\n    id: box1\n    width: 10.0\n    height: 10.0\n    depth: 10.0\n",
-            "  - type: create_sphere\n    id: sphere1\n    radius: 3.0\n",
+            "  - type: create_sphere\n    id: sphere1\n    radius: 3.0\n    center:\n    - 0.0\n    - 0.0\n    - 6.0\n",
             "  - type: cut\n    id: cut1\n    target: box1\n    tool: sphere1\n",
         ),
     );

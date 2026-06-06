@@ -5,15 +5,15 @@ root_component:
   features:
     - type: create_box
       id: box_a
-      width: 2.0
-      height: 2.0
+      width: 4.0
+      height: 4.0
       depth: 2.0
-    - type: create_box
-      id: box_b
-      width: 2.0
-      height: 2.0
-      depth: 2.0
+    - type: create_cylinder
+      id: cyl_b
+      radius: 1.5
+      height: 6.0
+      origin: [0.0, 0.0, -3.0]
     - type: intersect
       id: int1
       target: box_a
-      tool: box_b
+      tool: cyl_b

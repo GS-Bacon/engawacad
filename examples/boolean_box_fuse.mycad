@@ -5,13 +5,13 @@ root_component:
   features:
     - type: create_box
       id: box_a
-      width: 2.0
+      width: 6.0
       height: 2.0
       depth: 2.0
     - type: create_box
       id: box_b
       width: 2.0
-      height: 2.0
+      height: 6.0
       depth: 2.0
     - type: fuse
       id: fuse1
