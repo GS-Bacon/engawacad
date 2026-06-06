@@ -1,0 +1,21 @@
+version: "0.1.0"
+root_component:
+  name: "Sibling Assembly"
+  children:
+    - name: "Part A"
+      features:
+        - type: create_box
+          id: box_a
+          width: 10.0
+          height: 10.0
+          depth: 10.0
+    - name: "Part B"
+      transform:
+        position: [50.0, 0.0, 0.0]
+        rotation: [0.0, 0.0, 0.0]
+      features:
+        - type: create_box
+          id: box_b
+          width: 20.0
+          height: 20.0
+          depth: 20.0

@@ -1,0 +1,15 @@
+version: "0.1.0"
+root_component:
+  name: "Deep Nested"
+  children:
+    - name: "Level 1"
+      children:
+        - name: "Level 2"
+          children:
+            - name: "Leaf"
+              features:
+                - type: create_box
+                  id: box_1
+                  width: 5.0
+                  height: 5.0
+                  depth: 5.0

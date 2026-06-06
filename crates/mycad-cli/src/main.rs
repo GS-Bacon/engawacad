@@ -1,7 +1,7 @@
 mod view;
 
 use clap::{Parser, Subcommand};
-use mycad_build::build_bodies_from_features;
+use mycad_build::build_assembly;
 use mycad_format::Document;
 use mycad_kernel::brep::topology::IdGenerator;
 use mycad_kernel::tessellation::{
@@ -70,14 +70,10 @@ fn run_export(
     let doc = Document::from_path(input)
         .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
 
-    let root = &doc.root_component;
-    if root.reference.is_some() || !root.children.is_empty() {
-        return Err("assembly/reference documents are not supported".to_string());
-    }
-
+    let base_dir = input.parent().unwrap_or(std::path::Path::new("."));
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&root.features, &mut gen)
-        .map_err(|e| format!("failed to build solid: {e}"))?;
+    let bodies = build_assembly(&doc, base_dir, &mut gen)
+        .map_err(|e| format!("failed to build assembly: {e}"))?;
 
     let opts = match segments {
         Some(n) => TessellationOptions::new(n, 1),
@@ -85,7 +81,7 @@ fn run_export(
     };
 
     let meshes: Vec<_> = bodies
-        .live()
+        .iter()
         .map(|b| tessellate_solid_with(&b.solid, &opts))
         .collect::<Result<_, _>>()
         .map_err(|e| format!("failed to tessellate: {e}"))?;

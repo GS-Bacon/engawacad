@@ -199,21 +199,17 @@ async fn t08_degenerate_dimension() {
     assert!(!err.error.is_empty(), "error message must not be empty");
 }
 
-// T09: 422 assembly unsupported
+// T09: Assembly now supported — API returns 200 with non-empty bodies.
 #[tokio::test]
-async fn t09_assembly_unsupported() {
+async fn t09_assembly_supported() {
     let file = fixture_path("assembly.mycad");
     let (status, body) = send_mesh_request(file).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
-    let err: ErrorResponse = serde_json::from_str(&body).unwrap();
-    assert!(
-        err.error.contains("assembly") || err.error.contains("reference"),
-        "expected assembly/reference message, got: {}",
-        err.error
-    );
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
+    assert!(!bodies.is_empty(), "bodies must not be empty");
 }
 
-// T10: 422 empty part
+// T10: 422 empty part — bodies.is_empty() guard returns "empty assembly: no bodies built"
 #[tokio::test]
 async fn t10_empty_part() {
     let file = fixture_path("empty_part.mycad");
@@ -221,8 +217,8 @@ async fn t10_empty_part() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
     assert!(
-        err.error.contains("empty part") || err.error.contains("no features"),
-        "expected empty part message, got: {}",
+        err.error.contains("empty") || err.error.contains("no bodies"),
+        "expected empty/no bodies message, got: {}",
         err.error
     );
 }

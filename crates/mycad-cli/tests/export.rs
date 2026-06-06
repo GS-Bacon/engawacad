@@ -115,9 +115,9 @@ fn export_invalid_profile_fails_no_stl() {
     assert_eq!(written, 0, "no STL should be written for invalid profile");
 }
 
-/// T16: CLI export of assembly document fails with error (fail-closed).
+/// T16: CLI export of assembly document now succeeds (assembly guard removed).
 #[test]
-fn t16_export_assembly_fails() {
+fn t16_export_assembly_succeeds() {
     let bin = env!("CARGO_BIN_EXE_mycad");
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -133,10 +133,7 @@ fn t16_export_assembly_fails() {
         .arg(tmp.path())
         .output()
         .expect("run mycad export");
-    assert!(!output.status.success(), "export of assembly must fail");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("assembly") || stderr.contains("not supported"),
-        "error must mention assembly or not supported: {stderr}"
-    );
+    assert!(output.status.success(), "export of assembly must succeed");
+    let stl = std::fs::read(tmp.path()).expect("read stl");
+    assert!(!stl.is_empty(), "STL output must not be empty");
 }

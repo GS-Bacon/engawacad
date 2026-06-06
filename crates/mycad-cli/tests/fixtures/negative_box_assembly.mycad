@@ -1,0 +1,11 @@
+version: "0.1.0"
+root_component:
+  name: "Negative Box Assembly"
+  children:
+    - name: "Bad Part"
+      features:
+        - type: create_box
+          id: box_1
+          width: -10.0
+          height: 5.0
+          depth: 5.0
