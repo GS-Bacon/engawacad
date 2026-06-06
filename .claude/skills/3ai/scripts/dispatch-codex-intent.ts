@@ -59,8 +59,11 @@ async function main() {
   let roadmapCtx = "";
   if (existsSync(roadmapFile)) {
     const roadmap = readFileSync(roadmapFile, "utf-8");
-    // 現 Phase のセクションのみ抽出（最初の ## Phase X: ... ブロック）
-    const phaseSection = roadmap.match(/## Phase \d[^#][\s\S]*?(?=\n## Phase |\n---\n|$)/)?.[0] ?? "";
+    // 現 Phase のセクションを抽出: ✅ を含まない最初の ## Phase X: ... ブロック
+    // ✅ の位置はヘッダ先頭 ("## ✅ Phase N") またはタイトル末尾 ("## Phase N: ... ✅") の両方を考慮
+    const allPhaseBlocks = [...roadmap.matchAll(/## (?:✅ )?Phase \d[^#\n]*\n[\s\S]*?(?=\n## (?:✅ )?Phase |\n---\n|$)/g)];
+    const currentBlock = allPhaseBlocks.find(m => !m[0].split('\n')[0].includes('✅'));
+    const phaseSection = currentBlock?.[0] ?? "";
     if (phaseSection) {
       roadmapCtx = `===== ROADMAP CONTEXT =====\n現 Phase の完了条件（ROADMAP.md 抜粋）。Issue がこの Phase に寄与するか判定に使うこと。\n${phaseSection.slice(0, 2000)}\n===== END ROADMAP CONTEXT =====\n\n`;
     }
