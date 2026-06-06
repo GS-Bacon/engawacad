@@ -62,12 +62,12 @@ export async function extractTestSummary(
       );
       const diff = await new Response(proc.stdout).text();
       await proc.exited;
-      for (const m of diff.matchAll(/^\+\s*(?:async\s+)?fn\s+(test_[A-Za-z0-9_]+)/gm)) {
+      for (const m of diff.matchAll(/^\+\s*(?:async\s+)?fn\s+((?:test_|t\d+_)[A-Za-z0-9_]+)/gm)) {
         const name = m[1];
         let kind = "other";
         if (/determin|repeat|twice|idempotent/.test(name)) kind = "determinism";
-        else if (/degenerat|zero_|empty_/.test(name)) kind = "degenerate";
-        else if (/max|min|inf|nan|boundary|overflow|extreme/.test(name)) kind = "boundary";
+        else if (/degen|zero_|empty_|boundary/.test(name)) kind = "degenerate";
+        else if (/max|min|inf|nan|overflow|extreme/.test(name)) kind = "boundary";
         else if (/golden|roundtrip|yaml|serialize/.test(name)) kind = "golden";
         else if (/edge|case/.test(name)) kind = "edge_case";
         addedInRound.push({ name, kind });
