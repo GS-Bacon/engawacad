@@ -591,11 +591,15 @@ bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
   [--result-file features/$ISSUE_NUM-$ISSUE_SLUG/glm-result.json]
 ```
 
+**対処方針（優先順位）:**
+1. **修正できるなら**: Issue 起票 → その場で修正 → フロー続行（方向議論は後回しでよい）
+2. **修正方針が不明なら**: Issue 起票 → ユーザーへエスカレーション
+
 **起票タイミング:**
-- STEP 6-D: GLM が ESC_MAX_LOOPS を超えて失敗 → 起票してからユーザーへ
-- STEP 6.5: 期待値乖離検出 → 起票してからユーザーへ
-- STEP 7 ループ上限超過 (critical ≥ 1) → 起票してからユーザーへ
-- STEP 7.5 ループ上限超過 → 起票してからユーザーへ
+- STEP 6-D: GLM が ESC_MAX_LOOPS を超えて失敗 → 起票して修正またはユーザーへ
+- STEP 6.5: 期待値乖離検出 → 起票してユーザーへ
+- STEP 7 ループ上限超過 (critical ≥ 1) → 起票して修正またはユーザーへ
+- STEP 7.5 ループ上限超過 → 起票して修正またはユーザーへ
 - B-3 ambiguous が解決しない場合 → 起票してからバッチから除外
 
 **補助チェックスクリプト（各 STEP で活用）:**
