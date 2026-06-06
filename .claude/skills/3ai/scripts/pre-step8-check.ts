@@ -1,9 +1,18 @@
 #!/usr/bin/env bun
 // pre-step8-check.ts — STEP 8 前に crates/ の unstaged/untracked ファイルを検出する
-// Usage: bun pre-step8-check.ts
+// Usage: bun pre-step8-check.ts [--auto-raise] [--feature-dir <path>]
 //
 // exit 0: 問題なし（staged または追跡済みの変更のみ）
 // exit 1: crates/ 配下に unstaged 変更または untracked ファイルあり
+
+const cliArgs = process.argv.slice(2);
+let autoRaise = false;
+let featureDir = "";
+
+for (let i = 0; i < cliArgs.length; i++) {
+  if (cliArgs[i] === "--auto-raise") autoRaise = true;
+  else if (cliArgs[i] === "--feature-dir") featureDir = cliArgs[++i];
+}
 
 const proc = Bun.spawn(["git", "status", "--porcelain"], { stdout: "pipe", stderr: "pipe" });
 const output = await new Response(proc.stdout).text();
@@ -45,5 +54,23 @@ if (modifiedUnstaged.length > 0) {
 process.stderr.write(`\n  Suggested command:\n`);
 const paths = [...new Set([...untracked, ...modifiedUnstaged].map((l) => l.slice(3).trim()))];
 process.stderr.write(`    git add ${paths.join(" ")}\n`);
+
+if (autoRaise && featureDir) {
+  const errorSummary = `STEP 8 前に crates/ の未ステージングファイルを検出: ${paths.join(", ")}`;
+  try {
+    Bun.spawnSync(
+      [
+        "bun",
+        import.meta.dir + "/raise-issue-on-failure.ts",
+        "--step", "STEP 8 pre-check (untracked)",
+        "--feature-dir", featureDir,
+        "--error-summary", errorSummary,
+      ],
+      { stdout: "inherit", stderr: "inherit" }
+    );
+  } catch {
+    // ベストエフォート: 起票失敗してもメインの exit code には影響させない
+  }
+}
 
 process.exit(1);

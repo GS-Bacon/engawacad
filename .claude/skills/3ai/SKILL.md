@@ -517,7 +517,10 @@ medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-findings
 **`blocking >= 1`**（critical/high あり）の場合:
 ```bash
 bun .claude/skills/3ai/scripts/state.ts inc \
-  features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_loops
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_loops \
+  --raise-at 3 \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --step "STEP 7.5 codex_review"
 ```
 `codex-final.yaml` の critical/high 指摘を `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` に転記し、GLM 実装へ再 dispatch（指摘内容がコア実装なら `--mode core`、テスト関連なら `--mode test`）→ `cargo xtask ci` green 確認 → **7.5-A に戻って Codex 再レビュー**（`codex_loops` 上限 2）。
 
@@ -544,7 +547,8 @@ bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/s
 
 ```bash
 # crates/ の unstaged/untracked ファイルを検出（git add 漏れ防止）
-bun .claude/skills/3ai/scripts/pre-step8-check.ts
+bun .claude/skills/3ai/scripts/pre-step8-check.ts \
+  --auto-raise --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG
 cargo xtask ci   # 最終 green 確認
 git checkout main
 git merge --squash cad/$ISSUE_NUM-$ISSUE_SLUG
@@ -603,7 +607,7 @@ bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
 - B-3 ambiguous が解決しない場合 → 起票してからバッチから除外
 
 **補助チェックスクリプト（各 STEP で活用）:**
-- `check-dispatch-result.ts --result <json>` — dispatch 結果の status/ci_passed を確認（STEP 6-B, 6.6, 7 後）
-- `pre-step8-check.ts` — STEP 8 直前に crates/ の unstaged/untracked を検出
+- `check-dispatch-result.ts --result <json> --auto-raise --feature-dir <dir> --step <name>` — dispatch 結果の status/ci_passed を確認（STEP 6-B, 6.6, 7 後）。`--auto-raise` を付けるとエラー時に自動起票する
+- `pre-step8-check.ts --auto-raise --feature-dir <dir>` — STEP 8 直前に crates/ の unstaged/untracked を検出。`--auto-raise` を付けるとエラー時に自動起票する
 - `build-codex-input.ts --plan-file ... --test-summary ... --output ...` — STEP 7.5-A で使用（Non-Goals を自動注入）
 - `lint-test-semantics.ts` — STEP 6.6 後に BooleanOp 命名不整合をチェック

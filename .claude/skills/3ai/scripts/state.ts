@@ -125,9 +125,35 @@ if (import.meta.main) {
     case "assert":
       process.exit(assertState(file, rest[0]) ? 0 : 1);
       break;
-    case "inc":
-      console.log(incState(file, rest[0]));
+    case "inc": {
+      const incKey = rest[0];
+      // parse optional flags: [--raise-at N] [--feature-dir dir] [--step text]
+      let raiseAt: number | undefined;
+      let incFeatureDir = "";
+      let incStep = "";
+      for (let i = 1; i < rest.length; i++) {
+        if (rest[i] === "--raise-at") raiseAt = parseInt(rest[++i]);
+        else if (rest[i] === "--feature-dir") incFeatureDir = rest[++i];
+        else if (rest[i] === "--step") incStep = rest[++i];
+      }
+      const incResult = incState(file, incKey);
+      console.log(incResult);
+      if (raiseAt !== undefined && incResult >= raiseAt && incFeatureDir && incStep) {
+        const errorSummary = `${incKey} が ${raiseAt} に達しました（ループ上限超過）`;
+        Bun.spawnSync(
+          [
+            "bun",
+            import.meta.dir + "/raise-issue-on-failure.ts",
+            "--step", incStep,
+            "--feature-dir", incFeatureDir,
+            "--error-summary", errorSummary,
+          ],
+          { stdout: "inherit", stderr: "inherit" }
+        );
+        process.exit(2);
+      }
       break;
+    }
     case "assert-critical-zero":
       process.exit(assertCriticalZero(file, rest[0]) ? 0 : 1);
       break;
