@@ -1,0 +1,38 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `cargo xtask ci` 全テスト通過確認 | 新機能の追加 |
+| `mycad export examples/assembly.mycad` が exit 0、STL ≥ 1KB 確認 | 幾何の完璧な精度 |
+| `mycad view examples/assembly.mycad` が HTTP 200 を返すことを確認 | ビューアの UI 改善 |
+| Acceptance test ファイル作成 (`crates/mycad-cli/tests/close_gate_acceptance.rs`) | Phase 6 以降の実装 |
+| ROADMAP.md Phase 5 を ✅ 化 (完了日記入) | |
+| GitHub マイルストーン #6 を close | |
+
+## Non-Goals
+- 新機能実装
+- Phase 5 以外の Issue 修正
+
+## 実装対象
+<!-- Issue: #78 -->
+影響ファイル:
+- `crates/mycad-cli/tests/close_gate_acceptance.rs` — 新規作成 (CLI export 検証 + HTTP 200 検証)
+- `ROADMAP.md` — Phase 5 ヘッダを ✅ に変更、完了日記入
+
+## 設計方針
+- 決定性要件: N/A（テスト検証のみ）
+- B-rep トポロジー妥当性: N/A
+- 退化幾何の扱い: N/A
+- derive 規約: N/A（新型なし）
+- エラーハンドリング: N/A
+- workspace.dependencies: 新規追加なし
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 正常系 | `mycad export examples/assembly.mycad` が exit 0 で成功 | exit code 0 |
+| T02 | 正常系 | 生成した STL ファイルが 1KB 以上 | ファイルサイズ ≥ 1024 bytes |
+| T03 | 正常系 | HTTP サーバが起動し `/api/v0/mesh` が 200 を返す | HTTP 200 + bodies 配列が空でない |
+| T04_boundary | 境界 | 存在しないファイルを export すると非ゼロ exit code | exit code ≠ 0 |
+
+## 幾何的不変条件チェックリスト
+- N/A (close gate 検証のみ)

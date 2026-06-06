@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "Issue 整合"
+    finding: "plan の In-Scope に `GitHub マイルストーン #6 を close` が含まれていない"
+    suggestion: "In-Scope 表に `GitHub マイルストーン #6 を close` を追加すること"
+
+verdict: pass
