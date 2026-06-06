@@ -1,0 +1,7 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "boolean_example_layout_acceptance.rs をコメントのみに置き換え（0 tests）。YAML・golden は既に更新済みのため変更不要。cargo xtask ci 全チェック通過。",
+  "tests_added": 0,
+  "failed_reason": ""
+}

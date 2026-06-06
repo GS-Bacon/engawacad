@@ -1,11 +1,123 @@
 {
   "totals": {
-    "passed": 647,
+    "passed": 631,
     "failed": 0,
-    "ignored": 0
+    "ignored": 5
   },
   "by_crate": {
+    "mycad_api-8802c7a0d0b762ce": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api-4994bc7dc603a5b4": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-4a945905f1127cbb": {
+      "passed": 2,
+      "failed": 0
+    },
     "api_fallback_edge-7d38581dfb70fc25": {
+      "passed": 11,
+      "failed": 0
+    },
+    "mesh_api-fbba96c639f3c253": {
+      "passed": 16,
+      "failed": 0
+    },
+    "static_assets-5db5e3f50592e22b": {
+      "passed": 6,
+      "failed": 0
+    },
+    "static_assets_edge-9bd538bd824d3cf9": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_build-3c595849a4da74ba": {
+      "passed": 0,
+      "failed": 0
+    },
+    "a1_1_plane_cyl_fuse_isect_acceptance-67b4857ac93dac90": {
+      "passed": 21,
+      "failed": 0
+    },
+    "boolean_example_layout_acceptance-2bc59845a7468453": {
+      "passed": 0,
+      "failed": 0
+    },
+    "cyl_sph_intersect_acceptance-6f26c7b50ed1cebf": {
+      "passed": 18,
+      "failed": 0
+    },
+    "examples_smoke-af8b42ed307175b3": {
+      "passed": 18,
+      "failed": 0
+    },
+    "feature_dispatcher-22ed5caca757e101": {
+      "passed": 45,
+      "failed": 0
+    },
+    "fuse_box_cyl_acceptance-f3b3e21c800fb5ba": {
+      "passed": 8,
+      "failed": 0
+    },
+    "hole_tessellation_acceptance-15988bb5069090dd": {
+      "passed": 7,
+      "failed": 0
+    },
+    "position_params_acceptance-53f657f85d6d6914": {
+      "passed": 14,
+      "failed": 0
+    },
+    "surface_boolean_a2_acceptance-c88c7e5388b37001": {
+      "passed": 13,
+      "failed": 0
+    },
+    "mycad-1aa657aa705d4700": {
+      "passed": 12,
+      "failed": 0
+    },
+    "export-29e4c251b906698e": {
+      "passed": 5,
+      "failed": 0
+    },
+    "mycad_format-cb78ec6616537fb7": {
+      "passed": 100,
+      "failed": 0
+    },
+    "golden_examples-31523050b0dff8e3": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_kernel-e15e9d196babbf19": {
+      "passed": 259,
+      "failed": 0
+    },
+    "box_sphere_void_acceptance-fd412644f31256b1": {
+      "passed": 11,
+      "failed": 0
+    },
+    "cuboid_roundtrip-9ac1aaaf2f8fadba": {
+      "passed": 2,
+      "failed": 0
+    },
+    "cyl_sph_surface_intersect-3d752a2ce014d9b8": {
+      "passed": 7,
+      "failed": 0
+    },
+    "tessellation_cap_acceptance-c8af9dd1fb413bbd": {
+      "passed": 12,
+      "failed": 0
+    },
+    "test_bool_probe-0fab8c584edbd5b3": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_viewer-4b92dea51e117472": {
+      "passed": 0,
+      "failed": 0
+    },
+    "xtask-30fe61d461b37a2b": {
       "passed": 11,
       "failed": 0
     },
