@@ -206,6 +206,23 @@ fn ci() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // Playwright end-to-end tests
+    println!("\n=== Running Playwright tests ===");
+    let Some(_npx) = which("npx") else {
+        eprintln!("FAILED: 'npx' not found. Ensure Node.js >= 20 is installed.");
+        return ExitCode::FAILURE;
+    };
+    let pw_web_dir = workspace_root().join("web");
+    let pw_status = Command::new("npx")
+        .args(["playwright", "test"])
+        .current_dir(&pw_web_dir)
+        .status()
+        .expect("failed to execute playwright test");
+    if !pw_status.success() {
+        eprintln!("FAILED: Playwright tests");
+        return ExitCode::FAILURE;
+    }
+
     // 3ai シェルスクリプトのユニットテスト
     println!("\n=== Running 3ai shell tests ===");
     let Some(bats) = which("bats") else {
