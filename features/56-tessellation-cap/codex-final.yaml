@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 813
+    finding: "巻き方向修正に対する受け入れテストが成果物へ入っていません。`crates/mycad-kernel/tests/tessellation_cap_acceptance.rs` は untracked のままで、stdin の TEST SUMMARY も `total_added=0`, `determinism=0`, `degenerate=0` を示しているため、この Issue で必須の決定性・退化入力検証が一度も実行対象になっていません。"
+    suggestion: "`tessellation_cap_acceptance.rs` を追跡対象として追加し、少なくとも T01/T06/T07 を含むテスト実行結果が TEST SUMMARY に反映される状態で差分を出し直す"
+  - id: F02
+    severity: high
+    file: "crates/mycad-kernel/tests/tessellation_cap_acceptance.rs"
+    line_hint: 205
+    finding: "`t04_watertight_cut_hole` と `t05_watertight_fuse` は、plan で合意した `boolean_cut_cylinder_hole` / `boolean_fuse_box_cyl` の watertight 検証ではなく、別形状 (`box - sphere`, `box ∩ sphere`) に対する signed-volume の上限下限チェックしかしていません。これでは in-scope の 2 シナリオで seam edge が 2 面共有されることを保証できません。"
+    suggestion: "T04/T05 は plan 通りの対象形状を構築し、`assert_watertight_welded` などで watertight 条件を直接検証する"
+verdict: fail

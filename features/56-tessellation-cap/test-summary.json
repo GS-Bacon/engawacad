@@ -1,0 +1,50 @@
+{
+  "totals": {
+    "passed": 647,
+    "failed": 0,
+    "ignored": 0
+  },
+  "by_crate": {
+    "api_fallback_edge-7d38581dfb70fc25": {
+      "passed": 11,
+      "failed": 0
+    },
+    "mycad_api-785831210a6451a6": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api-758f4150e88ebfc1": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-866b23c41f03de10": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback_edge-04912f802c1a478d": {
+      "passed": 1,
+      "failed": 0
+    },
+    "mesh_api-ede4942318b4a9c5": {
+      "passed": 0,
+      "failed": 0
+    },
+    "static_assets-a8a81e37af80bb10": {
+      "passed": 2,
+      "failed": 0
+    },
+    "static_assets_edge-bd854bf668add7de": {
+      "passed": 0,
+      "failed": 0
+    }
+  },
+  "added_in_round": [],
+  "coverage_hints": {
+    "total_added": 0,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}
