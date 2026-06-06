@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/bool_naked_edge_acceptance.rs"
+    line_hint: 103
+    finding: "T02/T03 は `naked == 0` しか見ておらず、`count_naked_edges()` が空メッシュで 0 を返すため、boolean/tessellation が `Ok(TriangleMesh::new())` に退行しても受け入れテストが通ってしまう。"
+    suggestion: "`triangle_count() > 0` と座標有限性を先に検証してから naked edge を数える。少なくとも T02/T03 に非空メッシュのアサーションを追加する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/bool_naked_edge_acceptance.rs"
+    line_hint: 15
+    finding: "`count_naked_edges()` の `round()` 量子化は『tol 未満なら weld』になっておらず、距離が `0.5 * tol` を超える頂点対は `tol` 内でも別セルに分かれる。T09 も 1e-11 差しか使っていないため、この境界バグを検出できない。"
+    suggestion: "`tessellation_cap_acceptance` のような epsilon ベースの weld を使うか、少なくとも `0.9e-10` / `1.1e-10` 付近のケースで直下/直上を明示的に検証する。"
+
+verdict: fail
