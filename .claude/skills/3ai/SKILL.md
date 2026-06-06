@@ -481,17 +481,16 @@ bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
 bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review
 ```
 
-### 7.5-A: テストサマリを Codex 入力に整形
+### 7.5-A: テストサマリ + Non-Goals を Codex 入力に整形
 
-`test-summary.json` を `===== TEST SUMMARY =====` ヘッダ付きで `codex-input.md` に書き出す（`codex-final-reviewer.md` がこのヘッダを参照する）:
+`build-codex-input.ts` で `codex-input.md` を生成する（TEST SUMMARY + Non-Goals + known ignored tests を注入）:
 
 ```bash
-{
-  echo "===== TEST SUMMARY ====="
-  cat features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
-  echo ""
-  echo "===== END TEST SUMMARY ====="
-} > features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
+bun .claude/skills/3ai/scripts/build-codex-input.ts \
+  --plan-file features/$ISSUE_NUM-$ISSUE_SLUG/plan.md \
+  --test-summary features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json \
+  --ci-log features/$ISSUE_NUM-$ISSUE_SLUG/ci.log \
+  --output features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
 ```
 
 ### 7.5-B: Codex 技術レビュー dispatch
@@ -544,6 +543,8 @@ bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/s
 ```
 
 ```bash
+# crates/ の unstaged/untracked ファイルを検出（git add 漏れ防止）
+bun .claude/skills/3ai/scripts/pre-step8-check.ts
 cargo xtask ci   # 最終 green 確認
 git checkout main
 git merge --squash cad/$ISSUE_NUM-$ISSUE_SLUG
@@ -574,3 +575,31 @@ bun .claude/skills/3ai/scripts/finalize-feature.ts --issue $ISSUE_NUM --slug $IS
 - dispatch 完了をポーリング**しない** — 背景実行 + 完了通知で受け取る
 - git commit/push は STEP 8 以外で行わない（`finalize-feature.ts` の commit は STEP 8 の一部として許可）
 - `features/$ISSUE/` の手動 `git add` は行わない — 必ず `finalize-feature.ts` 経由にする
+
+---
+
+## エラー検知・自動 Issue 起票（常に守ること）
+
+**フロー中にエラー・トラブルが発生したら `raise-issue-on-failure.ts` で GitHub Issue を即時起票する。**  
+エスカレーションしてユーザーに報告する際は、必ず起票してから報告する。
+
+```bash
+bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
+  --step "STEP X-Y <内容>" \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --error-summary "<エラーの概要（1〜3行）>" \
+  [--result-file features/$ISSUE_NUM-$ISSUE_SLUG/glm-result.json]
+```
+
+**起票タイミング:**
+- STEP 6-D: GLM が ESC_MAX_LOOPS を超えて失敗 → 起票してからユーザーへ
+- STEP 6.5: 期待値乖離検出 → 起票してからユーザーへ
+- STEP 7 ループ上限超過 (critical ≥ 1) → 起票してからユーザーへ
+- STEP 7.5 ループ上限超過 → 起票してからユーザーへ
+- B-3 ambiguous が解決しない場合 → 起票してからバッチから除外
+
+**補助チェックスクリプト（各 STEP で活用）:**
+- `check-dispatch-result.ts --result <json>` — dispatch 結果の status/ci_passed を確認（STEP 6-B, 6.6, 7 後）
+- `pre-step8-check.ts` — STEP 8 直前に crates/ の unstaged/untracked を検出
+- `build-codex-input.ts --plan-file ... --test-summary ... --output ...` — STEP 7.5-A で使用（Non-Goals を自動注入）
+- `lint-test-semantics.ts` — STEP 6.6 後に BooleanOp 命名不整合をチェック

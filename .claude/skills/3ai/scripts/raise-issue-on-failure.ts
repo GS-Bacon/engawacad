@@ -1,0 +1,118 @@
+#!/usr/bin/env bun
+// raise-issue-on-failure.ts — 3ai フロー中のトラブルを GitHub Issue として自動起票する
+//
+// Usage: bun raise-issue-on-failure.ts \
+//   --step <STEP名> \
+//   --feature-dir <features/N-slug> \
+//   --error-summary <エラー概要テキスト> \
+//   [--result-file <dispatch result JSON>] \
+//   [--dry-run]
+//
+// 既に同じ STEP+feature の Issue が open なら二重起票しない
+// exit 0: Issue 起票成功 or dry-run
+// exit 1: 起票失敗
+
+import { readFileSync, existsSync } from "fs";
+
+const args = process.argv.slice(2);
+let step = "";
+let featureDir = "";
+let errorSummary = "";
+let resultFile = "";
+let dryRun = false;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--step") step = args[++i];
+  else if (args[i] === "--feature-dir") featureDir = args[++i];
+  else if (args[i] === "--error-summary") errorSummary = args[++i];
+  else if (args[i] === "--result-file") resultFile = args[++i];
+  else if (args[i] === "--dry-run") dryRun = true;
+}
+
+if (!step || !featureDir || !errorSummary) {
+  process.stderr.write("Usage: raise-issue-on-failure.ts --step <step> --feature-dir <dir> --error-summary <text> [--result-file <json>] [--dry-run]\n");
+  process.exit(2);
+}
+
+// featureDir から issue 番号・slug を取得
+const dirMatch = featureDir.match(/features\/(\d+)-(.+)$/);
+const issueNum = dirMatch ? dirMatch[1] : "unknown";
+const slug = dirMatch ? dirMatch[2] : featureDir;
+
+// state.json を読む
+let stateSummary = "";
+const stateFile = `${featureDir}/state.json`;
+if (existsSync(stateFile)) {
+  try {
+    const state = JSON.parse(readFileSync(stateFile, "utf-8"));
+    stateSummary = JSON.stringify(state, null, 2);
+  } catch {}
+}
+
+// result file の内容（あれば）
+let resultDetail = "";
+if (resultFile && existsSync(resultFile)) {
+  try {
+    const r = JSON.parse(readFileSync(resultFile, "utf-8"));
+    resultDetail = `\n\n## dispatch result\n\`\`\`json\n${JSON.stringify(r, null, 2)}\n\`\`\``;
+  } catch {}
+}
+
+const title = `fix(3ai): [自動起票] ${step} でエラー — Issue #${issueNum} (${slug})`;
+const body = `## 発生ステップ
+${step}
+
+## 対象 feature
+- Issue: #${issueNum}
+- slug: ${slug}
+- feature-dir: \`${featureDir}\`
+
+## エラー概要
+${errorSummary}
+
+## state.json
+\`\`\`json
+${stateSummary || "(取得不可)"}
+\`\`\`
+${resultDetail}
+
+---
+*このIssueは \`raise-issue-on-failure.ts\` により自動起票されました。*`;
+
+if (dryRun) {
+  process.stdout.write(`[dry-run] Would create issue:\n  title: ${title}\n`);
+  process.exit(0);
+}
+
+// 重複チェック: 同タイトルの open issue があれば skip
+const searchProc = Bun.spawn(
+  ["gh", "issue", "list", "--state", "open", "--search", `"${step}" "${issueNum}"`, "--json", "title,number", "--limit", "5"],
+  { stdout: "pipe", stderr: "pipe" }
+);
+const searchOut = await new Response(searchProc.stdout).text();
+await searchProc.exited;
+
+try {
+  const existing = JSON.parse(searchOut) as Array<{ title: string; number: number }>;
+  const dup = existing.find((i) => i.title.includes(issueNum) && i.title.includes(step));
+  if (dup) {
+    process.stdout.write(`SKIP: 既に同じトラブルの Issue #${dup.number} が open です\n`);
+    process.exit(0);
+  }
+} catch {}
+
+// 起票
+const createProc = Bun.spawn(
+  ["gh", "issue", "create", "--title", title, "--body", body, "--label", "bug"],
+  { stdout: "pipe", stderr: "pipe" }
+);
+const createOut = await new Response(createProc.stdout).text();
+const createErr = await new Response(createProc.stderr).text();
+await createProc.exited;
+
+if (createProc.exitCode !== 0) {
+  process.stderr.write(`ERROR: Issue 起票失敗:\n${createErr}\n`);
+  process.exit(1);
+}
+
+process.stdout.write(`OK: Issue を起票しました: ${createOut.trim()}\n`);
