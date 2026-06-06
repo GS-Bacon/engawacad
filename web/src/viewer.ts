@@ -66,7 +66,7 @@ export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void {
       center.y + distance * 0.5,
       center.z + distance,
     );
-    controls.minDistance = maxDim * 0.1;
+    controls.minDistance = Math.max(camera.near * 2, maxDim * 0.1);
   }
 
   camera.lookAt(controls.target);
