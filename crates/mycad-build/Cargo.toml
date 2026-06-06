@@ -14,3 +14,4 @@ mycad-kernel = { workspace = true }
 mycad-format = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+tempfile = { workspace = true }

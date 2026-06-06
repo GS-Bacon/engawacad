@@ -76,4 +76,13 @@ pub enum KernelError {
 
     #[error("unsupported boolean case: {reason}")]
     UnsupportedBooleanCase { reason: &'static str },
+
+    #[error("circular reference detected while resolving: {path}")]
+    CircularReference { path: String },
+
+    #[error("maximum reference depth ({max}) exceeded at: {path}")]
+    MaxDepthExceeded { max: usize, path: String },
+
+    #[error("failed to resolve reference '{path}': {reason}")]
+    ReferenceResolution { path: String, reason: String },
 }

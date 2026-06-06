@@ -7,6 +7,7 @@ use mycad_kernel::geometry::Point;
 use mycad_kernel::primitives::{make_cuboid, make_cylinder, make_extrusion, make_sphere};
 use mycad_kernel::BooleanOp;
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Body {
@@ -261,4 +262,128 @@ fn validate_profile_closed(segments: &[mycad_format::SketchSegment]) -> Result<(
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Assembly build (Issue #73)
+// ---------------------------------------------------------------------------
+
+use mycad_format::component::{Component, ComponentRef};
+use mycad_format::Document;
+
+const MAX_REFERENCE_DEPTH: usize = 16;
+
+/// Build an assembly by traversing the Component tree, resolving references,
+/// and aggregating all live Bodies.
+///
+/// `base_dir` is the parent directory of the `.mycad` file being built.
+/// Transform application is out of scope (#74).
+pub fn build_assembly(
+    doc: &Document,
+    base_dir: &Path,
+    gen: &mut IdGenerator,
+) -> Result<Vec<Body>, KernelError> {
+    let mut bodies: Vec<Body> = Vec::new();
+    let mut visiting: Vec<PathBuf> = Vec::new();
+    build_component_tree(
+        &doc.root_component,
+        base_dir,
+        &mut visiting,
+        0,
+        gen,
+        &mut bodies,
+    )?;
+    Ok(bodies)
+}
+
+fn build_component_tree(
+    component: &Component,
+    base_dir: &Path,
+    visiting: &mut Vec<PathBuf>,
+    depth: usize,
+    gen: &mut IdGenerator,
+    out: &mut Vec<Body>,
+) -> Result<(), KernelError> {
+    // 1. Build this component's own features
+    if !component.features.is_empty() {
+        let built = build_bodies_from_features(&component.features, gen)?;
+        out.extend(built.live().cloned());
+    }
+
+    // 2. Resolve reference (if any) — this is where depth increases
+    if let Some(reference) = &component.reference {
+        if depth >= MAX_REFERENCE_DEPTH {
+            return Err(KernelError::MaxDepthExceeded {
+                max: MAX_REFERENCE_DEPTH,
+                path: component.name.clone(),
+            });
+        }
+        let (resolved_path, child_base_dir) = resolve_reference(reference, base_dir)?;
+        let canonical =
+            std::fs::canonicalize(&resolved_path).unwrap_or_else(|_| resolved_path.clone());
+        if visiting.contains(&canonical) {
+            return Err(KernelError::CircularReference {
+                path: resolved_path.display().to_string(),
+            });
+        }
+        let ref_doc =
+            Document::from_path(&resolved_path).map_err(|e| KernelError::ReferenceResolution {
+                path: resolved_path.display().to_string(),
+                reason: e.to_string(),
+            })?;
+        visiting.push(canonical);
+        build_component_tree(
+            &ref_doc.root_component,
+            &child_base_dir,
+            visiting,
+            depth + 1,
+            gen,
+            out,
+        )?;
+        visiting.pop();
+    }
+
+    // 3. Recurse into children (same document, so depth stays)
+    for child in &component.children {
+        build_component_tree(child, base_dir, visiting, depth, gen, out)?;
+    }
+    Ok(())
+}
+
+fn resolve_reference(
+    reference: &ComponentRef,
+    base_dir: &Path,
+) -> Result<(PathBuf, PathBuf), KernelError> {
+    let path = match reference {
+        ComponentRef::StdLib(rel) => {
+            let root = resolve_stdlib_root().ok_or_else(|| KernelError::ReferenceResolution {
+                path: format!("stdlib://{rel}"),
+                reason: "stdlib root not found (set MYCAD_STDLIB_PATH or provide stdlib/)".into(),
+            })?;
+            root.join(format!("{rel}.mycad"))
+        }
+        ComponentRef::File(rel) => base_dir.join(rel),
+    };
+    let parent = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| base_dir.to_path_buf());
+    Ok((path, parent))
+}
+
+/// Determine stdlib root: env `MYCAD_STDLIB_PATH` (non-empty) > repo-local `stdlib/`.
+fn resolve_stdlib_root() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("MYCAD_STDLIB_PATH") {
+        if !p.trim().is_empty() {
+            return Some(PathBuf::from(p));
+        }
+    }
+    let repo_stdlib = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("stdlib");
+    if repo_stdlib.is_dir() {
+        Some(repo_stdlib)
+    } else {
+        None
+    }
 }

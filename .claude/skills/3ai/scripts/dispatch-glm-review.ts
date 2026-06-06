@@ -30,6 +30,7 @@ const PERSONA_AGENT: Record<string, string> = {
   invariant: ".claude/skills/3ai/agents/glm-reviewer-invariant.md",
   ambig:     ".claude/skills/3ai/agents/glm-reviewer-ambig.md",
   numeric:   ".claude/skills/3ai/agents/glm-reviewer-numeric.md",
+  assembly:  ".claude/skills/3ai/agents/glm-reviewer-assembly.md",
   final:     ".claude/skills/3ai/agents/glm-reviewer-final.md",
 };
 
