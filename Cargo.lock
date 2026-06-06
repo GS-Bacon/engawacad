@@ -656,6 +656,7 @@ dependencies = [
  "mycad-kernel",
  "serde_json",
  "serde_yaml",
+ "tempfile",
 ]
 
 [[package]]

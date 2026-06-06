@@ -4,6 +4,7 @@ use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::error::KernelError;
 use mycad_kernel::geometry::Plane;
 use mycad_kernel::geometry::Point;
+use mycad_kernel::geometry::Vec3;
 use mycad_kernel::primitives::{make_cuboid, make_cylinder, make_extrusion, make_sphere};
 use mycad_kernel::BooleanOp;
 use std::collections::{HashMap, HashSet};
@@ -277,7 +278,8 @@ const MAX_REFERENCE_DEPTH: usize = 16;
 /// and aggregating all live Bodies.
 ///
 /// `base_dir` is the parent directory of the `.mycad` file being built.
-/// Transform application is out of scope (#74).
+/// Each Component's `transform.position` is accumulated along the tree path
+/// and applied as a translation to the resulting Bodies.
 pub fn build_assembly(
     doc: &Document,
     base_dir: &Path,
@@ -290,6 +292,7 @@ pub fn build_assembly(
         base_dir,
         &mut visiting,
         0,
+        Vec3::zeros(),
         gen,
         &mut bodies,
     )?;
@@ -301,16 +304,32 @@ fn build_component_tree(
     base_dir: &Path,
     visiting: &mut Vec<PathBuf>,
     depth: usize,
+    accumulated_offset: Vec3,
     gen: &mut IdGenerator,
     out: &mut Vec<Body>,
 ) -> Result<(), KernelError> {
-    // 1. Build this component's own features
+    // Accumulate this component's position into the running offset (rotation ignored until #77)
+    let p = &component.transform.position;
+    if p.iter().any(|v| !v.is_finite()) {
+        return Err(KernelError::InvalidParameter {
+            kind: "transform.position",
+        });
+    }
+    let local_offset = Vec3::new(p[0], p[1], p[2]);
+    let total_offset = accumulated_offset + local_offset;
+
+    // 1. Build this component's own features and apply accumulated translation
     if !component.features.is_empty() {
         let built = build_bodies_from_features(&component.features, gen)?;
-        out.extend(built.live().cloned());
+        for mut body in built.live().cloned() {
+            if total_offset != Vec3::zeros() {
+                body.solid.translate(total_offset);
+            }
+            out.push(body);
+        }
     }
 
-    // 2. Resolve reference (if any) — this is where depth increases
+    // 2. Resolve reference (if any) — propagates total_offset into the referenced tree
     if let Some(reference) = &component.reference {
         if depth >= MAX_REFERENCE_DEPTH {
             return Err(KernelError::MaxDepthExceeded {
@@ -337,15 +356,16 @@ fn build_component_tree(
             &child_base_dir,
             visiting,
             depth + 1,
+            total_offset,
             gen,
             out,
         )?;
         visiting.pop();
     }
 
-    // 3. Recurse into children (same document, so depth stays)
+    // 3. Recurse into children, propagating total_offset
     for child in &component.children {
-        build_component_tree(child, base_dir, visiting, depth, gen, out)?;
+        build_component_tree(child, base_dir, visiting, depth, total_offset, gen, out)?;
     }
     Ok(())
 }
