@@ -24,7 +24,7 @@ export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void {
   const scene = new Scene();
   scene.background = new Color(0xf0f0f0);
 
-  const camera = new PerspectiveCamera(50, width / height, 0.01, 10000);
+  const camera = new PerspectiveCamera(50, width / height, 1.0, 10000);
 
   const renderer = new WebGLRenderer({ antialias: true });
   renderer.setSize(width, height);
@@ -66,6 +66,7 @@ export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void {
       center.y + distance * 0.5,
       center.z + distance,
     );
+    controls.minDistance = maxDim * 0.1;
   }
 
   camera.lookAt(controls.target);
