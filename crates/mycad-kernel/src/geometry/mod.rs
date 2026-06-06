@@ -4,6 +4,7 @@ pub mod pcurve;
 pub mod surface;
 pub mod surface_intersect;
 pub mod tolerance;
+pub mod transform;
 
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
@@ -53,6 +54,15 @@ impl Plane {
             normal: Vec3::x(),
             u_axis: Vec3::y(),
             v_axis: Vec3::z(),
+        }
+    }
+
+    pub fn translate(&self, offset: Vec3) -> Plane {
+        Plane {
+            origin: transform::translate_point(self.origin, offset),
+            normal: self.normal,
+            u_axis: self.u_axis,
+            v_axis: self.v_axis,
         }
     }
 }

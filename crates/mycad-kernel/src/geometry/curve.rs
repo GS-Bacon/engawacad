@@ -53,4 +53,23 @@ impl Curve {
             }
         }
     }
+
+    pub fn translate(&self, offset: super::Vec3) -> Curve {
+        use super::transform::translate_point as t;
+        match self {
+            Curve::Line { origin, direction } => Curve::Line {
+                origin: t(*origin, offset),
+                direction: *direction,
+            },
+            Curve::Circle {
+                center,
+                normal,
+                radius,
+            } => Curve::Circle {
+                center: t(*center, offset),
+                normal: *normal,
+                radius: *radius,
+            },
+        }
+    }
 }

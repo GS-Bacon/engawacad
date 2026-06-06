@@ -21,7 +21,7 @@ pub enum TessellationStrategy {
 }
 
 /// A geometric surface in 3D space.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Surface {
     /// An infinite plane.
     Plane {
@@ -184,6 +184,45 @@ impl Surface {
             Surface::Cylinder { .. } => TessellationStrategy::UvGridFullPatch,
             Surface::Sphere { .. } => TessellationStrategy::UvSphere,
             Surface::Cone { .. } => TessellationStrategy::Unsupported,
+        }
+    }
+
+    pub fn translate(&self, offset: super::Vec3) -> Surface {
+        use super::transform::translate_point as t;
+        match self {
+            Surface::Plane {
+                origin,
+                normal,
+                u_axis,
+                v_axis,
+            } => Surface::Plane {
+                origin: t(*origin, offset),
+                normal: *normal,
+                u_axis: *u_axis,
+                v_axis: *v_axis,
+            },
+            Surface::Cylinder {
+                origin,
+                axis,
+                radius,
+            } => Surface::Cylinder {
+                origin: t(*origin, offset),
+                axis: *axis,
+                radius: *radius,
+            },
+            Surface::Sphere { center, radius } => Surface::Sphere {
+                center: t(*center, offset),
+                radius: *radius,
+            },
+            Surface::Cone {
+                apex,
+                axis,
+                half_angle,
+            } => Surface::Cone {
+                apex: t(*apex, offset),
+                axis: *axis,
+                half_angle: *half_angle,
+            },
         }
     }
 }
