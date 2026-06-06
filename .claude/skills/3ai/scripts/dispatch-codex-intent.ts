@@ -38,7 +38,7 @@ async function main() {
   let draftText: string;
   if (issueNum) {
     const proc = Bun.spawn(
-      ["gh", "issue", "view", issueNum, "--json", "body", "-q", ".body"],
+      ["gh", "issue", "view", issueNum, "--json", "title,body", "-q", "\"# \" + .title + \"\n\n\" + .body"],
       { stdout: "pipe", stderr: "pipe" },
     );
     draftText = (await new Response(proc.stdout).text()).trim();
