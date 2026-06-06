@@ -49,6 +49,13 @@ fn two_bodies() {
 }
 
 #[test]
+fn m5x20_bolt() {
+    smoke(include_str!(
+        "../../../stdlib/fasteners/jis_b1176/M5x20.mycad"
+    ));
+}
+
+#[test]
 fn boolean_box_cut() {
     smoke(include_str!("../../../examples/boolean_box_cut.mycad"));
 }

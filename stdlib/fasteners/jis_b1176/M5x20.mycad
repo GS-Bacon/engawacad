@@ -1,0 +1,15 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "M5x20 Bolt (JIS B 1176)"
+  features:
+    - type: create_cylinder
+      id: shaft
+      radius: 2.5
+      height: 20.0
+      origin: [0.0, 0.0, 0.0]
+    - type: create_cylinder
+      id: head
+      radius: 4.5
+      height: 3.0
+      origin: [0.0, 20.0, 0.0]
