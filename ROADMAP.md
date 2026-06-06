@@ -92,7 +92,7 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 
 ---
 
-## Phase 5: アセンブリと部品参照
+## ✅ Phase 5: アセンブリと部品参照
 
 **外から見た成果**: 複数の部品を組み合わせ、標準ライブラリ部品を参照できる
 
@@ -100,6 +100,8 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 - `stdlib://` 参照が解決される
 - Component 階層の transform が正しく適用される
 - `examples/assembly.mycad` が動作する
+
+**状態**: 完了 (2026-06-06)
 
 ---
 

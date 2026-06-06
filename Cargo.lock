@@ -670,8 +670,11 @@ dependencies = [
  "mycad-format",
  "mycad-kernel",
  "open",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
+ "tower",
  "urlencoding",
 ]
 
