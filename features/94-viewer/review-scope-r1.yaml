@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: low
+    section: "Non-Goals"
+    finding: "Issue の Non-Goals に「キーボードによる選択」が明記されていないが、plan の Non-Goals には記載がある"
+    suggestion: "Issue 側の Non-Goals にも「キーボードによる選択」を追加して整合させる（ただし実質的な影響は軽微）"
+
+verdict: pass

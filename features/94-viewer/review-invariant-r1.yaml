@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "設計方針 > 決定性"
+    finding: "T01 決定性テストの期待結果が「完全一致」とされているが、テスト計画表に検証項目（userData.faceIds, groupFaceIds, group 構成ごとの一致判定方法）が具体的に記載されていない"
+    suggestion: "T01 に検証する配列・オブジェクトの列挙を追加すること。例: 「expect(geo1.userData.faceIds).toEqual(geo2.userData.faceIds), expect(geo1.groups.map(g => [g.start, g.count, g.materialIndex])).toEqual(...)」"
+
+verdict: pass
