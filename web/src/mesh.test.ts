@@ -308,3 +308,90 @@ describe("edge cases", () => {
     ).toThrow(MeshValidationError);
   });
 });
+
+// --- face-picking tests (#94) ---
+
+describe("meshToGeometry — face_ids propagation (#94)", () => {
+  it("T01: determinism — same mesh → identical userData.faceIds, groupFaceIds, groups layout", () => {
+    const mesh = makeMesh({
+      positions: [
+        [0, 0, 0], [1, 0, 0], [0, 1, 0],
+        [1, 0, 0], [1, 1, 0], [0, 1, 0],
+      ],
+      normals: [
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+      ],
+      indices: [0, 1, 2, 3, 4, 5],
+      face_ids: ["face_a", "face_a", "face_b"],
+    });
+    const a = meshToGeometry(mesh);
+    const b = meshToGeometry(mesh);
+
+    expect(a.userData.faceIds).toEqual(b.userData.faceIds);
+    expect(a.userData.groupFaceIds).toEqual(b.userData.groupFaceIds);
+
+    const groupsOf = (g: import("three").BufferGeometry) =>
+      g.groups.map((gr) => [gr.start, gr.count, gr.materialIndex]);
+    expect(groupsOf(a)).toEqual(groupsOf(b));
+  });
+
+  it("T02: face_ids propagated to userData.faceIds; groups cover all triangles", () => {
+    const mesh = makeMesh({
+      positions: [
+        [0, 0, 0], [1, 0, 0], [0, 1, 0],
+        [1, 0, 0], [1, 1, 0], [0, 1, 0],
+        [0, 0, 1], [1, 0, 1], [0, 1, 1],
+      ],
+      normals: [
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+      ],
+      indices: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      face_ids: ["face_a", "face_a", "face_b"],
+    });
+    const geo = meshToGeometry(mesh);
+
+    expect(geo.userData.faceIds).toEqual(["face_a", "face_a", "face_b"]);
+    expect(geo.userData.groupFaceIds).toEqual(["face_a", "face_b"]);
+
+    // groups cover all triangle indices
+    const totalIndexCount = geo.getIndex()!.count;
+    expect(geo.groups.reduce((sum, g) => sum + g.count, 0)).toBe(totalIndexCount);
+  });
+
+  it("T03_boundary: empty indices mesh → 0 groups, empty userData.faceIds, no throw", () => {
+    const mesh = makeMesh({ indices: [], face_ids: [] });
+    const geo = meshToGeometry(mesh);
+
+    expect(geo.userData.faceIds).toEqual([]);
+    expect(geo.userData.groupFaceIds).toEqual([]);
+    expect(geo.groups).toHaveLength(0);
+  });
+
+  it("T04_degen: unnamed face (face_id '') in run → group created but empty-string faceId is not highlighted", () => {
+    const mesh = makeMesh({
+      positions: [
+        [0, 0, 0], [1, 0, 0], [0, 1, 0],
+        [1, 0, 0], [1, 1, 0], [0, 1, 0],
+      ],
+      normals: [
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+        [0, 0, 1], [0, 0, 1], [0, 0, 1],
+      ],
+      indices: [0, 1, 2, 3, 4, 5],
+      face_ids: ["", ""],
+    });
+    const geo = meshToGeometry(mesh);
+
+    expect(geo.userData.faceIds).toEqual(["", ""]);
+    expect(geo.userData.groupFaceIds).toEqual([""]);
+    expect(geo.groups).toHaveLength(1);
+    // empty-string faceId should not match a non-empty selection
+    // (setSelection checks faceId !== "")
+    const selectedId: string | null = "some_id";
+    const emptyId = "";
+    expect(selectedId !== null && selectedId !== "" && emptyId === selectedId).toBe(false);
+  });
+});

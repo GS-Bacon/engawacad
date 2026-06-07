@@ -86,5 +86,21 @@ export function meshToGeometry(mesh: TriangleMesh): BufferGeometry {
     geometry.setIndex(Array.from(mesh.indices));
   }
 
+  const faceIds = mesh.face_ids ?? [];
+  geometry.userData.faceIds = faceIds;
+
+  // Same face_id triangles are contiguous in tessellation output.
+  // Create one group per contiguous run for material-index switching.
+  const groupFaceIds: string[] = [];
+  let runStart = 0;
+  for (let t = 1; t <= faceIds.length; t++) {
+    if (t === faceIds.length || faceIds[t] !== faceIds[runStart]) {
+      geometry.addGroup(runStart * 3, (t - runStart) * 3, 0);
+      groupFaceIds.push(faceIds[runStart]);
+      runStart = t;
+    }
+  }
+  geometry.userData.groupFaceIds = groupFaceIds;
+
   return geometry;
 }

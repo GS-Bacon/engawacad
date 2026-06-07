@@ -37,12 +37,28 @@
         max-width: 80%;
         z-index: 10;
       }
+      #selected-face {
+        display: none;
+        position: absolute;
+        bottom: 1rem;
+        left: 1rem;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 10;
+        min-height: 1em;
+      }
     </style>
   </head>
   <body>
     <div id="app">
       <div id="error"></div>
       <div id="info"></div>
+      <div id="selected-face" data-testid="selected-face-id"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
