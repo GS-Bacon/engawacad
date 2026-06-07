@@ -1,0 +1,454 @@
+/**
+ * Unit tests for web/src/extrude.ts — #95 選択面からの押出(Extrude) UI
+ *
+ * T01: 決定性  — buildExtrudeFeatures を同入力で2回 → toEqual
+ * T02: 正常系  — planeForFaceId: f_z_* →xy / f_y_* →xz / f_x_* →yz
+ * T03: 正常系  — footprintProfile: box 上面投影 → 4 seg・凸閉矩形・座標一致
+ * T04: 正常系  — buildExtrudeFeatures: 既存 id {sketch_1} 与え → 衝突回避採番
+ * T05_degen   — 無名面 "" / 非対応ロール → planeForFaceId null・buildExtrudeFeatures null
+ * T06_boundary — faceIds に対象 faceId が0件 → footprintProfile null
+ */
+import { describe, it, expect, afterEach } from "vitest";
+import {
+  planeForFaceId,
+  footprintProfile,
+  buildExtrudeFeatures,
+} from "./extrude";
+import { postFeature } from "./api";
+import type { Feature } from "./generated/Feature";
+
+// Helper: build positions/indices/faceIds for a 10×10×10 box top face (f_z_pos).
+// 4 vertices of the Z=10 face: v0=(0,0,10) v1=(10,0,10) v2=(10,10,10) v3=(0,10,10)
+// 2 triangles: [0,1,2] and [0,2,3], both with faceId f_z_pos
+function boxTopFaceData() {
+  const positions = new Float32Array([
+    0, 0, 10,
+    10, 0, 10,
+    10, 10, 10,
+    0, 10, 10,
+  ]);
+  const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+  const faceIds = [
+    "N(v0;face:f_z_pos)",
+    "N(v0;face:f_z_pos)",
+  ];
+  return { positions, indices, faceIds };
+}
+
+// ---------------------------------------------------------------------------
+// T01: 決定性
+// ---------------------------------------------------------------------------
+describe("T01 determinism", () => {
+  it("buildExtrudeFeatures returns identical output on repeated calls with same input", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const depth = 5;
+    const existing = new Set<string>();
+    const a = buildExtrudeFeatures(faceId, positions, indices, faceIds, depth, existing);
+    const b = buildExtrudeFeatures(faceId, positions, indices, faceIds, depth, existing);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(a).toEqual(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T02: planeForFaceId — ロール → 平面
+// ---------------------------------------------------------------------------
+describe("T02 planeForFaceId", () => {
+  it("f_z_pos → xy", () => {
+    expect(planeForFaceId("N(fid;face:f_z_pos)")).toBe("xy");
+  });
+
+  it("f_z_neg → xy", () => {
+    expect(planeForFaceId("N(fid;face:f_z_neg)")).toBe("xy");
+  });
+
+  it("f_y_pos → xz", () => {
+    expect(planeForFaceId("N(fid;face:f_y_pos)")).toBe("xz");
+  });
+
+  it("f_x_neg → yz", () => {
+    expect(planeForFaceId("N(fid;face:f_x_neg)")).toBe("yz");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T03: footprintProfile — box 上面投影
+// ---------------------------------------------------------------------------
+describe("T03 footprintProfile", () => {
+  it("box top face → 4 segments, convex closed rectangle", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const segments = footprintProfile(positions, indices, faceIds, faceId, "xy");
+    expect(segments).not.toBeNull();
+    expect(segments!.length).toBe(4);
+    // closed: last seg.to === first seg.from
+    expect(segments![3].to).toEqual(segments![0].from);
+    // Bounding rectangle of (0..10, 0..10) on xy plane
+    expect(segments![0].from).toEqual([0, 0]);
+    expect(segments![0].to).toEqual([10, 0]);
+    expect(segments![1].from).toEqual([10, 0]);
+    expect(segments![1].to).toEqual([10, 10]);
+    expect(segments![2].from).toEqual([10, 10]);
+    expect(segments![2].to).toEqual([0, 10]);
+    expect(segments![3].from).toEqual([0, 10]);
+    expect(segments![3].to).toEqual([0, 0]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T04: buildExtrudeFeatures — 衝突回避採番
+// ---------------------------------------------------------------------------
+describe("T04 collision-free id naming", () => {
+  it("existing {sketch_1} causes sketch_0 to be used", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const existing = new Set(["sketch_1"]);
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, existing);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).not.toBe("sketch_1");
+    // Should use sketch_0 (lowest non-colliding)
+    expect(result!.sketch.id).toBe("sketch_0");
+    // Extrude references the sketch
+    if (result!.extrude.type === "extrude") {
+      expect(result!.extrude.sketch).toBe("sketch_0");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T05_degen: 無名面 / 非対応ロール → null
+// ---------------------------------------------------------------------------
+describe("T05_degen degenerate face ids", () => {
+  it("empty string faceId → planeForFaceId null", () => {
+    expect(planeForFaceId("")).toBeNull();
+  });
+
+  it("unsupported role → planeForFaceId null", () => {
+    expect(planeForFaceId("N(fid;face:f_w_pos)")).toBeNull();
+  });
+
+  it("empty faceId → buildExtrudeFeatures null", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const result = buildExtrudeFeatures("", positions, indices, faceIds, 5, new Set());
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T06_boundary: faceIds に対象 faceId が0件 → footprintProfile null
+// ---------------------------------------------------------------------------
+describe("T06_boundary no matching triangles", () => {
+  it("faceId not present in faceIds → footprintProfile null", () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["face_other"];
+    const result = footprintProfile(positions, indices, faceIds, "face_target", "xy");
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T07: depth 境界値テスト — buildExtrudeFeatures が不正 depth を弾く
+// ---------------------------------------------------------------------------
+describe("T07 depth boundary values", () => {
+  const { positions, indices, faceIds } = boxTopFaceData();
+  const faceId = "N(v0;face:f_z_pos)";
+
+  it("depth = 0 → null", () => {
+    expect(buildExtrudeFeatures(faceId, positions, indices, faceIds, 0, new Set())).toBeNull();
+  });
+
+  it("depth = -1 → null", () => {
+    expect(buildExtrudeFeatures(faceId, positions, indices, faceIds, -1, new Set())).toBeNull();
+  });
+
+  it("depth = NaN → null", () => {
+    expect(buildExtrudeFeatures(faceId, positions, indices, faceIds, NaN, new Set())).toBeNull();
+  });
+
+  it("depth = Infinity → null (Number.isFinite is false)", () => {
+    expect(buildExtrudeFeatures(faceId, positions, indices, faceIds, Infinity, new Set())).toBeNull();
+  });
+
+  it("depth = -Infinity → null", () => {
+    expect(buildExtrudeFeatures(faceId, positions, indices, faceIds, -Infinity, new Set())).toBeNull();
+  });
+
+  it("depth = -0 → null (0 === -0, depth <= 0 is true)", () => {
+    expect(buildExtrudeFeatures(faceId, positions, indices, faceIds, -0, new Set())).toBeNull();
+  });
+
+  it("depth = Number.MIN_VALUE (positive tiny) → valid", () => {
+    // smallest positive > 0, isFinite=true, > 0 → should succeed
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, Number.MIN_VALUE, new Set());
+    expect(result).not.toBeNull();
+  });
+
+  it("depth = Number.MAX_VALUE → valid", () => {
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, Number.MAX_VALUE, new Set());
+    expect(result).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T08: ε_guard 境界値テスト — footprintProfile が退化 extent を弾く
+// ---------------------------------------------------------------------------
+describe("T08 epsilon guard boundary", () => {
+  const faceId = "N(v0;face:f_z_pos)";
+
+  it("extent exactly ε_guard (1e-9) → null (<= ε_guard)", () => {
+    // All U coords the same → extent = 0 ≤ 1e-9
+    const positions = new Float32Array([
+      5, 0, 10,
+      5, 10, 10,
+      5, 5, 10,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = [faceId];
+    const result = footprintProfile(positions, indices, faceIds, faceId, "xy");
+    expect(result).toBeNull();
+  });
+
+  it("extent > ε_guard → non-null profile", () => {
+    // U range = 1 (0→1), V range = 10 → both > 1e-9
+    const positions = new Float32Array([
+      0, 0, 10,
+      1, 0, 10,
+      1, 10, 10,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = [faceId];
+    const result = footprintProfile(positions, indices, faceIds, faceId, "xy");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(4);
+  });
+
+  it("all vertices coincident (point face) → null", () => {
+    const positions = new Float32Array([
+      5, 5, 10,
+      5, 5, 10,
+      5, 5, 10,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = [faceId];
+    const result = footprintProfile(positions, indices, faceIds, faceId, "xy");
+    expect(result).toBeNull();
+  });
+
+  it("collinear vertices (line face, V extent = 0) → null", () => {
+    const positions = new Float32Array([
+      0, 5, 10,
+      5, 5, 10,
+      10, 5, 10,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = [faceId];
+    const result = footprintProfile(positions, indices, faceIds, faceId, "xy");
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T09: 決定性 100 回 — buildExtrudeFeatures が常に同一結果を返す
+// ---------------------------------------------------------------------------
+describe("T09 determinism 100 runs", () => {
+  it("buildExtrudeFeatures produces identical output 100 times", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const existing = new Set<string>();
+    const first = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, existing);
+    expect(first).not.toBeNull();
+    for (let i = 0; i < 100; i++) {
+      const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, existing);
+      expect(result).toEqual(first);
+    }
+  });
+
+  it("planeForFaceId produces identical output 100 times", () => {
+    const input = "N(fid;face:f_z_pos)";
+    const expected = "xy";
+    for (let i = 0; i < 100; i++) {
+      expect(planeForFaceId(input)).toBe(expected);
+    }
+  });
+
+  it("footprintProfile produces identical output 100 times", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const first = footprintProfile(positions, indices, faceIds, faceId, "xy");
+    expect(first).not.toBeNull();
+    for (let i = 0; i < 100; i++) {
+      expect(footprintProfile(positions, indices, faceIds, faceId, "xy")).toEqual(first);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T10: planeForFaceId 追加ケース
+// ---------------------------------------------------------------------------
+describe("T10 planeForFaceId additional cases", () => {
+  it("f_x_pos → yz", () => {
+    expect(planeForFaceId("N(fid;face:f_x_pos)")).toBe("yz");
+  });
+
+  it("f_y_neg → xz", () => {
+    expect(planeForFaceId("N(fid;face:f_y_neg)")).toBe("xz");
+  });
+
+  it("face_id without face: prefix → null", () => {
+    expect(planeForFaceId("N(fid;something_else)")).toBeNull();
+  });
+
+  it("face_id with numeric-only fid → still works", () => {
+    expect(planeForFaceId("N(42;face:f_z_neg)")).toBe("xy");
+  });
+
+  it("plain string without N() wrapper → null if no f_*_ pattern", () => {
+    expect(planeForFaceId("just_a_face")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T11: buildExtrudeFeatures ID 採番の追加ケース
+// ---------------------------------------------------------------------------
+describe("T11 buildExtrudeFeatures ID allocation", () => {
+  const { positions, indices, faceIds } = boxTopFaceData();
+  const faceId = "N(v0;face:f_z_pos)";
+
+  it("empty existing set → sketch_0 and extrude_0", () => {
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, new Set());
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_0");
+    expect(result!.extrude.id).toBe("extrude_0");
+  });
+
+  it("sketch_0 occupied → sketch_1", () => {
+    const existing = new Set(["sketch_0"]);
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, existing);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_1");
+  });
+
+  it("sketch_0 and sketch_1 occupied → sketch_2", () => {
+    const existing = new Set(["sketch_0", "sketch_1"]);
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, existing);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_2");
+  });
+
+  it("extrude references correct sketch id", () => {
+    const existing = new Set(["sketch_0"]);
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, existing);
+    expect(result).not.toBeNull();
+    if (result!.extrude.type === "extrude") {
+      expect(result!.extrude.sketch).toBe(result!.sketch.id);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T12: footprintProfile の異常平面投影
+// ---------------------------------------------------------------------------
+describe("T12 footprintProfile different planes", () => {
+  it("xz plane projects (x,z)", () => {
+    const faceId = "N(v0;face:f_y_pos)";
+    // Y face at y=5, x range 0..10, z range 0..20
+    const positions = new Float32Array([
+      0, 5, 0,
+      10, 5, 0,
+      10, 5, 20,
+      0, 5, 20,
+    ]);
+    const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+    const faceIds = [faceId, faceId];
+    const result = footprintProfile(positions, indices, faceIds, faceId, "xz");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(4);
+    // Bounding rect on xz: x=[0,10], z=[0,20]
+    expect(result![0].from).toEqual([0, 0]);
+    expect(result![1].to).toEqual([10, 20]);
+  });
+
+  it("yz plane projects (y,z)", () => {
+    const faceId = "N(v0;face:f_x_neg)";
+    const positions = new Float32Array([
+      -3, 0, 0,
+      -3, 10, 0,
+      -3, 10, 20,
+      -3, 0, 20,
+    ]);
+    const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+    const faceIds = [faceId, faceId];
+    const result = footprintProfile(positions, indices, faceIds, faceId, "yz");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(4);
+    // y=[0,10], z=[0,20]
+    expect(result![0].from).toEqual([0, 0]);
+    expect(result![1].to).toEqual([10, 20]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T13: postFeature HTTP エラー展開テスト
+// ---------------------------------------------------------------------------
+describe("T13 postFeature error handling", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("4xx with error body → throws with error message", async () => {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: "Invalid sketch profile" }), {
+        status: 422,
+        headers: { "content-type": "application/json" },
+      });
+    const feature: Feature = { type: "extrude", id: "e0", sketch: "s0", depth: 5 };
+    await expect(postFeature(feature)).rejects.toThrow("Invalid sketch profile");
+  });
+
+  it("5xx with error body → throws with error message", async () => {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: "Internal server error" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    const feature: Feature = { type: "extrude", id: "e0", sketch: "s0", depth: 5 };
+    await expect(postFeature(feature)).rejects.toThrow("Internal server error");
+  });
+
+  it("4xx with non-JSON body → throws HTTP status", async () => {
+    globalThis.fetch = async () =>
+      new Response("Bad Gateway", {
+        status: 502,
+        headers: { "content-type": "text/plain" },
+      });
+    const feature: Feature = { type: "extrude", id: "e0", sketch: "s0", depth: 5 };
+    await expect(postFeature(feature)).rejects.toThrow("HTTP 502");
+  });
+
+  it("4xx with empty error → throws HTTP status", async () => {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: "" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    const feature: Feature = { type: "extrude", id: "e0", sketch: "s0", depth: 5 };
+    await expect(postFeature(feature)).rejects.toThrow("HTTP 400");
+  });
+
+  it("200 → returns parsed BodyMesh array", async () => {
+    const body = [{ feature_id: "box_1", mesh: { positions: [], normals: [], indices: [], face_ids: [] } }];
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    const feature: Feature = { type: "create_sketch", id: "s0", plane: "xy", profile: [] };
+    const result = await postFeature(feature);
+    expect(result).toEqual(body);
+  });
+});

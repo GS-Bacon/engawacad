@@ -52,6 +52,23 @@
         z-index: 10;
         min-height: 1em;
       }
+      #extrude-panel {
+        display: none;
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 0.75rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        z-index: 10;
+        pointer-events: auto;
+      }
+      #extrude-panel label { margin-right: 0.5rem; }
+      #extrude-panel input { width: 5em; }
+      #extrude-panel button { margin-left: 0.5rem; cursor: pointer; }
     </style>
   </head>
   <body>
@@ -59,6 +76,10 @@
       <div id="error"></div>
       <div id="info"></div>
       <div id="selected-face" data-testid="selected-face-id"></div>
+      <div id="extrude-panel" data-testid="extrude-panel">
+        <label>深さ <input type="number" data-testid="extrude-depth" min="0.1" step="0.1" value="5" /></label>
+        <button data-testid="btn-extrude">押出</button>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -1,0 +1,149 @@
+/**
+ * Pure functions for building extrude features from a selected face.
+ * #95: Viewer-side logic for the Extrude UI.
+ */
+import type { Feature } from "./generated/Feature";
+import type { SketchPlane } from "./generated/SketchPlane";
+
+const EPSILON_GUARD = 1e-9;
+
+/**
+ * Map face_id axis role to the sketch plane that lies on that axis pair.
+ * face_id format: `N(<fid>;face:f_<axis>_<sign>)` → axis determines the plane:
+ *   Z → xy / Y → xz / X → yz
+ * Returns null for empty string or unsupported roles.
+ */
+export function planeForFaceId(faceId: string): SketchPlane | null {
+  if (!faceId) return null;
+  const match = faceId.match(/f_([xyz])_[a-z]+/);
+  if (!match) return null;
+  switch (match[1]) {
+    case "z":
+      return "xy";
+    case "y":
+      return "xz";
+    case "x":
+      return "yz";
+    default:
+      return null;
+  }
+}
+
+type SketchSegment = { id: string; from: [number, number]; to: [number, number] };
+
+/**
+ * Project triangles of the selected face onto the given plane and return
+ * a bounding rectangle as 4 closed sketch segments (CCW).
+ *
+ * @param positions Flat vertex positions (3 floats per vertex: x,y,z)
+ * @param indices Triangle index buffer (3 indices per triangle)
+ * @param faceIds Per-triangle face id array
+ * @param faceId The selected face id to filter
+ * @param plane The sketch plane for (u,v) projection
+ * @returns 4 closed CCW segments or null on degenerate/empty input
+ */
+export function footprintProfile(
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  faceIds: string[],
+  faceId: string,
+  plane: SketchPlane,
+): SketchSegment[] | null {
+  // Collect unique vertex indices from matching triangles
+  const vertSet = new Set<number>();
+  for (let t = 0; t < faceIds.length; t++) {
+    if (faceIds[t] === faceId) {
+      vertSet.add(indices[t * 3]);
+      vertSet.add(indices[t * 3 + 1]);
+      vertSet.add(indices[t * 3 + 2]);
+    }
+  }
+  if (vertSet.size === 0) return null;
+
+  // Project to (u,v) on the given plane
+  const projections: [number, number][] = [];
+  for (const vi of vertSet) {
+    const offset = vi * 3;
+    const x = positions[offset];
+    const y = positions[offset + 1];
+    const z = positions[offset + 2];
+    switch (plane) {
+      case "xy":
+        projections.push([x, y]);
+        break;
+      case "xz":
+        projections.push([x, z]);
+        break;
+      case "yz":
+        projections.push([y, z]);
+        break;
+    }
+  }
+
+  let minU = projections[0][0];
+  let maxU = projections[0][0];
+  let minV = projections[0][1];
+  let maxV = projections[0][1];
+  for (let i = 1; i < projections.length; i++) {
+    const [u, v] = projections[i];
+    if (u < minU) minU = u;
+    if (u > maxU) maxU = u;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+  }
+
+  if (maxU - minU <= EPSILON_GUARD || maxV - minV <= EPSILON_GUARD) return null;
+
+  // CCW bounding rectangle: BL → BR → TR → TL → (back to BL)
+  return [
+    { id: "seg_0", from: [minU, minV], to: [maxU, minV] },
+    { id: "seg_1", from: [maxU, minV], to: [maxU, maxV] },
+    { id: "seg_2", from: [maxU, maxV], to: [minU, maxV] },
+    { id: "seg_3", from: [minU, maxV], to: [minU, minV] },
+  ];
+}
+
+/**
+ * Build create_sketch + extrude Feature pair for the given selection.
+ * IDs are deterministic: smallest non-colliding `sketch_<n>` / `extrude_<n>`.
+ * Returns null if the face cannot be resolved to a plane or the profile is degenerate.
+ */
+export function buildExtrudeFeatures(
+  faceId: string,
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  faceIds: string[],
+  depth: number,
+  existingFeatureIds: Set<string>,
+): { sketch: Feature; extrude: Feature } | null {
+  const plane = planeForFaceId(faceId);
+  if (!plane) return null;
+
+  const profile = footprintProfile(positions, indices, faceIds, faceId, plane);
+  if (!profile) return null;
+
+  if (!Number.isFinite(depth) || depth <= 0) return null;
+
+  const sketchId = nextId("sketch_", existingFeatureIds);
+  const extrudeId = nextId("extrude_", existingFeatureIds);
+
+  const sketch: Feature = {
+    type: "create_sketch",
+    id: sketchId,
+    plane,
+    profile,
+  };
+  const extrude: Feature = {
+    type: "extrude",
+    id: extrudeId,
+    sketch: sketchId,
+    depth,
+  };
+  return { sketch, extrude };
+}
+
+function nextId(prefix: string, existing: Set<string>): string {
+  let n = 0;
+  while (existing.has(`${prefix}${n}`)) n++;
+  return `${prefix}${n}`;
+}
