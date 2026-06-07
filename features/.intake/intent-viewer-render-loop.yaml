@@ -1,0 +1,6 @@
+```yaml
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と Non-Goals が明確に分離されている。
+  Phase 6 の備考にあるビューア操作品質改善の Milestone Issue としての位置づけも本文中で確認できる。
+```

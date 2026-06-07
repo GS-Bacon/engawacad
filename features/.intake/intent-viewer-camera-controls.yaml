@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と Non-Goals が明確に分離されている。
+  viewer-render-loop を別 Issue として切り分けており、Phase 6 の viewer-polish 系 Milestone としての位置づけも本文から判別できる。

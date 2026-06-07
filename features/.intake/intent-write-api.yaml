@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と Non-Goals が明確。
+  前提 Issue と Phase 6 の「Feature を 1 個追加する書き込みエンドポイント」への寄与も本文から判断できる。

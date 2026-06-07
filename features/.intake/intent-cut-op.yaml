@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Phase 6 の完了条件への寄与、前提 Issue、In-Scope/Out-of-Scope、Non-Goals が明示されている。
+  Acceptance tests も CI/E2E で計測可能で、plan.md の `### 数値モデル` 必須も本文で判断できる。

@@ -1,0 +1,6 @@
+```yaml
+aligned: yes
+comment: |
+  完了条件が CI で検証可能な形で列挙されており、In-Scope / Out-of-Scope / Non-Goals も分離されている。
+  Phase 6 の「TriangleMesh が EntityRef を保持し API 経由で渡る」という完了条件への寄与も明確。
+```

@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests が Playwright/CI ベースで計測可能で、In-Scope/Out-of-Scope と前提 Issue が明記されている。
+  Phase 6 の「ブラウザで平面をクリック選択」に直接寄与する粒度で、意図と完了条件が明確。

@@ -161,17 +161,18 @@ Phase 6 では WebSocket を導入しない（複雑さを最小化）。
 
 ADR-006 §3 に従い、実装 Issue を「1 軸 × 1–2 op」に分解する。起票は Codex intent-check 後。
 
-| スラグ | ラベル | 内容 |
-|---|---|---|
-| `viewer-polish`    | `viewer`, `type: refactor`, `batch:viewer` | 回転 damping・カメラ制御 (フィット/ズーム基点/標準ビュー) |
-| `mesh-face-ids`    | `kernel`, `type: foundation`, `batch:kernel` | `TriangleMesh.face_ids` の実装 + BodyMesh/TS 型反映 |
-| `write-api`        | `cli`, `type: feature`, `batch:kernel` | `POST /api/v0/features` エンドポイント + ディスク書き戻し |
-| `viewer-pick`      | `viewer`, `type: feature`, `batch:viewer` | raycaster によるピッキング + 選択ハイライト |
-| `extrude-op`       | `viewer`+`kernel`, `type: feature`, `batch:viewer` | 選択面から `Extrude` を UI 実行 |
-| `cut-op`           | `viewer`+`kernel`, `type: feature`, `batch:viewer` | 選択面から `ExtrudeCut` を UI 実行 |
+| Issue | スラグ | ラベル | 内容 |
+|---|---|---|---|
+| [#90](https://github.com/GS-Bacon/mycad/issues/90) | `viewer-render-loop`    | `viewer`, `type: refactor`, `batch:viewer` | render loop を rAF に統一し damping + DPR を設定 |
+| [#91](https://github.com/GS-Bacon/mycad/issues/91) | `viewer-camera-controls` | `viewer`, `type: refactor`, `batch:viewer` | 初期フィット表示 + Front/Top/Iso 標準ビューボタン |
+| [#92](https://github.com/GS-Bacon/mycad/issues/92) | `mesh-face-ids`    | `kernel`, `type: foundation`, `batch:kernel` | `TriangleMesh.face_ids` の実装 + BodyMesh/TS 型反映 |
+| [#93](https://github.com/GS-Bacon/mycad/issues/93) | `write-api`        | `cli`, `type: feature`, `batch:kernel` | `POST /api/v0/features` エンドポイント + ディスク書き戻し（依存: #92） |
+| [#94](https://github.com/GS-Bacon/mycad/issues/94) | `viewer-pick`      | `viewer`, `type: feature`, `batch:viewer` | raycaster によるピッキング + 選択ハイライト（依存: #92） |
+| [#95](https://github.com/GS-Bacon/mycad/issues/95) | `extrude-op`       | `viewer`+`kernel`, `type: feature`, `batch:viewer` | 選択面から `Extrude` を UI 実行（依存: #93 #94） |
+| [#96](https://github.com/GS-Bacon/mycad/issues/96) | `cut-op`           | `format`+`kernel`+`viewer`, `type: feature`, `batch:kernel` | `ExtrudeCut` variant 追加 + UI 実行（依存: #95） |
 
-処理順（依存関係）: `viewer-polish` → `mesh-face-ids` → `write-api` → `viewer-pick` → `extrude-op` → `cut-op`
+処理順（依存関係）: #90/#91/#92 → #93/#94 → #95 → #96
 
-`type: feature` Issue（`write-api` / `viewer-pick` / `extrude-op` / `cut-op`）が全 closed になった時点で
+`type: feature` Issue（#93 / #94 / #95 / #96）が全 closed になった時点で
 Phase 6 完了（ADR-002 完了手続き: ROADMAP ✅ + Milestone close）。
-`viewer-polish` と `mesh-face-ids` は完了判定の対象外。
+#90/#91（refactor）と #92（foundation）は完了判定の対象外。

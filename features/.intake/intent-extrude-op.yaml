@@ -1,0 +1,6 @@
+```yaml
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と前提 Issue が明記されている。
+  Phase 6 の「面選択 → Extrude 実行 → 結果反映」に直接寄与する粒度で、意図とスコープが明確。
+```
