@@ -1,0 +1,10 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "CI green after committing generated TS file (drift check fix)",
+  "glm_exit": 0,
+  "debug_spec_used": false,
+  "failed_reason": null,
+  "error_pattern": null,
+  "error_pattern_kind": "none"
+}

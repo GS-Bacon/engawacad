@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "web/src/mesh.ts"
+    line_hint: 11
+    finding: "公開型 `TriangleMesh` に必須の `face_ids` を追加したのに、`validateMesh` が `face_ids` の存在や `face_ids.length == indices.length / 3` を一切検証していません。実際に更新後の `web/src/mesh.test.ts` でも、多数三角形に対して `face_ids` 1件の不正メッシュを受理しており、ブラウザ側テストが #92 の wire 契約を検証できていません。"
+    suggestion: "`validateMesh` に `face_ids` 長の検証を追加し、欠落・長さ不一致を reject する負テストと fixture を更新する。"
+  - id: F02
+    severity: low
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 1876
+    finding: "`t09_merge_determinism` は `TriangleMesh` の新規出力である `face_ids` を比較しておらず、`merge_meshes` の face-id 連結順だけが壊れても決定性テストが緑のままになります。"
+    suggestion: "`assert_eq!(merged1.face_ids, merged2.face_ids)` を追加して、新フィールドも決定性対象に含める。"
+  - id: F03
+    severity: low
+    file: "crates/mycad-kernel/tests/face_ids_acceptance.rs"
+    line_hint: 37
+    finding: "T03 のコメントは `N(...;F:...)` 形式を検証するとしていますが、実際の assertion は `starts_with(\"N(\")` とユニーク数しか見ていません。誤って Edge/Vertex の `EntityRef` を流しても `Named` 文字列である限り通ってしまい、face-kind の回帰を捕まえられません。"
+    suggestion: "`;F:` を必須で確認し、必要なら cuboid 各面が期待回数だけ現れることも検証する。"
+
+verdict: pass

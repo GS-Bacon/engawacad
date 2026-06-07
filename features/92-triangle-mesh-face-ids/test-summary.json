@@ -1,0 +1,42 @@
+{
+  "totals": {
+    "passed": 763,
+    "failed": 0,
+    "ignored": 3
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_determinism",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_length_invariant_cuboid",
+      "kind": "other"
+    },
+    {
+      "name": "t03_cuboid_face_ids_correct",
+      "kind": "other"
+    },
+    {
+      "name": "t04_length_invariant_cylinder_sphere",
+      "kind": "other"
+    },
+    {
+      "name": "t05_boundary_unnamed_face",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t06_degen_skip_invariant",
+      "kind": "degenerate"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 6,
+    "determinism": 1,
+    "degenerate": 2,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}
