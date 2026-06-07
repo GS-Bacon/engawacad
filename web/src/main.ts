@@ -44,11 +44,12 @@ async function main(): Promise<void> {
       if (!sel || !Number.isFinite(depth) || depth <= 0) return;
       const built = buildExtrudeFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, usedFeatureIds);
       if (!built) return;
+      // Reserve IDs before any POST so partial failures don't cause reuse on retry.
+      usedFeatureIds.add(built.sketch.id);
+      usedFeatureIds.add(built.extrude.id);
       try {
         await postFeature(built.sketch);
         const updated = await postFeature(built.extrude);
-        usedFeatureIds.add(built.sketch.id);
-        usedFeatureIds.add(built.extrude.id);
         currentBodies = updated;
         handle.updateBodies(updated);
       } catch (err) {
@@ -65,11 +66,12 @@ async function main(): Promise<void> {
       if (!target) return;
       const built = buildExtrudeCutFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, target, usedFeatureIds);
       if (!built) return;
+      // Reserve IDs before any POST so partial failures don't cause reuse on retry.
+      usedFeatureIds.add(built.sketch.id);
+      usedFeatureIds.add(built.extrudeCut.id);
       try {
         await postFeature(built.sketch);
         const updated = await postFeature(built.extrudeCut);
-        usedFeatureIds.add(built.sketch.id);
-        usedFeatureIds.add(built.extrudeCut.id);
         currentBodies = updated;
         handle.updateBodies(updated);
       } catch (err) {
