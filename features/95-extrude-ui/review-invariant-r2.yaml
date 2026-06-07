@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "実行フロー > 検証"
+    finding: "7.5 state shim の記載があるが、`keep_codex_gate:false` が設定されているにも関わらず state shim を実行しようとしている。この矛盾は不正な状態遷移を引き起こす可能性がある"
+    suggestion: "state shim 手順を削除するか、`keep_codex_gate` の設定値との整合性を取ること"
+
+verdict: fail

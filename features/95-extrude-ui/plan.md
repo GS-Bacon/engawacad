@@ -1,0 +1,212 @@
+# #95 feat(viewer): 選択面からの押出(Extrude)を UI で実行
+
+## Context
+ADR-008 が定める Phase 6「対話編集の背骨」の first gesture。#92(face_ids)・#93(POST /api/v0/features)・
+#94(面ピッキング)が揃い、本 Issue で「面を選ぶ→深さを入れる→押出ボタン→モデルが変わる」の縦スライスを
+疎通させる。新しい幾何は作らず既存 `make_extrusion` / `Feature::Extrude` を再利用する(ADR-008 Decision 1)。
+
+## 調査で判明した構造的制約(設計の起点)
+- `Feature::Extrude { id, sketch: String, depth: f64 }` は **face を参照しない**。`sketch` は先行する
+  `Feature::CreateSketch { id, plane: SketchPlane(xy|xz|yz), profile: Vec<SketchSegment> }` の **id 文字列参照**。
+  build ディスパッチ(`crates/mycad-build/src/lib.rs`)が sketch を引いて `Plane::xy/xz/yz`(原点)上で押出。
+- `POST /api/v0/features` は **1 リクエスト = 1 Feature**(`crates/mycad-api/src/handler.rs`)。レスポンスは
+  再テッセレーション後の `Vec<BodyMesh>` 全体。→ Extrude には sketch が先に存在する必要があるため、
+  **`create_sketch` → `extrude` の 2 連続 POST** が唯一の経路(API/Feature モデルは変更しない=ADR-008 Decision 1 厳守)。
+- profile は kernel が **凸・閉・3頂点以上・非自己交差**を要求(`make_extrusion`)。矩形は全て満たす。
+- face_id `N(<fid>;face:f_<axis>_<sign>)` の axis で平面解決: **Z→xy / Y→xz / X→yz**(`cuboid.rs` のロール定義)。
+- 選択は transient(`.mycad` 非変更)。押出のみ committed(ADR-008 Decision 3)。
+
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|---|---|
+| 面選択中に `data-testid="extrude-panel"` 表示(深さ `<input type=number data-testid=extrude-depth>` + `<button data-testid=btn-extrude>`) | ExtrudeCut(#96) |
+| 押出ボタン → `create_sketch` POST → `extrude` POST(各 200)→ 最終レスポンスでシーン差し替え | テーパー角・両側押出・任意方向押出 |
+| face_id ロールから正準平面(xy/xz/yz)を解決 | 任意平面/オフセット sketch(原点固定の既存モデルの制約) |
+| 選択面の三角形頂点を平面投影し footprint 矩形(凸4頂点)を profile に | スケッチ描画 UI(Phase 7) |
+| 押出後に選択クリア + パネル非表示 | undo/redo・アニメプレビュー・WebSocket(Phase 7) |
+
+## Non-Goals
+- ExtrudeCut(#96 で実装)
+- テーパー角・両側押出・任意方向
+- 任意平面/面オフセットでの押出(下記「既知の幾何的制約」参照)
+- スケッチ描画 UI / undo-redo / リアルタイムプレビュー
+
+## 既知の幾何的制約(MVP として明示)
+sketch 平面は常に **世界原点**(`Plane::xy/xz/yz` は origin=0)。よって「選択面の位置から外側へ押し出す」真の
+オフセット押出にはならず、**選択面の footprint と向きを持つ角柱を原点平面上に生成**する。これは ADR-008 が
+「現行機能だけで対話ループを通す最小スライス」と定める範囲内の既知の割り切り。真のオフセット押出(任意平面 sketch)は
+Phase 7 以降。完了条件(Feature::Extrude 出現・頂点数増加・POST 疎通)はこの割り切りで全て満たす。
+
+## 実装方針(フロント主体・Rust 変更なし / バックエンドは acceptance test のみ)
+
+### 新規 `web/src/extrude.ts`(純粋関数・vitest 対象)
+face_id とメッシュから 2 つの Feature を組む副作用なしロジック。viewer/DOM 非依存にしてテスト容易化。
+```ts
+export type SketchPlane = "xy" | "xz" | "yz";
+// face_id ロール → 平面。解決不能(無名 "" / 非対応ロール)は null。
+export function planeForFaceId(faceId: string): SketchPlane | null;
+// 選択面の三角形頂点(positions, faceIds, 対象 faceId)を平面 (u,v) へ投影し
+// bounding 矩形 4 セグメント(seg0..3・反時計回り・閉)を返す。
+// 退化(頂点0件 / u・v いずれかの extent ≤ ε_guard)は null(数値モデル参照)。
+export function footprintProfile(
+  positions: ArrayLike<number>, faceIds: string[], faceId: string, plane: SketchPlane,
+): { id: string; from: [number, number]; to: [number, number] }[] | null;
+// 既存 feature_id 集合と衝突しない一意 id を採番(sketch_<n>/extrude_<n>, n は最小空き整数)。
+export function buildExtrudeFeatures(
+  faceId: string, positions, faceIds, depth: number, existingFeatureIds: Set<string>,
+): { sketch: Feature; extrude: Feature } | null;  // 解決不能なら null
+```
+**ID 採番の決定性**: `Uuid`/乱数/タイムスタンプは **使わない**。`existingFeatureIds` から衝突しない
+最小空き整数 n を求めて `sketch_<n>`/`extrude_<n>` を割り当てる純関数。同一入力(同一 face/positions/depth/
+existing 集合)に対し常に同一の sketch/extrude を返す(T01 が toEqual で検証)。kernel 側の `IdGenerator` は
+B-rep エンティティ ID を決定的に生成する別レイヤであり、Feature の `id` 文字列(本層が決める)とは別物。
+```ts
+```
+平面投影の (u,v) 取り: xy→(x,y) / xz→(x,z) / yz→(y,z)。
+
+### `web/src/api.ts` — `postFeature` 追加(既存 `fetchBodies` のエラー展開を踏襲)
+```ts
+// after(追加)
+import type { Feature } from "./generated/Feature";
+export async function postFeature(feature: Feature): Promise<BodyMesh[]> {
+  const res = await fetch("/api/v0/features", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(feature),
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try { const b = (await res.json()) as ErrorResponse; if (b.error) message = b.error; } catch {}
+    throw new Error(message);
+  }
+  return (await res.json()) as BodyMesh[];
+}
+```
+
+### `web/src/viewer.ts` — 再描画ハンドル + 選択コールバック
+再フェッチ後にシーンを差し替える必要があるが、現状 `initViewer` は再呼び出しで canvas/rAF/listener を多重生成する。
+ハンドルを返し、選択変化を外へ通知する形に変更(唯一の呼び出し元は main.ts)。
+```ts
+// before
+export function initViewer(container: HTMLElement, bodies: BodyMesh[]): void { … animate(); }
+// after
+export interface ViewerHandle {
+  updateBodies(bodies: BodyMesh[]): void;          // group 内 mesh を破棄して再構築・再フィット
+  getSelectedFaceVertices(): { positions: Float32Array; faceIds: string[]; faceId: string } | null;
+  dispose(): void;                                  // rAF cancel + resize listener 除去 + renderer.dispose
+}
+export function initViewer(
+  container: HTMLElement, bodies: BodyMesh[],
+  opts?: { onSelectionChange?: (faceId: string | null) => void },
+): ViewerHandle { … }
+```
+- `setSelection` 末尾で `opts?.onSelectionChange?.(faceId)` を呼ぶ(他挙動不変)。
+- `updateBodies`: 既存 group の children を `geometry.dispose()`+`remove`、`pickMeshes` クリア、bodies から再構築、
+  bbox 再フィット、`setSelection(null)`。canvas/renderer/controls/rAF は使い回し(多重生成回避)。
+- `getSelectedFaceVertices`: 現 `selectedFaceId` に一致する mesh の position 属性 + faceIds を返す(main から footprint 計算用)。
+- `animate` の `requestAnimationFrame` id を保持し `dispose` で `cancelAnimationFrame`。
+
+### `web/src/main.ts` — パネル配線 + 押出フロー
+```ts
+// after(要点)
+let currentBodies = bodies;  // 初期 fetch 結果を保持
+const handle = initViewer(app, bodies, { onSelectionChange: onSelect });
+const panel = document.querySelector<HTMLElement>('[data-testid="extrude-panel"]')!;
+const depthInput = document.querySelector<HTMLInputElement>('[data-testid="extrude-depth"]')!;
+const btn = document.querySelector<HTMLButtonElement>('[data-testid="btn-extrude"]')!;
+function onSelect(faceId: string | null) {
+  panel.style.display = faceId && planeForFaceId(faceId) ? "block" : "none";
+}
+btn.addEventListener("click", async () => {
+  const sel = handle.getSelectedFaceVertices();
+  const depth = Number(depthInput.value);
+  if (!sel || !Number.isFinite(depth) || depth <= 0) return;
+  const existing = new Set(currentBodies.map((b) => b.feature_id));
+  const built = buildExtrudeFeatures(sel.faceId, sel.positions, sel.faceIds, depth, existing);
+  if (!built) return;
+  try {
+    await postFeature(built.sketch);                  // POST 1: create_sketch(幾何変化なし)
+    const updated = await postFeature(built.extrude); // POST 2: extrude(角柱追加)
+    currentBodies = updated;
+    handle.updateBodies(updated);                     // 選択クリア → onSelect(null) でパネル非表示
+  } catch (e) { showError(e instanceof Error ? e.message : String(e)); }
+});
+```
+`showError` は **既存 main.ts の関数をそのまま再利用**(`#error` 要素に textContent を表示・`display:block`、index.html に
+既存)。新規定義・新規 DOM は追加しない。`currentBodies` のみ module スコープへ昇格(初期 fetch 結果を保持して
+押出時に `feature_id` 集合を作るため)。`showInfo`(現状未使用)は本 Issue では触らない。
+
+### `web/index.html` — パネル DOM(`pointer-events` は既定=有効。`#selected-face` の none を継承させない)
+`#app` 内に追加。右上配置、既定 `display:none`。
+```html
+<div id="extrude-panel" data-testid="extrude-panel">
+  <label>深さ <input type="number" data-testid="extrude-depth" min="0.1" step="0.1" value="5" /></label>
+  <button data-testid="btn-extrude">押出</button>
+</div>
+```
+CSS: `position:absolute; top:1rem; right:1rem; z-index:10; display:none; pointer-events:auto;`。
+`pointer-events:auto`(=初期値)を明示し、`#selected-face` の `pointer-events:none` を継承しないことを保証(クリック可能)。
+
+## 設計方針(数値)
+
+### 数値モデル
+本 Issue はフロントエンドの入力構築のみで、**B-rep 幾何の新規 tolerance は導入しない**。幾何的 ε は全て
+kernel 側に委譲する(ADR-004)。Phase 6 必須項目として明示的に整理する:
+
+- **ε_snap / ε_len / ε_area(幾何 tolerance)**: 本層では **未定義・未使用**。profile の妥当性(面積≈0・非凸・
+  非閉・最短辺長)判定は `make_extrusion`(kernel)が ADR-004 の tolerance(ε_len/ε_area 等)で実施し、不正なら
+  API が 422 を返す。フロント側でこれらを **再定義しない**(二重定義による不整合を避ける=決定性の源を一本化)。
+- **ε_guard(クライアント退化ガード, = `1e-9`)**: 幾何 tolerance ではなく **入力サニティガード**。footprint の
+  u/v 各軸 extent が `extentU <= ε_guard || extentV <= ε_guard` のとき `footprintProfile` は `null` を返し POST を
+  発火させない。**浮動小数点誤差での誤判定を避けるため、厳密等価 `min==max` ではなく `ε_guard` 比較を使う**(AM02 採用)。
+  box 面の extent は O(モデル寸法) ≫ ε_guard のため通常経路では発火しない。
+- **depth(UI ガード)**: `Number.isFinite(depth) && depth > 0` のみ許可。負/0/NaN は POST しない。深さの幾何妥当性
+  (`depth > tolerance`)の最終判定も kernel に委譲する。
+
+## 幾何的不変条件チェックリスト
+- Boolean/Partition/Assemble は本 Issue 非該当(Extrude は加算、kernel 側 manifold 保証は #92 以前で検証済み)→ **N/A**。
+- クライアント側不変条件: 生成 profile は常に凸閉矩形(bounding box 構築)・seg 数=4・閉(seg3.to == seg0.from)。
+- transient 不変条件: 押出前(GET)と押出後(GET)の `.mycad` 差分は **追加 2 Feature のみ**、既存 Feature 不変。
+
+## テスト計画(ID 付き)
+| ID | 種別 | 内容 | 期待 |
+|----|------|------|------|
+| T01 | 決定性(vitest) | `buildExtrudeFeatures` を同入力で2回 → `toEqual` | sketch/extrude 完全一致 |
+| T02 | 正常系(vitest) | `planeForFaceId`: f_z_* →xy / f_y_* →xz / f_x_* →yz | 各一致 |
+| T03 | 正常系(vitest) | `footprintProfile`: box 上面投影 → 4 seg・凸閉矩形・座標一致 | 矩形・閉 |
+| T04 | 正常系(vitest) | `buildExtrudeFeatures`: 既存 id `{sketch_1}` 与え → 衝突回避採番 | 非衝突 |
+| T05_degen | 退化(vitest) | 無名面 `""`/非対応ロール → `planeForFaceId` null・`buildExtrudeFeatures` null | null・POST 不発 |
+| T06_boundary | 境界(vitest) | faceIds に対象 faceId が0件(全投影面積0) → `footprintProfile` null | null |
+| E01 | E2E | 面クリック → `extrude-panel` visible | display!=none |
+| E02 | E2E | 背景クリック(選択解除) → パネル非表示 | display=none |
+| E03 | E2E | 深さ入力 + 押出 → POST が `create_sketch`・`extrude` の順で各 200、postData が期待 JSON | 2 POST・type 一致 |
+| E04 | E2E | 押出レスポンス(頂点増 fixture)でシーン差し替え後、選択クリア + パネル非表示 | パネル none |
+| A01 | acceptance(Rust, crates/mycad-api/tests/) | 実 app へ create_sketch→extrude POST → レスポンス頂点数 > 初期、かつ書き戻し `.mycad` に `type: extrude` 1件 | 増加・Feature 存在 |
+
+> A01 が完了条件「頂点数増加」「`mycad export` で Feature::Extrude ≥1」を実バックエンドで担保(Playwright は mock のため)。
+
+## 実行フロー(承認後 自動進行)
+STEP 5 ブランチ `cad/95-extrude-ui` → 5.5 acceptance skeleton(A01 を crates/mycad-api/tests/ に `#[ignore]` 雛形 +
+vitest/Playwright 雛形を web/ に)→ 6 GLM コア実装 → 6.5 test-spec → 6.6 GLM テスト実装 → 7 GLM 最終 →
+**7.5(`keep_codex_gate:false`)** → 8 squash マージ。
+
+**STEP 7.5 の扱い(矛盾ではない・skill B-5 STEP 7.5 の規定どおり)**:
+本 Issue は batch:viewer の `keep_codex_gate:false`。この場合 **STEP 7.5 の Codex 独立ゲートは実行せず**、
+実 Codex レビューは **B-6 横断レビュー**(全バッチ commit を batch_start_sha から一括レビュー)に集約する。
+ただし STEP 8 のゲートは `state.ts assert ... codex_review` を要求するため、STEP 7 末で
+`state.ts set features/95-extrude-ui/state.json codex_review passed`(= state shim)を実行して assert を通す。
+これは Codex レビューを省く意味ではなく **実行タイミングを B-6 に移すための状態整合**であり、
+同条件の #94(full flow・`keep_codex_gate:false`)で実施済み・merge 済みの確立手順。
+
+## 検証
+`cargo xtask ci` green + `npm run typecheck` + `npm run test`(vitest) + `npm run build` + `npm run playwright`。
+特に E03(2 POST の順序と JSON)、E04(差し替え後の選択クリア)、A01(実バックエンドの頂点増 + Feature 出現)を重視。
+
+**`initViewer` シグネチャ変更の影響確認(GLM IN01 採用)**: 戻り値を `void`→`ViewerHandle` に変える前に
+`grep -rn "initViewer" web/src web/tests` で呼び出し元が `main.ts` 単独であることを確認する
+(round1 時点で確認済み: 定義 viewer.ts:25 / 呼び出し main.ts:25 のみ、テストはブラウザ経由で直接呼ばない)。
+将来呼び出し元が増えた場合の breaking 性を STEP 6 実装時に再 grep で再確認すること。
+
+## フォローアップ(本 Issue 外)
+- ADR-008 が定める Phase 6 **API レビューペルソナ**が `dispatch-glm-review.ts` に未実装(#93/#94 から継続課題)。
+- 真のオフセット/任意平面押出(sketch 原点固定の解消)は Phase 7。

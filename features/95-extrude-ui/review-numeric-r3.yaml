@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: critical
+    section: "設計方針 > 数値モデル"
+    finding: "plan.md に '### 数値モデル' セクションが存在しない (Phase 6 では必須)"
+    suggestion: "ADR-006 §plan.md 必須セクションに従って '### 数値モデル' を追加し、ε_snap, ε_len, ε_area を明記すること"
+
+verdict: pass

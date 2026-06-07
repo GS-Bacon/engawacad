@@ -1,0 +1,13 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使わず Uuid::new_v4() を使用する設計になっている"
+    suggestion: "IdGenerator::next() に置き換えること"
+  - id: IN02
+    severity: high
+    section: "テスト計画"
+    finding: "T01 決定性テストがテスト計画に存在しない"
+    suggestion: "同一入力を 2 回 build して全 ID・座標が一致することを assert するテストを追加すること"
+
+verdict: pass

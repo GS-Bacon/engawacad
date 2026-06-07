@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "web/src/main.ts — パネル配線"
+    finding: "`showError` 関数が呼び出されているが、この関数の定義場所や表示形式が明記されていない"
+    suggestion: "`showError` を `alert` で代用するか、`index.html` に `<div data-testid=\"error-message\">` を追加し `textContent` で表示する方針を明記すること"
+
+verdict: pass

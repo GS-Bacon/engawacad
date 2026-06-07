@@ -1,0 +1,8 @@
+issues:
+  - id: AM02
+    severity: medium
+    section: "web/src/extrude.ts > footprintProfile"
+    finding: "退化判定の「面積0」を min==max でチェックしているが、浮動小数点値の厳密等価比較は数値誤差で意図しない null を返す可能性がある（例: 計算過程で 1e-16 程度の誤差が乗った矩形）"
+    suggestion: "「box 面は常に非退化」という前提に基づく厳密等価比較を意図的と明記するか、margin を設けるかの判断を plan で明確にすること（現状は「厳密」との記載のみあり、意図的か否か読み手が判断できない）"
+
+verdict: pass

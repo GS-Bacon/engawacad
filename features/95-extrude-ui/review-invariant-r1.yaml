@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "web/src/viewer.ts — initViewer シグネチャ変更"
+    finding: "initViewer の返り値を void から ViewerHandle に変更するが、呼び出し元が main.ts のみという説明がある。Rust 変更なしと明記されているため影響は限定的だが、将来他呼び出し元が増えた場合の breaking change リスクは文書化されていない。"
+    suggestion: "呼び出し元が main.ts のみであることを保証するため、web/ 側の grep 検索を A01 または実行フローに追加すること（他呼び出し元が存在しないことを確認）。または README/CLAUDE.md に initViewer 呼び出し規約を記載すること。"
+
+verdict: pass

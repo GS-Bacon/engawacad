@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "web/index.html — パネル DOM"
+    finding: "CSS説明で「pointer-events は既定=有効」「既定」としているが、既定値の仕様(=auto)が明記されていない"
+    suggestion: "「pointer-events: auto(初期値)」と仕様を明記すること"
+
+verdict: pass
