@@ -147,3 +147,88 @@ function nextId(prefix: string, existing: Set<string>): string {
   while (existing.has(`${prefix}${n}`)) n++;
   return `${prefix}${n}`;
 }
+
+/**
+ * Inset a bounding rectangle toward its centroid by the given ratio (0 < ratio < 0.5).
+ * Returns null if the resulting extent is <= EPSILON_GUARD in either axis.
+ */
+export function insetRect(
+  rect: SketchSegment[],
+  ratio: number,
+): SketchSegment[] | null {
+  // Extract corners from segments (CCW: BL→BR→TR→TL)
+  const corners: [number, number][] = rect.map((s) => s.from);
+  let minU = corners[0][0];
+  let maxU = corners[0][0];
+  let minV = corners[0][1];
+  let maxV = corners[0][1];
+  for (const [u, v] of corners) {
+    if (u < minU) minU = u;
+    if (u > maxU) maxU = u;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+  }
+  const extentU = maxU - minU;
+  const extentV = maxV - minV;
+  const shrinkU = extentU * ratio;
+  const shrinkV = extentV * ratio;
+  const newMinU = minU + shrinkU;
+  const newMaxU = maxU - shrinkU;
+  const newMinV = minV + shrinkV;
+  const newMaxV = maxV - shrinkV;
+  if (newMaxU - newMinU <= EPSILON_GUARD || newMaxV - newMinV <= EPSILON_GUARD) {
+    return null;
+  }
+  return [
+    { id: "seg_0", from: [newMinU, newMinV], to: [newMaxU, newMinV] },
+    { id: "seg_1", from: [newMaxU, newMinV], to: [newMaxU, newMaxV] },
+    { id: "seg_2", from: [newMaxU, newMaxV], to: [newMinU, newMaxV] },
+    { id: "seg_3", from: [newMinU, newMaxV], to: [newMinU, newMinV] },
+  ];
+}
+
+export const CUT_INSET_RATIO = 0.25;
+
+/**
+ * Build create_sketch + extrude_cut Feature pair for the given selection.
+ * The tool profile is inset inward from the face footprint to avoid coplanar faces.
+ * Returns null if the face cannot be resolved, profile is degenerate, or inset collapses.
+ */
+export function buildExtrudeCutFeatures(
+  faceId: string,
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  faceIds: string[],
+  depth: number,
+  target: string,
+  existingFeatureIds: Set<string>,
+): { sketch: Feature; extrudeCut: Feature } | null {
+  const plane = planeForFaceId(faceId);
+  if (!plane) return null;
+  if (!target) return null;
+  if (!Number.isFinite(depth) || depth <= 0) return null;
+
+  const rect = footprintProfile(positions, indices, faceIds, faceId, plane);
+  if (!rect) return null;
+
+  const inset = insetRect(rect, CUT_INSET_RATIO);
+  if (!inset) return null;
+
+  const sketchId = nextId("sketch_", existingFeatureIds);
+  const cutId = nextId("extrude_cut_", existingFeatureIds);
+
+  const sketch: Feature = {
+    type: "create_sketch",
+    id: sketchId,
+    plane,
+    profile: inset,
+  };
+  const extrudeCut: Feature = {
+    type: "extrude_cut",
+    id: cutId,
+    sketch: sketchId,
+    depth,
+    target,
+  };
+  return { sketch, extrudeCut };
+}

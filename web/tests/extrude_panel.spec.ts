@@ -114,3 +114,50 @@ test("E04 after extrude scene updates and panel hides", async ({ page }) => {
   const panel = page.locator('[data-testid="extrude-panel"]');
   await expect(panel).toHaveCSS("display", "none");
 });
+
+// ---------------------------------------------------------------------------
+// #96 ExtrudeCut E2E tests
+// ---------------------------------------------------------------------------
+
+// E01_cut: 面クリック後、btn-extrude-cut が visible
+test("E01_cut face click shows extrude cut button", async ({ page }) => {
+  await setupExtrudePage(page);
+  const canvas = page.locator("canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas not found");
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+
+  const cutBtn = page.locator('[data-testid="btn-extrude-cut"]');
+  await expect(cutBtn).not.toHaveCSS("display", "none");
+});
+
+// E02_cut: 深さ入力 + 押出カット → POST create_sketch → POST extrude_cut の順
+test("E02_cut extrude cut button triggers ordered POST sequence", async ({ page }) => {
+  await setupExtrudePage(page);
+
+  const postedBodies: Array<{ type: string; target?: string }> = [];
+  await page.route("/api/v0/features", (route) => {
+    const body = JSON.parse(route.request().postData() ?? "{}");
+    postedBodies.push({ type: body.type, target: body.target });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(loadFacesFixture()),
+    });
+  });
+
+  const canvas = page.locator("canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas not found");
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+
+  await page.fill('[data-testid="extrude-depth"]', "5");
+  await page.click('[data-testid="btn-extrude-cut"]');
+
+  await page.waitForTimeout(500);
+  expect(postedBodies.map((b) => b.type)).toEqual(["create_sketch", "extrude_cut"]);
+  // Verify extrude_cut has target field
+  const cutPost = postedBodies.find((b) => b.type === "extrude_cut");
+  expect(cutPost).toBeDefined();
+  expect(cutPost!.target).toBeTruthy();
+});

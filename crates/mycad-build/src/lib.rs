@@ -119,6 +119,36 @@ pub fn build_bodies_from_features(
                 let solid = make_extrusion(&plane, &profile_uv, *depth, gen)?;
                 built.register(id.to_string(), solid);
             }
+            Feature::ExtrudeCut {
+                id: _,
+                sketch,
+                depth,
+                target,
+            } => {
+                let (sketch_plane, segments) =
+                    sketches
+                        .get(sketch.as_str())
+                        .ok_or_else(|| KernelError::SketchNotFound {
+                            sketch: sketch.clone(),
+                        })?;
+
+                let plane = match sketch_plane {
+                    mycad_format::SketchPlane::Xy => Plane::xy(),
+                    mycad_format::SketchPlane::Xz => Plane::xz(),
+                    mycad_format::SketchPlane::Yz => Plane::yz(),
+                };
+
+                let profile_uv: Vec<(f64, f64)> =
+                    segments.iter().map(|s| (s.from[0], s.from[1])).collect();
+                let tool = make_extrusion(&plane, &profile_uv, *depth, gen)?;
+
+                let t_solid = built
+                    .get(target)
+                    .ok_or_else(|| KernelError::BodyNotFound { id: target.clone() })?;
+                let result = boolean(&t_solid.solid, &tool, BooleanOp::Cut, gen)?;
+                built.consume(target);
+                built.register(id.to_string(), result);
+            }
             Feature::CreateBox {
                 id: _,
                 width,

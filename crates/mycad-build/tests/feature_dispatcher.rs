@@ -1992,3 +1992,468 @@ fn tx7_a3_sphere_face_name() {
     }
     panic!("inner sphere face not found");
 }
+
+// --- #96 ExtrudeCut tests (U01-U04) ---
+
+/// U01: Determinism — build ExtrudeCut twice with same IdGenerator seed, solids byte-identical.
+#[test]
+fn u01_extrude_cut_determinism() {
+    use mycad_format::feature::{Feature, SketchPlane, SketchSegment};
+
+    // make_cuboid(10,10,10) → [-5,5]×[-5,5]×[-5,5]
+    // make_extrusion XY plane, profile [-3,3]→[3,-3]→[3,3]→[-3,3], depth=3 → z∈[0,3]
+    // Tool fully inside target box
+    let features = vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [-3.0, -3.0],
+                    to: [3.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [3.0, -3.0],
+                    to: [3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [3.0, 3.0],
+                    to: [-3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s4".into(),
+                    from: [-3.0, 3.0],
+                    to: [-3.0, -3.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: 3.0,
+            target: "box".into(),
+        },
+    ];
+
+    let mut g1 = IdGenerator::new(0);
+    let b1 = build_bodies_from_features(&features, &mut g1).expect("build 1");
+    let mut g2 = IdGenerator::new(0);
+    let b2 = build_bodies_from_features(&features, &mut g2).expect("build 2");
+
+    let s1 = &b1.get("cut1").expect("cut1 in b1").solid;
+    let s2 = &b2.get("cut1").expect("cut1 in b2").solid;
+    assert_solids_equal(s1, s2);
+}
+
+/// U02: Void shell — box minus inset cuboid (fully embedded, depth small).
+#[test]
+fn u02_extrude_cut_void_shell() {
+    use mycad_format::feature::{Feature, SketchPlane, SketchSegment};
+
+    // make_cuboid(10,10,10) → [-5,5]×[-5,5]×[-5,5]
+    // tool: XY profile [-3,-3]→[3,-3]→[3,3]→[-3,3], depth=3 → z∈[0,3]
+    // Tool fully embedded inside box → void (2 shells)
+    let features = vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [-3.0, -3.0],
+                    to: [3.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [3.0, -3.0],
+                    to: [3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [3.0, 3.0],
+                    to: [-3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s4".into(),
+                    from: [-3.0, 3.0],
+                    to: [-3.0, -3.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: 3.0, // tool z ∈ [0, 3] — fully inside box z ∈ [-5, 5]
+            target: "box".into(),
+        },
+    ];
+
+    let bodies = build_features(features).expect("void cut should succeed");
+    let solid = &bodies.get("cut1").expect("cut1").solid;
+
+    assert!(
+        solid.shells.len() >= 2,
+        "void cut: at least 2 shells (outer + void), got {}",
+        solid.shells.len()
+    );
+    solid.validate_manifold().expect("void cut: manifold OK");
+    let euler = solid.euler_poincare();
+    assert_eq!(euler, 0, "void cut: Euler OK, got {euler}");
+}
+
+/// U05_degen: ExtrudeCut with degenerate depth (≤ 0) → InvalidParameter.
+#[test]
+fn u05_extrude_cut_degen_depth() {
+    use mycad_format::feature::{Feature, SketchPlane, SketchSegment};
+
+    // Normal box + sketch, but depth = 0.0
+    let features_depth_zero = vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [-3.0, -3.0],
+                    to: [3.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [3.0, -3.0],
+                    to: [3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [3.0, 3.0],
+                    to: [-3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s4".into(),
+                    from: [-3.0, 3.0],
+                    to: [-3.0, -3.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: 0.0,
+            target: "box".into(),
+        },
+    ];
+    let result = build_features(features_depth_zero);
+    assert!(result.is_err(), "depth=0 should error, got {:?}", result);
+    let err = format!("{}", result.unwrap_err());
+    assert!(
+        err.contains("invalid parameter"),
+        "expected InvalidParameter, got: {err}"
+    );
+
+    // depth = -1.0
+    let features_depth_neg = vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [-3.0, -3.0],
+                    to: [3.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [3.0, -3.0],
+                    to: [3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [3.0, 3.0],
+                    to: [-3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s4".into(),
+                    from: [-3.0, 3.0],
+                    to: [-3.0, -3.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: -1.0,
+            target: "box".into(),
+        },
+    ];
+    let result = build_features(features_depth_neg);
+    assert!(result.is_err(), "depth=-1 should error, got {:?}", result);
+    let err = format!("{}", result.unwrap_err());
+    assert!(
+        err.contains("invalid parameter"),
+        "expected InvalidParameter, got: {err}"
+    );
+}
+
+/// U06a: ExtrudeCut with missing target → BodyNotFound.
+#[test]
+fn u06a_extrude_cut_missing_target() {
+    use mycad_format::feature::{Feature, SketchPlane, SketchSegment};
+
+    let features = vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [-3.0, -3.0],
+                    to: [3.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [3.0, -3.0],
+                    to: [3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [3.0, 3.0],
+                    to: [-3.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s4".into(),
+                    from: [-3.0, 3.0],
+                    to: [-3.0, -3.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: 3.0,
+            target: "nonexistent".into(),
+        },
+    ];
+    let result = build_features(features);
+    assert!(
+        result.is_err(),
+        "missing target should error, got {:?}",
+        result
+    );
+    let err = format!("{}", result.unwrap_err());
+    assert!(
+        err.contains("body not found"),
+        "expected BodyNotFound, got: {err}"
+    );
+}
+
+/// U06b: ExtrudeCut with non-intersecting tool (outside target box).
+/// Tool is placed far from the target — no intersection.
+/// boolean(Cut) should return Ok with target unchanged (no-op cut).
+#[test]
+fn u06b_extrude_cut_nonintersecting() {
+    use mycad_format::feature::{Feature, SketchPlane, SketchSegment};
+
+    // Target box: make_cuboid(10,10,10) → [-5,5]×[-5,5]×[-5,5]
+    // Tool: XY profile far away at [100,100]→[110,110], depth=5 → z∈[0,5]
+    // Tool is completely outside the target → no intersection
+    let features = vec![
+        Feature::CreateBox {
+            id: "box".into(),
+            width: 10.0,
+            height: 10.0,
+            depth: 10.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [100.0, 100.0],
+                    to: [110.0, 100.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [110.0, 100.0],
+                    to: [110.0, 110.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [110.0, 110.0],
+                    to: [100.0, 110.0],
+                },
+                SketchSegment {
+                    id: "s4".into(),
+                    from: [100.0, 110.0],
+                    to: [100.0, 100.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: 5.0,
+            target: "box".into(),
+        },
+    ];
+
+    // Build just the target box for comparison
+    let target_features = vec![Feature::CreateBox {
+        id: "box".into(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    }];
+
+    let result = build_features(features);
+    // Non-intersecting cut: boolean may return Ok (target unchanged) or Err
+    match result {
+        Ok(bodies) => {
+            // Result should be geometrically identical to the target box
+            // (IDs will differ due to IdGenerator advancing through tool creation)
+            let target_bodies = build_features(target_features).expect("target build");
+            let result_solid = &bodies.get("cut1").expect("cut1").solid;
+            let target_solid = &target_bodies.get("box").expect("box").solid;
+            // Same topological structure (topology counts, manifold, euler)
+            assert_eq!(
+                result_solid.vertices.len(),
+                target_solid.vertices.len(),
+                "vertex count"
+            );
+            assert_eq!(
+                result_solid.edges.len(),
+                target_solid.edges.len(),
+                "edge count"
+            );
+            assert_eq!(
+                result_solid.faces.len(),
+                target_solid.faces.len(),
+                "face count"
+            );
+            assert_eq!(
+                result_solid.shells.len(),
+                target_solid.shells.len(),
+                "shell count"
+            );
+            assert_eq!(
+                result_solid.euler_poincare(),
+                target_solid.euler_poincare(),
+                "euler"
+            );
+            result_solid
+                .validate_manifold()
+                .expect("non-intersecting cut: manifold OK");
+        }
+        Err(e) => {
+            let err = format!("{e}");
+            assert!(
+                err.contains("empty boolean result")
+                    || err.contains("boolean internal")
+                    || err.contains("unsupported"),
+                "unexpected error for non-intersecting cut: {err}"
+            );
+        }
+    }
+}
+
+/// U03: Partial cut — box minus an L-shaped corner removal (no coplanar faces).
+/// Mirrors the existing t06_cut_partial_l_shape pattern but via ExtrudeCut dispatch.
+#[test]
+fn u03_extrude_cut_partial_l() {
+    use mycad_format::feature::{Feature, SketchPlane, SketchSegment};
+
+    // make_cuboid(2,2,2) → [-1,1]×[-1,1]×[-1,1]
+    // Tool: XY profile [0.5,-2]→[2,-2]→[2,2]→[0.5,2], depth=2 → z∈[0,2]
+    // No face is coplanar with target (same setup as t06_cut_partial_l_shape).
+    let features = vec![
+        Feature::CreateBox {
+            id: "target".into(),
+            width: 2.0,
+            height: 2.0,
+            depth: 2.0,
+        },
+        Feature::CreateSketch {
+            id: "sk_cut".into(),
+            plane: SketchPlane::Xy,
+            profile: vec![
+                SketchSegment {
+                    id: "ts1".into(),
+                    from: [0.5, -2.0],
+                    to: [2.0, -2.0],
+                },
+                SketchSegment {
+                    id: "ts2".into(),
+                    from: [2.0, -2.0],
+                    to: [2.0, 2.0],
+                },
+                SketchSegment {
+                    id: "ts3".into(),
+                    from: [2.0, 2.0],
+                    to: [0.5, 2.0],
+                },
+                SketchSegment {
+                    id: "ts4".into(),
+                    from: [0.5, 2.0],
+                    to: [0.5, -2.0],
+                },
+            ],
+        },
+        Feature::ExtrudeCut {
+            id: "cut1".into(),
+            sketch: "sk_cut".into(),
+            depth: 2.0,
+            target: "target".into(),
+        },
+    ];
+
+    let bodies = build_features(features).expect("partial cut should succeed");
+    let solid = &bodies.get("cut1").expect("cut1").solid;
+
+    assert_eq!(
+        solid.shells.len(),
+        1,
+        "partial cut: single shell, got {}",
+        solid.shells.len()
+    );
+    solid.validate_manifold().expect("partial cut: manifold OK");
+    let euler = solid.euler_poincare();
+    assert_eq!(euler, 0, "partial cut: Euler OK, got {euler}");
+    // Base box has 6 faces; L-cut adds faces (step walls + floor)
+    assert!(
+        solid.faces.len() > 6,
+        "partial cut: face count {} should be > 6 (base box)",
+        solid.faces.len()
+    );
+}

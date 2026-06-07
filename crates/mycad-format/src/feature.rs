@@ -306,6 +306,15 @@ pub enum Feature {
         depth: f64,
     },
 
+    /// Extrude a sketch profile and cut (boolean subtract) it from a target body.
+    #[serde(rename = "extrude_cut")]
+    ExtrudeCut {
+        id: String,
+        sketch: String,
+        depth: f64,
+        target: String,
+    },
+
     /// Cut (boolean subtract) one body from another.
     #[serde(rename = "cut")]
     Cut {
@@ -344,6 +353,7 @@ impl Feature {
             | Feature::CreateSphere { id, .. }
             | Feature::CreateSketch { id, .. }
             | Feature::Extrude { id, .. }
+            | Feature::ExtrudeCut { id, .. }
             | Feature::Cut { id, .. }
             | Feature::Fuse { id, .. }
             | Feature::Intersect { id, .. } => id,
@@ -441,6 +451,27 @@ mod tests {
         );
         let back: Feature = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(back.id(), "sketch_1");
+    }
+
+    #[test]
+    fn test_extrude_cut_yaml_golden() {
+        let f = Feature::ExtrudeCut {
+            id: "ec_1".to_string(),
+            sketch: "sketch_0".to_string(),
+            depth: 5.0,
+            target: "box_1".to_string(),
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("type: extrude_cut"), "tag missing: {yaml}");
+        assert!(yaml.contains("id: ec_1"), "id missing: {yaml}");
+        assert!(yaml.contains("sketch: sketch_0"), "sketch missing: {yaml}");
+        assert!(yaml.contains("depth: 5.0"), "depth missing: {yaml}");
+        assert!(yaml.contains("target: box_1"), "target missing: {yaml}");
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.id(), "ec_1");
+        assert!(
+            matches!(back, Feature::ExtrudeCut { depth, target, .. } if (depth - 5.0).abs() < 1e-12 && target == "box_1")
+        );
     }
 
     // --- T01-T14: Topological naming tests ---

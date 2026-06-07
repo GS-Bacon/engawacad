@@ -1,6 +1,6 @@
 import { fetchBodies, postFeature } from "./api";
 import { initViewer } from "./viewer";
-import { planeForFaceId, buildExtrudeFeatures } from "./extrude";
+import { planeForFaceId, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
 
 const app = document.getElementById("app")!;
 const errorEl = document.getElementById("error")!;
@@ -24,6 +24,10 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Tracks ALL feature IDs ever used (bodies + sketches), grows monotonically.
+    // Prevents duplicate IDs across consecutive extrude / extrude-cut operations.
+    const usedFeatureIds = new Set(currentBodies.map((b) => b.feature_id));
+
     const handle = initViewer(app, currentBodies, { onSelectionChange: onSelect });
 
     const panel = document.querySelector<HTMLElement>('[data-testid="extrude-panel"]')!;
@@ -38,12 +42,34 @@ async function main(): Promise<void> {
       const sel = handle.getSelectedFaceVertices();
       const depth = Number(depthInput.value);
       if (!sel || !Number.isFinite(depth) || depth <= 0) return;
-      const existing = new Set(currentBodies.map((b) => b.feature_id));
-      const built = buildExtrudeFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, existing);
+      const built = buildExtrudeFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, usedFeatureIds);
       if (!built) return;
       try {
         await postFeature(built.sketch);
         const updated = await postFeature(built.extrude);
+        usedFeatureIds.add(built.sketch.id);
+        usedFeatureIds.add(built.extrude.id);
+        currentBodies = updated;
+        handle.updateBodies(updated);
+      } catch (err) {
+        showError(err instanceof Error ? err.message : String(err));
+      }
+    });
+
+    const cutBtn = document.querySelector<HTMLButtonElement>('[data-testid="btn-extrude-cut"]')!;
+    cutBtn.addEventListener("click", async () => {
+      const sel = handle.getSelectedFaceVertices();
+      const depth = Number(depthInput.value);
+      if (!sel || !Number.isFinite(depth) || depth <= 0) return;
+      const target = currentBodies.find((b) => b.mesh.face_ids.some((fid: string) => fid === sel.faceId))?.feature_id;
+      if (!target) return;
+      const built = buildExtrudeCutFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, target, usedFeatureIds);
+      if (!built) return;
+      try {
+        await postFeature(built.sketch);
+        const updated = await postFeature(built.extrudeCut);
+        usedFeatureIds.add(built.sketch.id);
+        usedFeatureIds.add(built.extrudeCut.id);
         currentBodies = updated;
         handle.updateBodies(updated);
       } catch (err) {

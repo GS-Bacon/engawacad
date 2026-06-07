@@ -13,6 +13,9 @@ import {
   planeForFaceId,
   footprintProfile,
   buildExtrudeFeatures,
+  buildExtrudeCutFeatures,
+  insetRect,
+  CUT_INSET_RATIO,
 } from "./extrude";
 import { postFeature } from "./api";
 import type { Feature } from "./generated/Feature";
@@ -450,5 +453,190 @@ describe("T13 postFeature error handling", () => {
     const feature: Feature = { type: "create_sketch", id: "s0", plane: "xy", profile: [] };
     const result = await postFeature(feature);
     expect(result).toEqual(body);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T14: insetRect unit tests
+// ---------------------------------------------------------------------------
+describe("T14 insetRect", () => {
+  it("10×10 rectangle with ratio 0.25 → 5×5 centered", () => {
+    const rect = [
+      { id: "seg_0", from: [0, 0] as [number, number], to: [10, 0] as [number, number] },
+      { id: "seg_1", from: [10, 0] as [number, number], to: [10, 10] as [number, number] },
+      { id: "seg_2", from: [10, 10] as [number, number], to: [0, 10] as [number, number] },
+      { id: "seg_3", from: [0, 10] as [number, number], to: [0, 0] as [number, number] },
+    ];
+    const result = insetRect(rect, 0.25);
+    expect(result).not.toBeNull();
+    // extent = 10, shrink per side = 10 * 0.25 = 2.5, new range = [2.5, 7.5]
+    expect(result![0].from).toEqual([2.5, 2.5]);
+    expect(result![1].to).toEqual([7.5, 7.5]);
+    // 4 segments, closed
+    expect(result!.length).toBe(4);
+    expect(result![3].to).toEqual(result![0].from);
+  });
+
+  it("collapse case: tiny extent → null", () => {
+    // extent = 2, ratio = 0.5 → shrink = 1 each side → new extent = 0
+    const rect = [
+      { id: "seg_0", from: [0, 0] as [number, number], to: [2, 0] as [number, number] },
+      { id: "seg_1", from: [2, 0] as [number, number], to: [2, 2] as [number, number] },
+      { id: "seg_2", from: [2, 2] as [number, number], to: [0, 2] as [number, number] },
+      { id: "seg_3", from: [0, 2] as [number, number], to: [0, 0] as [number, number] },
+    ];
+    const result = insetRect(rect, 0.5);
+    expect(result).toBeNull();
+  });
+
+  it("non-square rectangle: 20×4 with ratio 0.25 → 10×2", () => {
+    const rect = [
+      { id: "seg_0", from: [0, 0] as [number, number], to: [20, 0] as [number, number] },
+      { id: "seg_1", from: [20, 0] as [number, number], to: [20, 4] as [number, number] },
+      { id: "seg_2", from: [20, 4] as [number, number], to: [0, 4] as [number, number] },
+      { id: "seg_3", from: [0, 4] as [number, number], to: [0, 0] as [number, number] },
+    ];
+    const result = insetRect(rect, 0.25);
+    expect(result).not.toBeNull();
+    // U: [5, 15], V: [1, 3]
+    expect(result![0].from).toEqual([5, 1]);
+    expect(result![1].to).toEqual([15, 3]);
+  });
+
+  it("deterministic: same input → same output 100 times", () => {
+    const rect = [
+      { id: "seg_0", from: [0, 0] as [number, number], to: [10, 0] as [number, number] },
+      { id: "seg_1", from: [10, 0] as [number, number], to: [10, 10] as [number, number] },
+      { id: "seg_2", from: [10, 10] as [number, number], to: [0, 10] as [number, number] },
+      { id: "seg_3", from: [0, 10] as [number, number], to: [0, 0] as [number, number] },
+    ];
+    const first = insetRect(rect, 0.25);
+    expect(first).not.toBeNull();
+    for (let i = 0; i < 100; i++) {
+      expect(insetRect(rect, 0.25)).toEqual(first);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T15: buildExtrudeCutFeatures determinism (T01_ui)
+// ---------------------------------------------------------------------------
+describe("T15 buildExtrudeCutFeatures determinism", () => {
+  it("same input produces identical output", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const depth = 5;
+    const target = "box_1";
+    const existing = new Set<string>();
+    const a = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, depth, target, existing);
+    const b = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, depth, target, existing);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(a).toEqual(b);
+  });
+
+  it("result has correct type and target", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const depth = 5;
+    const target = "box_1";
+    const existing = new Set<string>();
+    const result = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, depth, target, existing);
+    expect(result).not.toBeNull();
+    expect(result!.extrudeCut.type).toBe("extrude_cut");
+    if (result!.extrudeCut.type === "extrude_cut") {
+      expect(result!.extrudeCut.target).toBe("box_1");
+      expect(result!.extrudeCut.depth).toBe(5);
+      expect(result!.extrudeCut.sketch).toBe(result!.sketch.id);
+    }
+  });
+
+  it("100 repeated calls produce identical output", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const depth = 5;
+    const target = "box_1";
+    const existing = new Set<string>();
+    const first = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, depth, target, existing);
+    expect(first).not.toBeNull();
+    for (let i = 0; i < 100; i++) {
+      expect(
+        buildExtrudeCutFeatures(faceId, positions, indices, faceIds, depth, target, existing),
+      ).toEqual(first);
+    }
+  });
+
+  it("empty existingFeatureIds → sketch_0 and extrude_cut_0", () => {
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const faceId = "N(v0;face:f_z_pos)";
+    const existing = new Set<string>();
+    const result = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 5, "box_1", existing);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_0");
+    expect(result!.extrudeCut.id).toBe("extrude_cut_0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T16: buildExtrudeCutFeatures degenerate inputs (T02_ui_degen)
+// ---------------------------------------------------------------------------
+describe("T16 buildExtrudeCutFeatures degenerate inputs", () => {
+  const { positions, indices, faceIds } = boxTopFaceData();
+  const faceId = "N(v0;face:f_z_pos)";
+
+  it("empty target → null", () => {
+    const result = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 5, "", new Set());
+    expect(result).toBeNull();
+  });
+
+  it("depth = 0 → null", () => {
+    expect(
+      buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 0, "box_1", new Set()),
+    ).toBeNull();
+  });
+
+  it("depth = -1 → null", () => {
+    expect(
+      buildExtrudeCutFeatures(faceId, positions, indices, faceIds, -1, "box_1", new Set()),
+    ).toBeNull();
+  });
+
+  it("depth = NaN → null", () => {
+    expect(
+      buildExtrudeCutFeatures(faceId, positions, indices, faceIds, NaN, "box_1", new Set()),
+    ).toBeNull();
+  });
+
+  it("depth = Infinity → null", () => {
+    expect(
+      buildExtrudeCutFeatures(faceId, positions, indices, faceIds, Infinity, "box_1", new Set()),
+    ).toBeNull();
+  });
+
+  it("depth = -0 → null", () => {
+    expect(
+      buildExtrudeCutFeatures(faceId, positions, indices, faceIds, -0, "box_1", new Set()),
+    ).toBeNull();
+  });
+
+  it("inset collapse: zero-width face → null", () => {
+    // All U coords the same → footprintProfile gets a degenerate extent → null
+    const degeneratePositions = new Float32Array([
+      5, 0, 10,
+      5, 10, 10,
+      5, 5, 10,
+    ]);
+    const degenerateIndices = new Uint32Array([0, 1, 2]);
+    const degenerateFaceIds = [faceId];
+    const result = buildExtrudeCutFeatures(
+      faceId, degeneratePositions, degenerateIndices, degenerateFaceIds,
+      5, "box_1", new Set(),
+    );
+    expect(result).toBeNull();
+  });
+
+  it("empty faceId → null", () => {
+    const result = buildExtrudeCutFeatures("", positions, indices, faceIds, 5, "box_1", new Set());
+    expect(result).toBeNull();
   });
 });
