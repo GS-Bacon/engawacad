@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "実装対象 > handler.rs"
+    finding: "tessellate → write_atomic → commit の順序だが、tessellate 中のパニック時の tmp ファイル片付け未言及。rename 前に tmp 書き込みと tessellate の順序が逆転すると tmp ゴミが残るリスク。"
+    suggestion: "実装時に必ず tessellate → write_atomic → commit の順序を守ること。パニック時は OS が tmp をクリアするため問題ないが、コメントで順序不変条件を明記すると保守性向上。"
+
+verdict: pass

@@ -1,0 +1,7 @@
+issues:
+  - id: AM02
+    severity: medium
+    section: "handler.rs — POST"
+    finding: "「tmp ゴミはパニック時に OS が回収するが」という記述は、正常系で rename が成功する前提に依存している。write_atomic が fs::write 成功後に rename 失敗した場合、tmp ファイルが残り続ける挙動が未定義"
+    suggestion: "「rename 失敗時も tmp ファイルは明示的に fs::remove_file で削除を試みる。削除失敗時はログ出力のみで 500 を返す（状態不変は保証済み）」等の後処理を明記すること"
+verdict: fail

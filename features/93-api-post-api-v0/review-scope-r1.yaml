@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: low
+    section: "Non-Goals"
+    finding: "Issue の Out-of-Scope にある「バリデーション（重複 ID 等）の全網羅」が plan の Non-Goals に明記されていない"
+    suggestion: "Non-Goals に「重複 ID 以外のきめ細かいバリデーション全網羅」を追加して SCOPE 整合を明確にすること"
+
+verdict: pass

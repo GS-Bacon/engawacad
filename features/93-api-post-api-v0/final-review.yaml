@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "crates/mycad-api/src/handler.rs"
+    line_hint: 35
+    finding: "write_atomic で rename 失敗時の tmp ファイル削除が best-effort (_ =) だが、削除失敗時にログ等が出力されない"
+    suggestion: "best-effort 仕様自体は問題ないが、将来的には eprintln! または tracing::error! で失敗を記録すること"
+
+verdict: pass

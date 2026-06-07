@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "テスト計画 > T06_degen"
+    finding: "期待結果が「400 or 422」でいずれかか不明確。axum の JsonRejection は通常 422 だが、実装者が 400 と仮定してテストを書くと flaky になる可能性"
+    suggestion: "axum の JsonRejection 仕様に基づき「422」に固定するか、あるいは「axum のデフォルト動作（422）」と明記すること"
+
+verdict: pass

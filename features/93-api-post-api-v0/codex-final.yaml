@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/mycad-api/src/handler.rs"
+    line_hint: 63
+    finding: "POST /api/v0/features が `Json<Feature>` extractor をそのまま受けているため、body のデシリアライズ失敗や `Content-Type` 不一致は `ApiError` / `ErrorResponse` を経由せず、axum 既定の plain-text 4xx を返します。既存 API の JSON エラー契約と不整合です。"
+    suggestion: "`JsonRejection` を handler 側で捕捉し、status を維持したまま `ErrorResponse` JSON に包んで返すか、custom extractor を用意して 4xx でも常に JSON を返してください。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-api/tests/post_features_acceptance.rs"
+    line_hint: 262
+    finding: "E03/E04 が `500 Internal Server Error` も許容しており、zero-width / negative-dimension が `KernelError` / `TessellationError` から 422 に写像される既存契約を壊してもテストが green のままです。退化入力の回帰検知として弱すぎます。"
+    suggestion: "E03/E04 は `StatusCode::UNPROCESSABLE_ENTITY` のみを期待し、可能なら `ErrorResponse` JSON 本文まで検証してください。"
+
+verdict: pass

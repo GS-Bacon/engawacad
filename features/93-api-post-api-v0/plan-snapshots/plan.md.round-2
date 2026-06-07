@@ -1,0 +1,157 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `POST /api/v0/features` エンドポイント追加（`axum::routing::post`） | WebSocket / リアルタイムプッシュ（ADR-008 Decision 3、Phase 7+） |
+| リクエスト body = `Json<Feature>`（既存 ts-rs 型を再利用、新規 transport 型なし） | Feature の削除・並べ替え・編集（undo/redo） |
+| サーバ状態を `Arc<Mutex<AppState>>` でメモリ常駐化（path + 遅延ロード Document） | 認証・マルチユーザー・並行最適化 |
+| Feature を `root_component.features` に push → 検証 → 再テッセレーション → ディスク書き戻し | 子コンポーネントを宛先に指定する push（root のみ対象） |
+| レスポンス = `Json<Vec<BodyMesh>>`（既存型を再利用） | バリデーション全網羅（重複 ID 等の既存 FormatError のみ依拠） |
+| GET/POST 共通の build→tessellate ヘルパ抽出で冪等性を構造保証 | プレビュー（未確定 Feature の一時テッセレーション） |
+
+## Non-Goals
+- WebSocket / プッシュ通知
+- Feature 削除・編集・並べ替えエンドポイント
+- 認証・マルチユーザー
+- root_component 以外（子 component）への Feature 追加
+- きめ細かい並行制御（`std::sync::Mutex` で GET/POST を全直列化する。Phase 6 は単一ユーザー前提）
+- 重複 feature_id 以外のきめ細かいバリデーション全網羅（既存 `Document::validate` / `FormatError` が拾う範囲のみに依拠。意味的妥当性の追加検証は対象外）
+
+## 実装対象
+<!-- Issue: #93 -->
+影響クレート/ファイル: `crates/mycad-api/src/{state.rs(新規), handler.rs, router.rs, main.rs}`
+
+### 1. 新規 `state.rs` — メモリ常駐 AppState
+```rust
+use mycad_format::Document;
+use std::path::PathBuf;
+
+pub struct AppState {
+    pub path: PathBuf,
+    /// 遅延ロード: 初回の /mesh または /features アクセス時に from_path で読み込みキャッシュ
+    pub doc: Option<Document>,
+}
+
+impl AppState {
+    pub fn new(path: PathBuf) -> Self { Self { path, doc: None } }
+
+    /// doc 未ロードなら from_path で読み込む。読込済みなら参照を返す。
+    pub fn ensure_loaded(&mut self) -> Result<&mut Document, ApiError> {
+        if self.doc.is_none() {
+            self.doc = Some(Document::from_path(&self.path)?);
+        }
+        Ok(self.doc.as_mut().unwrap())
+    }
+
+    pub fn base_dir(&self) -> PathBuf {
+        self.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+    }
+}
+```
+
+### 2. `handler.rs` — State 型変更 + 共通ヘルパ + POST
+**before**（GET、state = `Arc<PathBuf>`、毎回ディスク読み）:
+```rust
+pub(crate) async fn get_mesh(State(file): State<Arc<PathBuf>>) -> Result<Json<Vec<BodyMesh>>, ApiError> {
+    let doc = Document::from_path(file.as_path())?;
+    let base_dir = file.parent()...;
+    let mut gen = IdGenerator::new(0);
+    let bodies = build_assembly(&doc, &base_dir, &mut gen)?;
+    // ... tessellate ...
+}
+```
+**after**（GET/POST 共通ヘルパ + `State<Arc<Mutex<AppState>>>`）:
+```rust
+type SharedState = Arc<Mutex<AppState>>;
+
+/// GET/POST 双方が通る唯一の build→tessellate 経路（冪等性を構造保証）
+fn assemble_and_tessellate(doc: &Document, base_dir: &Path) -> Result<Vec<BodyMesh>, ApiError> {
+    let mut gen = IdGenerator::new(0);
+    let bodies = build_assembly(doc, base_dir, &mut gen)?;
+    if bodies.is_empty() {
+        return Err(ApiError::Unprocessable("empty assembly: no bodies built".into()));
+    }
+    bodies.iter().map(|b| Ok(BodyMesh {
+        feature_id: b.feature_id.clone(),
+        mesh: tessellate_solid_with(&b.solid, &V0_TESSELLATION)?,
+    })).collect::<Result<_, TessellationError>>().map_err(Into::into)
+}
+
+pub(crate) async fn get_mesh(State(state): State<SharedState>) -> Result<Json<Vec<BodyMesh>>, ApiError> {
+    let mut g = state.lock().unwrap();
+    let base_dir = g.base_dir();
+    let doc = g.ensure_loaded()?;
+    Ok(Json(assemble_and_tessellate(doc, &base_dir)?))
+}
+
+pub(crate) async fn post_feature(
+    State(state): State<SharedState>,
+    Json(feature): Json<Feature>,
+) -> Result<Json<Vec<BodyMesh>>, ApiError> {
+    let mut g = state.lock().unwrap();
+    let base_dir = g.base_dir();
+    let path = g.path.clone();
+    g.ensure_loaded()?;
+
+    // ADR-005 F01: 検証付き mutation — candidate に push → validate → tessellate
+    let mut candidate = g.doc.as_ref().unwrap().clone();
+    candidate.root_component.features.push(feature);
+    candidate.validate()?;                                  // 重複 ID 等は FormatError→422
+    let meshes = assemble_and_tessellate(&candidate, &base_dir)?;
+
+    // 原子的ディスク書き戻し: tmp へ write → rename（同 FS で atomic）
+    let yaml = candidate.to_yaml()?;                        // 再 validate 込み
+    write_atomic(&path, &yaml)?;                            // 失敗時 state.doc 不変（commit 前）
+
+    *g.doc.as_mut().unwrap() = candidate;                   // 全成功時のみ in-memory 反映
+    Ok(Json(meshes))
+}
+```
+`write_atomic(path, yaml)`: 同ディレクトリに一時ファイル（`<path>.tmp`）を `fs::write` → `fs::rename(tmp, path)`。`std::io::Error` は `ApiError::Internal`（500）へマップ（`error.rs` に `From<std::io::Error>` を追加）。
+
+**順序不変条件（IN01）**: POST 内は必ず `validate → assemble_and_tessellate → write_atomic → *g.doc = candidate` の順を守る。tessellate 失敗時はディスク・メモリとも未変更、write 失敗時はメモリ未変更（commit 前）。この順序をコードコメントで明記する（tmp ゴミはパニック時に OS が回収するが、正常系では rename で消費される）。
+
+### 3. `router.rs` — POST ルート + state ラップ
+**before**: `app(file: Arc<PathBuf>)` が `.route("/mesh", get(get_mesh)).with_state(file)`
+**after**（**シグネチャは維持** = 既存 ~40 箇所の呼び出しを無改修に保つ）:
+```rust
+pub fn app(file: Arc<PathBuf>) -> Router {
+    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::new((*file).clone())));
+    let api = Router::new()
+        .route("/mesh", get(get_mesh))
+        .route("/features", post(post_feature))
+        .fallback(api_not_found)
+        .with_state(state);
+    Router::new().nest("/api/v0", api).fallback(static_handler).layer(...)
+}
+```
+
+### 4. `main.rs` — 変更なし（`app(Arc::new(file))` のまま）
+
+## 設計方針
+- **決定性**: `assemble_and_tessellate` 内で `IdGenerator::new(0)` を毎回新規生成（既存 GET と同一）。同一 Document → 同一 `Vec<BodyMesh>`（face_ids 含む、#92 で保証済み）。
+- **冪等性（完了条件）**: GET と POST が `assemble_and_tessellate` の単一経路を共有し、POST 後の in-memory doc を GET も読むため、POST 直後レスポンス == 後続 GET が構造的に保証される。
+- **検証付き mutation（ADR-005 F01）**: `add_feature` 検証 API は未整備のため、`candidate = doc.clone()` に push → `candidate.validate()` → 失敗時は candidate を破棄（state.doc 不変）。全成功後のみ `g.doc` へ commit。これで「不正 Feature 投入時にファイル・メモリとも変化しない」を担保。
+- **遅延ロード採用理由**: 既存 `static_assets`/`api_fallback` テストが `/dev/null` 等の不正パスで `app()` を構築し、/mesh も /features も叩かない。`app()` 構築時の eager load はこれらを壊すため、初回アクセス時ロードを採る（ロード後はメモリ常駐 = ユーザー選択の方針を満たす）。
+- **ロック粒度**: `std::sync::Mutex`。クリティカルセクション内で `.await` を一切行わない（load/validate/tessellate/fs はすべて同期）ため tokio Mutex 不要。GET/POST は全直列化（Phase 6 単一ユーザー前提、Non-Goal）。
+- **B-rep トポロジー妥当性**: 本 Issue は API 層のみ。幾何生成は既存 `build_assembly`/`tessellate_solid_with` に委譲し新規幾何ロジックなし → Euler-Poincaré 検証は N/A。
+- **退化幾何の扱い**: 新規導入なし。退化は既存 tessellation 層が処理（#92 で face_ids 不変量検証済み）。
+- **derive 規約**: `AppState` は非シリアライズの内部状態 → derive 不要。リクエスト/レスポンスは既存 `Feature`/`BodyMesh`（Serialize/Deserialize/TS 既存）を再利用。
+- **エラーハンドリング**: 既存 `ApiError`（thiserror）を再利用。追加は `From<std::io::Error> for ApiError`（書き戻し失敗→500 Internal）のみ。Json body デシリアライズ失敗は axum の `JsonRejection` が自動で 400/422。
+- **workspace.dependencies**: 新規依存なし（`std::sync::Mutex` は std）。
+
+### 数値モデル
+N/A。本 Issue は API 層のみで数値閾値・tolerance を新規導入しない。テッセレーションは既存定数 `V0_TESSELLATION { angular_segments: 32, axial_segments: 1 }` をそのまま使用。退化判定も既存 tessellation 層に委譲。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一 fixture + 同一 Feature を別 app に POST × 2 | 2 レスポンスの positions/normals/face_ids が完全一致 |
+| T02 | 正常系 | 有効 `CreateBox` Feature を POST | 200、`Vec<BodyMesh>` 非空、.mycad の features 数 +1 |
+| T03 | 冪等性 | POST 直後レスポンス と 後続 `GET /api/v0/mesh` | JSON bytes 一致 |
+| T04 | 累積 | 連続 POST × 2（異なる id） | features 数 +2、bodies に両 Feature が反映 |
+| T05_boundary | 境界/異常 | 重複 feature_id の Feature を POST | 422、.mycad 不変 かつ in-memory doc 不変（次 GET が POST 前と一致） |
+| T06_degen | 退化/異常 | shape 不正 body（未知 type / 必須欠落、valid JSON）を POST | 422（axum `Json<T>` の `JsonDataError`）、.mycad と in-memory doc 不変 |
+| T07 | リグレッション | 既存 GET /mesh テスト群（State 型変更後） | 全て green |
+
+## 幾何的不変条件チェックリスト
+- N/A（Boolean/Partition/Assemble の新規幾何ロジックを含まない。API 層 Issue）
