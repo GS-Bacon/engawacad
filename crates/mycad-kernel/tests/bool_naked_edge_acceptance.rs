@@ -191,6 +191,7 @@ fn t07_degenerate_triangle_no_naked_edge() {
         positions: vec![[0.0, 0.0, 0.0]; 3],
         normals: vec![[0.0, 0.0, 1.0]; 3],
         indices: vec![0, 1, 2],
+        face_ids: vec!["".to_string()],
     };
     // 全頂点が同一 → i0==i1 after welding → degenerate → skip
     assert_eq!(
@@ -207,6 +208,7 @@ fn t08_negative_zero_welding() {
         positions: vec![[-0.0, -0.0, -0.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         normals: vec![[0.0, 0.0, 1.0]; 3],
         indices: vec![0, 1, 2],
+        face_ids: vec!["".to_string()],
     };
     // v0 == v1 after quantization → whole triangle skipped → 0 naked edges.
     assert_eq!(
@@ -231,6 +233,7 @@ fn t09_near_boundary_welding() {
         ],
         normals: vec![[0.0, 0.0, 1.0]; 6],
         indices: vec![0, 1, 2, 3, 4, 5],
+        face_ids: vec!["".to_string(), "".to_string()],
     };
     // After welding: 3→0, 4→1
     // Triangles: (0,1,2) and (0,1,5) share edge (0,1) → count 2

@@ -15,4 +15,9 @@ normals: Array<[number, number, number]>,
 /**
  * Triangle indices (every 3 indices form a triangle).
  */
-indices: Array<number>, };
+indices: Array<number>, 
+/**
+ * Per-triangle face id string. Length always equals `triangle_count()`.
+ * Unnamed faces (`Face.name == None`) produce an empty string.
+ */
+face_ids: Array<string>, };

@@ -21,6 +21,7 @@ function makeMesh(
       [0, 0, 1],
     ],
     indices: [0, 1, 2],
+    face_ids: [""],
     ...overrides,
   };
 }
@@ -294,6 +295,7 @@ describe("edge cases", () => {
       positions: [],
       normals: [],
       indices: [],
+      face_ids: [],
     };
     expect(() => validateMesh(mesh)).not.toThrow();
     const geo = meshToGeometry(mesh);

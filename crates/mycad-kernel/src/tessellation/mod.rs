@@ -26,6 +26,9 @@ pub struct TriangleMesh {
     pub normals: Vec<[f64; 3]>,
     /// Triangle indices (every 3 indices form a triangle).
     pub indices: Vec<u32>,
+    /// Per-triangle face id string. Length always equals `triangle_count()`.
+    /// Unnamed faces (`Face.name == None`) produce an empty string.
+    pub face_ids: Vec<String>,
 }
 
 impl TriangleMesh {
@@ -34,6 +37,7 @@ impl TriangleMesh {
             positions: Vec::new(),
             normals: Vec::new(),
             indices: Vec::new(),
+            face_ids: Vec::new(),
         }
     }
 
@@ -105,6 +109,11 @@ pub fn tessellate_solid_with(
     let mut mesh = TriangleMesh::new();
 
     for (face_idx, face) in solid.faces.iter().enumerate() {
+        let face_id = face
+            .name
+            .as_ref()
+            .map(|n| n.canonical_name())
+            .unwrap_or_default();
         let strategy = face.surface.tessellation_strategy();
         match strategy {
             TessellationStrategy::BoundaryFan => {
@@ -116,16 +125,16 @@ pub fn tessellate_solid_with(
                 let is_convex = is_polygon_convex(&loop_points, &face.surface, face.same_sense);
 
                 if has_inner || !is_convex {
-                    tessellate_face_earcut(solid, face, opts, &mut mesh, face_idx)?;
+                    tessellate_face_earcut(solid, face, opts, &mut mesh, face_idx, &face_id)?;
                 } else {
-                    tessellate_face_fan_from_points(&loop_points, face, &mut mesh)?;
+                    tessellate_face_fan_from_points(&loop_points, face, &mut mesh, &face_id)?;
                 }
             }
             TessellationStrategy::UvGridFullPatch => {
-                tessellate_face_uv_grid(solid, face, opts, &mut mesh)?;
+                tessellate_face_uv_grid(solid, face, opts, &mut mesh, &face_id)?;
             }
             TessellationStrategy::UvSphere => {
-                tessellate_face_sphere(solid, face, opts, &mut mesh)?;
+                tessellate_face_sphere(solid, face, opts, &mut mesh, &face_id)?;
             }
             TessellationStrategy::Unsupported => {
                 return Err(TessellationError::UnsupportedSurface {
@@ -146,11 +155,12 @@ fn tessellate_face_fan(
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
     face_idx: usize,
+    face_id: &str,
 ) -> Result<(), TessellationError> {
     let outer_loop = &solid.loops[face.outer_loop];
     let loop_points =
         collect_loop_points(solid, outer_loop, opts.angular_segments.max(3), face_idx)?;
-    tessellate_face_fan_from_points(&loop_points, face, mesh)
+    tessellate_face_fan_from_points(&loop_points, face, mesh, face_id)
 }
 
 /// Tessellate a convex polygon as a fan (given pre-collected points).
@@ -158,6 +168,7 @@ fn tessellate_face_fan_from_points(
     loop_points: &[Point],
     face: &crate::brep::topology::Face,
     mesh: &mut TriangleMesh,
+    face_id: &str,
 ) -> Result<(), TessellationError> {
     if loop_points.len() < 3 {
         return Ok(());
@@ -205,6 +216,7 @@ fn tessellate_face_fan_from_points(
             mesh.indices.push(base_idx + i);
             mesh.indices.push(base_idx + i + 1);
         }
+        mesh.face_ids.push(face_id.to_string());
     }
 
     Ok(())
@@ -267,6 +279,7 @@ fn tessellate_face_earcut(
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
     face_idx: usize,
+    face_id: &str,
 ) -> Result<(), TessellationError> {
     let outer_loop = &solid.loops[face.outer_loop];
     let outer_points =
@@ -338,6 +351,7 @@ fn tessellate_face_earcut(
         mesh.indices.push(base_idx + chunk[0] as u32);
         mesh.indices.push(base_idx + chunk[1] as u32);
         mesh.indices.push(base_idx + chunk[2] as u32);
+        mesh.face_ids.push(face_id.to_string());
     }
 
     Ok(())
@@ -402,6 +416,7 @@ fn tessellate_face_uv_grid(
     face: &crate::brep::topology::Face,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
+    face_id: &str,
 ) -> Result<(), TessellationError> {
     if !face.inner_loops.is_empty() {
         return Err(TessellationError::TrimmedFaceUnsupported);
@@ -489,11 +504,11 @@ fn tessellate_face_uv_grid(
             // When same_sense=false the face normal is reversed, so flip winding
             // to keep triangle cross-product consistent with the face normal.
             if face.same_sense {
-                push_triangle(mesh, i00, i10, i01);
-                push_triangle(mesh, i10, i11, i01);
+                push_triangle(mesh, i00, i10, i01, face_id);
+                push_triangle(mesh, i10, i11, i01, face_id);
             } else {
-                push_triangle(mesh, i00, i01, i10);
-                push_triangle(mesh, i10, i01, i11);
+                push_triangle(mesh, i00, i01, i10, face_id);
+                push_triangle(mesh, i10, i01, i11, face_id);
             }
         }
     }
@@ -511,10 +526,11 @@ fn tessellate_face_sphere(
     face: &crate::brep::topology::Face,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
+    face_id: &str,
 ) -> Result<(), TessellationError> {
     // If inner loops exist, delegate to trimmed sphere tessellation
     if !face.inner_loops.is_empty() {
-        return tessellate_sphere_face_trimmed(solid, face, opts, mesh);
+        return tessellate_sphere_face_trimmed(solid, face, opts, mesh, face_id);
     }
 
     let outer_loop = &solid.loops[face.outer_loop];
@@ -670,9 +686,9 @@ fn tessellate_face_sphere(
         let cur = bottom_ring_start + iu as u32;
         let next = bottom_ring_start + ((iu + 1) % n_u) as u32;
         if face.same_sense {
-            push_triangle(mesh, south_idx, next, cur);
+            push_triangle(mesh, south_idx, next, cur, face_id);
         } else {
-            push_triangle(mesh, south_idx, cur, next);
+            push_triangle(mesh, south_idx, cur, next, face_id);
         }
     }
 
@@ -686,11 +702,11 @@ fn tessellate_face_sphere(
             let b0 = ring_b_start + iu as u32;
             let b1 = ring_b_start + ((iu + 1) % n_u) as u32;
             if face.same_sense {
-                push_triangle(mesh, a0, a1, b0);
-                push_triangle(mesh, a1, b1, b0);
+                push_triangle(mesh, a0, a1, b0, face_id);
+                push_triangle(mesh, a1, b1, b0, face_id);
             } else {
-                push_triangle(mesh, a0, b0, a1);
-                push_triangle(mesh, a1, b0, b1);
+                push_triangle(mesh, a0, b0, a1, face_id);
+                push_triangle(mesh, a1, b0, b1, face_id);
             }
         }
     }
@@ -701,9 +717,9 @@ fn tessellate_face_sphere(
         let cur = top_ring_start + iu as u32;
         let next = top_ring_start + ((iu + 1) % n_u) as u32;
         if face.same_sense {
-            push_triangle(mesh, cur, next, north_idx);
+            push_triangle(mesh, cur, next, north_idx, face_id);
         } else {
-            push_triangle(mesh, next, cur, north_idx);
+            push_triangle(mesh, next, cur, north_idx, face_id);
         }
     }
 
@@ -720,6 +736,7 @@ fn tessellate_sphere_face_trimmed(
     face: &crate::brep::topology::Face,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
+    face_id: &str,
 ) -> Result<(), TessellationError> {
     let Surface::Sphere {
         center: sph_center,
@@ -811,11 +828,11 @@ fn tessellate_sphere_face_trimmed(
             let b0 = ring_base + iu as u32;
             let b1 = ring_base + ((iu + 1) % n_u) as u32;
             if face.same_sense != trim_lower {
-                push_triangle(mesh, a0, a1, b0);
-                push_triangle(mesh, a1, b1, b0);
+                push_triangle(mesh, a0, a1, b0, face_id);
+                push_triangle(mesh, a1, b1, b0, face_id);
             } else {
-                push_triangle(mesh, a0, b0, a1);
-                push_triangle(mesh, a1, b0, b1);
+                push_triangle(mesh, a0, b0, a1, face_id);
+                push_triangle(mesh, a1, b0, b1, face_id);
             }
         }
     }
@@ -834,16 +851,16 @@ fn tessellate_sphere_face_trimmed(
         if trim_lower {
             // south pole fan
             if face.same_sense {
-                push_triangle(mesh, pole_idx, next, cur);
+                push_triangle(mesh, pole_idx, next, cur, face_id);
             } else {
-                push_triangle(mesh, pole_idx, cur, next);
+                push_triangle(mesh, pole_idx, cur, next, face_id);
             }
         } else {
             // north pole fan
             if face.same_sense {
-                push_triangle(mesh, cur, next, pole_idx);
+                push_triangle(mesh, cur, next, pole_idx, face_id);
             } else {
-                push_triangle(mesh, next, cur, pole_idx);
+                push_triangle(mesh, next, cur, pole_idx, face_id);
             }
         }
     }
@@ -861,7 +878,7 @@ fn normal_arr(normal: &crate::geometry::Vec3, same_sense: bool) -> [f64; 3] {
 }
 
 /// Push a triangle, but skip degenerate (zero-area) ones.
-fn push_triangle(mesh: &mut TriangleMesh, i0: u32, i1: u32, i2: u32) {
+fn push_triangle(mesh: &mut TriangleMesh, i0: u32, i1: u32, i2: u32, face_id: &str) {
     let p0: [f64; 3] = mesh.positions[i0 as usize];
     let p1: [f64; 3] = mesh.positions[i1 as usize];
     let p2: [f64; 3] = mesh.positions[i2 as usize];
@@ -876,6 +893,7 @@ fn push_triangle(mesh: &mut TriangleMesh, i0: u32, i1: u32, i2: u32) {
     mesh.indices.push(i0);
     mesh.indices.push(i1);
     mesh.indices.push(i2);
+    mesh.face_ids.push(face_id.to_string());
 }
 
 /// Merge multiple meshes into one by concatenating positions/normals
@@ -889,6 +907,7 @@ pub fn merge_meshes(meshes: &[TriangleMesh]) -> TriangleMesh {
         positions: Vec::with_capacity(total_positions),
         normals: Vec::with_capacity(total_normals),
         indices: Vec::with_capacity(total_indices),
+        face_ids: Vec::new(),
     };
 
     let mut vertex_offset: u32 = 0;
@@ -898,6 +917,7 @@ pub fn merge_meshes(meshes: &[TriangleMesh]) -> TriangleMesh {
         for &idx in &mesh.indices {
             merged.indices.push(vertex_offset + idx);
         }
+        merged.face_ids.extend_from_slice(&mesh.face_ids);
         vertex_offset += mesh.positions.len() as u32;
     }
 
@@ -1767,7 +1787,7 @@ mod tests {
         mesh.positions.push([1.0, 0.0, 0.0]);
         mesh.positions.push([0.5, 0.0, 0.0]); // Collinear → degenerate
         let before = mesh.indices.len();
-        push_triangle(&mut mesh, 0, 1, 2);
+        push_triangle(&mut mesh, 0, 1, 2, "");
         assert_eq!(
             mesh.indices.len(),
             before,
@@ -1782,7 +1802,7 @@ mod tests {
         mesh.positions.push([1.0, 0.0, 0.0]);
         mesh.positions.push([0.0, 1.0, 0.0]); // Non-degenerate
         let before = mesh.indices.len();
-        push_triangle(&mut mesh, 0, 1, 2);
+        push_triangle(&mut mesh, 0, 1, 2, "");
         assert_eq!(
             mesh.indices.len(),
             before + 3,
@@ -1797,7 +1817,7 @@ mod tests {
         mesh.positions.push([1.0, 2.0, 3.0]);
         mesh.positions.push([1.0, 2.0, 3.0]); // All same point
         let before = mesh.indices.len();
-        push_triangle(&mut mesh, 0, 1, 2);
+        push_triangle(&mut mesh, 0, 1, 2, "");
         assert_eq!(
             mesh.indices.len(),
             before,
@@ -1818,7 +1838,7 @@ mod tests {
         mesh.positions.push([tiny, 0.0, 0.0]);
         mesh.positions.push([0.0, tiny, 0.0]);
         let before = mesh.indices.len();
-        push_triangle(&mut mesh, 0, 1, 2);
+        push_triangle(&mut mesh, 0, 1, 2, "");
         assert_eq!(
             mesh.indices.len(),
             before + 3,
@@ -1835,11 +1855,13 @@ mod tests {
             positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
             indices: vec![0, 1, 2],
+            face_ids: vec!["face_a".to_string()],
         };
         let m2 = TriangleMesh {
             positions: vec![[5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [5.0, 1.0, 0.0]],
             normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
             indices: vec![0, 1, 2],
+            face_ids: vec!["face_b".to_string()],
         };
 
         let merged = merge_meshes(&[m1, m2]);
@@ -1848,6 +1870,7 @@ mod tests {
         assert_eq!(merged.normals.len(), 6);
         // m2 indices offset by m1.positions.len() = 3
         assert_eq!(merged.indices, vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(merged.face_ids, vec!["face_a", "face_b"]);
     }
 
     /// T09: merge_meshes determinism — same input produces same output.
@@ -1883,16 +1906,19 @@ mod tests {
         assert_eq!(empty.positions.len(), 0);
         assert_eq!(empty.normals.len(), 0);
         assert_eq!(empty.indices.len(), 0);
+        assert_eq!(empty.face_ids.len(), 0);
 
         let m1 = TriangleMesh {
             positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
             indices: vec![0, 1, 2],
+            face_ids: vec!["f".to_string()],
         };
         let single = merge_meshes(&[m1.clone()]);
         assert_eq!(single.positions, m1.positions);
         assert_eq!(single.normals, m1.normals);
         assert_eq!(single.indices, m1.indices);
+        assert_eq!(single.face_ids, m1.face_ids);
     }
 
     /// merge_meshes with three meshes — cumulative offset.
@@ -1906,10 +1932,12 @@ mod tests {
             ],
             normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
             indices: vec![0, 1, 2],
+            face_ids: vec![format!("f{offset}")],
         };
         let merged = merge_meshes(&[make_mesh(0.0), make_mesh(5.0), make_mesh(10.0)]);
         assert_eq!(merged.positions.len(), 9);
         assert_eq!(merged.indices, vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(merged.face_ids.len(), 3);
     }
 
     // T14: planar face + line pcurve produces same point count as edge.curve (1 point per Line HE)
