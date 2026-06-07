@@ -1,6 +1,7 @@
 pub mod error;
 pub mod handler;
 pub mod router;
+pub mod state;
 pub mod static_assets;
 pub mod transport;
 

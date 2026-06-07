@@ -49,6 +49,12 @@ impl From<TessellationError> for ApiError {
     }
 }
 
+impl From<std::io::Error> for ApiError {
+    fn from(err: std::io::Error) -> Self {
+        ApiError::Internal(err.to_string())
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, msg) = match &self {
