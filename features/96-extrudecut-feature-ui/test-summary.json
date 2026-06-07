@@ -1,0 +1,22 @@
+{
+  "totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "test_extrude_cut_yaml_golden",
+      "kind": "golden"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 1,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 1,
+    "edge_case": 0
+  }
+}

@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "設計方針 > 数値モデル"
+    finding: "ADR-004 §3.1 への準拠明記が不明瞭。'LENGTH_TOLERANCE = 1e-9(geometry/math.rs:10)' は参照されているが、ADR-004 本体との対応関係が明記されていない。"
+    suggestion: "「幾何 tolerance: ADR-004 §3.1 準拠。LENGTH_TOLERANCE(1e-9)は ADR-004 で決定済みの値をそのまま使用」に文言修正し、参照元を明確にすること。"
+
+verdict: pass

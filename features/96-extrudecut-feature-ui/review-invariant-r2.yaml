@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "テスト計画 > U06_boundary"
+    finding: "U06_boundary の期待値が「STEP 6 で確定」と状態留保されている"
+    suggestion: "設計段階で期待値を確定させるか、設計レビューでは medium として扱い実装時に確定することを明記する（現状は medium で許容）"
+
+verdict: pass

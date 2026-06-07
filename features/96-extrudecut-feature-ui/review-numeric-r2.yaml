@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "テスト計画 > U06_boundary"
+    finding: "非交差 tool(target 外) の処理が「STEP 6で実挙動を確認し片方に確定」と先送りされている。boolean 実装が Err を返すか Ok(target 不変) を返すかの二択なので、既存 cut テスト(t06/t07/t08)の挙動から決定可能。"
+    suggestion: "既存 Cut/boolean 実装の非交差時の挙動を確認し、plan に明記すること（ただし、これは Low 優先度。Cut 経路は一貫した挙動を持つはずで、実装時に確認しても遅くない）"
+
+verdict: pass

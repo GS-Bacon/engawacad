@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 61
+    finding: "`existing` を live body の `feature_id` だけから作っているため、1回目の `extrude_cut` 後に履歴上の `sketch_0` が集合から落ちます。次回クリック時に再び `sketch_0` を生成して `create_sketch` POST が duplicate feature_id で 422 になり、`extrude_cut` を連続実行できません。"
+    suggestion: "ID 採番元を `currentBodies` ではなくドキュメント全 feature ID に切り替えるか、サーバー側で ID を払い出して `create_sketch` と `extrude_cut` を原子的に作成する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-api/tests/extrude_cut_acceptance.rs"
+    line_hint: 72
+    finding: "`TriangleMesh.positions` は既に `Vec<[f64; 3]>` で頂点数そのものなのに `/ 3` しており、さらに JSON パース失敗を `unwrap_or_default()` で 0 扱いしています。このため A01 が実際の頂点数変化を正しく検証できず、回帰を見逃します。"
+    suggestion: "既存の `extrude_ui_acceptance.rs` と同様に `serde_json::from_str(body).unwrap()` を使い、頂点数は `b.mesh.positions.len()` をそのまま合計する。"
+
+verdict: fail

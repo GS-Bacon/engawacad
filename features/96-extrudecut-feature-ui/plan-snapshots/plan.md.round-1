@@ -1,0 +1,225 @@
+# #96 feat: ExtrudeCut Feature 追加と UI — 押出でモデルから体積を除去する
+
+## Context
+ADR-008 Phase 6「対話編集の背骨」の cut 側。#95(Extrude add) が closed になり、本 Issue で除算側
+`Feature::ExtrudeCut` を追加する。新しい幾何アルゴリズムは作らず、既存 `make_extrusion`(Phase 1) +
+`boolean(.., BooleanOp::Cut, ..)`(Phase 4) を **build ディスパッチ層で合成**する(ADR-008 Decision 1)。
+ブラウザ押出パネルに「押出カット」ボタンを足し、面選択 → 深さ → カット で体積が除去される縦スライスを通す。
+
+## 設計判断(壁打ち + 調査で確定したもの)
+
+### D1: フィールド構造 = `{id, sketch, depth, target}`(明示 target)— ユーザー承認済み
+既存 `Cut {id, target, tool}` と同じく **cut 対象ボディを `target` で明示参照**する。Issue 本文の
+「Extrude と同一フィールド」案(target 無し=暗黙の単一ボディ)は、複数ボディ時に曖昧・将来拡張で破綻するため不採用。
+`Extrude` と違い `tool` フィールドは持たない(tool ソリッドは sketch から **その場生成**し register しない)。
+
+### D2: cut tool は「選択面 footprint を内側へインセット」した角柱(coplanar 回避)— 調査で確定
+`make_cuboid` は **原点中心**(`v∈[-hx,-hy,-hz]..[hx,hy,hz]`, `cuboid.rs:35-37`)。#95 のフル footprint を
+そのまま原点平面から押し出すと、tool 側面が target 側面と **座標一致(coplanar overlapping)**になる。
+**Cut 経路の coplanar 面はカーネルで一切テストされておらず保証外**(既存 cut テストは
+`feature_dispatcher.rs:914`「no face is coplanar with target」等で意図的に回避。coincident 成功例は Fuse の `t02` のみ)。
+→ UI が作る cut profile は選択面 bbox を **重心方向へ `CUT_INSET_RATIO` だけ縮小**し、tool 断面を target 断面の
+**内側に厳密に収める**。これにより:
+- depth がボディを貫通しない → tool 完全埋没 → **内部 void(2 シェル)**。`box_sphere_void_acceptance.rs` /
+  `t08_cut_void_shell`(`feature_dispatcher.rs:971-1004`)で実証済み valid。
+- depth が +normal 側の面を貫通 → **ブラインドポケット(1 シェル, 面に inner loop)**。sphere dimple
+  (`boolean_cut_sphere_dimple` smoke)・L字 `t06`(`feature_dispatcher.rs:910-966`)で実証済み valid。
+どちらの depth でも coplanar 面を作らず、2-disjoint 分割(`MultipleOuterShellsResult`, テスト未整備で危険)も起きない。
+
+### D3: target 解決は main.ts が currentBodies から行う
+選択面 faceId を持つボディの `feature_id` が cut 対象。`BodyMesh.mesh.face_ids`(per-triangle)に faceId が
+含まれるボディを `currentBodies.find(...)` で引く。boolean は target を consume し結果を ExtrudeCut の id で
+register するため、cut 後 `currentBodies` は新 feature_id に更新され、次回 cut の target 解決も自己整合する。
+
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|---|---|
+| `Feature::ExtrudeCut {id, sketch, depth, target}` を `mycad-format/src/feature.rs` に追加 + `Feature::id()` arm | ThroughAll(「最後まで」)フラグ |
+| `mycad-build/src/lib.rs` に dispatch arm 追加(`make_extrusion` で tool 生成 → `boolean(target, tool, Cut, gen)`) | フィレット・面取り |
+| xtask `FEATURE_GOLDEN` 更新 + `t02_feature_tagged_union` に extrude_cut タグ assert / `Feature.ts` 自動再生成 | テーパー角・両側カット |
+| 押出パネルに `data-testid="btn-extrude-cut"` 追加、`buildExtrudeCutFeatures`(インセット profile + target)配線 | undo/redo・任意平面 sketch |
+| 退化/境界テスト + A01 acceptance(`### 数値モデル` 準拠) | フル面 coplanar cut(Phase 7、カーネル coplanar 対応待ち) |
+
+## Non-Goals
+- ThroughAll フラグ / テーパー角・両側カット
+- フィレット・面取り
+- undo/redo
+- 任意平面/面オフセット sketch、フル面(coplanar)cut
+- `MultipleOuterShellsResult` を伴う 2-disjoint 分割 cut(テスト前例なし・本 Issue では生成しない)
+
+## 既知の幾何的制約(MVP として明示)
+- sketch 平面は常に **世界原点**(`Plane::xy/xz/yz`, origin=0)。#95 と同じ割り切り。
+- cut tool は選択面 footprint を **インセット**した角柱(D2)。よって cut 領域は選択面より小さく、
+  depth がボディを貫通しなければ **内部空洞**、貫通すれば **ポケット**になる。フル面サイズ/面オフセット cut は Phase 7。
+- 完了条件(`ExtrudeCut` 出現・頂点数変化・POST 疎通)はこの割り切りで全て満たす。
+
+## 実装対象(層ごと, before/after)
+
+### 1. `crates/mycad-format/src/feature.rs` — variant 追加(GLM)
+`Extrude`(L302-307)の直後に追加。before/after:
+```rust
+// before (Extrude の直後は Cut が続く)
+Extrude { id: String, sketch: String, depth: f64 },
+/// Boolean subtraction ...
+#[serde(rename = "cut")]
+Cut { id: String, target: String, tool: String },
+
+// after (両者の間に ExtrudeCut を挿入)
+Extrude { id: String, sketch: String, depth: f64 },
+/// Extrude a sketch profile and cut (boolean subtract) it from a target body.
+#[serde(rename = "extrude_cut")]
+ExtrudeCut { id: String, sketch: String, depth: f64, target: String },
+/// Boolean subtraction ...
+#[serde(rename = "cut")]
+Cut { id: String, target: String, tool: String },
+```
+`Feature::id()` の match(L342-349)に arm 追加:
+```rust
+// after
+| Feature::ExtrudeCut { id, .. }
+```
+test module に YAML golden roundtrip(`test_extrude_cut_yaml_golden`)を追加(既存
+`test_create_sketch_yaml_golden` L408-444 と同じ byte 一致 + 往復パターン)。
+
+### 2. `crates/mycad-build/src/lib.rs` — dispatch arm(GLM)
+`Feature::Extrude` arm(L99-121)と `Feature::Cut` arm(L153-168)の合成。`match` に追加:
+```rust
+// after (Extrude arm をベースに tool を register せず target から boolean Cut)
+Feature::ExtrudeCut { id: _, sketch, depth, target } => {
+    let (sketch_plane, segments) = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    let plane = match sketch_plane {
+        mycad_format::SketchPlane::Xy => Plane::xy(),
+        mycad_format::SketchPlane::Xz => Plane::xz(),
+        mycad_format::SketchPlane::Yz => Plane::yz(),
+    };
+    let profile_uv: Vec<(f64, f64)> = segments.iter().map(|s| (s.from[0], s.from[1])).collect();
+    let tool = make_extrusion(&plane, &profile_uv, *depth, gen)?;   // tool は register しない
+    let t_solid = built.get(target)
+        .ok_or_else(|| KernelError::BodyNotFound { id: target.clone() })?;
+    let result = boolean(&t_solid.solid, &tool, BooleanOp::Cut, gen)?;
+    built.consume(target);                                          // target のみ consume
+    built.register(id.to_string(), result);
+}
+```
+> 既存 Extrude/Cut arm の正確な変数名・register/consume API・SketchNotFound/BodyNotFound の正式 variant 名は
+> STEP 6 で GLM が `lib.rs` 実体に合わせて確定する(上記は構造の指針。imports `boolean, make_extrusion, BooleanOp` は既存)。
+
+### 3. `crates/xtask/src/main.rs` — golden 更新(GLM)
+`FEATURE_GOLDEN`(L330-337)の `extrude` variant 直後に挿入:
+```
+| { "type": "extrude_cut", id: string, sketch: string, depth: number, target: string, }
+```
+`t02_feature_tagged_union`(L341-)に `assert!(actual.contains(r#""type": "extrude_cut""#))` を追加。
+`web/src/generated/Feature.ts` は `cargo xtask gen-ts`(CI 内)で **自動再生成**(手編集禁止)。
+
+### 4. `web/index.html` — ボタン追加(GLM)
+extrude-panel(L79-82)の押出ボタン隣へ:
+```html
+<button data-testid="btn-extrude-cut">押出カット</button>
+```
+
+### 5. `web/src/extrude.ts` — `buildExtrudeCutFeatures` + `insetRect`(GLM)
+`footprintProfile`/`planeForFaceId`/`nextId` を再利用し、bbox を内側へ縮めた矩形で cut Feature を組む純関数:
+```ts
+export const CUT_INSET_RATIO = 0.25;   // 各辺を extent の 25% 内側へ(中央 50% を tool 断面に)。0<ratio<0.5
+export function buildExtrudeCutFeatures(
+  faceId: string, positions: ArrayLike<number>, indices: ArrayLike<number>,
+  faceIds: string[], depth: number, target: string, existingFeatureIds: Set<string>,
+): { sketch: Feature; extrudeCut: Feature } | null {
+  const plane = planeForFaceId(faceId);
+  if (!plane) return null;
+  if (!target) return null;
+  if (!Number.isFinite(depth) || depth <= 0) return null;
+  const rect = footprintProfile(positions, indices, faceIds, faceId, plane);  // 既存(#95)。退化は null
+  if (!rect) return null;
+  const inset = insetRect(rect, CUT_INSET_RATIO);   // bbox 重心へ縮小。縮小後 extent ≤ ε_guard なら null
+  if (!inset) return null;
+  const sketchId = nextId("sketch_", existingFeatureIds);
+  const cutId = nextId("extrude_cut_", existingFeatureIds);
+  const sketch: Feature = { type: "create_sketch", id: sketchId, plane, profile: inset };
+  const extrudeCut: Feature = { type: "extrude_cut", id: cutId, sketch: sketchId, depth, target };
+  return { sketch, extrudeCut };
+}
+```
+`insetRect(rect, ratio)`: 4 セグメント矩形の bbox 重心から各辺を `ratio` 縮小し新 4 セグメント(反時計回り・閉)を返す。
+縮小後の u/v extent が `EPSILON_GUARD`(既存 `1e-9`)以下なら `null`。実引数シグネチャ(`footprintProfile`/
+`buildExtrudeFeatures` の実際の引数順・`Feature` 型の profile フィールド名)は STEP 6 で GLM が `extrude.ts` 実体に合わせる。
+
+### 6. `web/src/main.ts` — 押出カット配線(GLM)
+押出ボタン配線(L31-52)の隣に追加。`currentBodies` から target を解決:
+```ts
+const cutBtn = document.querySelector<HTMLButtonElement>('[data-testid="btn-extrude-cut"]')!;
+cutBtn.addEventListener("click", async () => {
+  const sel = handle.getSelectedFaceVertices();
+  const depth = Number(depthInput.value);
+  if (!sel || !Number.isFinite(depth) || depth <= 0) return;
+  const target = currentBodies.find((b) => b.mesh.face_ids.includes(sel.faceId))?.feature_id;
+  if (!target) return;
+  const existing = new Set(currentBodies.map((b) => b.feature_id));
+  const built = buildExtrudeCutFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, target, existing);
+  if (!built) return;
+  try {
+    await postFeature(built.sketch);
+    const updated = await postFeature(built.extrudeCut);
+    currentBodies = updated;
+    handle.updateBodies(updated);
+  } catch (err) { showError(err instanceof Error ? err.message : String(err)); }
+});
+```
+`onSelect`・`getSelectedFaceVertices`(positions/indices/faceIds を返す形)・`postFeature`・`showError`・
+`currentBodies` は #95 で導入済みを再利用。新規 DOM/関数は最小限。
+
+## 設計方針(数値)
+
+### 数値モデル(ADR-004 準拠)
+- **幾何 tolerance**: 本層で新規定義しない。profile 妥当性(凸・閉・最短辺・面積)と cut の degenerate 判定は
+  `make_extrusion` / `boolean` が `LENGTH_TOLERANCE = 1e-9`(`geometry/math.rs:10`)で実施。**Issue 記載の
+  `ε = 1e-10` はコードベースに存在しない**(実際は `1e-9`)。フロントで再定義しない(決定性の源を一本化)。
+- **ε_guard(クライアント退化ガード, `1e-9` = 既存 `EPSILON_GUARD`)**: #95 と同一。footprint/inset 後の u·v
+  extent が `<= ε_guard` で `null`。厳密等価でなく `ε_guard` 比較(浮動小数誤差での誤判定回避)。
+- **CUT_INSET_RATIO(`0.25`)**: 幾何 tolerance ではなく **MVP ヒューリスティック**。coplanar 面回避のため tool 断面を
+  target 断面内側に収める(D2)。`0 < ratio < 0.5`。box 面 extent ≫ ε_guard のため通常経路で退化しない。
+- **depth(UI ガード)**: `Number.isFinite(depth) && depth > 0` のみ POST。負/0/NaN は不発。幾何妥当性は kernel 委譲。
+
+## 幾何的不変条件チェックリスト
+- **Boolean(Cut)該当 Issue**。結果 solid は `validate_manifold()` OK でなければならない。
+- 内部 void cut → `shells.len() == 2`、`euler_poincare() == 0`(`t08` 準拠)。
+- ブラインドポケット cut → `shells.len() == 1`、`validate_manifold` OK、面数が base box より増(pocket 壁)。
+  > euler 値はポケットが面に開ける inner loop 計上で geometry 依存のため **数値固定しない**(manifold OK + shell 数 + 面数増で担保)。
+- 決定性: 同一 features を同初期値 `IdGenerator` で 2 回ビルド → `assert_solids_equal`(byte 単位)。
+- transient: cut 前後の `.mycad` 差分は **追加 2 Feature(create_sketch + extrude_cut)のみ**、既存 Feature 不変。
+
+## テスト計画(ID 付き)
+| ID | 種別 | 内容 | 期待 |
+|----|------|------|------|
+| U01 | 決定性(dispatcher) | extrude_cut(内部 void config)を 2 回ビルド → `assert_solids_equal` | byte 一致 |
+| U02 | 正常系(dispatcher) | box − インセット角柱(完全埋没, depth 小) | shells==2, euler_poincare()==0, manifold OK |
+| U03 | 正常系(dispatcher) | box − インセット角柱(+normal 面貫通, depth 大) | shells==1, manifold OK, 面数増 |
+| U04 | serde(format) | `ExtrudeCut` の YAML golden roundtrip(`type: extrude_cut`・target 含む) | byte 一致・往復一致 |
+| U05_degen | 退化(dispatcher) | depth ≤ 0 → `InvalidParameter`; 非凸 profile → `InvalidParameter` | Err |
+| U06_boundary | 境界(dispatcher) | 存在しない target → `BodyNotFound`; 非交差 tool → `Ok(noop)` か `EmptyBooleanResult`(規約 documenting) | Err/規約一致 |
+| T01_ui | 純関数(vitest) | `buildExtrudeCutFeatures` 決定性(同入力 2 回 `toEqual`)+ target/`extrude_cut` フィールド | 一致 |
+| T02_ui_degen | 退化(vitest) | target `""` → null; depth≤0 → null; インセット後退化 → null | null |
+| E01_cut | E2E(Playwright, mock) | 面クリック → `btn-extrude-cut` visible | display!=none |
+| E02_cut | E2E(mock) | 深さ入力 + 押出カット → POST が `["create_sketch","extrude_cut"]` の順・各 200 | 順序一致 |
+| A01 | acceptance(Rust, mycad-api/tests/) | 実 app へ create_sketch→extrude_cut(ブラインドポケット)POST → 頂点数変化、`.mycad` に `type: extrude_cut` 1件 | 変化・Feature 存在 |
+
+> 退化/境界 ID: U05_degen, U06_boundary, T02_ui_degen。
+
+## 実行フロー(承認後 自動進行)
+STEP 5 ブランチ `cad/96-extrudecut-feature-ui` → 5.5 acceptance skeleton(A01 を `crates/mycad-api/tests/` に
+`#[ignore]` 雛形 + dispatcher/vitest/Playwright 雛形)→ 6 GLM コア実装 → 6.5 test-spec → 6.6 GLM テスト →
+7 GLM 最終 → **7.5 Codex 独立技術ゲート(`keep_codex_gate:true` = batch:kernel, 実行)** → 8 squash マージ。
+
+> #96 は batch:kernel(`keep_codex_gate:true`)。幾何不変量リスクが高いため STEP 7.5 Codex ゲートを **実行**する
+> (state shim ではなく実レビュー)。B-6 横断レビューとは別。
+
+## 検証
+`cargo xtask ci` green(rust test + clippy + fmt + web typecheck/vitest/build + Playwright)。
+重点: U02/U03(shells・manifold)、U01(決定性)、A01(実バックエンドの頂点変化 + `extrude_cut` 出現)、
+E02_cut(2 POST 順序)。coplanar 面を作らない設計(D2)が CI green の前提。
+
+## フォローアップ(本 Issue 外)
+- フル面サイズ / 面オフセット cut(coplanar 対応 or 真のオフセット sketch)は Phase 7。
+- カーネルの Cut coplanar 経路のテスト整備(現在未検証)。

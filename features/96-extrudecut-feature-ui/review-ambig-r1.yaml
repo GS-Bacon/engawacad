@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > U06_boundary"
+    finding: "期待結果が「Err/規約一致」と書かれているが、「規約 documenting」とは何を指すか不明。「Ok(noop) か EmptyBooleanResult(規約 documenting)」という記述は実装者がどちらを採用すべきか判断できない"
+    suggestion: "boolean カーネルの実際の挙動を確認し、「非交差 tool → EmptyBooleanResult Err」または「非交差 tool → Ok(noop) かつ target 不変」のいずれかを確定させること"
+
+verdict: pass

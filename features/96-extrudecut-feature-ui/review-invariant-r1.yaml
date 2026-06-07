@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "テスト計画 > U06_boundary"
+    finding: "非交差 tool の期待結果が「Err/規約一致」と暧昧。`EmptyBooleanResult` は既存 `boolean_cut` 実装が返す実際のエラー型名でなく、設計書上の仮称。実装時は既存 `boolean` 関数の実際の戻り値型・variant を確認し、U06 の期待を具体化すること。"
+    suggestion: "STEP 6 で `boolean` 関数のシグネチャを確認し、U06 の「期待」カラムに実際の `KernelError:: Xxx` variant 名を記載すること。"
+
+verdict: pass
