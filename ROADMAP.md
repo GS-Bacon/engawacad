@@ -105,7 +105,7 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 
 ---
 
-## Phase 6: 対話編集の背骨 — 面を選んで押出/押出カット
+## ✅ Phase 6: 対話編集の背骨 — 面を選んで押出/押出カット
 
 **前提 ADR**: [ADR-008](docs/decisions/008-interactive-editing-increment.md)
 
@@ -123,6 +123,8 @@ mycad view examples/simple_box.mycad   # ローカルサーバを起動してブ
 - 決定性テストが通り、`mycad view` で確認できる
 
 **備考**: ビューアの回転品質・カメラ制御の改善も本 Phase の Milestone Issue として着手する (`type: refactor`/`bug`、完了判定の対象外)。
+
+**状態**: 完了 (2026-06-07)
 
 ---
 
