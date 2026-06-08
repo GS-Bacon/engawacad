@@ -2530,10 +2530,26 @@ fn t01_positive_extrude_centroid() {
             plane: SketchPlane::Yz,
             offset: 5.0,
             profile: vec![
-                SketchSegment { id: "s0".into(), from: [-2.0, -3.0], to: [2.0, -3.0] },
-                SketchSegment { id: "s1".into(), from: [2.0, -3.0], to: [2.0, 3.0] },
-                SketchSegment { id: "s2".into(), from: [2.0, 3.0], to: [-2.0, 3.0] },
-                SketchSegment { id: "s3".into(), from: [-2.0, 3.0], to: [-2.0, -3.0] },
+                SketchSegment {
+                    id: "s0".into(),
+                    from: [-2.0, -3.0],
+                    to: [2.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [2.0, -3.0],
+                    to: [2.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [2.0, 3.0],
+                    to: [-2.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [-2.0, 3.0],
+                    to: [-2.0, -3.0],
+                },
             ],
         },
         // Extrude 3 units outward (expected: +X direction, body X ∈ [5, 8])
@@ -2583,10 +2599,26 @@ fn t02_reg_negative_extrude_centroid() {
             plane: SketchPlane::Yz,
             offset: -5.0,
             profile: vec![
-                SketchSegment { id: "s0".into(), from: [-2.0, -3.0], to: [2.0, -3.0] },
-                SketchSegment { id: "s1".into(), from: [2.0, -3.0], to: [2.0, 3.0] },
-                SketchSegment { id: "s2".into(), from: [2.0, 3.0], to: [-2.0, 3.0] },
-                SketchSegment { id: "s3".into(), from: [-2.0, 3.0], to: [-2.0, -3.0] },
+                SketchSegment {
+                    id: "s0".into(),
+                    from: [-2.0, -3.0],
+                    to: [2.0, -3.0],
+                },
+                SketchSegment {
+                    id: "s1".into(),
+                    from: [2.0, -3.0],
+                    to: [2.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s2".into(),
+                    from: [2.0, 3.0],
+                    to: [-2.0, 3.0],
+                },
+                SketchSegment {
+                    id: "s3".into(),
+                    from: [-2.0, 3.0],
+                    to: [-2.0, -3.0],
+                },
             ],
         },
         // Extrude 3 units outward from left face (expected: -X direction, body X ∈ [-8, -5])

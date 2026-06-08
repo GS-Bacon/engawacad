@@ -70,7 +70,7 @@ fn classify_fragment_against_solid(
             {
                 if frag_normal.dot(other_normal).abs() > 1.0 - len_eps {
                     let dist = (frag_origin - other_origin).dot(other_normal).abs();
-                    if dist < len_eps {
+                    if dist <= len_eps {
                         let other_loop_verts = get_loop_vertex_points(other, face.outer_loop);
                         if polygons_have_2d_overlap(
                             &frag.polygon_3d,

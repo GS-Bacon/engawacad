@@ -5,31 +5,129 @@
 ///   Layer 2: classify.rs coplanar dist <= len_eps (boundary detection)
 ///   Layer 3: validate_manifold() detects overlapping coplanar faces
 use mycad_kernel::booleans::{boolean, BooleanOp};
-use mycad_kernel::brep::topology::IdGenerator;
+use mycad_kernel::brep::topology::{IdGenerator, Solid};
+use mycad_kernel::geometry::surface::Surface;
 use mycad_kernel::geometry::Vec3;
 use mycad_kernel::primitives::make_cuboid;
 
 /// Helper: build a 10×20×30 cuboid centered at origin. Right face at X=+5.
-fn target_box(gen: &mut IdGenerator) -> mycad_kernel::brep::topology::Solid {
+fn target_box(gen: &mut IdGenerator) -> Solid {
     make_cuboid(10.0, 20.0, 30.0, gen).expect("target cuboid")
+}
+
+/// Helper: build a solid with two coplanar overlapping faces.
+/// Takes a valid cuboid and duplicates its bottom face.
+fn build_solid_with_coplanar_overlapping_faces(gen: &mut IdGenerator) -> Solid {
+    let mut cuboid = make_cuboid(2.0, 2.0, 2.0, gen).expect("cuboid");
+
+    let bot_face_idx = cuboid
+        .faces
+        .iter()
+        .position(|f| {
+            if let Surface::Plane { normal, .. } = &f.surface {
+                normal.z < 0.0
+            } else {
+                false
+            }
+        })
+        .expect("bottom face");
+
+    let original = cuboid.faces[bot_face_idx].clone();
+    let new_face_idx = cuboid.add_face(
+        gen.next(),
+        original.surface.clone(),
+        original.outer_loop,
+        original.inner_loops.clone(),
+        original.same_sense,
+        mycad_format::EntityRef::try_named("test", mycad_format::EntityKind::Face, "dup").ok(),
+    );
+    cuboid.shells[0].faces.push(new_face_idx);
+    cuboid
+}
+
+/// Helper: build a solid with two coplanar faces that do NOT overlap in 2D.
+/// Two separate cuboids on the same Z=0 plane but far apart in X.
+fn build_solid_with_coplanar_non_overlapping_faces(gen: &mut IdGenerator) -> Solid {
+    let mut box1 = make_cuboid(2.0, 2.0, 2.0, gen).expect("box1");
+    let mut box2 = make_cuboid(2.0, 2.0, 2.0, gen).expect("box2");
+    box2.translate(Vec3::new(10.0, 0.0, 0.0));
+
+    // Merge box2 topology into box1
+    let v_map: Vec<usize> = box2
+        .vertices
+        .iter()
+        .map(|v| box1.add_vertex(gen.next(), v.point, v.name.clone()))
+        .collect();
+
+    let e_map: Vec<usize> = box2
+        .edges
+        .iter()
+        .map(|e| {
+            box1.add_edge(
+                gen.next(),
+                [v_map[e.vertices[0]], v_map[e.vertices[1]]],
+                e.curve.clone(),
+                e.t_range,
+                e.name.clone(),
+            )
+        })
+        .collect();
+
+    let he_map: Vec<usize> = box2
+        .half_edges
+        .iter()
+        .map(|he| {
+            box1.add_half_edge(
+                gen.next(),
+                v_map[he.start_vertex],
+                e_map[he.edge],
+                he.forward,
+            )
+        })
+        .collect();
+
+    let l_map: Vec<usize> = box2
+        .loops
+        .iter()
+        .map(|lp| {
+            let new_hes: Vec<usize> = lp.half_edges.iter().map(|&h| he_map[h]).collect();
+            box1.add_loop(gen.next(), new_hes)
+        })
+        .collect();
+
+    let f_map: Vec<usize> = box2
+        .faces
+        .iter()
+        .map(|f| {
+            let outer = l_map[f.outer_loop];
+            let inner: Vec<usize> = f.inner_loops.iter().map(|&l| l_map[l]).collect();
+            box1.add_face(
+                gen.next(),
+                f.surface.clone(),
+                outer,
+                inner,
+                f.same_sense,
+                f.name.clone(),
+            )
+        })
+        .collect();
+
+    let shell_faces: Vec<usize> = box2.shells[0].faces.iter().map(|&f| f_map[f]).collect();
+    box1.add_shell(gen.next(), shell_faces, true);
+
+    box1
 }
 
 /// T01: Boolean Cut where tool face is exactly len_eps (1e-9) from target face.
 /// Before fix: dist < len_eps → false → coplanar not detected → overlapping degenerate faces.
 /// After fix (<=): correctly classified, result is a valid manifold or clean Err.
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t01_cut_tool_face_at_len_eps_from_target_face() {
     let mut gen = IdGenerator::new(1);
-    let mut target = target_box(&mut gen);
+    let target = target_box(&mut gen);
 
-    // Tool: cuboid positioned so its right face is at X = 5 - 1e-9 (len_eps from target right face).
-    // Tool spans X: [-(5-1e-9), 5-1e-9] → width = 2*(5-1e-9), centered at origin.
-    // But we want tool's right face at X=5-1e-9 and left face inside target.
-    // Use width=4 centered at X=3-1e-9: right=5-1e-9, left=1-1e-9.
     let len_eps = 1e-9_f64;
     let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool cuboid");
-    // translate: center of tool = (5 - len_eps) - 4/2 = 3 - len_eps
     tool.translate(Vec3::new(3.0 - len_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -43,37 +141,37 @@ fn t01_cut_tool_face_at_len_eps_from_target_face() {
 }
 
 /// T01_degen_boundary: tool face at exactly 1e-6 clearance (EPSILON_GUARD after fix).
-/// This is the normal UI-generated case after the EPSILON_GUARD fix.
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t01_degen_boundary_cut_with_epsilon_guard_clearance() {
     let mut gen = IdGenerator::new(2);
     let target = target_box(&mut gen);
-    // Tool's right face at X = 5 - 1e-6 (= face_dist - EPSILON_GUARD(new))
     let epsilon_guard = 1e-6_f64;
     let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool");
     tool.translate(Vec3::new(3.0 - epsilon_guard, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-    assert!(result.is_ok(), "1e-6 clearance cut should succeed: {:?}", result);
-    assert!(result.unwrap().validate_manifold().is_ok(), "must be manifold");
+    assert!(
+        result.is_ok(),
+        "1e-6 clearance cut should succeed: {:?}",
+        result
+    );
+    assert!(
+        result.unwrap().validate_manifold().is_ok(),
+        "must be manifold"
+    );
 }
 
 /// T02: classify boundary — tool face at exactly len_eps from target face.
 /// With <= fix, this should be classified as SharedOppositeDirection (coplanar).
-/// Net effect: correctly merged, not duplicated.
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t02_classify_boundary_coplanar_at_len_eps() {
     let mut gen = IdGenerator::new(3);
     let target = target_box(&mut gen);
-    // Tool's right face at X = 5 - 1e-9 = 5 - len_eps.
     let len_eps = 1e-9_f64;
     let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool");
     tool.translate(Vec3::new(3.0 - len_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-    // After classify.rs fix, no overlapping faces in result.
     match result {
         Ok(solid) => assert!(solid.validate_manifold().is_ok()),
         Err(_) => {}
@@ -81,9 +179,7 @@ fn t02_classify_boundary_coplanar_at_len_eps() {
 }
 
 /// T02_boundary_degen: tool face at len_eps + 1e-15 — just above tolerance, NOT coplanar.
-/// The cut should produce a clean result regardless.
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t02_boundary_dist_just_above_len_eps_not_coplanar() {
     let mut gen = IdGenerator::new(4);
     let target = target_box(&mut gen);
@@ -97,27 +193,37 @@ fn t02_boundary_dist_just_above_len_eps_not_coplanar() {
 }
 
 /// T03: validate_manifold() rejects a solid with overlapping coplanar faces.
-/// GLM will implement this once the coplanar check is added to validate_manifold().
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t03_validate_manifold_rejects_coplanar_duplicate_faces() {
-    // GLM: construct a boolean Cut result that was manually perturbed to contain
-    // overlapping coplanar faces, then assert validate_manifold() returns Err.
-    // (Or construct such a topology directly and call validate_manifold().)
-    todo!("GLM: construct degenerate solid and assert validate_manifold() is_err()")
+    let mut gen = IdGenerator::new(5);
+    let solid = build_solid_with_coplanar_overlapping_faces(&mut gen);
+    let result = solid.validate_manifold();
+    assert!(
+        result.is_err(),
+        "overlapping coplanar faces must be rejected, but got Ok"
+    );
+    let err = format!("{}", result.unwrap_err());
+    assert!(
+        err.contains("overlapping coplanar faces"),
+        "expected coplanar faces error, got: {err}"
+    );
 }
 
 /// T03_boundary_degen: coplanar faces with no 2D overlap → validate_manifold() Ok.
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t03_boundary_coplanar_faces_no_overlap_valid() {
-    // GLM: coplanar faces on same plane but disjoint in 2D → Ok.
-    todo!("GLM: construct solid with non-overlapping coplanar faces → is_ok()")
+    let mut gen = IdGenerator::new(6);
+    let solid = build_solid_with_coplanar_non_overlapping_faces(&mut gen);
+    let result = solid.validate_manifold();
+    assert!(
+        result.is_ok(),
+        "coplanar but non-overlapping faces should pass: {:?}",
+        result
+    );
 }
 
 /// T04: Determinism — same inputs produce identical output 2 times.
 #[test]
-#[ignore = "STEP 6 で実装後に解除"]
 fn t04_determinism_extrude_cut_near_face() {
     let run = || {
         let mut gen = IdGenerator::new(99);
@@ -129,5 +235,8 @@ fn t04_determinism_extrude_cut_near_face() {
     };
     let r1 = run();
     let r2 = run();
-    assert_eq!(r1, r2, "identical inputs must produce identical topology counts");
+    assert_eq!(
+        r1, r2,
+        "identical inputs must produce identical topology counts"
+    );
 }

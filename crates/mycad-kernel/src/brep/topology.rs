@@ -2,7 +2,7 @@ use crate::error::KernelError;
 use crate::geometry::curve::Curve;
 use crate::geometry::pcurve::Pcurve;
 use crate::geometry::surface::Surface;
-use crate::geometry::Point;
+use crate::geometry::{Point, Vec3};
 use mycad_format::EntityRef;
 use serde::{Deserialize, Serialize};
 
@@ -368,7 +368,57 @@ impl Solid {
             let _ = face_idx;
         }
 
+        // Coplanar duplicate face check
+        let len_eps = crate::geometry::math::LENGTH_TOLERANCE;
+        for i in 0..self.faces.len() {
+            for j in (i + 1)..self.faces.len() {
+                let face_a = &self.faces[i];
+                let face_b = &self.faces[j];
+
+                let (normal_a, origin_a) = match &face_a.surface {
+                    Surface::Plane { normal, origin, .. } => (normal, origin),
+                    _ => continue,
+                };
+                let (normal_b, origin_b) = match &face_b.surface {
+                    Surface::Plane { normal, origin, .. } => (normal, origin),
+                    _ => continue,
+                };
+
+                // Normals parallel?
+                if normal_a.dot(normal_b).abs() <= 1.0 - len_eps {
+                    continue;
+                }
+
+                // Plane distance within tolerance?
+                let dist = (origin_a - origin_b).dot(normal_b).abs();
+                if dist > len_eps {
+                    continue;
+                }
+
+                // 2D AABB overlap check
+                let verts_a = self.loop_vertex_points(face_a.outer_loop);
+                let verts_b = self.loop_vertex_points(face_b.outer_loop);
+                if aabb_overlap(&verts_a, &verts_b, normal_a, len_eps) {
+                    return Err(KernelError::ManifoldViolation {
+                        reason: "overlapping coplanar faces detected",
+                    });
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    /// Collect 3D vertex points from a loop's half-edges.
+    fn loop_vertex_points(&self, loop_idx: usize) -> Vec<Point> {
+        let lp = &self.loops[loop_idx];
+        lp.half_edges
+            .iter()
+            .map(|&he_idx| {
+                let he = &self.half_edges[he_idx];
+                self.vertices[he.start_vertex].point
+            })
+            .collect()
     }
 
     /// Compute Euler-Poincaré characteristic: V - E + F - 2*S + 2*H should equal 0.
@@ -414,6 +464,44 @@ impl Solid {
         // half_edges.pcurve is UV-space and invariant under rotation.
         let _ = rotate_vec;
     }
+}
+
+/// AABB overlap check for two polygon vertex sets projected onto the dominant axis of `normal`.
+fn aabb_overlap(poly_a: &[Point], poly_b: &[Point], normal: &Vec3, len_eps: f64) -> bool {
+    if poly_a.is_empty() || poly_b.is_empty() {
+        return false;
+    }
+
+    let (u_idx, v_idx) = if normal.x.abs() >= normal.y.abs() && normal.x.abs() >= normal.z.abs() {
+        (1, 2)
+    } else if normal.y.abs() >= normal.z.abs() {
+        (0, 2)
+    } else {
+        (0, 1)
+    };
+
+    let (min_a_u, max_a_u) = poly_a
+        .iter()
+        .map(|p| p.coords[u_idx])
+        .fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v), mx.max(v)));
+    let (min_a_v, max_a_v) = poly_a
+        .iter()
+        .map(|p| p.coords[v_idx])
+        .fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v), mx.max(v)));
+
+    let (min_b_u, max_b_u) = poly_b
+        .iter()
+        .map(|p| p.coords[u_idx])
+        .fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v), mx.max(v)));
+    let (min_b_v, max_b_v) = poly_b
+        .iter()
+        .map(|p| p.coords[v_idx])
+        .fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v), mx.max(v)));
+
+    max_a_u - min_b_u > len_eps
+        && max_b_u - min_a_u > len_eps
+        && max_a_v - min_b_v > len_eps
+        && max_b_v - min_a_v > len_eps
 }
 
 /// Counter for generating deterministic entity IDs.
