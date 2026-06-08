@@ -1,0 +1,15 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "web/src/viewer.ts"
+    line_hint: 1
+    finding: "初期ロード時の自動フィット表示（Box3 AABB → camera/target 計算）が実装されていない"
+    suggestion: "mesh ロード後に new THREE.Box3().setFromObject(group) → sphere.radius で distance を計算して camera.position をセットする実装を追加すること"
+  - id: FN02
+    severity: critical
+    file: "web/tests/viewer.spec.ts"
+    line_hint: 1
+    finding: "完了条件にある「ページロード直後に canvas スナップショットを撮り、モデルが viewport 中央に収まっている（スナップショット回帰）」テストが実装されていない"
+    suggestion: "T07〜T09 の前に初期フィット表示を検証するスナップショットテスト（例: T07 snapshot test）を追加すること"
+
+verdict: fail
