@@ -1,0 +1,33 @@
+{
+  "totals": {
+    "passed": 847,
+    "failed": 0,
+    "ignored": 0
+  },
+  "by_crate": {
+    "mycad-api": {
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "added_in_round": [
+    "s08_multistep_extrude_cut",
+    "s08_boundary_shallow_depth",
+    "s08_degen_nonexistent_target",
+    "s08_determinism_100x",
+    "s08_degen_invalid_sketch",
+    "s08_degen_zero_length_segment",
+    "s08_boundary_min_depth",
+    "s08_multistep_two_cuts"
+  ],
+  "coverage_hints": {
+    "total_added": 8,
+    "determinism": 1,
+    "degenerate": 3,
+    "boundary": 2,
+    "golden": 0,
+    "edge_case": 2
+  },
+  "note": "total_added computed from glm-result(3) + glm-test-result(5); git-diff unavailable pre-commit"
+}

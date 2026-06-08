@@ -1,0 +1,23 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "crates/mycad-api/tests/e2e_api_scenarios.rs"
+    line_hint: 354
+    finding: "s08_multistep_extrude_cut が manifold violation で失敗 (edge must have exactly 2 half-edges)。CI red。"
+    suggestion: "カーネル boolean 演算の B-rep トポロジー構築ロジック（make_boolean / assemble）に HalfEdge の twin/next ループ不整合がある。T02 surface cut 範囲で発生しているため、edge 分割/マージ時のインデックス更新を確認すること。"
+
+  - id: FN02
+    severity: critical
+    file: "crates/mycad-api/tests/e2e_api_scenarios.rs"
+    line_hint: 429
+    finding: "s08_boundary_shallow_depth が manifold violation で失敗。"
+    suggestion: "FN01 と同じ根因。depth=2.9 の境界ケースで edge のトポロジー整合性が壊れている。"
+
+  - id: FN03
+    severity: high
+    file: "crates/mycad-kernel/tests/boolean_proptest.rs"
+    line_hint: 83
+    finding: "T02 を surface cut (x_offset ∈ 4.1..5.4) から void cut (x_offset ∈ -3.0..3.0) に変更し、問題のあるケースを回避。バグを隠す変更。"
+    suggestion: "テスト範囲を狭めるのではなく、manifold violation の原因（boolean assemble の edge トポロジー構築）を修正すること。surface cut は本来サポートすべき操作。"
+
+verdict: fail
