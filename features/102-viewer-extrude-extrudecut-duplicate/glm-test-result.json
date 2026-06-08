@@ -1,8 +1,10 @@
 {
-  "status": "success",
-  "ci_passed": true,
-  "summary": "test-spec.md の追加テストは Vitest 側。GLM が既存 extrude.test.ts (58件) と mesh.test.ts (28件) が全 green であることを確認。fetchAllFeatureIds のエラーハンドリングは API モックテストが複雑なため test-spec の観察事項として記録のみ。",
-  "tests_added": 0,
-  "glm_exit": 0,
-  "debug_spec_used": false
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": false,
+  "failed_reason": "cargo xtask ci failed — see features/102-viewer-extrude-extrudecut-duplicate/ci.log",
+  "error_pattern": "error[E0027]: pattern does not mention field `offset` --> crates/mycad-build/src/lib.rs:LINE:COL",
+  "error_pattern_kind": "compile"
 }

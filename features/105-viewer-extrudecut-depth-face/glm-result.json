@@ -1,8 +1,10 @@
 {
-  "status": "success",
-  "ci_passed": true,
-  "summary": "faceToCanonicalPlaneDistance() を追加し buildExtrudeCutFeatures で depth を clamp。extrude.test.ts T23 追加。Vitest 110件 green。",
-  "tests_added": 5,
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
   "glm_exit": 0,
-  "debug_spec_used": false
+  "debug_spec_used": false,
+  "failed_reason": "cargo xtask ci failed — see features/105-viewer-extrudecut-depth-face/ci.log",
+  "error_pattern": "error[E0027]: pattern does not mention field `offset` --> crates/mycad-build/src/lib.rs:LINE:COL",
+  "error_pattern_kind": "compile"
 }

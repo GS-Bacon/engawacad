@@ -2,9 +2,9 @@
   "status": "failed",
   "ci_passed": false,
   "summary": "CI red",
-  "glm_exit": 0,
+  "glm_exit": 1,
   "debug_spec_used": false,
   "failed_reason": "cargo xtask ci failed — see features/103-viewer-f-cap-f/ci.log",
-  "error_pattern": "error: failed to build assembly: invalid parameter: profile",
-  "error_pattern_kind": "generic"
+  "error_pattern": "error[E0463]: can't find crate for `mycad_build` --> crates/mycad-api/src/handler.rs:LINE:COL",
+  "error_pattern_kind": "compile"
 }
