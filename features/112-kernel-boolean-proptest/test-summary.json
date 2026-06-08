@@ -1,0 +1,86 @@
+{
+  "totals": {
+    "passed": 844,
+    "failed": 0,
+    "ignored": 7
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_prop_cut_never_produces_degenerate_manifold",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t01_boundary_coplanar_tool_does_not_panic",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t02_prop_surface_cut_reduces_volume",
+      "kind": "other"
+    },
+    {
+      "name": "t02_degen_minimum_tool_size_ok_or_err",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t03_determinism_fixed_seed",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_void_cut_volume_exceeds_initial",
+      "kind": "other"
+    },
+    {
+      "name": "t01_large_tool_still_valid",
+      "kind": "other"
+    },
+    {
+      "name": "t03_boundary_seed_determinism",
+      "kind": "determinism"
+    },
+    {
+      "name": "t03_repeated_determinism_100_runs",
+      "kind": "determinism"
+    },
+    {
+      "name": "t04_make_cuboid_nan_returns_err",
+      "kind": "boundary"
+    },
+    {
+      "name": "t04_make_cuboid_infinity_returns_err",
+      "kind": "boundary"
+    },
+    {
+      "name": "t04_make_cuboid_negative_returns_err",
+      "kind": "other"
+    },
+    {
+      "name": "t04_make_cuboid_zero_returns_err",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t04_make_cuboid_negative_zero_returns_err",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t04_make_cuboid_min_positive_ok",
+      "kind": "boundary"
+    },
+    {
+      "name": "t05_empty_solid_validate_manifold_is_consistent",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t06_make_cuboid_determinism",
+      "kind": "determinism"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 17,
+    "determinism": 4,
+    "degenerate": 6,
+    "boundary": 3,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

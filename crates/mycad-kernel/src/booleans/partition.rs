@@ -2056,6 +2056,16 @@ fn pslg_subdivide(
         }
     }
 
+    // Snap intersection points to outer-loop vertices to avoid degenerate sub-faces
+    for p in &mut all_points[n_outer..] {
+        for ov in outer_loop {
+            if (p.0 - ov.0).abs() < len_eps && (p.1 - ov.1).abs() < len_eps {
+                *p = *ov;
+                break;
+            }
+        }
+    }
+
     // Deduplicate points
     let mut unique_points: Vec<(f64, f64)> = Vec::new();
     for p in &all_points {

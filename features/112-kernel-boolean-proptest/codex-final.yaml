@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/boolean_proptest.rs"
+    line_hint: 65
+    finding: "T01_boundary/T03_boundary_seed は tool 幅 2.0 に対して `x_offset = ±5` を境界扱いしていますが、target face X=±5 と tool face が本当に一致する中心値は `±4`（内部側）または `±6`（外部接触）です。現在の `-5.0..=5.0` の proptest と `[-5,-3,0,3,5]` の固定値ではその実境界を保証して踏まないため、合意済みの coplanar/touching 分岐が未検証のままです。"
+    suggestion: "境界ケースは float range 任せにせず、`x_offset = [-6.0, -4.0, 4.0, 6.0]` を明示した example-based test か `Just(...)` を含む strategy に置き換え、同じ実境界値で決定性テストも回してください。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/boolean_proptest.rs"
+    line_hint: 147
+    finding: "T03/T03_boundary_seed/T03_repeated/T06 の決定性検証は vertex 数・vertex ID と tessellation の `positions`/`indices` までしか比較していないため、`Solid.id` や edge/half-edge/loop/face/shell の ID・配列順・name、あるいは `Err` の variant が run ごとに揺れても通ってしまいます。`boolean` 実装は hash ベースの集合を多用しているので、この粒度では B-rep 全体の非決定性を取りこぼします。"
+    suggestion: "決定性比較用の canonical snapshot を作り、`solid.id` と全 topo 配列の ID/参照/name まで `assert_eq!` してください。`Err` ケースも `Err(_)` ではなく具体的な `KernelError` まで一致確認するべきです。"
+
+verdict: fail
