@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "TypeScript T01-T03 (faceOffsetFromPlane) + Rust T05/T06/T07/T04a を追加。116 Vitest + 4 Rust テスト green。T04/T04b は boolean kernel 制限により #[ignore]。",
+  "tests_added": 7,
+  "glm_exit": 0,
+  "debug_spec_used": false
+}

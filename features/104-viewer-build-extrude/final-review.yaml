@@ -1,0 +1,23 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "crates/mycad-api/tests/extrude_fuse_acceptance.rs"
+    line_hint: 5
+    finding: "T04 受け入れテストが未実装（`#[ignore]` + `todo!()`）。Issue #104 の Acceptance tests が満たされていない。"
+    suggestion: "単一ボディになることを検証するテストを実装すること：選択面から押し出した後に `bodies.len() == 1` であることを assert する"
+
+  - id: FN02
+    severity: high
+    file: "crates/mycad-api/tests/extrude_fuse_acceptance.rs"
+    line_hint: 1
+    finding: "決定性テストが追加されていない（coverage_hints: determinism_tests = 0）。fuse_target + offset を含む extrude 操作が決定的か検証されていない。"
+    suggestion: "T04 テスト内で、同一 Feature 列を 2 回 build し、生成される Solid ID が全て一致することを assert する determinism 検証を追加すること"
+
+  - id: FN03
+    severity: high
+    file: "crates/mycad-format/src/feature.rs"
+    line_hint: 351
+    finding: "f64 の直接比較（`is_zero` 関数内 `*v == 0.0`）を使用。浮動小数点丸め誤差で微少な値が 0 と判定されないリスク。"
+    suggestion: "epsilon 比較（`v.abs() < 1e-12` 等）に置き換えること。ただし YAML skip_serializing_if 用途として意図的である場合、コメントで留保を明記すること"
+
+verdict: fail

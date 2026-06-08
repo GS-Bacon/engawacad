@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "GLM が offset/fuse_target を feature.rs・lib.rs・extrude.ts に実装。cargo fmt 修正と xtask golden 更新後、全 CI green。",
+  "tests_added": 0,
+  "glm_exit": 0,
+  "debug_spec_used": false
+}
