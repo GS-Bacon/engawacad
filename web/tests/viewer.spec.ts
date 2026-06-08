@@ -184,12 +184,18 @@ test("T09 btn-view-top positions camera on +Y axis of target", async ({ page }) 
   await page.waitForTimeout(500);
   await page.click('[data-testid="btn-view-top"]');
   await page.waitForTimeout(200);
-  const delta = await page.evaluate(() => {
+  const result = await page.evaluate(() => {
     const { camera, controls } = (window as any).__viewer;
     const t = controls.target;
-    return { dx: camera.position.x - t.x, dy: camera.position.y - t.y, dz: camera.position.z - t.z };
+    return {
+      dx: camera.position.x - t.x,
+      dy: camera.position.y - t.y,
+      dz: camera.position.z - t.z,
+      upZ: camera.up.z,
+    };
   });
-  expect(delta.dy).toBeGreaterThan(0);
-  expect(Math.abs(delta.dx)).toBeLessThan(0.01);
-  expect(Math.abs(delta.dz)).toBeLessThan(0.01);
+  expect(result.dy).toBeGreaterThan(0);
+  expect(Math.abs(result.dx)).toBeLessThan(0.01);
+  expect(Math.abs(result.dz)).toBeLessThan(0.01);
+  expect(result.upZ).toBe(-1); // up=(0,0,-1) で look 方向と平行にならない
 });

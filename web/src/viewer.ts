@@ -220,10 +220,14 @@ export function initViewer(
       const d = camera.position.distanceTo(controls.target);
       const t = controls.target;
       if (view === "front") {
+        camera.up.set(0, 1, 0);
         camera.position.set(t.x, t.y, t.z + d);
       } else if (view === "top") {
+        // look 方向が (0,-1,0) のため up = (0,1,0) と平行になる → -Z を up に設定
+        camera.up.set(0, 0, -1);
         camera.position.set(t.x, t.y + d, t.z);
       } else {
+        camera.up.set(0, 1, 0);
         const len = Math.sqrt(1.5);
         camera.position.set(t.x + d * 0.5 / len, t.y + d * 0.5 / len, t.z + d / len);
       }

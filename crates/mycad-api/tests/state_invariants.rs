@@ -23,3 +23,4 @@ fn ensure_loaded_public_api_returns_read_only_ref() {
         "loaded document must have features"
     );
 }
+
