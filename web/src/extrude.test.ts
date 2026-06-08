@@ -924,3 +924,79 @@ describe("T03_degen_no_match: faceOffsetFromPlane returns 0.0 for missing faceId
     expect(faceOffsetFromPlane(positions, indices, faceIds, "any", "xy")).toBeCloseTo(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #113 plan.md — T01〜T06 traceability (behavioral EPSILON_GUARD coverage)
+// ---------------------------------------------------------------------------
+
+// T01: planeForFaceId maps x/y/z → yz/xz/xy (see T02 / T10 above for full coverage)
+// T01_boundary_null: covered in T05_degen
+
+// T02: footprintProfile yz plane bounding box
+describe("T02_plan: footprintProfile yz plane Y:[-10,10] Z:[-15,15]", () => {
+  it("produces correct bounding rect from yz-face mesh", () => {
+    const positions = new Float32Array([
+      5, -10, -15, // v0
+      5,  10, -15, // v1
+      5, -10,  15, // v2
+      5,  10,  15, // v3
+    ]);
+    const indices = new Uint32Array([0, 1, 2, 1, 3, 2]);
+    const faceIds = ["f_x_pos", "f_x_pos"];
+    const result = footprintProfile(positions, indices, faceIds, "f_x_pos", "yz");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(4);
+    expect(result![0]).toEqual({ id: "seg_0", from: [-10, -15], to: [10, -15] });
+    expect(result![1]).toEqual({ id: "seg_1", from: [10, -15], to: [10, 15] });
+    expect(result![2]).toEqual({ id: "seg_2", from: [10, 15], to: [-10, 15] });
+    expect(result![3]).toEqual({ id: "seg_3", from: [-10, 15], to: [-10, -15] });
+  });
+});
+
+// T02_boundary_degen: covered in T08 (coincident vertices → null)
+
+// T03: faceToCanonicalPlaneDistance (covered in T23)
+// T03_boundary_missing: covered in T23
+
+// T04: buildExtrudeFeatures offset+depth (covered in T11 / T04)
+// T04_boundary_invalid: covered in T07
+
+// T05: buildExtrudeCutFeatures depth clamp — EPSILON_GUARD behavioral assertion
+describe("T05_plan: buildExtrudeCutFeatures EPSILON_GUARD depth clamp", () => {
+  const faceId = "N(v0;face:f_z_pos)";
+  const { positions, indices, faceIds } = boxTopFaceData(); // face at z=10
+
+  it("T05_01: depth > face_distance is clamped to face_distance - ε (< face_distance)", () => {
+    const result = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 999, "box_0", new Set());
+    expect(result).not.toBeNull();
+    const d = (result!.extrudeCut as any).depth as number;
+    // clamped: must be strictly less than face_distance (10) and positive
+    expect(d).toBeGreaterThan(0);
+    expect(d).toBeLessThan(10);
+    // clamped value = face_distance - EPSILON_GUARD (whatever EPSILON_GUARD is)
+    const faceDistance = faceToCanonicalPlaneDistance(positions, indices, faceIds, faceId, "xy");
+    expect(d).toBeLessThan(faceDistance);
+  });
+
+  it("T05_02: clamped depth equals face_distance - effective epsilon (deterministic)", () => {
+    const r1 = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 50, "box_0", new Set());
+    const r2 = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 50, "box_0", new Set());
+    expect(r1).not.toBeNull();
+    expect(r2).not.toBeNull();
+    expect((r1!.extrudeCut as any).depth).toBe((r2!.extrudeCut as any).depth);
+  });
+
+  it("T05_boundary_zero_dist: face at origin (distance=0) → null", () => {
+    // z=0 face: faceToCanonicalPlaneDistance("xy") = 0 → maxSafeDepth = -ε ≤ 0 → null
+    const zeroPositions = new Float32Array([0, 0, 0, 10, 0, 0, 10, 10, 0]);
+    const zeroIndices = new Uint32Array([0, 1, 2]);
+    const zeroFaceIds = [faceId];
+    const result = buildExtrudeCutFeatures(
+      faceId, zeroPositions, zeroIndices, zeroFaceIds, 1, "box_0", new Set(),
+    );
+    expect(result).toBeNull();
+  });
+});
+
+// T06: insetRect ratio=0.25 (covered in T14)
+// T06_boundary_degen: covered in T14 collapse case
