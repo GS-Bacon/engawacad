@@ -216,6 +216,7 @@ async fn s03_extrude_creates_two_bodies() {
 ///
 /// This tests the scenario from #105: boundary condition where the cut depth
 /// equals the offset distance, creating a degenerate (coplanar) result.
+/// The UI-actual pattern (offset=0, depth≈face_dist) is covered by S04b instead.
 #[tokio::test]
 async fn s04_degen_extrudecut_depth_boundary() {
     let (_dir, path) = temp_copy("simple_box.mycad");
@@ -236,6 +237,77 @@ async fn s04_degen_extrudecut_depth_boundary() {
         cut_status,
         StatusCode::UNPROCESSABLE_ENTITY,
         "boundary-depth extrude_cut must return 422: status={cut_status}, body={cut_body}"
+    );
+}
+
+/// S04b: sketch at offset=5.0, extrude_cut depth=4.9 (< face distance) → 200 (just inside boundary).
+///
+/// Complements S04: depth slightly less than offset avoids the degenerate coplanar case.
+#[tokio::test]
+async fn s04b_extrudecut_depth_just_inside_boundary() {
+    let (_dir, path) = temp_copy("simple_box.mycad");
+
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let app1 = make_app(path.clone());
+    let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
+    assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
+
+    let cut_json =
+        r#"{"type":"extrude_cut","id":"cut_0","sketch":"sketch_0","depth":4.9,"target":"box_1"}"#;
+    let app2 = make_app(path);
+    let (cut_status, cut_body) = send_post_feature(app2, cut_json).await;
+    assert_eq!(
+        cut_status,
+        StatusCode::OK,
+        "depth=4.9 (< offset=5.0) extrude_cut must succeed: status={cut_status}, body={cut_body}"
+    );
+}
+
+/// S06: extrude_cut with depth=0.0 → 422 (degenerate zero-depth tool).
+///
+/// A zero-depth cut creates a degenerate (zero-volume) tool body, which should
+/// be rejected by the kernel rather than silently accepted.
+#[tokio::test]
+async fn s06_zero_depth_extrude_cut_rejected() {
+    let (_dir, path) = temp_copy("simple_box.mycad");
+
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let app1 = make_app(path.clone());
+    let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
+    assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
+
+    let cut_json =
+        r#"{"type":"extrude_cut","id":"cut_0","sketch":"sketch_0","depth":0.0,"target":"box_1"}"#;
+    let app2 = make_app(path);
+    let (cut_status, cut_body) = send_post_feature(app2, cut_json).await;
+    assert_eq!(
+        cut_status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "zero-depth extrude_cut must return 422: status={cut_status}, body={cut_body}"
+    );
+}
+
+/// S07: extrude_cut with negative depth → 422 (invalid input).
+///
+/// A negative depth is geometrically meaningless for a cut operation and
+/// must be rejected at the API or kernel level.
+#[tokio::test]
+async fn s07_negative_depth_extrude_cut_rejected() {
+    let (_dir, path) = temp_copy("simple_box.mycad");
+
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let app1 = make_app(path.clone());
+    let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
+    assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
+
+    let cut_json =
+        r#"{"type":"extrude_cut","id":"cut_0","sketch":"sketch_0","depth":-1.0,"target":"box_1"}"#;
+    let app2 = make_app(path);
+    let (cut_status, cut_body) = send_post_feature(app2, cut_json).await;
+    assert_eq!(
+        cut_status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "negative-depth extrude_cut must return 422: status={cut_status}, body={cut_body}"
     );
 }
 

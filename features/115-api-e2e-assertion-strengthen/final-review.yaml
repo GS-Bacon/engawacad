@@ -1,0 +1,30 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "crates/mycad-api/tests/extrude_cut_acceptance.rs"
+    line_hint: 152
+    finding: "T02 体積チェックが Issue 要件と逆方向。Issue は「material 除去」を検証したい（vol_after < vol_before）が、実装は空洞体積を足し合わせて「vol_after > vol_before」をチェックしている"
+    suggestion: "material 除去の検証要件を明確化すること。空洞を持つ B-rep の体積計算戦略（外殻のみカウント、内外殻差分、等）を決めて T02 を修正する"
+
+  - id: FN02
+    severity: high
+    file: "crates/mycad-api/tests/extrude_cut_acceptance.rs"
+    line_hint: 138
+    finding: "T01 面数期待値（12）が Issue 要件（10）と不一致。Issue は「box 5面 + カット内壁 4面 + 底面 1面 = 10面」としているが、実装は「6 cuboid + 4 extrusion sides + 2 caps = 12 faces」とコメントしている"
+    suggestion: "正しい面数を幾何的に検証し、期待値を合意すること。または face_id 重複チェックの目的（退化 B-rep 検出）を達成できるなら面数値そのものは必須ではないので、アサーションを「全 face_id が一意であること」のみに絞ることも検討する"
+
+  - id: FN03
+    severity: medium
+    file: "crates/mycad-api/tests/e2e_api_scenarios.rs"
+    line_hint: 244
+    finding: "S04 の期待値修正が実装されていない。Issue 要件4「S04 の期待値修正: offset=5.0, depth=5.0 の幾何を UI 実際生成パターン（offset=0, depth≈face_dist）に修正する」に対し、S04 テスト自体に変更がない"
+    suggestion: "S04 テストを修正するか、または S04b（depth=4.9）で境界値ケースをカバーしたので S04 修正は obsolete になったことを Issue コメント等で明記する"
+
+  - id: FN04
+    severity: low
+    file: "crates/mycad-api/tests/extrude_cut_acceptance.rs"
+    line_hint: 176
+    finding: "A02 決定性テストで face_id 重複チェックが欠落している。Issue 要件2「face_id 重複チェック」は A01 にのみ追加され、A02 100回決定性検証には含まれていない"
+    suggestion: "A02 でも face_id 一意性を検証すること。あるいは A01 で検証済みとして A02 は byte-identical に絞る設計判断ならば、その意図をコメントに明記する"
+
+verdict: fail
