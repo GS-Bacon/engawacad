@@ -1,0 +1,15 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "web/src/viewer.ts"
+    line_hint: 48
+    finding: "完了条件の `renderer.setPixelRatio(window.devicePixelRatio)` が実装されていない。Issue In-Scope の DPR 設定が漏れている。"
+    suggestion: "renderer 初期化後に `renderer.setPixelRatio(window.devicePixelRatio)` を追加すること。T05 テストがこの実装を前提としているため、現状ではテストが fail する。"
+  - id: FN02
+    severity: high
+    file: "web/src/viewer.ts"
+    line_hint: 186
+    finding: "requestAnimationFrame ループでの `controls.update()` 呼び出しが Issue In-Scope にあるが、既存実装で既に満たされているか不明。"
+    suggestion: "animate() 関数内に既に `controls.update()` がある場合は Issue 完了条件との対応を明確にすること。"
+
+verdict: fail
