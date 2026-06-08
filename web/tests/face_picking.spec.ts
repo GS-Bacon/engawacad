@@ -24,6 +24,13 @@ async function setupPickingPage(page: Page): Promise<void> {
       body: JSON.stringify(fixture),
     }),
   );
+  await page.route("/api/v0/features", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    }),
+  );
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
   // OrbitControls の初期化 + 最初のフレーム描画を待つ
@@ -96,6 +103,13 @@ test("E04 face-pick does not mutate mycad (transient state only)", async ({ page
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(fixture),
+    }),
+  );
+  await page.route("/api/v0/features", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
     }),
   );
 

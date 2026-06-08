@@ -13,15 +13,22 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 ## 引数解釈（最初に判定）
 
 - `/3ai --issue N` → **単一 Issue モード**。STEP 0 へ直行（既存フロー、変更なし）。  
-- `/3ai`（引数なし）→ **バッチモード**。STEP B へ。  
-- `/3ai --batch fixes` → **バッチモード**（bug+batch:* に絞る）。STEP B へ。  
-- `/3ai --batch phase` → **バッチモード**（現 Phase milestone の type:feature に絞る）。STEP B へ。  
+- `/3ai`（引数なし）→ **自律バッチモード**（承認待ちなし・無人進行）。STEP B へ。`plan.json.batch_arg === null` がスイッチ。  
+- `/3ai --batch fixes` → **対話バッチモード**（bug+batch:* に絞る、従来どおりユーザー確認あり）。STEP B へ。  
+- `/3ai --batch phase` → **対話バッチモード**（現 Phase milestone の type:feature に絞る、従来どおりユーザー確認あり）。STEP B へ。  
 
 ---
 
 ## STEP B: バッチ実行（バッチモード専用）
 
 > 引数なし、または `--batch` 付きで呼ばれた場合のみ実行する。`--issue N` の場合は STEP 0 へ直行。
+
+### 自律スイッチ
+
+B-1 で生成した `plan.json` の `batch_arg` フィールドで挙動を切り替える:
+
+- **`batch_arg === null`（引数なし起動）→ 自律モード**: B-2 slug ログ表示後に承認を待たず自動進行する。B-3 では Claude が自力で要件を詰めて推奨実装で続行する。B-4 の full Issue では STEP 4 の `ExitPlanMode` をスキップし情報共有のみ行う。止まるのは **B-3 で自力解決できない曖昧さ** と **各種 escalation ゲート** のみ。
+- **`batch_arg !== null`（`--batch fixes/phase`）→ 対話モード**: 従来どおり B-2 着手確認・B-3 ユーザー確認・B-4 full の STEP 4 `ExitPlanMode` をすべて維持する。
 
 ### B-1: 実行プラン生成
 
@@ -37,22 +44,31 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
 
 `plan.json` の内容を平易な言葉でユーザーに提示する:
 - 選択した tier・グループ一覧・各 Issue の `flow`（light/full）・`gate`（auto/pause）・実行順序
-- 導出した slug を Issue ごとに一覧し、修正があれば **ここで一括受付**する（後から変えられない）
+- 導出した slug を Issue ごとに**必ず一覧表示する**（間違いに気づけるようログを省かない）
 
-**全件 `flow: light` のバッチ**はここで一括着手確認を行う（`ExitPlanMode` なし、承認=ユーザーの返答）。
+**自律モード（`batch_arg === null`）**: slug・順序を表示したら承認を待たず直ちに B-3 へ進む。slug は表示した値を自動採用（後から変えられない）。`ExitPlanMode` も着手確認も行わない。
+
+**対話モード（`batch_arg !== null`）**: slug の修正があれば **ここで一括受付**する（後から変えられない）。全件 `flow: light` のバッチはここで一括着手確認を行う（`ExitPlanMode` なし、承認=ユーザーの返答）。
 
 ### B-3: pause の front-load（実装前に人間介在を集約）
 
-`gate: pause` または `intent_check_required: true` の Issue がある場合、実装ループ前にまとめて処理する:
+`gate: pause` または `intent_check_required: true` の Issue がある場合、実装ループ前にまとめて処理する。
 
-- **`needs-review` ラベルあり / ambiguous** → ユーザーに要件を確認。解決したら続行、解決しなければバッチから除外する
+**自律モード（`batch_arg === null`）**:
+
+- **`needs-review` ラベルあり / ambiguous** → ユーザーに確認する前に **Claude が ROADMAP・関連 ADR・関連 Issue・既存コードを Read/grep して要件を確定する**。確定できた場合は *推奨設計* で続行し、曖昧点と採った判断を `features/$N-$SLUG/plan.md` の冒頭に「自律判断ログ」として明記する。どうしても確定できない（情報が存在しない / 複数選択肢が等価で根拠なし）場合のみ停止してユーザーにエスカレーション。
 - **`intent_check_required: true`** → Codex intent-check を実行:
   ```bash
   bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
     --issue $N \
     --result features/.batch/intent-$N.yaml
   ```
-  `aligned: no` → ユーザーと相談し、スコープ修正またはバッチから除外する
+  `aligned: yes` → 続行。`aligned: no` → Claude が ROADMAP/ADR でスコープ整合を再確認し、推奨スコープに調整して続行。ただし *Phase/スコープ自体の根本的不整合*（例: 別 Phase 向け Issue など）と判断したら推奨実装せず停止してユーザーにエスカレーション。
+
+**対話モード（`batch_arg !== null`）**:
+
+- **`needs-review` ラベルあり / ambiguous** → ユーザーに要件を確認。解決したら続行、解決しなければバッチから除外する
+- **`intent_check_required: true`** → Codex intent-check を実行し `aligned: no` → ユーザーと相談し、スコープ修正またはバッチから除外する
 
 **B-3 完了後の残 Issue は無人で自動進行する。**
 
@@ -63,7 +79,9 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
 1. `main` ブランチ上でクリーンな状態を確認する
 2. `bun .claude/skills/3ai/scripts/init-feature.ts --issue $N --slug $SLUG` を実行する  
    （`features/$N-$SLUG/` が既存の場合はスキップ → 完了済みとして continue）
-3. `flow: full` の Issue → 既存 STEP 1（ディレクトリ作成済み、Issue 確定のみ）→ STEP 2 … STEP 8 を当該 Issue で実行。`ExitPlanMode`（唯一の承認点）は full Issue でも維持する
+3. `flow: full` の Issue → 既存 STEP 1（ディレクトリ作成済み、Issue 確定のみ）→ STEP 2 → 2.5 → STEP 3（GLM 設計レビュー収束）まで実行した後:
+   - **自律モード（`batch_arg === null`）**: STEP 4 の `ExitPlanMode` をスキップ。代わりに STEP 2.5 と同じ「確定 plan の要点を情報共有として表示（待たない）」を行い、そのまま STEP 5 へ進む。
+   - **対話モード（`batch_arg !== null`）**: 従来どおり STEP 4 `ExitPlanMode`（唯一の承認点）を実行し、承認後に STEP 5〜8 を自動進行する。
 4. `flow: light` の Issue → **B-5 へ**
 
 ### B-5: Lightweight フロー（機械的 Issue）
@@ -270,7 +288,10 @@ bun .claude/skills/3ai/scripts/state.ts set \
 
 ## STEP 4: 確定プラン提出（唯一の承認点）
 
-**`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点。**
+> **自律バッチモード（引数なし起動, `batch_arg === null`）では本 STEP の `ExitPlanMode` をスキップし、確定 plan の要点を情報共有として表示するのみ（待たない）。B-4 の手順に従ってそのまま STEP 5 へ進む。**  
+> 対話バッチモード（`batch_arg !== null`）および単一 Issue モードでは下記のとおり唯一の承認点として維持する。
+
+**`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点（対話/単一 Issue モード）。**
 
 GLM レビュー反映後の plan を提示しユーザーに承認を求める。
 

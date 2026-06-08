@@ -51,6 +51,13 @@ async function setupPageWithFixture(
       body: JSON.stringify(fixture),
     }),
   );
+  await page.route("/api/v0/features", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    }),
+  );
 
   return consoleErrors;
 }

@@ -250,8 +250,40 @@ export function insetRect(
 export const CUT_INSET_RATIO = 0.25;
 
 /**
+ * Returns the distance from the selected face to the canonical plane origin along the
+ * plane's normal axis. Used to clamp ExtrudeCut depth to avoid coplanar face errors.
+ * Returns Infinity if no matching face triangle is found.
+ */
+export function faceToCanonicalPlaneDistance(
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  faceIds: string[],
+  faceId: string,
+  plane: SketchPlane,
+): number {
+  for (let t = 0; t < faceIds.length; t++) {
+    if (faceIds[t] === faceId) {
+      const i0 = indices[t * 3];
+      const x = positions[i0 * 3];
+      const y = positions[i0 * 3 + 1];
+      const z = positions[i0 * 3 + 2];
+      switch (plane) {
+        case "yz":
+          return Math.abs(x);
+        case "xz":
+          return Math.abs(y);
+        case "xy":
+          return Math.abs(z);
+      }
+    }
+  }
+  return Infinity;
+}
+
+/**
  * Build create_sketch + extrude_cut Feature pair for the given selection.
  * The tool profile is inset inward from the face footprint to avoid coplanar faces.
+ * depth is clamped to (face-to-canonical-plane distance - ε) to prevent manifold errors.
  * Returns null if the face cannot be resolved, profile is degenerate, or inset collapses.
  */
 export function buildExtrudeCutFeatures(
@@ -267,6 +299,11 @@ export function buildExtrudeCutFeatures(
   if (!plane) return null;
   if (!target) return null;
   if (!Number.isFinite(depth) || depth <= 0) return null;
+
+  const maxSafeDepth =
+    faceToCanonicalPlaneDistance(positions, indices, faceIds, faceId, plane) - EPSILON_GUARD;
+  const effectiveDepth = Math.min(depth, maxSafeDepth);
+  if (effectiveDepth <= 0) return null;
 
   const rect = footprintProfile(positions, indices, faceIds, faceId, plane);
   if (!rect) return null;
@@ -287,7 +324,7 @@ export function buildExtrudeCutFeatures(
     type: "extrude_cut",
     id: cutId,
     sketch: sketchId,
-    depth,
+    depth: effectiveDepth,
     target,
   };
   return { sketch, extrudeCut };

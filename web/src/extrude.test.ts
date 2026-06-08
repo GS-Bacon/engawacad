@@ -15,6 +15,7 @@ import {
   footprintProfile,
   buildExtrudeFeatures,
   buildExtrudeCutFeatures,
+  faceToCanonicalPlaneDistance,
   insetRect,
   CUT_INSET_RATIO,
 } from "./extrude";
@@ -783,6 +784,87 @@ describe("T22_boundary_no_match: faceId not in faceIds → null", () => {
     const indices = new Uint32Array([0, 1, 2]);
     const faceIds = ["N(v0;face:f_z_pos)"];
     const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_cap_unknown)");
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T23: faceToCanonicalPlaneDistance — face 位置から正準面までの距離
+// ---------------------------------------------------------------------------
+describe("T23 faceToCanonicalPlaneDistance", () => {
+  function makeTriangle(x: number, y: number, z: number): {
+    positions: Float32Array; indices: Uint32Array; faceIds: string[];
+  } {
+    return {
+      positions: new Float32Array([x, y, z, x + 1, y, z, x, y + 1, z]),
+      indices: new Uint32Array([0, 1, 2]),
+      faceIds: ["face_a"],
+    };
+  }
+
+  it("T23_01: yz plane, x=5 → distance 5", () => {
+    const { positions, indices, faceIds } = makeTriangle(5, 0, 0);
+    expect(faceToCanonicalPlaneDistance(positions, indices, faceIds, "face_a", "yz")).toBeCloseTo(5);
+  });
+
+  it("T23_02: xz plane, y=3 → distance 3", () => {
+    const { positions, indices, faceIds } = makeTriangle(0, 3, 0);
+    expect(faceToCanonicalPlaneDistance(positions, indices, faceIds, "face_a", "xz")).toBeCloseTo(3);
+  });
+
+  it("T23_03: xy plane, z=10 → distance 10", () => {
+    const { positions, indices, faceIds } = makeTriangle(0, 0, 10);
+    expect(faceToCanonicalPlaneDistance(positions, indices, faceIds, "face_a", "xy")).toBeCloseTo(10);
+  });
+
+  it("T23_normal_under: f_x_pos at x=5, depth=4 → no clamp (effectiveDepth=4)", () => {
+    const positions = new Float32Array([5, 0, 0, 5, 5, 0, 5, 0, 5]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_x_pos)"];
+    const result = buildExtrudeCutFeatures(
+      "N(v0;face:f_x_pos)", positions, indices, faceIds, 4, "box_0", new Set()
+    );
+    expect(result).not.toBeNull();
+    if (result!.extrudeCut.type === "extrude_cut") {
+      expect(result!.extrudeCut.depth).toBeCloseTo(4);
+    }
+  });
+
+  it("T23_boundary_exact: depth == faceOffset → effectiveDepth < depth (clamped)", () => {
+    // f_x_pos at x=5, depth=5 → should be clamped
+    const positions = new Float32Array([5, 0, 0, 5, 5, 0, 5, 0, 5]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_x_pos)"];
+    const result = buildExtrudeCutFeatures(
+      "N(v0;face:f_x_pos)", positions, indices, faceIds, 5, "box_0", new Set()
+    );
+    expect(result).not.toBeNull();
+    if (result!.extrudeCut.type === "extrude_cut") {
+      expect(result!.extrudeCut.depth).toBeLessThan(5);
+    }
+  });
+
+  it("T23_boundary_over: f_x_pos at x=5, depth=10 → clamped to ≈5-ε", () => {
+    const positions = new Float32Array([5, 0, 0, 5, 5, 0, 5, 0, 5]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_x_pos)"];
+    const result = buildExtrudeCutFeatures(
+      "N(v0;face:f_x_pos)", positions, indices, faceIds, 10, "box_0", new Set()
+    );
+    expect(result).not.toBeNull();
+    if (result!.extrudeCut.type === "extrude_cut") {
+      expect(result!.extrudeCut.depth).toBeLessThan(5);
+      expect(result!.extrudeCut.depth).toBeGreaterThan(5 - 1e-6);
+    }
+  });
+
+  it("T23_degen_zero_offset: face at origin (x=0) → null (depth clamped to ≤0)", () => {
+    const positions = new Float32Array([0, 0, 0, 0, 5, 0, 0, 0, 5]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_x_pos)"];
+    const result = buildExtrudeCutFeatures(
+      "N(v0;face:f_x_pos)", positions, indices, faceIds, 5, "box_0", new Set()
+    );
     expect(result).toBeNull();
   });
 });
