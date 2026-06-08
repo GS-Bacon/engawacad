@@ -34,14 +34,21 @@ fn count_naked_edges(mesh: &TriangleMesh, tol: f64) -> usize {
         let q0 = qpos[i0];
         let q1 = qpos[i1];
         let q2 = qpos[i2];
-        // Skip the entire triangle if any two quantized vertices coincide.
-        // A degenerate (A,B,A) triangle would otherwise count edge AB twice,
-        // making it look shared (count=2) and hiding the exposed boundary.
-        if q0 == q1 || q1 == q2 || q2 == q0 {
-            continue;
-        }
+        // Process edges one-by-one instead of skipping the whole triangle.
+        // Skipping the triangle on any degenerate vertex pair (A,B,A) would
+        // discard the valid edge AB, hiding an exposed boundary.
+        let mut seen_in_tri: Vec<[[i64; 3]; 2]> = Vec::with_capacity(3);
         for [qa, qb] in &[[q0, q1], [q1, q2], [q2, q0]] {
+            if qa == qb {
+                continue; // degenerate (zero-length) edge — skip only this edge
+            }
             let key = if qa <= qb { [*qa, *qb] } else { [*qb, *qa] };
+            // Dedup within the same triangle to prevent (A,B,A) from counting
+            // edge AB twice and making it look like a shared interior edge.
+            if seen_in_tri.contains(&key) {
+                continue;
+            }
+            seen_in_tri.push(key);
             *edge_count.entry(key).or_insert(0) += 1;
         }
     }
@@ -202,6 +209,7 @@ fn t07_degenerate_triangle_no_naked_edge() {
 }
 
 /// T08: -0.0 と +0.0 が同じ位置としてウェルドされること。
+/// スリバー (A,A,B): 縮退 edge AA はスキップ、非縮退 edge AB は 1 件カウント → naked = 1。
 #[test]
 fn t08_negative_zero_welding() {
     let mesh = TriangleMesh {
@@ -210,11 +218,33 @@ fn t08_negative_zero_welding() {
         indices: vec![0, 1, 2],
         face_ids: vec!["".to_string()],
     };
-    // v0 == v1 after quantization → whole triangle skipped → 0 naked edges.
+    // After welding: v0 == v1 (both → origin). Triangle becomes (O, O, X).
+    // Edges: (O,O) degenerate → skipped; (O,X) valid → counted once → naked = 1.
     assert_eq!(
         count_naked_edges(&mesh, 1e-10),
-        0,
-        "-0.0 and +0.0 weld to same grid cell; degenerate triangle is fully skipped"
+        1,
+        "sliver (A,A,B): degenerate edge AA skipped, valid edge AB is exposed → naked = 1"
+    );
+}
+
+/// T10: (A,B,A) スリバー単独 — naked edge = 1（回帰テスト for #88）。
+/// 旧実装は triangle 単位で skip し naked=0 と誤判定していた。
+#[test]
+fn t10_sliver_aba_exposes_one_naked_edge() {
+    // Triangle (A, B, A): vertex 0 and vertex 2 are identical.
+    // After welding: indices represent (A, B, A) → edge A-B appears twice in
+    // the triangle but they are the same undirected key; edge B-A (= A-B)
+    // also appears. Correct behaviour: AB counted once → count == 1 → naked = 1.
+    let mesh = TriangleMesh {
+        positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        normals: vec![[0.0, 0.0, 1.0]; 3],
+        indices: vec![0, 1, 2],
+        face_ids: vec!["".to_string()],
+    };
+    assert_eq!(
+        count_naked_edges(&mesh, 1e-10),
+        1,
+        "sliver (A,B,A) must expose exactly 1 naked edge (edge A-B)"
     );
 }
 
