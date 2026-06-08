@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "faceToCanonicalPlaneDistance() を追加し buildExtrudeCutFeatures で depth を clamp。extrude.test.ts T23 追加。Vitest 110件 green。",
+  "tests_added": 5,
+  "glm_exit": 0,
+  "debug_spec_used": false
+}

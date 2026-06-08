@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "Claude がコア実装時にテスト T23 (5件) を追加。全テスト 110件 green。",
+  "tests_added": 0,
+  "glm_exit": 0,
+  "debug_spec_used": false
+}
