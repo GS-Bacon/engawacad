@@ -1,0 +1,22 @@
+{
+  "totals": {
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0
+  },
+  "by_crate": {
+    "e2e_api_scenarios-a8a285d371c587cb": {
+      "passed": 5,
+      "failed": 0
+    }
+  },
+  "added_in_round": [],
+  "coverage_hints": {
+    "total_added": 0,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}
