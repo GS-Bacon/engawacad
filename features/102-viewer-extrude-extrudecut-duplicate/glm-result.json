@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 0,
+  "debug_spec_used": false,
+  "failed_reason": "cargo xtask ci failed — see features/102-viewer-extrude-extrudecut-duplicate/ci.log",
+  "error_pattern": "error: failed to build assembly: invalid parameter: profile",
+  "error_pattern_kind": "generic"
+}
