@@ -118,7 +118,13 @@ bun .claude/skills/3ai/scripts/dispatch-codex.ts \
   --result features/.batch/codex-crosscut.yaml
 ```
 
-- `blocking ≥ 1` → ユーザーに報告（バッチ全体の自動ループはせずエスカレーション）
+- **自律モード（`batch_arg === null`）の場合**: `blocking ≥ 1` でも Claude が自己判断で修正して続行する:
+  1. 各 critical/high 指摘を「採用」「棄却」「partial」に分類し理由を記録する
+  2. 採用した指摘: F01→F02 dispatch（crates/src/ は GLM、その他は Claude が直接修正）
+  3. 修正後 `cargo xtask ci` green を確認し、Codex 再レビューを実施する（`--result features/.batch/codex-crosscut-r2.yaml`）
+  4. 再レビューで `blocking == 0` になれば完了。再び `blocking ≥ 1` の場合は同ループを繰り返す（上限 2 回）
+  5. 2 回ループ後も critical ≥ 1 が残る場合のみユーザーにエスカレーション; critical = 0 なら Claude 裁量で受け切る
+- **対話モード（`batch_arg !== null`）**: `blocking ≥ 1` → ユーザーに報告（バッチ全体の自動ループはせずエスカレーション）
 - medium/low のみ → `features/.batch/codex-crosscut-findings.md` に記録
 - 任意: `bun .claude/skills/3ai/scripts/finalize-feature.ts --sweep --dry-run` で取りこぼしを確認する
 

@@ -162,7 +162,9 @@ fn t01_degen_boundary_cut_with_epsilon_guard_clearance() {
 }
 
 /// T02: classify boundary — tool face at exactly len_eps from target face.
-/// With <= fix, this should be classified as SharedOppositeDirection (coplanar).
+/// With <= fix, classify treats this as SharedOppositeDirection (coplanar) and
+/// the boolean must succeed (not return Err). A silent Err here would mean the
+/// `<=` boundary guard in classify.rs is broken.
 #[test]
 fn t02_classify_boundary_coplanar_at_len_eps() {
     let mut gen = IdGenerator::new(3);
@@ -172,10 +174,15 @@ fn t02_classify_boundary_coplanar_at_len_eps() {
     tool.translate(Vec3::new(3.0 - len_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-    match result {
-        Ok(solid) => assert!(solid.validate_manifold().is_ok()),
-        Err(_) => {}
-    }
+    assert!(
+        result.is_ok(),
+        "boolean at len_eps boundary must succeed (classify <= fix): {:?}",
+        result
+    );
+    assert!(
+        result.unwrap().validate_manifold().is_ok(),
+        "result must be manifold at len_eps boundary"
+    );
 }
 
 /// T02_boundary_degen: tool face at len_eps + 1e-15 — just above tolerance, NOT coplanar.
