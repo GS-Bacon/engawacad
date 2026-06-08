@@ -72,11 +72,16 @@ test("T01 console no error - simple_box", async ({ page }) => {
 });
 
 // T02: Screenshot comparison - simple_box
+// Platform note: baseline filename is "simple-box-linux.png" on Linux (Playwright appends platform).
 test("T02 screenshot - simple_box", async ({ page }) => {
   await setupPageWithFixture(page, "simple_box");
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
-  await page.waitForTimeout(1000);
+  // Wait for at least one GPU frame to be sent instead of an arbitrary fixed delay.
+  await page.waitForFunction(
+    () => (window as any).__viewer?.renderer?.info?.render?.frame > 0,
+    { timeout: 10_000 },
+  );
 
   await expect(page).toHaveScreenshot("simple_box.png", {
     maxDiffPixelRatio: 0.03,
@@ -114,7 +119,8 @@ test("T04 boundary - empty response", async ({ page }) => {
   );
 
   await page.goto("/");
-  await page.waitForTimeout(2000);
+  // Wait for the error element to appear instead of an arbitrary fixed delay.
+  await page.waitForSelector("#error", { state: "visible", timeout: 10_000 });
 
   // "No bodies found" displayed in #error div
   const errorEl = page.locator("#error");
