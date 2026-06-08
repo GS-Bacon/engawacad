@@ -86,7 +86,7 @@ pub(crate) async fn post_feature(
 
     // 順序不変条件 (IN01): validate → assemble_and_tessellate → write_atomic → commit
     // 失敗時はディスク・メモリとも未変更
-    let mut candidate = g.doc.as_ref().unwrap().clone();
+    let mut candidate = g.snapshot()?;
     candidate.root_component.features.push(feature);
     candidate.validate()?;
     let meshes = assemble_and_tessellate(&candidate, &base_dir)?;
@@ -95,6 +95,6 @@ pub(crate) async fn post_feature(
     write_atomic(&path, &yaml)?;
 
     // 全成功時のみ in-memory 反映
-    *g.doc.as_mut().unwrap() = candidate;
+    g.commit(candidate);
     Ok(Json(meshes))
 }
