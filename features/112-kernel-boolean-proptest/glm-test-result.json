@@ -1,7 +1,10 @@
 {
-  "status": "success",
-  "ci_passed": true,
-  "summary": "CI green",
-  "glm_exit": 0,
-  "debug_spec_used": false
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": true,
+  "failed_reason": "cargo xtask ci failed — see features/112-kernel-boolean-proptest/ci.log",
+  "error_pattern": "test s08_boundary_shallow_depth ... FAILED",
+  "error_pattern_kind": "test"
 }
