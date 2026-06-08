@@ -69,6 +69,24 @@
       #extrude-panel label { margin-right: 0.5rem; }
       #extrude-panel input { width: 5em; }
       #extrude-panel button { margin-left: 0.5rem; cursor: pointer; }
+      #view-buttons {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        display: flex;
+        gap: 0.4rem;
+        z-index: 10;
+      }
+      #view-buttons button {
+        background: rgba(0,0,0,0.5);
+        color: white;
+        border: none;
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -80,6 +98,11 @@
         <label>深さ <input type="number" data-testid="extrude-depth" min="0.1" step="0.1" value="5" /></label>
         <button data-testid="btn-extrude">押出</button>
         <button data-testid="btn-extrude-cut">押出カット</button>
+      </div>
+      <div id="view-buttons">
+        <button data-testid="btn-view-front">Front</button>
+        <button data-testid="btn-view-top">Top</button>
+        <button data-testid="btn-view-iso">Iso</button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

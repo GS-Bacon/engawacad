@@ -25,6 +25,7 @@ export let selectedFaceId: string | null = null;
 export interface ViewerHandle {
   updateBodies(bodies: BodyMesh[]): void;
   getSelectedFaceVertices(): { positions: Float32Array; indices: Uint32Array; faceIds: string[]; faceId: string } | null;
+  setView(view: "front" | "top" | "iso"): void;
   dispose(): void;
 }
 
@@ -214,6 +215,20 @@ export function initViewer(
         }
       }
       return null;
+    },
+    setView(view: "front" | "top" | "iso") {
+      const d = camera.position.distanceTo(controls.target);
+      const t = controls.target;
+      if (view === "front") {
+        camera.position.set(t.x, t.y, t.z + d);
+      } else if (view === "top") {
+        camera.position.set(t.x, t.y + d, t.z);
+      } else {
+        const len = Math.sqrt(1.5);
+        camera.position.set(t.x + d * 0.5 / len, t.y + d * 0.5 / len, t.z + d / len);
+      }
+      camera.lookAt(controls.target);
+      controls.update();
     },
     dispose() {
       cancelAnimationFrame(animFrameId);

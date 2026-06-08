@@ -147,3 +147,49 @@ test("T06 OrbitControls enableDamping is true", async ({ page }) => {
   );
   expect(damping).toBe(true);
 });
+
+// T07: view buttons exist in DOM — skeleton (#91)
+test("T07 view buttons exist in DOM", async ({ page }) => {
+  await setupPageWithFixture(page, "simple_box");
+  await page.goto("/");
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await expect(page.locator('[data-testid="btn-view-front"]')).toBeVisible();
+  await expect(page.locator('[data-testid="btn-view-top"]')).toBeVisible();
+  await expect(page.locator('[data-testid="btn-view-iso"]')).toBeVisible();
+});
+
+// T08: front view button — skeleton (#91)
+test("T08 btn-view-front positions camera on +Z axis of target", async ({ page }) => {
+  await setupPageWithFixture(page, "simple_box");
+  await page.goto("/");
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  await page.click('[data-testid="btn-view-front"]');
+  await page.waitForTimeout(200);
+  const delta = await page.evaluate(() => {
+    const { camera, controls } = (window as any).__viewer;
+    const t = controls.target;
+    return { dx: camera.position.x - t.x, dy: camera.position.y - t.y, dz: camera.position.z - t.z };
+  });
+  expect(delta.dz).toBeGreaterThan(0);
+  expect(Math.abs(delta.dx)).toBeLessThan(0.01);
+  expect(Math.abs(delta.dy)).toBeLessThan(0.01);
+});
+
+// T09: top view button — skeleton (#91)
+test("T09 btn-view-top positions camera on +Y axis of target", async ({ page }) => {
+  await setupPageWithFixture(page, "simple_box");
+  await page.goto("/");
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  await page.click('[data-testid="btn-view-top"]');
+  await page.waitForTimeout(200);
+  const delta = await page.evaluate(() => {
+    const { camera, controls } = (window as any).__viewer;
+    const t = controls.target;
+    return { dx: camera.position.x - t.x, dy: camera.position.y - t.y, dz: camera.position.z - t.z };
+  });
+  expect(delta.dy).toBeGreaterThan(0);
+  expect(Math.abs(delta.dx)).toBeLessThan(0.01);
+  expect(Math.abs(delta.dz)).toBeLessThan(0.01);
+});

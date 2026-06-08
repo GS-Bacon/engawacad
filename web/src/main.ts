@@ -31,6 +31,13 @@ async function main(): Promise<void> {
 
     const handle = initViewer(app, currentBodies, { onSelectionChange: onSelect });
 
+    const viewFront = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-front"]')!;
+    const viewTop   = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-top"]')!;
+    const viewIso   = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-iso"]')!;
+    viewFront.addEventListener("click", () => handle.setView("front"));
+    viewTop.addEventListener("click",   () => handle.setView("top"));
+    viewIso.addEventListener("click",   () => handle.setView("iso"));
+
     const panel = document.querySelector<HTMLElement>('[data-testid="extrude-panel"]')!;
     const depthInput = document.querySelector<HTMLInputElement>('[data-testid="extrude-depth"]')!;
     const btn = document.querySelector<HTMLButtonElement>('[data-testid="btn-extrude"]')!;
