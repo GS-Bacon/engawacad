@@ -395,13 +395,36 @@ impl Solid {
                     continue;
                 }
 
-                // 2D AABB overlap check
-                let verts_a = self.loop_vertex_points(face_a.outer_loop);
-                let verts_b = self.loop_vertex_points(face_b.outer_loop);
-                if aabb_overlap(&verts_a, &verts_b, normal_a, len_eps) {
+                // Same outer_loop index → true duplicate (e.g. cloned face sharing the same loop)
+                if face_a.outer_loop == face_b.outer_loop {
                     return Err(KernelError::ManifoldViolation {
                         reason: "overlapping coplanar faces detected",
                     });
+                }
+                // Skip face pairs that share vertices but have different loops (adjacent, not duplicates)
+                let verts_a = self.loop_vertex_points(face_a.outer_loop);
+                let verts_b = self.loop_vertex_points(face_b.outer_loop);
+                let share_vertex = verts_a
+                    .iter()
+                    .any(|pa| verts_b.iter().any(|pb| (pa - pb).norm() < len_eps));
+                if share_vertex {
+                    continue;
+                }
+                // 2D AABB overlap as a coarse filter, then check inner loops to reduce false positives
+                if aabb_overlap(&verts_a, &verts_b, normal_a, len_eps) {
+                    let inner_loops_a: Vec<Vec<Point>> = face_a
+                        .inner_loops
+                        .iter()
+                        .map(|&li| self.loop_vertex_points(li))
+                        .collect();
+                    let covered_by_hole = inner_loops_a
+                        .iter()
+                        .any(|hole| aabb_overlap(&verts_b, hole, normal_a, len_eps));
+                    if !covered_by_hole {
+                        return Err(KernelError::ManifoldViolation {
+                            reason: "overlapping coplanar faces detected",
+                        });
+                    }
                 }
             }
         }
@@ -1712,6 +1735,306 @@ mod tests {
             cuboid.vertices[0].point.z,
             rotated.vertices[0].point.z,
             epsilon = 1e-15
+        );
+    }
+
+    // ---- b6-f01 topology overlap tests ----
+
+    /// T_adj_coplanar: two adjacent coplanar faces sharing a vertex must pass validate_manifold.
+    /// Layout (XY plane):
+    ///   face_a: (0,0)-(1,0)-(1,1)-(0,1)
+    ///   face_b: (1,0)-(2,0)-(2,1)-(1,1)   shares edge (1,0)-(1,1) with face_a
+    /// They share vertices → the improved check skips them.
+    #[test]
+    fn t_adj_coplanar() {
+        let mut s = Solid::new(0);
+        // 6 vertices
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(1.0, 0.0, 0.0), None);
+        let v2 = s.add_vertex(3, Point::new(1.0, 1.0, 0.0), None);
+        let v3 = s.add_vertex(4, Point::new(0.0, 1.0, 0.0), None);
+        let v4 = s.add_vertex(5, Point::new(2.0, 0.0, 0.0), None);
+        let v5 = s.add_vertex(6, Point::new(2.0, 1.0, 0.0), None);
+
+        // Edges for face_a: v0→v1, v1→v2, v2→v3, v3→v0
+        let e01 = s.add_edge(
+            10,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::new(0.0, 0.0, 0.0),
+                direction: Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e12 = s.add_edge(
+            11,
+            [v1, v2],
+            Curve::Line {
+                origin: Point::new(1.0, 0.0, 0.0),
+                direction: Vec3::y(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e23 = s.add_edge(
+            12,
+            [v2, v3],
+            Curve::Line {
+                origin: Point::new(1.0, 1.0, 0.0),
+                direction: -Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e30 = s.add_edge(
+            13,
+            [v3, v0],
+            Curve::Line {
+                origin: Point::new(0.0, 1.0, 0.0),
+                direction: -Vec3::y(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+
+        // Edges for face_b: v1→v4, v4→v5, v5→v2, v2→v1
+        let e14 = s.add_edge(
+            14,
+            [v1, v4],
+            Curve::Line {
+                origin: Point::new(1.0, 0.0, 0.0),
+                direction: Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e45 = s.add_edge(
+            15,
+            [v4, v5],
+            Curve::Line {
+                origin: Point::new(2.0, 0.0, 0.0),
+                direction: Vec3::y(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e52 = s.add_edge(
+            16,
+            [v5, v2],
+            Curve::Line {
+                origin: Point::new(2.0, 1.0, 0.0),
+                direction: -Vec3::x(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+        let e21 = s.add_edge(
+            17,
+            [v2, v1],
+            Curve::Line {
+                origin: Point::new(1.0, 1.0, 0.0),
+                direction: -Vec3::y(),
+            },
+            [0.0, 1.0],
+            None,
+        );
+
+        let surface = Surface::Plane {
+            origin: Point::origin(),
+            normal: Vec3::z(),
+            u_axis: Vec3::x(),
+            v_axis: Vec3::y(),
+        };
+
+        // Face A: forward half-edges v0→v1→v2→v3→v0
+        let he_a0 = s.add_half_edge(20, v0, e01, true);
+        let he_a1 = s.add_half_edge(21, v1, e12, true);
+        let he_a2 = s.add_half_edge(22, v2, e23, true);
+        let he_a3 = s.add_half_edge(23, v3, e30, true);
+        let lp_a = s.add_loop(30, vec![he_a0, he_a1, he_a2, he_a3]);
+
+        // Face A reverse: v0→v3→v2→v1→v0
+        let he_a3r = s.add_half_edge(24, v0, e30, false); // v0→v3
+        let he_a2r = s.add_half_edge(25, v3, e23, false); // v3→v2
+        let he_a1r = s.add_half_edge(26, v2, e12, false); // v2→v1
+        let he_a0r = s.add_half_edge(27, v1, e01, false); // v1→v0
+        let lp_ar = s.add_loop(31, vec![he_a3r, he_a2r, he_a1r, he_a0r]);
+
+        // Face B: forward half-edges v1→v4→v5→v2→v1
+        let he_b0 = s.add_half_edge(28, v1, e14, true);
+        let he_b1 = s.add_half_edge(29, v4, e45, true);
+        let he_b2 = s.add_half_edge(40, v5, e52, true);
+        let he_b3 = s.add_half_edge(41, v2, e21, true);
+        let lp_b = s.add_loop(32, vec![he_b0, he_b1, he_b2, he_b3]);
+
+        // Face B reverse: v1→v2→v5→v4→v1
+        let he_b3r = s.add_half_edge(42, v1, e21, false); // v1→v2
+        let he_b2r = s.add_half_edge(43, v2, e52, false); // v2→v5
+        let he_b1r = s.add_half_edge(44, v5, e45, false); // v5→v4
+        let he_b0r = s.add_half_edge(45, v4, e14, false); // v4→v1
+        let lp_br = s.add_loop(33, vec![he_b3r, he_b2r, he_b1r, he_b0r]);
+
+        s.add_face(50, surface.clone(), lp_a, vec![], true, None);
+        s.add_face(51, surface.clone(), lp_b, vec![], true, None);
+        s.add_face(52, surface.clone(), lp_ar, vec![], false, None);
+        s.add_face(53, surface, lp_br, vec![], false, None);
+
+        s.add_shell(60, vec![0, 1, 2, 3], true);
+
+        assert!(
+            s.validate_manifold().is_ok(),
+            "adjacent coplanar faces sharing vertices must pass validation"
+        );
+    }
+
+    /// T_degen_true_overlap: two truly overlapping coplanar faces (no shared vertices)
+    /// must fail validate_manifold with ManifoldViolation.
+    #[test]
+    fn t_degen_true_overlap() {
+        let mut s = Solid::new(0);
+        // face_a: (0,0)-(2,0)-(2,2)-(0,2)
+        // face_b: (1,1)-(3,1)-(3,3)-(1,3) — overlaps face_a, no shared vertices
+        let v0 = s.add_vertex(1, Point::new(0.0, 0.0, 0.0), None);
+        let v1 = s.add_vertex(2, Point::new(2.0, 0.0, 0.0), None);
+        let v2 = s.add_vertex(3, Point::new(2.0, 2.0, 0.0), None);
+        let v3 = s.add_vertex(4, Point::new(0.0, 2.0, 0.0), None);
+        let v4 = s.add_vertex(5, Point::new(1.0, 1.0, 0.0), None);
+        let v5 = s.add_vertex(6, Point::new(3.0, 1.0, 0.0), None);
+        let v6 = s.add_vertex(7, Point::new(3.0, 3.0, 0.0), None);
+        let v7 = s.add_vertex(8, Point::new(1.0, 3.0, 0.0), None);
+
+        // Edges face_a
+        let e01 = s.add_edge(
+            10,
+            [v0, v1],
+            Curve::Line {
+                origin: Point::new(0.0, 0.0, 0.0),
+                direction: Vec3::x(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+        let e12 = s.add_edge(
+            11,
+            [v1, v2],
+            Curve::Line {
+                origin: Point::new(2.0, 0.0, 0.0),
+                direction: Vec3::y(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+        let e23 = s.add_edge(
+            12,
+            [v2, v3],
+            Curve::Line {
+                origin: Point::new(2.0, 2.0, 0.0),
+                direction: -Vec3::x(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+        let e30 = s.add_edge(
+            13,
+            [v3, v0],
+            Curve::Line {
+                origin: Point::new(0.0, 2.0, 0.0),
+                direction: -Vec3::y(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+
+        // Edges face_b
+        let e45 = s.add_edge(
+            14,
+            [v4, v5],
+            Curve::Line {
+                origin: Point::new(1.0, 1.0, 0.0),
+                direction: Vec3::x(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+        let e56 = s.add_edge(
+            15,
+            [v5, v6],
+            Curve::Line {
+                origin: Point::new(3.0, 1.0, 0.0),
+                direction: Vec3::y(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+        let e67 = s.add_edge(
+            16,
+            [v6, v7],
+            Curve::Line {
+                origin: Point::new(3.0, 3.0, 0.0),
+                direction: -Vec3::x(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+        let e74 = s.add_edge(
+            17,
+            [v7, v4],
+            Curve::Line {
+                origin: Point::new(1.0, 3.0, 0.0),
+                direction: -Vec3::y(),
+            },
+            [0.0, 2.0],
+            None,
+        );
+
+        let surface = Surface::Plane {
+            origin: Point::origin(),
+            normal: Vec3::z(),
+            u_axis: Vec3::x(),
+            v_axis: Vec3::y(),
+        };
+
+        // Face A: forward
+        let he_a0 = s.add_half_edge(20, v0, e01, true);
+        let he_a1 = s.add_half_edge(21, v1, e12, true);
+        let he_a2 = s.add_half_edge(22, v2, e23, true);
+        let he_a3 = s.add_half_edge(23, v3, e30, true);
+        let lp_a = s.add_loop(30, vec![he_a0, he_a1, he_a2, he_a3]);
+
+        // Face A: reverse v0→v3→v2→v1→v0
+        let he_a3r = s.add_half_edge(24, v0, e30, false);
+        let he_a2r = s.add_half_edge(25, v3, e23, false);
+        let he_a1r = s.add_half_edge(26, v2, e12, false);
+        let he_a0r = s.add_half_edge(27, v1, e01, false);
+        let lp_ar = s.add_loop(31, vec![he_a3r, he_a2r, he_a1r, he_a0r]);
+
+        // Face B: forward v4→v5→v6→v7→v4
+        let he_b0 = s.add_half_edge(28, v4, e45, true);
+        let he_b1 = s.add_half_edge(29, v5, e56, true);
+        let he_b2 = s.add_half_edge(40, v6, e67, true);
+        let he_b3 = s.add_half_edge(41, v7, e74, true);
+        let lp_b = s.add_loop(32, vec![he_b0, he_b1, he_b2, he_b3]);
+
+        // Face B: reverse v4→v7→v6→v5→v4
+        let he_b3r = s.add_half_edge(42, v4, e74, false);
+        let he_b2r = s.add_half_edge(43, v7, e67, false);
+        let he_b1r = s.add_half_edge(44, v6, e56, false);
+        let he_b0r = s.add_half_edge(45, v5, e45, false);
+        let lp_br = s.add_loop(33, vec![he_b3r, he_b2r, he_b1r, he_b0r]);
+
+        s.add_face(50, surface.clone(), lp_a, vec![], true, None);
+        s.add_face(51, surface.clone(), lp_b, vec![], true, None);
+        s.add_face(52, surface.clone(), lp_ar, vec![], false, None);
+        s.add_face(53, surface, lp_br, vec![], false, None);
+
+        s.add_shell(60, vec![0, 1, 2, 3], true);
+
+        let result = s.validate_manifold();
+        assert!(
+            matches!(result, Err(KernelError::ManifoldViolation { .. })),
+            "truly overlapping coplanar faces must fail with ManifoldViolation, got {:?}",
+            result
         );
     }
 }
