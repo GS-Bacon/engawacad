@@ -640,3 +640,44 @@ describe("T16 buildExtrudeCutFeatures degenerate inputs", () => {
     expect(result).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// T17: usedFeatureIds collision avoidance — simulates main.ts initialization
+// ---------------------------------------------------------------------------
+describe("T17 usedFeatureIds collision avoidance (simulates main.ts init)", () => {
+  const { positions, indices, faceIds } = boxTopFaceData();
+  const faceId = "N(v0;face:f_z_pos)";
+
+  it("existing {sketch_0} from server → buildExtrudeFeatures uses sketch_1", () => {
+    // Simulates: fetchAllFeatureIds() returns ["sketch_0"]
+    // usedFeatureIds = new Set(["sketch_0"])
+    const usedFeatureIds = new Set(["sketch_0"]);
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, usedFeatureIds);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_1");
+  });
+
+  it("existing {sketch_0, sketch_1, extrude_0} from server → sketch_2 and extrude_1", () => {
+    const usedFeatureIds = new Set(["sketch_0", "sketch_1", "extrude_0"]);
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, usedFeatureIds);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_2");
+    expect(result!.extrude.id).toBe("extrude_1");
+  });
+
+  it("extrudeCut avoids existing extrude_cut_0", () => {
+    const usedFeatureIds = new Set(["sketch_0", "extrude_cut_0"]);
+    const result = buildExtrudeCutFeatures(faceId, positions, indices, faceIds, 5, "box_1", usedFeatureIds);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_1");
+    expect(result!.extrudeCut.id).toBe("extrude_cut_1");
+  });
+
+  it("empty usedFeatureIds from server (no features) → sketch_0 and extrude_0", () => {
+    const usedFeatureIds = new Set<string>();
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, usedFeatureIds);
+    expect(result).not.toBeNull();
+    expect(result!.sketch.id).toBe("sketch_0");
+    expect(result!.extrude.id).toBe("extrude_0");
+  });
+});

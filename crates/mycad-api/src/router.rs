@@ -1,4 +1,4 @@
-use crate::handler::{get_mesh, post_feature};
+use crate::handler::{get_features, get_mesh, post_feature};
 use crate::state::AppState;
 use crate::static_assets::static_handler;
 use crate::transport::ErrorResponse;
@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::Json;
 use axum::Router;
 use std::path::PathBuf;
@@ -47,7 +47,7 @@ pub fn app(file: Arc<PathBuf>) -> Router {
     let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::new((*file).clone())));
     let api = Router::new()
         .route("/mesh", get(get_mesh))
-        .route("/features", post(post_feature))
+        .route("/features", get(get_features).post(post_feature))
         .fallback(api_not_found)
         .with_state(state);
 

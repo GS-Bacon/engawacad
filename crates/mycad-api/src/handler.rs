@@ -60,6 +60,20 @@ pub(crate) async fn get_mesh(
     Ok(Json(assemble_and_tessellate(doc, &base_dir)?))
 }
 
+pub(crate) async fn get_features(
+    State(state): State<SharedState>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let mut g = state.lock().unwrap();
+    let doc = g.ensure_loaded()?;
+    let ids: Vec<String> = doc
+        .root_component
+        .features
+        .iter()
+        .map(|f| f.id().to_string())
+        .collect();
+    Ok(Json(ids))
+}
+
 pub(crate) async fn post_feature(
     State(state): State<SharedState>,
     feature_result: Result<Json<Feature>, JsonRejection>,

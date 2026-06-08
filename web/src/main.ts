@@ -1,4 +1,4 @@
-import { fetchBodies, postFeature } from "./api";
+import { fetchAllFeatureIds, fetchBodies, postFeature } from "./api";
 import { initViewer } from "./viewer";
 import { planeForFaceId, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
 
@@ -26,7 +26,8 @@ async function main(): Promise<void> {
 
     // Tracks ALL feature IDs ever used (bodies + sketches), grows monotonically.
     // Prevents duplicate IDs across consecutive extrude / extrude-cut operations.
-    const usedFeatureIds = new Set(currentBodies.map((b) => b.feature_id));
+    const allFeatureIds = await fetchAllFeatureIds();
+    const usedFeatureIds = new Set<string>(allFeatureIds);
 
     const handle = initViewer(app, currentBodies, { onSelectionChange: onSelect });
 
