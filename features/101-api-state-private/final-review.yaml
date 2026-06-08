@@ -1,0 +1,16 @@
+issues:
+  - id: FN01
+    severity: medium
+    file: "crates/mycad-api/src/state.rs"
+    line_hint: 48
+    finding: "commit() が validate 済みであることの検証を行っていない（呼び出し側責務というドキュメントのみ）"
+    suggestion: "将来的には型レベルで ValidatedDocument ラッパーを導入して validate 済みのみを commit できるようにする"
+
+  - id: FN02
+    severity: low
+    file: "crates/mycad-api/src/state.rs"
+    line_hint: 57
+    finding: "commit() が渡された doc で self.doc を上書きするのみ、古い doc を drop する前に検証する機構がない"
+    suggestion: "事後条件として渡された doc.validate() == Ok を assert することで防御的にする"
+
+verdict: pass
