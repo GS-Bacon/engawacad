@@ -1,4 +1,5 @@
 import type { BodyMesh } from "./generated/BodyMesh";
+import { log } from "./logger";
 import {
   AmbientLight,
   AxesHelper,
@@ -188,6 +189,17 @@ export function initViewer(
     renderer.render(scene, camera);
   }
   (window as any).__viewer = { renderer, camera, controls };
+
+  // ドラッグ/ズーム/パン完了時のみ記録（フレームごとの連続ログは出さない）
+  controls.addEventListener("end", () => {
+    const p = camera.position;
+    const tg = controls.target;
+    log("camera_snap", {
+      pos: [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)],
+      target: [+tg.x.toFixed(3), +tg.y.toFixed(3), +tg.z.toFixed(3)],
+    });
+  });
+
   animate();
 
   return {
@@ -233,6 +245,7 @@ export function initViewer(
       }
       camera.lookAt(controls.target);
       controls.update();
+      log("view_change", { view });
     },
     dispose() {
       cancelAnimationFrame(animFrameId);

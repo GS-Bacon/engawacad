@@ -1,6 +1,7 @@
 import type { BodyMesh } from "./generated/BodyMesh";
 import type { ErrorResponse } from "./generated/ErrorResponse";
 import type { Feature } from "./generated/Feature";
+import { log } from "./logger";
 
 export async function fetchBodies(): Promise<BodyMesh[]> {
   const res = await fetch("/api/v0/mesh");
@@ -46,6 +47,7 @@ export async function postFeature(feature: Feature): Promise<BodyMesh[]> {
     } catch {
       // keep default message
     }
+    log("api_error", { method: "POST", url: "/api/v0/features", status: res.status, error: message });
     throw new Error(message);
   }
   return (await res.json()) as BodyMesh[];

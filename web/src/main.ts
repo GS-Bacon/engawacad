@@ -1,6 +1,7 @@
 import { fetchAllFeatureIds, fetchBodies, postFeature } from "./api";
 import { initViewer } from "./viewer";
 import { planeForFaceId, planeForFaceNormal, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
+import { log, clearLog, getEntries, formatLog } from "./logger";
 
 const app = document.getElementById("app")!;
 const errorEl = document.getElementById("error")!;
@@ -16,6 +17,24 @@ function showInfo(msg: string): void {
   infoEl.style.display = "block";
 }
 
+// Ctrl+Shift+L でログをクリップボードにコピー
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key === "L") {
+    e.preventDefault();
+    navigator.clipboard.writeText(formatLog()).then(() => {
+      console.info("[action-log] copied to clipboard");
+    });
+  }
+});
+
+// ブラウザコンソールからも参照できるように公開
+(window as any).__actionLog = {
+  get entries() { return getEntries(); },
+  copy() { navigator.clipboard.writeText(formatLog()); return "copied!"; },
+  clear() { clearLog(); return "cleared!"; },
+  format: formatLog,
+};
+
 async function main(): Promise<void> {
   try {
     let currentBodies = await fetchBodies();
@@ -30,6 +49,7 @@ async function main(): Promise<void> {
     const usedFeatureIds = new Set<string>(allFeatureIds);
 
     const handle = initViewer(app, currentBodies, { onSelectionChange: onSelect });
+    log("init", { bodies: currentBodies.length });
 
     const viewFront = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-front"]')!;
     const viewTop   = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-top"]')!;
@@ -43,6 +63,7 @@ async function main(): Promise<void> {
     const btn = document.querySelector<HTMLButtonElement>('[data-testid="btn-extrude"]')!;
 
     function onSelect(faceId: string | null): void {
+      log("face_pick", { faceId });
       if (!faceId) { panel.style.display = "none"; return; }
       const sel = handle.getSelectedFaceVertices();
       const plane = planeForFaceId(faceId) ??
@@ -56,6 +77,7 @@ async function main(): Promise<void> {
       if (!sel || !Number.isFinite(depth) || depth <= 0) return;
       const built = buildExtrudeFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, usedFeatureIds);
       if (!built) return;
+      log("extrude_submit", { faceId: sel.faceId, depth });
       // Reserve IDs before any POST so partial failures don't cause reuse on retry.
       usedFeatureIds.add(built.sketch.id);
       usedFeatureIds.add(built.extrude.id);
@@ -64,8 +86,11 @@ async function main(): Promise<void> {
         const updated = await postFeature(built.extrude);
         currentBodies = updated;
         handle.updateBodies(updated);
+        log("extrude_ok", { bodies: updated.length });
       } catch (err) {
-        showError(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        log("extrude_error", { error: msg });
+        showError(msg);
       }
     });
 
@@ -78,6 +103,7 @@ async function main(): Promise<void> {
       if (!target) return;
       const built = buildExtrudeCutFeatures(sel.faceId, sel.positions, sel.indices, sel.faceIds, depth, target, usedFeatureIds);
       if (!built) return;
+      log("extrude_cut_submit", { faceId: sel.faceId, depth, target });
       // Reserve IDs before any POST so partial failures don't cause reuse on retry.
       usedFeatureIds.add(built.sketch.id);
       usedFeatureIds.add(built.extrudeCut.id);
@@ -86,8 +112,11 @@ async function main(): Promise<void> {
         const updated = await postFeature(built.extrudeCut);
         currentBodies = updated;
         handle.updateBodies(updated);
+        log("extrude_cut_ok", { bodies: updated.length });
       } catch (err) {
-        showError(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        log("extrude_cut_error", { error: msg });
+        showError(msg);
       }
     });
   } catch (err) {
