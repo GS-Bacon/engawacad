@@ -183,6 +183,7 @@ mod tests {
             id: "box_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 10.0,
+            fuse_target: None,
         });
 
         let yaml = doc.to_yaml().unwrap();
@@ -349,6 +350,7 @@ mod tests {
         doc2.root_component.features.push(Feature::CreateSketch {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -376,6 +378,7 @@ mod tests {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 8.0,
+            fuse_target: None,
         });
         assert_eq!(
             doc2.to_yaml().unwrap(),

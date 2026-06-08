@@ -334,7 +334,7 @@ import type { SketchSegment } from "./SketchSegment";
 /**
  * A feature — one step in the operation history.
  */
-export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, } | { "type": "create_cylinder", id: string, radius: number, height: number, origin?: [number, number, number], } | { "type": "create_sphere", id: string, radius: number, center?: [number, number, number], } | { "type": "create_sketch", id: string, plane: SketchPlane, profile: Array<SketchSegment>, } | { "type": "extrude", id: string, sketch: string, depth: number, } | { "type": "extrude_cut", id: string, sketch: string, depth: number, target: string, } | { "type": "cut", id: string, target: string, tool: string, } | { "type": "fuse", id: string, target: string, tool: string, } | { "type": "intersect", id: string, target: string, tool: string, };
+export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, } | { "type": "create_cylinder", id: string, radius: number, height: number, origin?: [number, number, number], } | { "type": "create_sphere", id: string, radius: number, center?: [number, number, number], } | { "type": "create_sketch", id: string, plane: SketchPlane, offset?: number, profile: Array<SketchSegment>, } | { "type": "extrude", id: string, sketch: string, depth: number, fuse_target?: string | null, } | { "type": "extrude_cut", id: string, sketch: string, depth: number, target: string, } | { "type": "cut", id: string, target: string, tool: string, } | { "type": "fuse", id: string, target: string, tool: string, } | { "type": "intersect", id: string, target: string, tool: string, };
 "#;
 
     #[test]

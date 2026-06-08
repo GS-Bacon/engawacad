@@ -70,8 +70,14 @@ pub fn build_bodies_from_features(
         return Err(KernelError::EmptyFeatureList);
     }
 
-    let mut sketches: HashMap<&str, (&mycad_format::SketchPlane, &[mycad_format::SketchSegment])> =
-        HashMap::new();
+    let mut sketches: HashMap<
+        &str,
+        (
+            &mycad_format::SketchPlane,
+            &[mycad_format::SketchSegment],
+            f64,
+        ),
+    > = HashMap::new();
     let mut built = BuiltBodies::default();
     let mut seen_ids: HashMap<&str, ()> = HashMap::new();
 
@@ -88,11 +94,15 @@ pub fn build_bodies_from_features(
             Feature::CreateSketch {
                 id: _,
                 plane,
+                offset,
                 profile,
             } => {
                 validate_sketch_segment_ids(profile)?;
                 validate_profile_closed(profile)?;
-                if sketches.insert(id, (plane, profile.as_slice())).is_some() {
+                if sketches
+                    .insert(id, (plane, profile.as_slice(), *offset))
+                    .is_some()
+                {
                     return Err(KernelError::DuplicateFeatureId { id: id.to_string() });
                 }
             }
@@ -100,24 +110,43 @@ pub fn build_bodies_from_features(
                 id: _,
                 sketch,
                 depth,
+                fuse_target,
             } => {
-                let (sketch_plane, segments) =
+                let (sketch_plane, segments, offset) =
                     sketches
                         .get(sketch.as_str())
                         .ok_or_else(|| KernelError::SketchNotFound {
                             sketch: sketch.clone(),
                         })?;
 
-                let plane = match sketch_plane {
+                let base_plane = match sketch_plane {
                     mycad_format::SketchPlane::Xy => Plane::xy(),
                     mycad_format::SketchPlane::Xz => Plane::xz(),
                     mycad_format::SketchPlane::Yz => Plane::yz(),
                 };
+                let plane = if *offset != 0.0 {
+                    base_plane.translate(base_plane.normal * *offset)
+                } else {
+                    base_plane
+                };
 
                 let profile_uv: Vec<(f64, f64)> =
                     segments.iter().map(|s| (s.from[0], s.from[1])).collect();
-                let solid = make_extrusion(&plane, &profile_uv, *depth, gen)?;
-                built.register(id.to_string(), solid);
+                let extruded = make_extrusion(&plane, &profile_uv, *depth, gen)?;
+
+                if let Some(target_id) = fuse_target {
+                    let t_solid =
+                        built
+                            .get(target_id)
+                            .ok_or_else(|| KernelError::BodyNotFound {
+                                id: target_id.clone(),
+                            })?;
+                    let result = boolean(&t_solid.solid, &extruded, BooleanOp::Fuse, gen)?;
+                    built.consume(target_id);
+                    built.register(id.to_string(), result);
+                } else {
+                    built.register(id.to_string(), extruded);
+                }
             }
             Feature::ExtrudeCut {
                 id: _,
@@ -125,7 +154,7 @@ pub fn build_bodies_from_features(
                 depth,
                 target,
             } => {
-                let (sketch_plane, segments) =
+                let (sketch_plane, segments, _offset) =
                     sketches
                         .get(sketch.as_str())
                         .ok_or_else(|| KernelError::SketchNotFound {

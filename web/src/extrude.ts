@@ -164,6 +164,37 @@ export function footprintProfile(
 }
 
 /**
+ * Compute the signed offset of a face from the canonical plane origin along the plane's normal axis.
+ * Uses the first triangle vertex matching `faceId` for deterministic calculation.
+ * Returns 0.0 if no matching face triangle is found.
+ */
+export function faceOffsetFromPlane(
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  faceIds: string[],
+  faceId: string,
+  plane: SketchPlane,
+): number {
+  for (let t = 0; t < faceIds.length; t++) {
+    if (faceIds[t] === faceId) {
+      const i0 = indices[t * 3];
+      const x = positions[i0 * 3];
+      const y = positions[i0 * 3 + 1];
+      const z = positions[i0 * 3 + 2];
+      switch (plane) {
+        case "yz":
+          return x;
+        case "xz":
+          return y;
+        case "xy":
+          return z;
+      }
+    }
+  }
+  return 0.0;
+}
+
+/**
  * Build create_sketch + extrude Feature pair for the given selection.
  * IDs are deterministic: smallest non-colliding `sketch_<n>` / `extrude_<n>`.
  * Returns null if the face cannot be resolved to a plane or the profile is degenerate.
@@ -175,6 +206,7 @@ export function buildExtrudeFeatures(
   faceIds: string[],
   depth: number,
   existingFeatureIds: Set<string>,
+  targetBody?: string,
 ): { sketch: Feature; extrude: Feature } | null {
   const plane = planeForFaceId(faceId);
   if (!plane) return null;
@@ -184,6 +216,8 @@ export function buildExtrudeFeatures(
 
   if (!Number.isFinite(depth) || depth <= 0) return null;
 
+  const offset = faceOffsetFromPlane(positions, indices, faceIds, faceId, plane);
+
   const sketchId = nextId("sketch_", existingFeatureIds);
   const extrudeId = nextId("extrude_", existingFeatureIds);
 
@@ -191,6 +225,7 @@ export function buildExtrudeFeatures(
     type: "create_sketch",
     id: sketchId,
     plane,
+    offset,
     profile,
   };
   const extrude: Feature = {
@@ -198,6 +233,7 @@ export function buildExtrudeFeatures(
     id: extrudeId,
     sketch: sketchId,
     depth,
+    ...(targetBody ? { fuse_target: targetBody } : {}),
   };
   return { sketch, extrude };
 }

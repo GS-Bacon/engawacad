@@ -295,6 +295,8 @@ pub enum Feature {
     CreateSketch {
         id: String,
         plane: SketchPlane,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        offset: f64,
         profile: Vec<SketchSegment>,
     },
 
@@ -304,6 +306,8 @@ pub enum Feature {
         id: String,
         sketch: String,
         depth: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fuse_target: Option<String>,
     },
 
     /// Extrude a sketch profile and cut (boolean subtract) it from a target body.
@@ -342,6 +346,10 @@ pub enum Feature {
 
 fn is_origin(p: &[f64; 3]) -> bool {
     *p == [0.0, 0.0, 0.0]
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 impl Feature {
@@ -420,6 +428,7 @@ mod tests {
         let f = Feature::CreateSketch {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),

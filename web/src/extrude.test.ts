@@ -16,6 +16,7 @@ import {
   buildExtrudeFeatures,
   buildExtrudeCutFeatures,
   faceToCanonicalPlaneDistance,
+  faceOffsetFromPlane,
   insetRect,
   CUT_INSET_RATIO,
 } from "./extrude";
@@ -866,5 +867,60 @@ describe("T23 faceToCanonicalPlaneDistance", () => {
       "N(v0;face:f_x_pos)", positions, indices, faceIds, 5, "box_0", new Set()
     );
     expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #104: faceOffsetFromPlane — face の法線方向オフセット
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// T01_unit_offset_yz: yz 面の頂点(x=5) から offset 5.0 を返す
+// ---------------------------------------------------------------------------
+describe("T01_unit_offset_yz: faceOffsetFromPlane yz face returns x offset", () => {
+  it("triangle on x=5 → offset 5.0 for yz plane", () => {
+    const positions = new Float32Array([
+      5, 0, 0,
+      5, 10, 0,
+      5, 0, 10,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["face_a"];
+    expect(faceOffsetFromPlane(positions, indices, faceIds, "face_a", "yz")).toBeCloseTo(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T02_unit_offset_xy: xy 面の頂点(z=10) から offset 10.0 を返す
+// ---------------------------------------------------------------------------
+describe("T02_unit_offset_xy: faceOffsetFromPlane xy face returns z offset", () => {
+  it("triangle on z=10 → offset 10.0 for xy plane", () => {
+    const positions = new Float32Array([
+      0, 0, 10,
+      10, 0, 10,
+      0, 10, 10,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["face_b"];
+    expect(faceOffsetFromPlane(positions, indices, faceIds, "face_b", "xy")).toBeCloseTo(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T03_degen_no_match: faceId が存在しない場合 0.0 を返す
+// ---------------------------------------------------------------------------
+describe("T03_degen_no_match: faceOffsetFromPlane returns 0.0 for missing faceId", () => {
+  it("faceId not in faceIds → 0.0", () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["face_other"];
+    expect(faceOffsetFromPlane(positions, indices, faceIds, "face_missing", "xy")).toBeCloseTo(0);
+  });
+
+  it("empty faceIds array → 0.0", () => {
+    const positions = new Float32Array([0, 0, 0]);
+    const indices = new Uint32Array([]);
+    const faceIds: string[] = [];
+    expect(faceOffsetFromPlane(positions, indices, faceIds, "any", "xy")).toBeCloseTo(0);
   });
 });

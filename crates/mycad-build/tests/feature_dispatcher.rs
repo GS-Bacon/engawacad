@@ -319,6 +319,7 @@ fn t05_fuse_disjoint_boxes() {
         Feature::CreateSketch {
             id: "sketch1".to_string(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s1".to_string(),
@@ -346,10 +347,12 @@ fn t05_fuse_disjoint_boxes() {
             id: "ext1".to_string(),
             sketch: "sketch1".to_string(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::CreateSketch {
             id: "sketch2".to_string(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s5".to_string(),
@@ -377,6 +380,7 @@ fn t05_fuse_disjoint_boxes() {
             id: "ext2".to_string(),
             sketch: "sketch2".to_string(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::Fuse {
             id: "fuse1".to_string(),
@@ -404,6 +408,7 @@ fn t05_intersect_disjoint_boxes() {
         Feature::CreateSketch {
             id: "sketch1".to_string(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s1".to_string(),
@@ -431,10 +436,12 @@ fn t05_intersect_disjoint_boxes() {
             id: "ext1".to_string(),
             sketch: "sketch1".to_string(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::CreateSketch {
             id: "sketch2".to_string(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s5".to_string(),
@@ -462,6 +469,7 @@ fn t05_intersect_disjoint_boxes() {
             id: "ext2".to_string(),
             sketch: "sketch2".to_string(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::Intersect {
             id: "int1".to_string(),
@@ -516,6 +524,7 @@ fn t07_duplicate_feature_id() {
         Feature::CreateSketch {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -532,6 +541,7 @@ fn t07_duplicate_feature_id() {
         Feature::CreateSketch {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "seg_c".to_string(),
@@ -564,6 +574,7 @@ fn t11_zero_bodies() {
     let features = vec![Feature::CreateSketch {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
+        offset: 0.0,
         profile: vec![
             SketchSegment {
                 id: "seg_a".to_string(),
@@ -594,6 +605,7 @@ fn sketch_not_found() {
         id: "ext_1".to_string(),
         sketch: "nonexistent".to_string(),
         depth: 5.0,
+        fuse_target: None,
     }];
     let mut g = IdGenerator::new(0);
     let result = build_bodies_from_features(&features, &mut g);
@@ -615,10 +627,12 @@ fn forward_reference_prohibited() {
             id: "ext_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 5.0,
+            fuse_target: None,
         },
         Feature::CreateSketch {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -656,6 +670,7 @@ fn duplicate_segment_id() {
     let features = vec![Feature::CreateSketch {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
+        offset: 0.0,
         profile: vec![
             SketchSegment {
                 id: "seg_a".to_string(),
@@ -736,6 +751,7 @@ fn t02_fuse_touching_boxes() {
         Feature::CreateSketch {
             id: "sk1".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s1".into(),
@@ -763,10 +779,12 @@ fn t02_fuse_touching_boxes() {
             id: "ext1".into(),
             sketch: "sk1".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::CreateSketch {
             id: "sk2".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s5".into(),
@@ -794,6 +812,7 @@ fn t02_fuse_touching_boxes() {
             id: "ext2".into(),
             sketch: "sk2".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Fuse {
             id: "fuse1".into(),
@@ -923,6 +942,7 @@ fn t06_cut_partial_l_shape() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -950,6 +970,7 @@ fn t06_cut_partial_l_shape() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1014,6 +1035,7 @@ fn t09_intersect_contact_only() {
         Feature::CreateSketch {
             id: "sk1".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s1".into(),
@@ -1041,10 +1063,12 @@ fn t09_intersect_contact_only() {
             id: "ext1".into(),
             sketch: "sk1".into(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::CreateSketch {
             id: "sk2".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s5".into(),
@@ -1072,6 +1096,7 @@ fn t09_intersect_contact_only() {
             id: "ext2".into(),
             sketch: "sk2".into(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::Intersect {
             id: "int1".into(),
@@ -1113,6 +1138,7 @@ fn t12_boolean_determinism() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -1140,6 +1166,7 @@ fn t12_boolean_determinism() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1171,6 +1198,7 @@ fn t17_boolean_stl_export() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -1198,6 +1226,7 @@ fn t17_boolean_stl_export() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1231,6 +1260,7 @@ fn t20_build_live_bodies() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -1258,6 +1288,7 @@ fn t20_build_live_bodies() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1328,6 +1359,7 @@ fn t24_disjoint_fuse_boxes() {
         Feature::CreateSketch {
             id: "sk1".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s1".into(),
@@ -1355,10 +1387,12 @@ fn t24_disjoint_fuse_boxes() {
             id: "ext1".into(),
             sketch: "sk1".into(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::CreateSketch {
             id: "sk2".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "s5".into(),
@@ -1386,6 +1420,7 @@ fn t24_disjoint_fuse_boxes() {
             id: "ext2".into(),
             sketch: "sk2".into(),
             depth: 1.0,
+            fuse_target: None,
         },
         Feature::Fuse {
             id: "fuse1".into(),
@@ -1419,6 +1454,7 @@ fn t18_intersection_edge_names() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -1446,6 +1482,7 @@ fn t18_intersection_edge_names() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1496,6 +1533,7 @@ fn t19_boolean_determinism_with_names() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -1523,6 +1561,7 @@ fn t19_boolean_determinism_with_names() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -1562,6 +1601,7 @@ fn t20_intersection_edge_name_golden() {
         Feature::CreateSketch {
             id: "sk_tool".into(),
             plane: mycad_format::SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 mycad_format::SketchSegment {
                     id: "ts1".into(),
@@ -1589,6 +1629,7 @@ fn t20_intersection_edge_name_golden() {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
+            fuse_target: None,
         },
         Feature::Cut {
             id: "cut1".into(),
@@ -2013,6 +2054,7 @@ fn u01_extrude_cut_determinism() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2072,6 +2114,7 @@ fn u02_extrude_cut_void_shell() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2132,6 +2175,7 @@ fn u05_extrude_cut_degen_depth() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2181,6 +2225,7 @@ fn u05_extrude_cut_degen_depth() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2235,6 +2280,7 @@ fn u06a_extrude_cut_missing_target() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2298,6 +2344,7 @@ fn u06b_extrude_cut_nonintersecting() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2407,6 +2454,7 @@ fn u03_extrude_cut_partial_l() {
         Feature::CreateSketch {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
+            offset: 0.0,
             profile: vec![
                 SketchSegment {
                     id: "ts1".into(),
