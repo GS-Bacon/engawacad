@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "GLM がコア実装時にテストも追加済み。test-spec.md の全テスト ID が extrude.test.ts に実装されていることを確認。Vitest 105件 green。",
+  "tests_added": 0,
+  "glm_exit": 0,
+  "debug_spec_used": false
+}

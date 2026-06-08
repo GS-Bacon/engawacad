@@ -1,0 +1,9 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "planeForFaceNormal() を extrude.ts に追加。main.ts の onSelect で planeForFaceId が null の場合に法線フォールバックするよう変更。コアテスト5件追加（T18: z→xy, T19: y→xz, T20: x→yz, T21: 縮退→null, T22: faceId不在→null）。全テスト 105 passed。CI green。",
+  "tests_added": 5,
+  "failed_reason": "",
+  "glm_exit": 0,
+  "debug_spec_used": false
+}
