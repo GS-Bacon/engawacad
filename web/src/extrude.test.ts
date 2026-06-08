@@ -11,6 +11,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   planeForFaceId,
+  planeForFaceNormal,
   footprintProfile,
   buildExtrudeFeatures,
   buildExtrudeCutFeatures,
@@ -679,5 +680,109 @@ describe("T17 usedFeatureIds collision avoidance (simulates main.ts init)", () =
     expect(result).not.toBeNull();
     expect(result!.sketch.id).toBe("sketch_0");
     expect(result!.extrude.id).toBe("extrude_0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #103: planeForFaceNormal — face id パターンマッチに依存しない法線ベースの平面判定
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// T18_normal_cap_z: z 方向法線の三角形 → "xy"
+// ---------------------------------------------------------------------------
+describe("T18_normal_cap_z: planeForFaceNormal z-axis normal → xy", () => {
+  it("triangle with z-normal returns xy plane", () => {
+    // Triangle on z=5 plane: normal is (0,0,1) → dominant z → "xy"
+    const positions = new Float32Array([
+      0, 0, 5,
+      10, 0, 5,
+      10, 10, 5,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_cap_z_pos)"];
+    const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_cap_z_pos)");
+    expect(result).toBe("xy");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T19_normal_side_y: y 方向法線の三角形 → "xz"
+// ---------------------------------------------------------------------------
+describe("T19_normal_side_y: planeForFaceNormal y-axis normal → xz", () => {
+  it("triangle with y-normal returns xz plane", () => {
+    // Triangle on y=5 plane: normal is (0,1,0) → dominant y → "xz"
+    const positions = new Float32Array([
+      0, 5, 0,
+      10, 5, 0,
+      10, 5, 20,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_side_y)"];
+    const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_side_y)");
+    expect(result).toBe("xz");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T20_normal_side_x: x 方向法線の三角形 → "yz"
+// ---------------------------------------------------------------------------
+describe("T20_normal_side_x: planeForFaceNormal x-axis normal → yz", () => {
+  it("triangle with x-normal returns yz plane", () => {
+    // Triangle on x=3 plane: normal is (1,0,0) → dominant x → "yz"
+    const positions = new Float32Array([
+      3, 0, 0,
+      3, 10, 0,
+      3, 10, 20,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_side_x)"];
+    const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_side_x)");
+    expect(result).toBe("yz");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T21_degen_zero_cross: 縮退三角形（クロス積長 ≤ 1e-9）→ null
+// ---------------------------------------------------------------------------
+describe("T21_degen_zero_cross: degenerate triangle → null", () => {
+  it("collapsed triangle (all vertices same) → null", () => {
+    const positions = new Float32Array([
+      5, 5, 5,
+      5, 5, 5,
+      5, 5, 5,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_cap_z)"];
+    const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_cap_z)");
+    expect(result).toBeNull();
+  });
+
+  it("collinear triangle → null", () => {
+    const positions = new Float32Array([
+      0, 0, 0,
+      5, 0, 0,
+      10, 0, 0,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_side_y)"];
+    const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_side_y)");
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T22_boundary_no_match: faceId が faceIds に存在しない → null
+// ---------------------------------------------------------------------------
+describe("T22_boundary_no_match: faceId not in faceIds → null", () => {
+  it("non-existent faceId returns null", () => {
+    const positions = new Float32Array([
+      0, 0, 5,
+      10, 0, 5,
+      10, 10, 5,
+    ]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const faceIds = ["N(v0;face:f_z_pos)"];
+    const result = planeForFaceNormal(positions, indices, faceIds, "N(v0;face:f_cap_unknown)");
+    expect(result).toBeNull();
   });
 });

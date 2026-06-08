@@ -1,6 +1,6 @@
 import { fetchAllFeatureIds, fetchBodies, postFeature } from "./api";
 import { initViewer } from "./viewer";
-import { planeForFaceId, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
+import { planeForFaceId, planeForFaceNormal, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
 
 const app = document.getElementById("app")!;
 const errorEl = document.getElementById("error")!;
@@ -36,7 +36,11 @@ async function main(): Promise<void> {
     const btn = document.querySelector<HTMLButtonElement>('[data-testid="btn-extrude"]')!;
 
     function onSelect(faceId: string | null): void {
-      panel.style.display = faceId && planeForFaceId(faceId) ? "block" : "none";
+      if (!faceId) { panel.style.display = "none"; return; }
+      const sel = handle.getSelectedFaceVertices();
+      const plane = planeForFaceId(faceId) ??
+        (sel ? planeForFaceNormal(sel.positions, sel.indices, sel.faceIds, faceId) : null);
+      panel.style.display = plane ? "block" : "none";
     }
 
     btn.addEventListener("click", async () => {

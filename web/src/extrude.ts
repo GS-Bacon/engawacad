@@ -29,6 +29,66 @@ export function planeForFaceId(faceId: string): SketchPlane | null {
   }
 }
 
+/**
+ * Determine sketch plane from the geometric normal of a selected face.
+ * Takes the first triangle matching `faceId`, computes its cross-product normal,
+ * and maps the dominant axis to a sketch plane (same mapping as planeForFaceId).
+ * Returns null for degenerate (zero-area) triangles or missing faceId.
+ */
+export function planeForFaceNormal(
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  faceIds: string[],
+  faceId: string,
+): SketchPlane | null {
+  // Find the first triangle matching the given faceId
+  let triIdx = -1;
+  for (let t = 0; t < faceIds.length; t++) {
+    if (faceIds[t] === faceId) {
+      triIdx = t;
+      break;
+    }
+  }
+  if (triIdx < 0) return null;
+
+  const i0 = indices[triIdx * 3];
+  const i1 = indices[triIdx * 3 + 1];
+  const i2 = indices[triIdx * 3 + 2];
+  const ax = positions[i0 * 3];
+  const ay = positions[i0 * 3 + 1];
+  const az = positions[i0 * 3 + 2];
+  const bx = positions[i1 * 3];
+  const by = positions[i1 * 3 + 1];
+  const bz = positions[i1 * 3 + 2];
+  const cx = positions[i2 * 3];
+  const cy = positions[i2 * 3 + 1];
+  const cz = positions[i2 * 3 + 2];
+
+  // edge1 = B - A, edge2 = C - A
+  const e1x = bx - ax;
+  const e1y = by - ay;
+  const e1z = bz - az;
+  const e2x = cx - ax;
+  const e2y = cy - ay;
+  const e2z = cz - az;
+
+  // cross product: normal = edge1 × edge2
+  const nx = e1y * e2z - e1z * e2y;
+  const ny = e1z * e2x - e1x * e2z;
+  const nz = e1x * e2y - e1y * e2x;
+
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  if (len <= EPSILON_GUARD) return null;
+
+  const anx = Math.abs(nx / len);
+  const any_ = Math.abs(ny / len);
+  const anz = Math.abs(nz / len);
+
+  if (anz >= any_ && anz >= anx) return "xy";
+  if (any_ >= anz && any_ >= anx) return "xz";
+  return "yz";
+}
+
 type SketchSegment = { id: string; from: [number, number]; to: [number, number] };
 
 /**
