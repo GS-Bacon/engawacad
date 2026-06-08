@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/booleans/partition.rs"
+    line_hint: 754
+    finding: "新しい ring/disc 分岐は `segments_are_interior()` の endpoint-only 判定で入っており、`chain_segments_into_polygon()` も閉路かどうかしか見ていません。非凸 face では端点が内側でも線分本体が外へはみ出せますし、近接/退化入力では零面積・自己交差ループでもそのまま hole/disc を生成してしまいます。結果として不正な inner loop を組み立て、manifold 破綻や誤分類を起こします。"
+    suggestion: "special-case に入る前に各線分が face 内に完全包含されることを確認し、`chain_segments_into_polygon()` 側でも重複頂点・自己交差・`signed_area_2d().abs() <= area_eps` を弾いて、失敗時は `pslg_subdivide` へフォールバックするようにしてください。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/src/booleans/partition.rs"
+    line_hint: 2425
+    finding: "`pslg_subdivide` の outer-face 除去条件を `area < outer_area * (1.0 - 1e-10)` に変えたことで、境界すれすれの正当な薄片まで『外側面』として落ちます。この閾値は全 PSLG パスに効くため、Issue #120 以外の near-boundary cut でも面欠落を起こし得ます。"
+    suggestion: "outer-face 判定は固定相対値ではなく幾何 tolerance に結び付けてください。例えば `outer_area - area` を perimeter/`len_eps` ベースで評価するか、今回の重複 outer-face ケースだけを局所的に除去する形に戻してください。"
+  - id: F03
+    severity: high
+    file: "crates/mycad-kernel/tests/boolean_proptest.rs"
+    line_hint: 90
+    finding: "レビュー対象 diff 上の surface-cut テスト変更は `t02_prop_surface_cut_reduces_volume` の `#[ignore]` 解除だけで、合意済みの T01 決定性・boundary/flush・固定失敗値 `x_offset=4.97809298669049` 回帰テストが tracked な差分に入っていません。今回の新分岐を守る acceptance coverage が不足したままです。"
+    suggestion: "`partition.rs` の debug unit test だけに頼らず、計画どおりの integration test を tracked な差分として追加してください。少なくとも `kernel_surface_cut_manifold_acceptance.rs` 相当の決定性・boundary・fixed-offset 回帰を含めるべきです。"
+
+verdict: fail

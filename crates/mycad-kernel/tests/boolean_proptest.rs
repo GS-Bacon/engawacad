@@ -84,13 +84,12 @@ proptest! {
 // not an internal void. Surface cuts produce a single-shell result, so
 // tessellation signed-volume correctly reflects material removal.
 //
-// KNOWN BUG: surface cut causes manifold violation ("edge must have exactly 2
-// half-edges") in the boolean kernel. Tracked in GitHub issue — re-enable once fixed.
+// Fixed in Issue #120: surface cut manifold violation resolved via ring/disc
+// fragment generation in partition_faces.
 // ---------------------------------------------------------------------------
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
     #[test]
-    #[ignore = "known kernel bug: surface cut manifold violation — see #120"]
     fn t02_prop_surface_cut_reduces_volume(
         x_offset in 4.1_f64..5.4_f64,
     ) {

@@ -751,6 +751,99 @@ pub fn partition_faces(
                         inner_boundary_pcurves_b: vec![vec![None; n_inner]],
                     });
                 }
+            } else if !line_segs.is_empty()
+                && circle_segs.is_empty()
+                && segments_are_interior(&line_segs, polygon_2d)
+            {
+                // Surface cut: all line segments form an interior closed loop.
+                // pslg_subdivide cannot produce the ring region for disconnected PSLGs,
+                // so we detect and handle this case explicitly.
+                if let Some((inner_poly_2d, inner_partners)) =
+                    chain_segments_into_polygon(&line_segs, len_eps)
+                {
+                    // Ring fragment: outer polygon with the interior polygon as a hole.
+                    let ring_inner_poly_3d: Vec<Point> = inner_poly_2d
+                        .iter()
+                        .rev() // reverse = CW winding for the hole
+                        .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                        .collect();
+                    let n_inner = ring_inner_poly_3d.len();
+                    let n_outer = polygon_3d.len();
+                    target_fragments.push(FaceFragment {
+                        source_face_index: fi,
+                        polygon_3d: polygon_3d.clone(),
+                        inner_polygons_3d: vec![ring_inner_poly_3d],
+                        surface: surface.clone(),
+                        parent_name: name.clone(),
+                        traversal_index: 0,
+                        is_tool_side: false,
+                        boundary_partners: vec![None; n_outer],
+                        boundary_curves: vec![None; n_outer],
+                        boundary_t_ranges: vec![[0.0, 1.0]; n_outer],
+                        boundary_pcurves_a: vec![None; n_outer],
+                        boundary_pcurves_b: vec![None; n_outer],
+                        inner_boundary_partners: vec![inner_partners.clone()],
+                        inner_boundary_curves: vec![vec![None; n_inner]],
+                        inner_boundary_t_ranges: vec![vec![[0.0, 1.0]; n_inner]],
+                        inner_boundary_pcurves_a: vec![vec![None; n_inner]],
+                        inner_boundary_pcurves_b: vec![vec![None; n_inner]],
+                    });
+
+                    // Disc fragment: the interior polygon itself (classified InsideOther → not selected for Cut).
+                    let inner_poly_3d: Vec<Point> = inner_poly_2d
+                        .iter()
+                        .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                        .collect();
+                    let n_disc = inner_poly_3d.len();
+                    target_fragments.push(FaceFragment {
+                        source_face_index: fi,
+                        polygon_3d: inner_poly_3d,
+                        inner_polygons_3d: vec![],
+                        surface: surface.clone(),
+                        parent_name: name.clone(),
+                        traversal_index: 1,
+                        is_tool_side: false,
+                        boundary_partners: inner_partners,
+                        boundary_curves: vec![None; n_disc],
+                        boundary_t_ranges: vec![[0.0, 1.0]; n_disc],
+                        boundary_pcurves_a: vec![None; n_disc],
+                        boundary_pcurves_b: vec![None; n_disc],
+                        inner_boundary_partners: vec![],
+                        inner_boundary_curves: vec![],
+                        inner_boundary_t_ranges: vec![],
+                        inner_boundary_pcurves_a: vec![],
+                        inner_boundary_pcurves_b: vec![],
+                    });
+                } else {
+                    // Cannot chain into a single closed loop — fall back to pslg_subdivide.
+                    let sub_faces = pslg_subdivide(polygon_2d, &segments, plane_data);
+                    for (idx, (sub_poly_2d, edge_partners)) in sub_faces.into_iter().enumerate() {
+                        let poly_3d: Vec<Point> = sub_poly_2d
+                            .iter()
+                            .map(|(u, v)| unproject_from_face_uv(surface, *u, *v))
+                            .collect();
+                        let n = poly_3d.len();
+                        target_fragments.push(FaceFragment {
+                            source_face_index: fi,
+                            polygon_3d: poly_3d,
+                            inner_polygons_3d: vec![],
+                            surface: surface.clone(),
+                            parent_name: name.clone(),
+                            traversal_index: idx as u32,
+                            is_tool_side: false,
+                            boundary_partners: edge_partners,
+                            boundary_curves: vec![None; n],
+                            boundary_t_ranges: vec![[0.0, 1.0]; n],
+                            boundary_pcurves_a: vec![None; n],
+                            boundary_pcurves_b: vec![None; n],
+                            inner_boundary_partners: vec![],
+                            inner_boundary_curves: vec![],
+                            inner_boundary_t_ranges: vec![],
+                            inner_boundary_pcurves_a: vec![],
+                            inner_boundary_pcurves_b: vec![],
+                        });
+                    }
+                }
             } else {
                 // Standard PSLG subdivision (line segments or circle segments crossing boundary)
                 let sub_faces = pslg_subdivide(polygon_2d, &segments, plane_data);
@@ -1612,6 +1705,73 @@ pub fn partition_faces(
     Ok((target_fragments, tool_fragments))
 }
 
+/// Euclidean distance between two 2D points.
+fn dist_2d(a: (f64, f64), b: (f64, f64)) -> f64 {
+    ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+}
+
+/// Try to chain all intersection segments into a single closed ordered CCW polygon.
+/// Returns None if segments cannot be chained into exactly one closed loop.
+#[allow(clippy::type_complexity)]
+fn chain_segments_into_polygon(
+    segs: &[&IntersectionSegment],
+    eps: f64,
+) -> Option<(Vec<(f64, f64)>, Vec<Option<EntityRef>>)> {
+    if segs.is_empty() {
+        return None;
+    }
+
+    let mut pts: Vec<(f64, f64)> = Vec::new();
+    let mut partners: Vec<Option<EntityRef>> = Vec::new();
+    let mut used = vec![false; segs.len()];
+
+    used[0] = true;
+    pts.push(segs[0].p_start);
+    partners.push(Some(segs[0].partner.clone()));
+    let mut cur = segs[0].p_end;
+
+    for _ in 1..segs.len() {
+        let found = segs.iter().enumerate().find(|(i, s)| {
+            !used[*i] && (dist_2d(s.p_start, cur) < eps || dist_2d(s.p_end, cur) < eps)
+        });
+        let (i, seg) = found?;
+        used[i] = true;
+        if dist_2d(seg.p_start, cur) < eps {
+            pts.push(seg.p_start);
+            partners.push(Some(seg.partner.clone()));
+            cur = seg.p_end;
+        } else {
+            pts.push(seg.p_end);
+            partners.push(Some(seg.partner.clone()));
+            cur = seg.p_start;
+        }
+    }
+
+    // Must close back to start
+    if dist_2d(cur, pts[0]) >= eps {
+        return None;
+    }
+    if pts.len() < 3 {
+        return None;
+    }
+
+    // Normalize to CCW (positive signed area)
+    if signed_area_2d(&pts) < 0.0 {
+        pts.reverse();
+        partners.reverse();
+        if !partners.is_empty() {
+            partners.rotate_left(1);
+        }
+    }
+
+    let area = signed_area_2d(&pts).abs();
+    if area <= eps * eps {
+        return None;
+    }
+
+    Some((pts, partners))
+}
+
 /// Check if all circle chord endpoints lie strictly inside the outer polygon (not on boundary).
 fn segments_are_interior(
     circle_segs: &[&IntersectionSegment],
@@ -2260,20 +2420,20 @@ fn pslg_subdivide(
         }
     }
 
-    // The outer boundary face has the largest area; filter it out
+    // The outer boundary face has the largest area; remove exactly that one.
     if sub_faces_raw.len() > 1 {
-        let outer_area: f64 = outer_loop
+        let max_idx = sub_faces_raw
             .iter()
-            .zip(outer_loop.iter().cycle().skip(1))
-            .map(|(a, b)| a.0 * b.1 - b.0 * a.1)
-            .sum::<f64>()
-            .abs()
-            / 2.0;
-
-        sub_faces_raw.retain(|(f, _)| {
-            let area = signed_area_2d(f).abs();
-            area < outer_area - area_eps
-        });
+            .enumerate()
+            .max_by(|(_, (fa, _)), (_, (fb, _))| {
+                signed_area_2d(fa)
+                    .abs()
+                    .partial_cmp(&signed_area_2d(fb).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(i, _)| i)
+            .unwrap(); // safe: len > 1
+        sub_faces_raw.swap_remove(max_idx);
     }
 
     sub_faces_raw.retain(|(f, _)| {
@@ -2508,6 +2668,101 @@ mod tests {
         assert!(
             segments_are_interior(&refs, &outer),
             "circle r=1 inside 4×4 square should be interior"
+        );
+    }
+
+    /// Debug: trace partition_faces for surface cut case at x_offset=4.978
+    #[test]
+    fn dbg_surface_cut_partition_trace() {
+        let x_offset = 4.97809298669049_f64;
+        let mut gen = IdGenerator::new(42);
+        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        tool.translate(Vec3::new(x_offset, 0.0, 0.0));
+
+        // Show tool face normals for identification
+        for (i, f) in tool.faces.iter().enumerate() {
+            if let Surface::Plane { normal, origin, .. } = &f.surface {
+                eprintln!(
+                    "  tool face[{}]: origin=({:.3},{:.3},{:.3}) normal=({:.1},{:.1},{:.1})",
+                    i, origin.x, origin.y, origin.z, normal.x, normal.y, normal.z
+                );
+            }
+        }
+        // Show target face normals
+        for (i, f) in target.faces.iter().enumerate() {
+            if let Surface::Plane { normal, origin, .. } = &f.surface {
+                eprintln!(
+                    "  target face[{}]: origin=({:.3},{:.3},{:.3}) normal=({:.1},{:.1},{:.1})",
+                    i, origin.x, origin.y, origin.z, normal.x, normal.y, normal.z
+                );
+            }
+        }
+
+        let result = partition_faces(&target, &tool, BooleanOp::Cut);
+        assert!(result.is_ok(), "partition should succeed");
+        let (target_frags, tool_frags) = result.unwrap();
+
+        eprintln!("=== Target fragments: {} ===", target_frags.len());
+        for (i, frag) in target_frags.iter().enumerate() {
+            let has_inner = !frag.inner_polygons_3d.is_empty();
+            let n_partners = frag
+                .boundary_partners
+                .iter()
+                .filter(|p| p.is_some())
+                .count();
+            eprintln!(
+                "  frag[{}]: source_face={} verts={} inner={} partners_with_some={}",
+                i,
+                frag.source_face_index,
+                frag.polygon_3d.len(),
+                has_inner,
+                n_partners,
+            );
+            if has_inner {
+                for (ii, inner) in frag.inner_polygons_3d.iter().enumerate() {
+                    eprintln!("    inner[{}]: {} verts", ii, inner.len());
+                    for p in inner {
+                        eprintln!("      ({:.6}, {:.6}, {:.6})", p.x, p.y, p.z);
+                    }
+                }
+            }
+        }
+
+        eprintln!("=== Tool fragments: {} ===", tool_frags.len());
+        for (i, frag) in tool_frags.iter().enumerate() {
+            let n_partners = frag
+                .boundary_partners
+                .iter()
+                .filter(|p| p.is_some())
+                .count();
+            let is_inner = !frag.inner_polygons_3d.is_empty();
+            eprintln!(
+                "  frag[{}]: source_face={} verts={} inner={} partners_with_some={}",
+                i,
+                frag.source_face_index,
+                frag.polygon_3d.len(),
+                is_inner,
+                n_partners,
+            );
+        }
+
+        // Regression: tool face[1] (z=+1) must produce exactly 2 sub-faces.
+        // Previously, a floating-point precision bug in pslg_subdivide's outer-face filter
+        // caused a 6-vertex outer face to survive, producing 3 fragments and breaking manifold.
+        let tool_face1_frags: Vec<_> = tool_frags
+            .iter()
+            .filter(|f| f.source_face_index == 1)
+            .collect();
+        assert_eq!(
+            tool_face1_frags.len(),
+            2,
+            "tool face[1] must produce exactly 2 sub-faces, got {}: {:?}",
+            tool_face1_frags.len(),
+            tool_face1_frags
+                .iter()
+                .map(|f| (f.source_face_index, f.polygon_3d.len()))
+                .collect::<Vec<_>>()
         );
     }
 }

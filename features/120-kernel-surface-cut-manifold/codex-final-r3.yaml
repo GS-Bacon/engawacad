@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/mycad-kernel/tests/kernel_surface_cut_manifold_acceptance.rs"
+    line_hint: 1
+    finding: "`kernel_surface_cut_manifold_acceptance.rs` が未追跡のままでレビュー対象 `git diff` に入っておらず、合意済みの T01_determinism / boundary / flush / fixed-offset 回帰が差分から欠落している。`coverage_hints.total_added=0` の状態では、新規 ring/disc 分岐の決定性と境界退化ケースをコミット差分上で検証できない。"
+    suggestion: "この受け入れテストを差分に含め、少なくとも `t01_determinism_surface_cut`、`t02_boundary_large_offset_manifold`、`t02_degen_flush_no_panic`、`t02_regression_fixed_x_offset` をコミット対象にしてください。"
+
+verdict: fail

@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/booleans/partition.rs"
+    line_hint: 2431
+    finding: "`area < outer_area * (1.0 - 1e-10)` で outer face を除去すると、切り欠き面積が `outer_area` の `1e-10` 未満な正当な分割面まで outer face 扱いで消えます。境界近傍の極小 surface cut では残すべき主片が落ち、boolean 結果が欠損します。"
+    suggestion: "固定の面積比マージンではなく、outer loop と同一境界かどうかで outer face だけを除去するか、少なくとも `outer_area - tol_area` 形式で幾何トレランス由来の絶対/相対許容差を使ってください。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/src/booleans/partition.rs"
+    line_hint: 1759
+    finding: "CCW 正規化で `pts.reverse(); partners.reverse();` しかしていないため、`boundary_partners[i]` が対応すべき辺 `pts[i] -> pts[i+1]` と 1 辺ずれます。surface-cut disc が選択される `BooleanOp::Intersect` では、`assemble` が誤った partner face を使って交差 edge provenance/name を生成します。"
+    suggestion: "閉ループの向きを反転する際は per-edge メタデータを `reverse` 後に `rotate_left(1)` して辺対応を保ってください。穴側に `.rev()` を掛ける provenance も同じ規則で変換するか、未使用なら `None` に落としてください。"
+
+verdict: fail
