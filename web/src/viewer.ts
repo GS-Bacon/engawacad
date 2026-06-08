@@ -48,6 +48,7 @@ export function initViewer(
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
 
   const group = new Group();
   const pickMeshes: Mesh[] = [];
@@ -185,6 +186,7 @@ export function initViewer(
     controls.update();
     renderer.render(scene, camera);
   }
+  (window as any).__viewer = { renderer, camera, controls };
   animate();
 
   return {

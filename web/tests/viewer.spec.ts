@@ -124,3 +124,26 @@ test("T04 boundary - empty response", async ({ page }) => {
   // No console errors beyond the expected UI message
   expect(consoleErrors.length).toBeLessThanOrEqual(1);
 });
+
+// T05: renderer pixelRatio — skeleton (#90)
+test("T05 renderer pixelRatio matches devicePixelRatio", async ({ page }) => {
+  await setupPageWithFixture(page, "simple_box");
+  await page.goto("/");
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  const ratio = await page.evaluate(() => (window as any).__viewer?.renderer.getPixelRatio());
+  const winRatio = await page.evaluate(() => window.devicePixelRatio);
+  expect(ratio).toBe(winRatio);
+});
+
+// T06: OrbitControls enableDamping — skeleton (#90)
+test("T06 OrbitControls enableDamping is true", async ({ page }) => {
+  await setupPageWithFixture(page, "simple_box");
+  await page.goto("/");
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  const damping = await page.evaluate(
+    () => (window as any).__viewer?.controls.enableDamping,
+  );
+  expect(damping).toBe(true);
+});
