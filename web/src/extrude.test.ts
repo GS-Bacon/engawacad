@@ -855,7 +855,8 @@ describe("T23 faceToCanonicalPlaneDistance", () => {
     expect(result).not.toBeNull();
     if (result!.extrudeCut.type === "extrude_cut") {
       expect(result!.extrudeCut.depth).toBeLessThan(5);
-      expect(result!.extrudeCut.depth).toBeGreaterThan(5 - 1e-6);
+      // EPSILON_GUARD = 1e-6, so clamped depth ≈ 5 - 1e-6; check it's close to 5
+      expect(result!.extrudeCut.depth).toBeGreaterThan(5 - 1e-4);
     }
   });
 

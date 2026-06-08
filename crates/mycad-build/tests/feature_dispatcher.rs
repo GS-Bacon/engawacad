@@ -2505,3 +2505,109 @@ fn u03_extrude_cut_partial_l() {
         solid.faces.len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// T01_positive_extrude_centroid: positive-offset extrusion extends outward (#114)
+// ---------------------------------------------------------------------------
+// A 10×20×30 box (centered at origin) has its right face at X=+5.
+// Extruding from that face with depth=3 should produce a new body whose
+// centroid is at X > 5 (i.e., extends outward in the +X direction).
+#[test]
+fn t01_positive_extrude_centroid() {
+    use mycad_format::{Feature, SketchPlane, SketchSegment};
+
+    let features = vec![
+        // 10×20×30 box centered at origin: X ∈ [-5, +5]
+        Feature::CreateBox {
+            id: "box_1".into(),
+            width: 10.0,
+            height: 20.0,
+            depth: 30.0,
+        },
+        // Sketch on yz plane at X=+5 (right face)
+        Feature::CreateSketch {
+            id: "sk_pos".into(),
+            plane: SketchPlane::Yz,
+            offset: 5.0,
+            profile: vec![
+                SketchSegment { id: "s0".into(), from: [-2.0, -3.0], to: [2.0, -3.0] },
+                SketchSegment { id: "s1".into(), from: [2.0, -3.0], to: [2.0, 3.0] },
+                SketchSegment { id: "s2".into(), from: [2.0, 3.0], to: [-2.0, 3.0] },
+                SketchSegment { id: "s3".into(), from: [-2.0, 3.0], to: [-2.0, -3.0] },
+            ],
+        },
+        // Extrude 3 units outward (expected: +X direction, body X ∈ [5, 8])
+        Feature::Extrude {
+            id: "extrude_pos".into(),
+            sketch: "sk_pos".into(),
+            depth: 3.0,
+            fuse_target: None,
+        },
+    ];
+
+    let bodies = build_features(features).expect("positive extrude should succeed");
+    let solid = &bodies.get("extrude_pos").expect("extrude_pos body").solid;
+    solid.validate_manifold().expect("must be manifold");
+
+    // Centroid x ≈ average of all vertex x coordinates
+    let centroid_x: f64 =
+        solid.vertices.iter().map(|v| v.point.x).sum::<f64>() / solid.vertices.len() as f64;
+    assert!(
+        centroid_x > 5.0,
+        "positive extrude centroid x ({centroid_x:.4}) must be > 5.0 (extends outward)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T02_reg_negative_extrude: negative-offset extrusion must extend outward
+// (regression test for #110 — currently fails, remove #[ignore] when fixed)
+// ---------------------------------------------------------------------------
+// A 10×20×30 box has its left face at X=-5.
+// Extruding from that face with depth=3 should extend to X < -5 (outward).
+// Bug #110: extrusion goes to X > -5 (inward) instead.
+#[test]
+#[ignore = "known bug: #110"]
+fn t02_reg_negative_extrude_centroid() {
+    use mycad_format::{Feature, SketchPlane, SketchSegment};
+
+    let features = vec![
+        Feature::CreateBox {
+            id: "box_1".into(),
+            width: 10.0,
+            height: 20.0,
+            depth: 30.0,
+        },
+        // Sketch on yz plane at X=-5 (left face, negative offset)
+        Feature::CreateSketch {
+            id: "sk_neg".into(),
+            plane: SketchPlane::Yz,
+            offset: -5.0,
+            profile: vec![
+                SketchSegment { id: "s0".into(), from: [-2.0, -3.0], to: [2.0, -3.0] },
+                SketchSegment { id: "s1".into(), from: [2.0, -3.0], to: [2.0, 3.0] },
+                SketchSegment { id: "s2".into(), from: [2.0, 3.0], to: [-2.0, 3.0] },
+                SketchSegment { id: "s3".into(), from: [-2.0, 3.0], to: [-2.0, -3.0] },
+            ],
+        },
+        // Extrude 3 units outward from left face (expected: -X direction, body X ∈ [-8, -5])
+        Feature::Extrude {
+            id: "extrude_neg".into(),
+            sketch: "sk_neg".into(),
+            depth: 3.0,
+            fuse_target: None,
+        },
+    ];
+
+    let bodies = build_features(features).expect("negative extrude should succeed");
+    let solid = &bodies.get("extrude_neg").expect("extrude_neg body").solid;
+    solid.validate_manifold().expect("must be manifold");
+
+    // After fix: centroid x ≈ (-5 + -8) / 2 = -6.5 → x < -5
+    // Current bug: centroid x ≈ (-5 + -2) / 2 = -3.5 → x > -5 (fails)
+    let centroid_x: f64 =
+        solid.vertices.iter().map(|v| v.point.x).sum::<f64>() / solid.vertices.len() as f64;
+    assert!(
+        centroid_x < -5.0,
+        "negative extrude centroid x ({centroid_x:.4}) must be < -5.0 (extends outward in -X)"
+    );
+}

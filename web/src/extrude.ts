@@ -5,7 +5,8 @@
 import type { Feature } from "./generated/Feature";
 import type { SketchPlane } from "./generated/SketchPlane";
 
-const EPSILON_GUARD = 1e-9;
+// 1e-6: 1000× kernel LENGTH_TOLERANCE (1e-9) to prevent coplanar face contact (#111)
+const EPSILON_GUARD = 1e-6;
 
 /**
  * Map face_id axis role to the sketch plane that lies on that axis pair.
