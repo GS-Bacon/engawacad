@@ -7,6 +7,7 @@
 web/node_modules/
 web/dist/
 web/test-results/
+test-results/
 
 # /3ai フロー
 .env
