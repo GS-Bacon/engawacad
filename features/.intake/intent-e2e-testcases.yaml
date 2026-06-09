@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と前提 Issue が明示されている。
+  Phase 7 の「Extrude / ExtrudeCut を実行できる」完了条件への寄与が読み取れ、数値モデルも本文内で独立して定義されている。

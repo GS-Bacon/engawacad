@@ -1,0 +1,6 @@
+```yaml
+aligned: yes
+comment: |
+  タイトルで対象と目的が把握でき、完了条件も「実サーバ起動」「xtask 追加」「既存テスト通過」と計測可能。
+  In-Scope/Out-of-Scope と Non-Goals が明確で、Phase 7 完了条件の自動検証基盤としての寄与も本文で明示されている。
+```

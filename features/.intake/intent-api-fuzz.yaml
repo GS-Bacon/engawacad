@@ -1,0 +1,6 @@
+```yaml
+aligned: yes
+comment: |
+  タイトルと完了条件が具体的で、In-Scope/Out-of-Scope も分離されており、単一の品質保証ハーネスとして意図が明確。
+  Phase 7 への寄与も位置づけで読める。NaN/Inf や閾値の扱いを含むため、plan.md には `### 数値モデル` が必要。
+```
