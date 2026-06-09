@@ -253,28 +253,44 @@ fn t02_fuzz_no_http_500() {
     });
 }
 
-// T03: NaN/Infinity を depth に入れても 500 を返さない（400 or 422 が正常）
+// T03: NaN/Infinity を depth に入れても 500 を返さない（有効 JSON は non-500、無効 JSON は 422）
 #[test]
 #[ignore = "fuzz: run with cargo xtask acceptance --fuzz"]
 fn t03_degen_special_float_values() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let special_payloads = [
-            r#"{"type":"create_box","id":"box_nan","width":0,"height":0,"depth":0}"#,
+        // 有効な JSON 数値（extreme values）— 500 でなければ OK
+        let valid_json_payloads = [
             r#"{"type":"create_box","id":"box_big","width":1e15,"height":1e15,"depth":1e15}"#,
             r#"{"type":"create_box","id":"box_neg","width":-1e15,"height":-1e15,"depth":-1e15}"#,
             r#"{"type":"create_box","id":"box_tiny","width":1e-15,"height":1e-15,"depth":1e-15}"#,
             r#"{"type":"create_box","id":"box_min","width":-1.7976931348623157e308,"height":1.0,"depth":1.0}"#,
         ];
-
-        for payload in &special_payloads {
+        for payload in &valid_json_payloads {
             let (_dir, path) = temp_copy("simple_box.mycad");
             let app = make_app(path);
             let (status, body) = send_post(app, payload).await;
             assert_ne!(
                 status,
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "special float payload caused HTTP 500 — payload={payload}, body={body}"
+                "extreme float payload caused HTTP 500 — payload={payload}, body={body}"
+            );
+        }
+
+        // 生バイトで送る NaN/Infinity（JSON 仕様外）— 422 Unprocessable を期待
+        let raw_invalid_payloads = [
+            r#"{"type":"create_box","id":"nan_d","width":1.0,"height":1.0,"depth":NaN}"#,
+            r#"{"type":"create_box","id":"inf_d","width":1.0,"height":1.0,"depth":Infinity}"#,
+            r#"{"type":"create_box","id":"neginf_w","width":-Infinity,"height":1.0,"depth":1.0}"#,
+        ];
+        for payload in &raw_invalid_payloads {
+            let (_dir, path) = temp_copy("simple_box.mycad");
+            let app = make_app(path);
+            let (status, _body) = send_post(app, payload).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "NaN/Infinity raw bytes should return 422 — payload={payload}"
             );
         }
     });
@@ -297,14 +313,10 @@ fn t04_degen_unknown_type() {
             let (_dir, path) = temp_copy("simple_box.mycad");
             let app = make_app(path);
             let (status, body) = send_post(app, payload).await;
-            assert_ne!(
+            assert_eq!(
                 status,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "unknown type caused HTTP 500 — payload={payload}, body={body}"
-            );
-            assert!(
-                status.is_client_error(),
-                "unknown type should return 4xx — got {status} for payload={payload}"
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "unknown type should return 422 — got {status} for payload={payload}, body={body}"
             );
         }
     });
@@ -322,10 +334,9 @@ fn t05_degen_null_body() {
             let (_dir, path) = temp_copy("simple_box.mycad");
             let app = make_app(path);
             let (status, body) = send_post(app, payload).await;
-            assert_ne!(
-                status,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "non-object body caused HTTP 500 — payload={payload}, body={body}"
+            assert!(
+                status.is_client_error(),
+                "non-object body should return 4xx — got {status} for payload={payload}, body={body}"
             );
         }
     });

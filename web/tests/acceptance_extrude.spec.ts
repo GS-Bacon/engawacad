@@ -9,13 +9,18 @@
  * face距離 = 15.0 (XY 平面 z=0 から top face z=+15 まで)
  *
  * 各テストは独立して実行可能（累積状態に依存しない絶対アサート）。
- * 一意の ID を使用するため並列実行（--workers N）に対応。
+ * RUN プレフィックスで ID を一意化するため再実行および --workers 1（デフォルト）に対応。
+ * 注: --workers N (N>1) の場合は共有サーバーへの同時書き込みによる状態競合が発生しうる。
+ * 並列テスト分離（per-test server）は Phase 7 以降の課題。
  *
  * Phase 7 拡張ポイント: CreateSketch 起点ケースは末尾コメントを参照
  */
 import { test, expect } from "@playwright/test";
 
 const API_BASE = "http://127.0.0.1:7878";
+
+// 実行ごとに一意のプレフィックスで duplicate ID エラーを防ぐ
+const RUN = Date.now().toString(36);
 
 // XY 平面上の矩形スケッチ (origin centered, [-2,2]×[-4,4])
 function makeSketch(id: string) {
@@ -62,51 +67,59 @@ function hasMeshVertices(responseText: string): boolean {
 
 // T01: Extrude 正側面 depth=2.0
 test("T01_extrude_normal depth=2.0", async ({ request }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t01"));
+  const sk = `${RUN}_sk_t01`;
+  const ext = `${RUN}_ext_t01`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude",
-    id: "ext_t01",
-    sketch: "sk_t01",
+    id: ext,
+    sketch: sk,
     depth: 2.0,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
-  expect(text).toContain('"feature_id":"ext_t01"');
+  expect(text).toContain(`"feature_id":"${ext}"`);
 });
 
 // T02: Extrude 正側面 depth=0.01 — 最小値
 test("T02_extrude_min depth=0.01", async ({ request }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t02"));
+  const sk = `${RUN}_sk_t02`;
+  const ext = `${RUN}_ext_t02`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude",
-    id: "ext_t02",
-    sketch: "sk_t02",
+    id: ext,
+    sketch: sk,
     depth: 0.01,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain(`"feature_id":"${ext}"`);
 });
 
 // T03: Extrude 正側面 depth=10.0 — 大値
 test("T03_extrude_large depth=10.0", async ({ request }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t03"));
+  const sk = `${RUN}_sk_t03`;
+  const ext = `${RUN}_ext_t03`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude",
-    id: "ext_t03",
-    sketch: "sk_t03",
+    id: ext,
+    sketch: sk,
     depth: 10.0,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain(`"feature_id":"${ext}"`);
 });
 
 // ---------------------------------------------------------------------------
@@ -117,36 +130,42 @@ test("T03_extrude_large depth=10.0", async ({ request }) => {
 test("T04_degen_extrude_neg_face depth=-2.0 (#110 regression)", async ({
   request,
 }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t04"));
+  const sk = `${RUN}_sk_t04`;
+  const ext = `${RUN}_ext_t04`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude",
-    id: "ext_t04",
-    sketch: "sk_t04",
+    id: ext,
+    sketch: sk,
     depth: -2.0,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain(`"feature_id":"${ext}"`);
 });
 
 // T05: Extrude 負側面 depth=-0.01 — 最小負値
 test("T05_degen_extrude_neg_min depth=-0.01 (#110 regression)", async ({
   request,
 }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t05"));
+  const sk = `${RUN}_sk_t05`;
+  const ext = `${RUN}_ext_t05`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude",
-    id: "ext_t05",
-    sketch: "sk_t05",
+    id: ext,
+    sketch: sk,
     depth: -0.01,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain(`"feature_id":"${ext}"`);
 });
 
 // ---------------------------------------------------------------------------
@@ -155,13 +174,15 @@ test("T05_degen_extrude_neg_min depth=-0.01 (#110 regression)", async ({
 
 // T06: ExtrudeCut depth=1.0 — 正常値
 test("T06_extrude_cut_normal depth=1.0", async ({ request }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t06"));
+  const sk = `${RUN}_sk_t06`;
+  const cut = `${RUN}_cut_t06`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude_cut",
-    id: "cut_t06",
-    sketch: "sk_t06",
+    id: cut,
+    sketch: sk,
     depth: 1.0,
     target: "box_1",
   });
@@ -172,52 +193,61 @@ test("T06_extrude_cut_normal depth=1.0", async ({ request }) => {
 
 // T07: ExtrudeCut depth=face距離-0.01=14.999 — 境界手前
 test("T07_extrude_cut_near_boundary depth=14.999", async ({ request }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t07"));
+  const sk = `${RUN}_sk_t07`;
+  const cut = `${RUN}_cut_t07`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude_cut",
-    id: "cut_t07",
-    sketch: "sk_t07",
+    id: cut,
+    sketch: sk,
     depth: 14.999,
     target: "box_1",
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
+  expect(hasMeshVertices(text)).toBeTruthy();
 });
 
 // T08: ExtrudeCut depth=face距離=15.0 — 境界値 (#111 回帰)
 test("T08_degen_extrude_cut_at_boundary depth=15.0 (#111 regression)", async ({
   request,
 }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t08"));
+  const sk = `${RUN}_sk_t08`;
+  const cut = `${RUN}_cut_t08`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude_cut",
-    id: "cut_t08",
-    sketch: "sk_t08",
+    id: cut,
+    sketch: sk,
     depth: 15.0,
     target: "box_1",
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
+  expect(hasMeshVertices(text)).toBeTruthy();
 });
 
 // T09: ExtrudeCut depth=face距離+0.1=15.1 — 境界超え
 test("T09_extrude_cut_beyond_boundary depth=15.1", async ({ request }) => {
-  const { status: s1 } = await postFeature(request, makeSketch("sk_t09"));
+  const sk = `${RUN}_sk_t09`;
+  const cut = `${RUN}_cut_t09`;
+  const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
   const { status, text } = await postFeature(request, {
     type: "extrude_cut",
-    id: "cut_t09",
-    sketch: "sk_t09",
+    id: cut,
+    sketch: sk,
     depth: 15.1,
     target: "box_1",
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
+  expect(hasMeshVertices(text)).toBeTruthy();
 });
 
 // ---------------------------------------------------------------------------
