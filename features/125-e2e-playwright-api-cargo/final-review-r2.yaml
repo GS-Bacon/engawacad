@@ -1,0 +1,21 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "playwright.config.ts"
+    line_hint: 1
+    finding: "playwright.config.ts の webServer 設定が追加されていない（Issue 完了条件 #1 未満たし）"
+    suggestion: "webServer に cargo run -p mycad-api -- <file> を設定し、tmpdir の simple_box.mycad を使用するよう構成すること"
+  - id: FN02
+    severity: critical
+    file: "web/tests/helpers.ts"
+    line_hint: 1
+    finding: "setupPageWithServer() ヘルパーが実装されていない（viewer.spec.ts で import されているがファイル自体が diff に含まれていない）"
+    suggestion: "helpers.ts を新規追加し、setupPageWithServer() を実装すること。既存の setupPageWithFixture() は互換性のため残す"
+  - id: FN03
+    severity: critical
+    file: "web/tests/viewer.spec.ts"
+    line_hint: 5
+    finding: "実装が不完全でテストが実行できない状態（helpers.ts 不在による import エラー）"
+    suggestion: "helpers.ts の実装を完了させてから import を有効化すること"
+
+verdict: fail

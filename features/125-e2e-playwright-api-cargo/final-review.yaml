@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "web/tests/viewer.spec.ts"
+    line_hint: 72-79
+    finding: "完了条件「既存テスト（T01/T02/E01-E04 等）が実サーバに対して通る」が実装されていない。新 T01_server テストが追加されたが、既存 T01 は fixture 版のままで実サーバ検証にならない"
+    suggestion: "既存 T01/T02 テストを setupPageWithServer() に切り替えるか、実サーバ版コピー (T01_server, T02_server) を追加して既存テストパスを実サーバで検証すること"
+
+verdict: fail
