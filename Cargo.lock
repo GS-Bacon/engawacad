@@ -1701,6 +1701,8 @@ dependencies = [
  "mycad-api",
  "mycad-format",
  "mycad-kernel",
+ "serde",
+ "serde_json",
  "tempfile",
  "ts-rs",
 ]

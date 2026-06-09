@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
+use serde::Deserialize;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let task = args.first().map(|s| s.as_str()).unwrap_or("help");
@@ -197,6 +199,435 @@ fn acceptance() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+// ---------------------------------------------------------------------------
+// Playwright JSON report structures (partial deserialization)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct PwReport {
+    suites: Vec<PwSuite>,
+}
+
+#[derive(Deserialize)]
+struct PwSuite {
+    #[serde(default)]
+    specs: Vec<PwSpec>,
+    #[serde(default)]
+    suites: Vec<PwSuite>,
+}
+
+#[derive(Deserialize)]
+struct PwSpec {
+    title: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    tests: Vec<PwTest>,
+}
+
+#[derive(Deserialize)]
+struct PwTest {
+    #[serde(default)]
+    results: Vec<PwResult>,
+}
+
+#[derive(Deserialize)]
+struct PwResult {
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    attachments: Vec<PwAttachment>,
+}
+
+#[derive(Deserialize)]
+struct PwAttachment {
+    name: String,
+    #[serde(default)]
+    path: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Tile data
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+enum Stage {
+    One,
+    Two,
+}
+
+#[derive(Debug, Clone)]
+struct TileInput {
+    /// Short label for drawtext overlay (ASCII only)
+    label: String,
+    /// true = draw green border; false = red
+    passed: bool,
+    stage: Stage,
+    video: PathBuf,
+}
+
+/// Extract stage from Playwright tags (`@stage1` / `@stage2`).
+/// Falls back to scanning the title string if tags are empty.
+fn classify(tags: &[String], title: &str) -> Option<Stage> {
+    for tag in tags {
+        if tag.contains("stage1") {
+            return Some(Stage::One);
+        }
+        if tag.contains("stage2") {
+            return Some(Stage::Two);
+        }
+    }
+    // Fallback: look for @stage1/@stage2 in the title text
+    if title.contains("@stage1") {
+        return Some(Stage::One);
+    }
+    if title.contains("@stage2") {
+        return Some(Stage::Two);
+    }
+    None
+}
+
+/// Recursively collect TileInput from the nested suite tree.
+fn collect_tiles(suite: &PwSuite, out: &mut Vec<TileInput>) {
+    for spec in &suite.specs {
+        // Use the last result of the first test variant
+        let Some(test) = spec.tests.first() else { continue };
+        let Some(result) = test.results.last() else { continue };
+
+        // Find the video attachment
+        let video_path = result
+            .attachments
+            .iter()
+            .find(|a| a.name == "video")
+            .and_then(|a| a.path.as_deref())
+            .map(PathBuf::from);
+        let Some(video) = video_path else { continue }; // API tests have no video
+        if !video.exists() {
+            continue;
+        }
+
+        let passed = result.status.as_deref() == Some("passed");
+        let stage = classify(&spec.tags, &spec.title);
+        let Some(stage) = stage else { continue }; // untagged → skip
+
+        // Shorten the label: strip @stageN suffix and leading test code
+        let label = shorten_label(&spec.title);
+
+        out.push(TileInput { label, passed, stage, video });
+    }
+    for child in &suite.suites {
+        collect_tiles(child, out);
+    }
+}
+
+/// Parse a Playwright JSON report and return TileInput list.
+/// Pure function — no I/O.
+pub(crate) fn parse_report(json: &str) -> Result<Vec<TileInput>, String> {
+    let report: PwReport =
+        serde_json::from_str(json).map_err(|e| format!("JSON parse error: {e}"))?;
+    let mut tiles = Vec::new();
+    for suite in &report.suites {
+        collect_tiles(suite, &mut tiles);
+    }
+    Ok(tiles)
+}
+
+/// Strip `@stageN` suffix and leading test ID (e.g. "T03 ") from a title.
+pub(crate) fn shorten_label(title: &str) -> String {
+    // Remove @stage1 / @stage2 annotation
+    let s = title
+        .replace("@stage1", "")
+        .replace("@stage2", "")
+        .trim()
+        .to_owned();
+    // Trim to at most 36 characters for drawtext legibility
+    if s.chars().count() > 36 {
+        let truncated: String = s.chars().take(34).collect();
+        format!("{truncated}..")
+    } else {
+        s
+    }
+}
+
+/// Escape a string for use in ffmpeg drawtext `text=` value.
+/// Colons, backslashes, single-quotes, percent signs, and newlines must be escaped.
+pub(crate) fn escape_drawtext(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| match c {
+            '\\' => vec!['\\', '\\'],
+            ':' => vec!['\\', ':'],
+            '\'' => vec!['\\', '\''],
+            '%' => vec!['%', '%'],
+            '\n' | '\r' => vec![' '],
+            other => vec![other],
+        })
+        .collect()
+}
+
+/// Find a suitable TrueType font for ffmpeg drawtext.
+/// Returns None if no font is found (drawtext will be skipped).
+pub(crate) fn find_font() -> Option<PathBuf> {
+    let candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    ];
+    candidates
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
+}
+
+/// Build the xstack layout string (pure: positions only, no filter_complex header).
+/// Each position is `x_y` using cumulative `w0+w1+...` / `h0+h4+...` form.
+pub(crate) fn build_xstack_layout(n: usize, cols: usize) -> String {
+    let mut positions: Vec<String> = Vec::with_capacity(n);
+    for i in 0..n {
+        let col = i % cols;
+        let row = i / cols;
+        let x = if col == 0 {
+            "0".to_owned()
+        } else {
+            (0..col).map(|c| format!("w{c}")).collect::<Vec<_>>().join("+")
+        };
+        // xstack では N*h0 形式の乗算が効かないため h0+h1+...hN-1 で累積する
+        let y = if row == 0 {
+            "0".to_owned()
+        } else {
+            (0..row).map(|r| format!("h{}", r * cols)).collect::<Vec<_>>().join("+")
+        };
+        positions.push(format!("{x}_{y}"));
+    }
+    positions.join("|")
+}
+
+// Tile dimensions used for the per-clip scale/pad step.
+const TILE_W: u32 = 480;
+const TILE_H: u32 = 360;
+const TILE_FPS: u32 = 30;
+const TILE_COLS: usize = 4;
+/// Border thickness in pixels for the pass/fail colour frame.
+const BORDER_PX: u32 = 8;
+/// Canvas dimensions for the final concatenated video.
+/// Must be the same for every segment so concat succeeds.
+const CANVAS_W: u32 = TILE_W * TILE_COLS as u32;
+// Canvas height is computed at runtime from row count per stage.
+
+/// Build a filter_complex string that normalises each input, applies a
+/// pass/fail colour border + label, then assembles them into an xstack grid.
+///
+/// `slow` — if true, `setpts=2.0*PTS` is applied (stage2 slow-motion effect).
+/// `font` — path to .ttf; if None the drawtext step is omitted.
+pub(crate) fn build_tile_filtergraph(
+    tiles: &[TileInput],
+    cols: usize,
+    w: u32,
+    h: u32,
+    fps: u32,
+    slow: bool,
+    font: Option<&std::path::Path>,
+) -> String {
+    let n = tiles.len();
+    let mut parts: Vec<String> = Vec::new();
+
+    for (i, tile) in tiles.iter().enumerate() {
+        let label = escape_drawtext(&tile.label);
+        // Green for pass, red for fail
+        let border_color = if tile.passed { "0x4CAF50" } else { "0xE53935" };
+
+        let mut chain = format!(
+            "[{i}:v] scale={w}:{h}:force_original_aspect_ratio=decrease,\
+             pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,\
+             fps={fps},\
+             setsar=1"
+        );
+        if slow {
+            chain.push_str(",setpts=2.0*PTS");
+        }
+        // Longest tile determines final duration — pad shorter ones
+        chain.push_str(",tpad=stop_mode=clone:stop_duration=0");
+        // Pass/fail border
+        chain.push_str(&format!(
+            ",drawbox=x=0:y=0:w=iw:h=ih:color={border_color}@1:t={BORDER_PX}"
+        ));
+        // Label (only if font is available)
+        if let Some(font_path) = font {
+            let font_str = font_path.to_str().unwrap_or("");
+            chain.push_str(&format!(
+                ",drawtext=fontfile='{font_str}':text='{label}'\
+                 :x=10:y=10:fontsize=18:fontcolor=white\
+                 :box=1:boxcolor=black@0.6:boxborderw=4"
+            ));
+        }
+        chain.push_str(&format!(" [v{i}]"));
+        parts.push(chain);
+    }
+
+    if n == 1 {
+        // Single tile: just output directly
+        return parts.remove(0).replace(" [v0]", " [out]");
+    }
+
+    let layout = build_xstack_layout(n, cols);
+    let input_labels: String = (0..n).map(|i| format!("[v{i}]")).collect();
+    parts.push(format!(
+        "{input_labels} xstack=inputs={n}:layout={layout}:fill=black [out]"
+    ));
+    parts.join(";\n")
+}
+
+/// Generate a title card mp4 via ffmpeg lavfi (no input image required).
+fn build_title_card(
+    text: &str,
+    canvas_w: u32,
+    canvas_h: u32,
+    fps: u32,
+    duration_secs: f32,
+    font: Option<&std::path::Path>,
+    output: &std::path::Path,
+) -> bool {
+    let size = format!("{canvas_w}x{canvas_h}");
+    let mut vf_parts = vec![format!(
+        "fps={fps},setsar=1,format=yuv420p"
+    )];
+    if let Some(fp) = font {
+        let esc = escape_drawtext(text);
+        let font_str = fp.to_str().unwrap_or("");
+        vf_parts.push(format!(
+            "drawtext=fontfile='{font_str}':text='{esc}'\
+             :x=(w-tw)/2:y=(h-th)/2:fontsize=36:fontcolor=white\
+             :box=1:boxcolor=black@0.4:boxborderw=8"
+        ));
+    }
+    let vf = vf_parts.join(",");
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f", "lavfi",
+            "-i", &format!("color=c=0x1A1A2E:s={size}:d={duration_secs}"),
+            "-vf", &vf,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            output.to_str().unwrap(),
+        ])
+        .status();
+    matches!(status, Ok(s) if s.success())
+}
+
+/// Render a single stage's tiles into a padded mp4 on the shared canvas.
+fn run_stage(
+    tiles: &[TileInput],
+    canvas_w: u32,
+    canvas_h: u32,
+    fps: u32,
+    slow: bool,
+    font: Option<&std::path::Path>,
+    output: &std::path::Path,
+) -> bool {
+    if tiles.is_empty() {
+        return false;
+    }
+    let n = tiles.len();
+    println!(
+        "  Building stage grid: {} tile(s), canvas {}x{}",
+        n, canvas_w, canvas_h
+    );
+
+    // Build xstack grid
+    let grid_tmp = output.with_extension("grid.mp4");
+    {
+        let filter = build_tile_filtergraph(
+            tiles,
+            TILE_COLS,
+            TILE_W,
+            TILE_H,
+            fps,
+            slow,
+            font,
+        );
+        let mut args: Vec<String> = vec!["-y".into()];
+        for tile in tiles {
+            args.push("-i".into());
+            args.push(tile.video.to_str().unwrap().to_owned());
+        }
+        args.extend([
+            "-filter_complex".into(),
+            filter,
+            "-map".into(),
+            "[out]".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            grid_tmp.to_str().unwrap().to_owned(),
+        ]);
+        let status = Command::new("ffmpeg").args(&args).status();
+        if !matches!(status, Ok(s) if s.success()) {
+            eprintln!("WARNING: ffmpeg stage grid 生成に失敗しました");
+            return false;
+        }
+    }
+
+    // Pad grid to the shared canvas size (different stages may have different
+    // row counts, which would make their grids different heights)
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            grid_tmp.to_str().unwrap(),
+            "-vf",
+            &format!(
+                "scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,\
+                 pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2:0x111111,\
+                 setsar=1,fps={fps},format=yuv420p"
+            ),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            output.to_str().unwrap(),
+        ])
+        .status();
+
+    let _ = std::fs::remove_file(&grid_tmp);
+    matches!(status, Ok(s) if s.success())
+}
+
+/// Concatenate segment files into a single mp4.
+fn concat_segments(segments: &[PathBuf], output: &std::path::Path) -> bool {
+    let n = segments.len();
+    if n == 0 {
+        return false;
+    }
+    if n == 1 {
+        return std::fs::copy(&segments[0], output)
+            .map(|_| true)
+            .unwrap_or(false);
+    }
+
+    let mut args: Vec<String> = vec!["-y".into()];
+    for seg in segments {
+        args.push("-i".into());
+        args.push(seg.to_str().unwrap().to_owned());
+    }
+    let filter: String = (0..n).map(|i| format!("[{i}:v]")).collect::<String>()
+        + &format!("concat=n={n}:v=1:a=0[out]");
+    args.extend([
+        "-filter_complex".into(),
+        filter,
+        "-map".into(),
+        "[out]".into(),
+        "-c:v".into(),
+        "libx264".into(),
+        "-pix_fmt".into(),
+        "yuv420p".into(),
+        output.to_str().unwrap().to_owned(),
+    ]);
+    let status = Command::new("ffmpeg").args(&args).status();
+    matches!(status, Ok(s) if s.success())
+}
+
 fn tile_videos(web_dir: &std::path::Path) {
     let Some(_ffmpeg) = which("ffmpeg") else {
         eprintln!("WARNING: ffmpeg が見つかりません — タイル合成をスキップします");
@@ -204,86 +635,136 @@ fn tile_videos(web_dir: &std::path::Path) {
     };
 
     let results_dir = web_dir.join("test-results");
-    let videos = collect_webm_files(&results_dir);
+    let report_path = results_dir.join("report.json");
 
-    if videos.is_empty() {
-        eprintln!("WARNING: --record が指定されましたが動画ファイルが見つかりませんでした");
+    if !report_path.exists() {
+        eprintln!("WARNING: test-results/report.json が見つかりません — タイル合成をスキップします");
         return;
     }
 
-    let output = results_dir.join("acceptance-tiled.mp4");
-    println!("\n=== Tiling {} video(s) with FFmpeg ===", videos.len());
-
-    let status = if videos.len() == 1 {
-        Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                videos[0].to_str().unwrap(),
-                output.to_str().unwrap(),
-            ])
-            .status()
-    } else {
-        let mut ffmpeg_args: Vec<String> = vec!["-y".into()];
-        for v in &videos {
-            ffmpeg_args.push("-i".into());
-            ffmpeg_args.push(v.to_str().unwrap().to_owned());
+    let json = match std::fs::read_to_string(&report_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("WARNING: report.json 読み込みエラー: {e}");
+            return;
         }
-        let filter = build_xstack_filter(videos.len());
-        ffmpeg_args.extend(["-filter_complex".into(), filter, "-vcodec".into(), "libx264".into()]);
-        ffmpeg_args.push(output.to_str().unwrap().to_owned());
-        Command::new("ffmpeg").args(&ffmpeg_args).status()
     };
 
-    match status {
-        Ok(s) if s.success() => {
-            println!("Tiled video saved to {}", output.display());
+    let tiles = match parse_report(&json) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("WARNING: report.json パースエラー: {e}");
+            return;
         }
-        Ok(_) => eprintln!("WARNING: ffmpeg タイル合成に失敗しました"),
-        Err(e) => eprintln!("WARNING: ffmpeg 実行エラー: {e}"),
-    }
-}
+    };
 
-fn collect_webm_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut videos = Vec::new();
-    if !dir.exists() {
-        return videos;
+    let stage1: Vec<&TileInput> = tiles.iter().filter(|t| t.stage == Stage::One).collect();
+    let stage2: Vec<&TileInput> = tiles.iter().filter(|t| t.stage == Stage::Two).collect();
+
+    println!(
+        "\n=== Tiling {} stage-1 and {} stage-2 video(s) with FFmpeg ===",
+        stage1.len(),
+        stage2.len()
+    );
+
+    if stage1.is_empty() && stage2.is_empty() {
+        eprintln!("WARNING: @stage1/@stage2 タグ付き録画が見つかりませんでした");
+        return;
     }
-    if let Ok(read_dir) = std::fs::read_dir(dir) {
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                videos.extend(collect_webm_files(&path));
-            } else if path.extension().and_then(|e| e.to_str()) == Some("webm") {
-                videos.push(path);
-            }
+
+    let font = find_font();
+    if font.is_none() {
+        eprintln!("INFO: フォントが見つかりません — ラベルなしで合成します");
+    }
+
+    // Compute canvas height from the larger stage's row count
+    let max_tiles = stage1.len().max(stage2.len()).max(1);
+    let rows = max_tiles.div_ceil(TILE_COLS);
+    let canvas_h = TILE_H * rows as u32;
+    let canvas_w = CANVAS_W;
+
+    let mut segments: Vec<PathBuf> = Vec::new();
+    let tmp_dir = results_dir.join("_promo_tmp");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+
+    // Stage 1
+    if !stage1.is_empty() {
+        let title_path = tmp_dir.join("title1.mp4");
+        let stage_tiles: Vec<TileInput> = stage1.iter().map(|t| (*t).clone()).collect();
+        let stage_path = tmp_dir.join("stage1.mp4");
+
+        if build_title_card(
+            "Stage 1 — Primitives & Booleans",
+            canvas_w,
+            canvas_h,
+            TILE_FPS,
+            2.5,
+            font.as_deref(),
+            &title_path,
+        ) {
+            segments.push(title_path);
+        }
+
+        if run_stage(
+            &stage_tiles,
+            canvas_w,
+            canvas_h,
+            TILE_FPS,
+            false,
+            font.as_deref(),
+            &stage_path,
+        ) {
+            segments.push(stage_path);
         }
     }
-    videos.sort();
-    videos
-}
 
-fn build_xstack_filter(n: usize) -> String {
-    const COLS: usize = 4;
-    let mut positions: Vec<String> = Vec::with_capacity(n);
-    for i in 0..n {
-        let col = i % COLS;
-        let row = i / COLS;
-        let x = match col {
-            0 => "0".to_owned(),
-            1 => "w0".to_owned(),
-            2 => "w0+w1".to_owned(),
-            _ => "w0+w1+w2".to_owned(),
-        };
-        // xstack では N*h0 形式の乗算が効かないため h0+h1+...hN-1 で累積する
-        let y = if row == 0 {
-            "0".to_owned()
-        } else {
-            (0..row).map(|r| format!("h{}", r * COLS)).collect::<Vec<_>>().join("+")
-        };
-        positions.push(format!("{x}_{y}"));
+    // Stage 2
+    if !stage2.is_empty() {
+        let title_path = tmp_dir.join("title2.mp4");
+        let stage_tiles: Vec<TileInput> = stage2.iter().map(|t| (*t).clone()).collect();
+        let stage_path = tmp_dir.join("stage2.mp4");
+
+        if build_title_card(
+            "Stage 2 — Extrude / Cut / Boolean",
+            canvas_w,
+            canvas_h,
+            TILE_FPS,
+            2.5,
+            font.as_deref(),
+            &title_path,
+        ) {
+            segments.push(title_path);
+        }
+
+        if run_stage(
+            &stage_tiles,
+            canvas_w,
+            canvas_h,
+            TILE_FPS,
+            true, // slow-motion for stage2
+            font.as_deref(),
+            &stage_path,
+        ) {
+            segments.push(stage_path);
+        }
     }
-    format!("xstack=inputs={}:layout={}:fill=black", n, positions.join("|"))
+
+    if segments.is_empty() {
+        eprintln!("WARNING: 生成できたセグメントがありません — 出力をスキップします");
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return;
+    }
+
+    let output = results_dir.join("acceptance-promo.mp4");
+    println!("=== Concatenating {} segment(s) → {} ===", segments.len(), output.display());
+
+    if concat_segments(&segments, &output) {
+        println!("Promo video saved to {}", output.display());
+    } else {
+        eprintln!("WARNING: concat に失敗しました");
+    }
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
 fn ci() -> ExitCode {
@@ -690,5 +1171,200 @@ export type ErrorResponse = { error: string, };
                 "{name} missing from gen_ts_to output"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Promo pipeline pure-function tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn t_xstack_layout_basic() {
+        // 4 tiles, 4 cols → single row
+        let layout = build_xstack_layout(4, 4);
+        assert_eq!(layout, "0_0|w0_0|w0+w1_0|w0+w1+w2_0");
+    }
+
+    #[test]
+    fn t_xstack_layout_two_rows() {
+        // 5 tiles, 4 cols → 2 rows
+        let layout = build_xstack_layout(5, 4);
+        // Tile 4 is row 1, col 0 → x=0, y=h0
+        assert!(layout.ends_with("|0_h0"));
+    }
+
+    #[test]
+    fn t_xstack_layout_single() {
+        let layout = build_xstack_layout(1, 4);
+        assert_eq!(layout, "0_0");
+    }
+
+    #[test]
+    fn t_escape_drawtext_colon() {
+        assert_eq!(escape_drawtext("T01: simple_box"), "T01\\: simple_box");
+    }
+
+    #[test]
+    fn t_escape_drawtext_percent() {
+        assert_eq!(escape_drawtext("50%"), "50%%");
+    }
+
+    #[test]
+    fn t_escape_drawtext_backslash() {
+        assert_eq!(escape_drawtext("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn t_escape_drawtext_newline() {
+        assert_eq!(escape_drawtext("a\nb"), "a b");
+    }
+
+    #[test]
+    fn t_shorten_label_strips_stage_tag() {
+        assert_eq!(
+            shorten_label("T03 console no error - cylinder @stage1"),
+            "T03 console no error - cylinder"
+        );
+    }
+
+    #[test]
+    fn t_shorten_label_truncates() {
+        let long = "T03 console no error - boolean_intersect_cyl_sphere_extra_long @stage1";
+        let result = shorten_label(long);
+        assert!(result.chars().count() <= 38, "label should be ≤38 chars, got: {result}");
+        assert!(result.ends_with(".."));
+    }
+
+    #[test]
+    fn t_classify_stage_tag() {
+        assert_eq!(
+            classify(&["@stage1".to_owned()], "title"),
+            Some(Stage::One)
+        );
+        assert_eq!(
+            classify(&["@stage2".to_owned()], "title"),
+            Some(Stage::Two)
+        );
+        assert_eq!(classify(&[], "title with @stage1 text"), Some(Stage::One));
+        assert_eq!(classify(&[], "untagged title"), None);
+    }
+
+    #[test]
+    fn t_parse_report_empty_suites() {
+        let json = r#"{"suites":[]}"#;
+        let tiles = parse_report(json).unwrap();
+        assert!(tiles.is_empty());
+    }
+
+    #[test]
+    fn t_parse_report_no_video_skipped() {
+        // Spec with no video attachment should be skipped
+        let json = r#"{
+            "suites": [{
+                "specs": [{
+                    "title": "T01 simple @stage1",
+                    "tags": ["@stage1"],
+                    "tests": [{
+                        "results": [{
+                            "status": "passed",
+                            "attachments": []
+                        }]
+                    }]
+                }],
+                "suites": []
+            }]
+        }"#;
+        let tiles = parse_report(json).unwrap();
+        assert!(tiles.is_empty(), "no video → should be skipped");
+    }
+
+    #[test]
+    fn t_parse_report_video_nonexistent_path_skipped() {
+        // video attachment with a path that doesn't exist on disk should be skipped
+        let json = r#"{
+            "suites": [{
+                "specs": [{
+                    "title": "T01 simple @stage1",
+                    "tags": ["@stage1"],
+                    "tests": [{
+                        "results": [{
+                            "status": "passed",
+                            "attachments": [{
+                                "name": "video",
+                                "path": "/nonexistent/path/video.webm",
+                                "contentType": "video/webm"
+                            }]
+                        }]
+                    }]
+                }],
+                "suites": []
+            }]
+        }"#;
+        let tiles = parse_report(json).unwrap();
+        // Path doesn't exist → skipped
+        assert!(tiles.is_empty(), "nonexistent video path → should be skipped");
+    }
+
+    #[test]
+    fn t_build_tile_filtergraph_contains_drawbox() {
+        // Build filtergraph for a single tile (passed) with no font
+        let tile = TileInput {
+            label: "T01 simple_box".to_owned(),
+            passed: true,
+            stage: Stage::One,
+            video: PathBuf::from("/fake/video.webm"),
+        };
+        let fg = build_tile_filtergraph(&[tile], 4, 480, 360, 30, false, None);
+        assert!(fg.contains("drawbox"), "must include drawbox for colour border");
+        assert!(fg.contains("0x4CAF50"), "pass tile must use green colour");
+        assert!(!fg.contains("drawtext"), "no font → no drawtext");
+        // Single tile should map to [out] directly
+        assert!(fg.contains("[out]"));
+    }
+
+    #[test]
+    fn t_build_tile_filtergraph_fail_tile_red() {
+        let tile = TileInput {
+            label: "T03 boolean_bad".to_owned(),
+            passed: false,
+            stage: Stage::One,
+            video: PathBuf::from("/fake/video.webm"),
+        };
+        let fg = build_tile_filtergraph(&[tile], 4, 480, 360, 30, false, None);
+        assert!(fg.contains("0xE53935"), "fail tile must use red colour");
+    }
+
+    #[test]
+    fn t_build_tile_filtergraph_two_tiles_xstack() {
+        let tiles = vec![
+            TileInput {
+                label: "A".to_owned(),
+                passed: true,
+                stage: Stage::One,
+                video: PathBuf::from("/a.webm"),
+            },
+            TileInput {
+                label: "B".to_owned(),
+                passed: false,
+                stage: Stage::Two,
+                video: PathBuf::from("/b.webm"),
+            },
+        ];
+        let fg = build_tile_filtergraph(&tiles, 4, 480, 360, 30, false, None);
+        assert!(fg.contains("xstack=inputs=2"), "must use xstack for 2 tiles");
+        assert!(fg.contains("[v0]") && fg.contains("[v1]"), "must label per-tile outputs");
+    }
+
+    #[test]
+    fn t_build_tile_filtergraph_slow_motion() {
+        let tile = TileInput {
+            label: "P01".to_owned(),
+            passed: true,
+            stage: Stage::Two,
+            video: PathBuf::from("/p.webm"),
+        };
+        let fg_slow = build_tile_filtergraph(&[tile.clone()], 4, 480, 360, 30, true, None);
+        let fg_normal = build_tile_filtergraph(&[tile], 4, 480, 360, 30, false, None);
+        assert!(fg_slow.contains("setpts=2.0*PTS"), "slow=true must include setpts");
+        assert!(!fg_normal.contains("setpts"), "slow=false must not include setpts");
     }
 }

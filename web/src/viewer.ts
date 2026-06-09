@@ -85,6 +85,24 @@ export function initViewer(
       group.add(threeMesh);
       pickMeshes.push(threeMesh);
     }
+
+    // Expose raw mesh data for E2E geometric invariant checks (assertMeshHealthy).
+    // Not used for rendering; safe to update on every rebuild.
+    (window as any).__meshData = pickMeshes.map((m) => {
+      const posAttr = m.geometry.getAttribute("position");
+      const normAttr = m.geometry.getAttribute("normal");
+      return {
+        positions: posAttr ? Array.from(posAttr.array as Float32Array) : [],
+        normals: normAttr ? Array.from(normAttr.array as Float32Array) : [],
+        indices: m.geometry.index
+          ? Array.from(m.geometry.index.array as Uint32Array)
+          : [],
+      };
+    });
+    // Monotonically-increasing rebuild counter — tests can check that
+    // updateBodies() was called by comparing version before/after.
+    (window as any).__meshDataVersion =
+      ((window as any).__meshDataVersion ?? 0) + 1;
   }
 
   buildScene(bodies);

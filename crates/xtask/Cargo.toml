@@ -10,6 +10,8 @@ ts-rs = { workspace = true }
 mycad-format = { workspace = true }
 mycad-kernel = { workspace = true }
 mycad-api = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

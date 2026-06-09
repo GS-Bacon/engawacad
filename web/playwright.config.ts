@@ -4,6 +4,9 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: 0,
+  reporter: process.env.PLAYWRIGHT_VIDEO === "1"
+    ? [["list"], ["json", { outputFile: "test-results/report.json" }]]
+    : "list",
   use: {
     launchOptions: { args: ["--use-gl=swiftshader"] },
     headless: true,

@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { setupPageWithServer } from "./helpers.js";
+import { setupPageWithServer, assertMeshHealthy } from "./helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,7 +64,7 @@ async function setupPageWithFixture(
 }
 
 // T01: Console no error — real API server (no fixture mock)
-test("T01 console no error - simple_box", async ({ page }) => {
+test("T01 console no error - simple_box @stage1", async ({ page }) => {
   const consoleErrors = await setupPageWithServer(page);
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
@@ -74,7 +74,7 @@ test("T01 console no error - simple_box", async ({ page }) => {
 
 // T02: Screenshot comparison - simple_box
 // Platform note: baseline filename is "simple-box-linux.png" on Linux (Playwright appends platform).
-test("T02 screenshot - simple_box", async ({ page }) => {
+test("T02 screenshot - simple_box @stage1", async ({ page }) => {
   await setupPageWithFixture(page, "simple_box");
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
@@ -89,16 +89,24 @@ test("T02 screenshot - simple_box", async ({ page }) => {
   });
 });
 
-// T03: Console no error - all non-assembly examples
+// T03: Console no error + mesh geometric invariants - all non-assembly examples
+// Checks: triangle count > 0, no NaN/Infinity, non-degenerate bbox, edge-manifold.
+// Known-broken curved-surface booleans will fail the edge-manifold check (naked edges).
 const LOOPED_EXAMPLES = NON_ASSEMBLY_EXAMPLES.filter((n) => n !== "simple_box");
 
 for (const name of LOOPED_EXAMPLES) {
-  test(`T03 console no error - ${name}`, async ({ page }) => {
+  test(`T03 console no error - ${name} @stage1`, async ({ page }) => {
     const consoleErrors = await setupPageWithFixture(page, name);
     await page.goto("/");
     await page.waitForSelector("canvas", { timeout: 10_000 });
+    // Wait for at least one rendered frame so __meshData is populated
+    await page.waitForFunction(
+      () => (window as any).__meshData !== undefined,
+      { timeout: 10_000 },
+    );
 
     expect(consoleErrors).toHaveLength(0);
+    await assertMeshHealthy(page);
   });
 }
 

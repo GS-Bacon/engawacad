@@ -72,7 +72,7 @@ test("E02 background click hides extrude panel", async ({ page }) => {
 });
 
 // E03: 深さ入力 + 押出 → POST create_sketch → POST extrude の順で各 200
-test("E03 extrude button triggers ordered POST sequence", async ({ page }) => {
+test("E03 extrude button triggers ordered POST sequence @stage2", async ({ page }) => {
   await setupExtrudePage(page);
 
   const postedBodies: string[] = [];
@@ -97,8 +97,10 @@ test("E03 extrude button triggers ordered POST sequence", async ({ page }) => {
   expect(postedBodies).toEqual(["create_sketch", "extrude"]);
 });
 
-// E04: 押出レスポンスでシーン差し替え後、選択クリア + パネル非表示
-test("E04 after extrude scene updates and panel hides", async ({ page }) => {
+// E04: 押出レスポンスでシーン差し替え後、選択クリア + パネル非表示 + viewer rebuild
+// Verifies that updateBodies() was called (scene actually updated) by checking
+// that __meshDataVersion incremented, in addition to the panel hiding.
+test("E04 after extrude scene updates and panel hides @stage2", async ({ page }) => {
   await setupExtrudePage(page);
 
   await page.route("/api/v0/features", (route) =>
@@ -114,12 +116,24 @@ test("E04 after extrude scene updates and panel hides", async ({ page }) => {
   if (!box) throw new Error("canvas not found");
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
 
+  // Capture the mesh rebuild version before triggering extrude
+  const versionBefore = await page.evaluate(
+    () => (window as any).__meshDataVersion ?? 0,
+  );
+
   await page.fill('[data-testid="extrude-depth"]', "5");
   await page.click('[data-testid="btn-extrude"]');
   await page.waitForTimeout(500);
 
+  // Panel must hide (selection cleared)
   const panel = page.locator('[data-testid="extrude-panel"]');
   await expect(panel).toHaveCSS("display", "none");
+
+  // Scene must have been rebuilt (updateBodies triggered buildScene again)
+  const versionAfter = await page.evaluate(
+    () => (window as any).__meshDataVersion ?? 0,
+  );
+  expect(versionAfter).toBeGreaterThan(versionBefore);
 });
 
 // ---------------------------------------------------------------------------
@@ -139,7 +153,7 @@ test("E01_cut face click shows extrude cut button", async ({ page }) => {
 });
 
 // E02_cut: 深さ入力 + 押出カット → POST create_sketch → POST extrude_cut の順
-test("E02_cut extrude cut button triggers ordered POST sequence", async ({ page }) => {
+test("E02_cut extrude cut button triggers ordered POST sequence @stage2", async ({ page }) => {
   await setupExtrudePage(page);
 
   const postedBodies: Array<{ type: string; target?: string }> = [];

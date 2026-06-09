@@ -57,22 +57,42 @@ test("E01 face-pick center click shows non-empty face id", async ({ page }) => {
   expect(text.length).toBeGreaterThan(0);
 });
 
-// E02: 別の面座標クリック → selected-face-id が更新
+// E02: 離れた面座標クリック → selected-face-id が別の値に更新される
+// Uses two corners of the canvas (not just nearby pixels) to ensure
+// different faces are hit on the simple_box_faces fixture.
 test("E02 face-pick second click updates selection", async ({ page }) => {
   await setupPickingPage(page);
   const canvas = page.locator("canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("canvas not found");
 
+  // Click center (top face in iso view)
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
   const first = await getSelectedText(page);
+  expect(first.length).toBeGreaterThan(0);
 
-  // センター付近の別座標 — 同じモデル上の別三角形または同面をクリック
-  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.45);
-  const second = await getSelectedText(page);
+  // Try candidate positions until we land on a different face.
+  // In iso view the box has 3 visible faces (top/right/front); the first
+  // click lands on the right face (f_x_pos), so we walk up-left on the
+  // iso projection to find the top face (f_y_pos).
+  const CANDIDATES: [number, number][] = [
+    [0.46, 0.46], // upper-left → top face in iso
+    [0.43, 0.49], // further left → front face in iso
+    [0.5,  0.43], // upper-centre
+    [0.47, 0.52], // lower-left
+  ];
+  let secondText = "";
+  for (const [xf, yf] of CANDIDATES) {
+    await page.mouse.click(box.x + box.width * xf, box.y + box.height * yf);
+    secondText = await getSelectedText(page);
+    if (secondText.length > 0 && secondText !== first) break;
+  }
+  const second = secondText;
 
-  // 最低限: テキストが存在する
+  // Must still be a valid face id
   expect(second.length).toBeGreaterThan(0);
+  // And it must be a *different* face id than the first selection
+  expect(second).not.toBe(first);
 });
 
 // E03: モデル無しの canvas 隅クリック → selected-face-id が空文字
