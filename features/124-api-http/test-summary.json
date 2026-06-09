@@ -4,14 +4,18 @@
     "failed": 0,
     "ignored": 6
   },
-  "by_crate": {},
-  "added_in_round": [],
+  "by_crate": {
+    "mycad-api": {
+      "fuzz_features": ["t01_determinism", "t02_fuzz_no_http_500", "t03_degen_special_float_values", "t04_degen_unknown_type", "t05_degen_null_body"]
+    }
+  },
+  "added_in_round": ["t01_determinism", "t02_fuzz_no_http_500", "t03_degen_special_float_values", "t04_degen_unknown_type", "t05_degen_null_body"],
   "coverage_hints": {
-    "total_added": 0,
-    "determinism": 0,
-    "degenerate": 0,
+    "total_added": 5,
+    "determinism": 1,
+    "degenerate": 3,
     "boundary": 0,
     "golden": 0,
-    "edge_case": 0
+    "edge_case": 1
   }
 }
