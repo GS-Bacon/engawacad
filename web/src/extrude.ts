@@ -8,6 +8,12 @@ import type { SketchPlane } from "./generated/SketchPlane";
 // 1e-6: 1000× kernel LENGTH_TOLERANCE (1e-9) to prevent coplanar face contact (#111)
 const EPSILON_GUARD = 1e-6;
 
+/** face_id (`f_<axis>_<sign>`) の sign から押し出し方向符号を返す。neg→-1, それ以外→+1。 */
+export function faceSignFromFaceId(faceId: string): number {
+  const m = faceId.match(/;face:f_[xyz]_([a-z]+)/);
+  return m && m[1].startsWith("neg") ? -1 : 1;
+}
+
 /**
  * Map face_id axis role to the sketch plane that lies on that axis pair.
  * face_id format: `N(<fid>;face:f_<axis>_<sign>)` → axis determines the plane:
@@ -16,7 +22,7 @@ const EPSILON_GUARD = 1e-6;
  */
 export function planeForFaceId(faceId: string): SketchPlane | null {
   if (!faceId) return null;
-  const match = faceId.match(/f_([xyz])_[a-z]+/);
+  const match = faceId.match(/;face:f_([xyz])_[a-z]+/);
   if (!match) return null;
   switch (match[1]) {
     case "z":
@@ -229,11 +235,12 @@ export function buildExtrudeFeatures(
     offset,
     profile,
   };
+  const dir = faceSignFromFaceId(faceId);
   const extrude: Feature = {
     type: "extrude",
     id: extrudeId,
     sketch: sketchId,
-    depth,
+    depth: dir * depth,
     ...(targetBody ? { fuse_target: targetBody } : {}),
   };
   return { sketch, extrude };

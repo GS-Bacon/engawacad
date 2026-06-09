@@ -142,7 +142,7 @@ pub fn make_extrusion(
     let length_eps = LENGTH_TOLERANCE;
     let area_eps = LENGTH_TOLERANCE * LENGTH_TOLERANCE;
 
-    if !depth.is_finite() || depth <= length_eps {
+    if !depth.is_finite() || depth.abs() <= length_eps || depth.abs() > 1e12 {
         return Err(KernelError::InvalidParameter { kind: "depth" });
     }
 
@@ -192,7 +192,7 @@ pub fn make_extrusion(
     // Handedness of the plane's coordinate system
     let cross_uv = plane.u_axis.cross(&plane.v_axis);
     let handedness = cross_uv.dot(&plane.normal).signum();
-    let winding = sa.signum() * handedness;
+    let winding = sa.signum() * handedness * depth.signum();
 
     // Build 3D positions for bottom and top vertices
     let mut bottom_v = Vec::with_capacity(n);
@@ -291,7 +291,7 @@ pub fn make_extrusion(
         id_gen.next(),
         Surface::Plane {
             origin: plane.origin,
-            normal: -plane.normal,
+            normal: plane.normal * -depth.signum(),
             u_axis: plane.u_axis,
             v_axis: plane.v_axis,
         },
@@ -319,7 +319,7 @@ pub fn make_extrusion(
         id_gen.next(),
         Surface::Plane {
             origin: plane.origin + depth * plane.normal,
-            normal: plane.normal,
+            normal: plane.normal * depth.signum(),
             u_axis: plane.u_axis,
             v_axis: plane.v_axis,
         },
@@ -513,10 +513,11 @@ mod tests {
             make_extrusion(&plane, &profile, 0.0, &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
         ));
-        assert!(matches!(
-            make_extrusion(&plane, &profile, -1.0, &mut gen),
-            Err(KernelError::InvalidParameter { kind: "depth" })
-        ));
+        // Negative depth is now valid (signed depth contract for #110)
+        assert!(
+            make_extrusion(&plane, &profile, -1.0, &mut gen).is_ok(),
+            "negative depth should be accepted"
+        );
         assert!(matches!(
             make_extrusion(&plane, &profile, f64::NAN, &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
@@ -777,5 +778,252 @@ mod tests {
         let profile = vec![(0.0, 0.0), (1e-12, 0.0), (1e-12, 1e-12), (0.0, 1e-12)];
         let mut gen = IdGenerator::new(0);
         assert!(make_extrusion(&plane, &profile, 1.0, &mut gen).is_err());
+    }
+
+    // --- #110: Negative depth (signed depth contract) ---
+
+    #[test]
+    fn t01_kernel_neg_depth_determinism() {
+        let plane = Plane::yz();
+        let profile = vec![(-2.0, -3.0), (2.0, -3.0), (2.0, 3.0), (-2.0, 3.0)];
+        let mut gen1 = IdGenerator::new(0);
+        let mut gen2 = IdGenerator::new(0);
+
+        let s1 = make_extrusion(&plane, &profile, -3.0, &mut gen1).unwrap();
+        let s2 = make_extrusion(&plane, &profile, -3.0, &mut gen2).unwrap();
+
+        assert_eq!(s1.vertices.len(), s2.vertices.len());
+        assert_eq!(s1.edges.len(), s2.edges.len());
+        assert_eq!(s1.faces.len(), s2.faces.len());
+
+        for (v1, v2) in s1.vertices.iter().zip(s2.vertices.iter()) {
+            assert_eq!(v1.id, v2.id, "vertex id mismatch");
+            assert_eq!(v1.point, v2.point, "vertex point mismatch");
+        }
+        for (e1, e2) in s1.edges.iter().zip(s2.edges.iter()) {
+            assert_eq!(e1.id, e2.id, "edge id mismatch");
+        }
+        for (f1, f2) in s1.faces.iter().zip(s2.faces.iter()) {
+            assert_eq!(f1.id, f2.id, "face id mismatch");
+        }
+    }
+
+    #[test]
+    fn t02_kernel_neg_depth_manifold() {
+        let plane = Plane::yz();
+        let profile = vec![(-2.0, -3.0), (2.0, -3.0), (2.0, 3.0), (-2.0, 3.0)];
+        let mut gen = IdGenerator::new(0);
+        let solid = make_extrusion(&plane, &profile, -3.0, &mut gen).unwrap();
+
+        // Top vertices should be on -normal side (x < 0 for yz plane with -depth)
+        let top_x = solid.vertices.iter().filter(|v| v.point.x < 0.0).count();
+        assert!(top_x >= 4, "top vertices should have x < 0, found {top_x}");
+
+        // validate_manifold must pass
+        solid
+            .validate_manifold()
+            .expect("negative depth solid must be manifold");
+
+        // Euler-Poincaré: V - E + F = 2 * S
+        let v = solid.vertices.len() as i64;
+        let e = solid.edges.len() as i64;
+        let f = solid.faces.len() as i64;
+        let s = solid.shells.len() as i64;
+        assert_eq!(
+            v - e + f,
+            2 * s,
+            "Euler-Poincaré must hold for negative depth"
+        );
+    }
+
+    #[test]
+    fn t_boundary_zero_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, 0.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    #[test]
+    fn t_degen_nonfinite_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, f64::NAN, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+        assert!(matches!(
+            make_extrusion(&plane, &profile, f64::INFINITY, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+        assert!(matches!(
+            make_extrusion(&plane, &profile, f64::NEG_INFINITY, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+        // F01: extreme magnitudes that would produce NaN normals via overflow
+        assert!(matches!(
+            make_extrusion(&plane, &profile, f64::MAX, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+        assert!(matches!(
+            make_extrusion(&plane, &profile, -f64::MAX, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    // --- Additional edge-case tests for #110 ---
+
+    /// Positive and negative depth produce symmetric bounding boxes about the plane.
+    #[test]
+    fn t03_positive_and_negative_symmetric() {
+        let plane = Plane::yz();
+        let profile = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)];
+
+        let mut gen_pos = IdGenerator::new(0);
+        let solid_pos = make_extrusion(&plane, &profile, 5.0, &mut gen_pos).unwrap();
+
+        let mut gen_neg = IdGenerator::new(0);
+        let solid_neg = make_extrusion(&plane, &profile, -5.0, &mut gen_neg).unwrap();
+
+        // Collect x-coordinates (the extrusion axis for yz plane)
+        let xs_pos: Vec<f64> = solid_pos.vertices.iter().map(|v| v.point.x).collect();
+        let xs_neg: Vec<f64> = solid_neg.vertices.iter().map(|v| v.point.x).collect();
+
+        let min_pos = xs_pos.iter().cloned().fold(f64::MAX, f64::min);
+        let max_pos = xs_pos.iter().cloned().fold(f64::MIN, f64::max);
+        let min_neg = xs_neg.iter().cloned().fold(f64::MAX, f64::min);
+        let max_neg = xs_neg.iter().cloned().fold(f64::MIN, f64::max);
+
+        // depth=+5: x ∈ [0, 5], depth=-5: x ∈ [-5, 0] (symmetric about x=0)
+        assert!(
+            (min_pos - 0.0).abs() < 1e-12,
+            "positive min_x should be ~0, got {min_pos}"
+        );
+        assert!(
+            (max_pos - 5.0).abs() < 1e-12,
+            "positive max_x should be ~5, got {max_pos}"
+        );
+        assert!(
+            (min_neg - (-5.0)).abs() < 1e-12,
+            "negative min_x should be ~-5, got {min_neg}"
+        );
+        assert!(
+            (max_neg - 0.0).abs() < 1e-12,
+            "negative max_x should be ~0, got {max_neg}"
+        );
+
+        // Symmetry: -min_neg ≈ max_pos and -max_neg ≈ min_pos
+        assert!((-min_neg - max_pos).abs() < 1e-12, "symmetric about origin");
+        assert!((-max_neg - min_pos).abs() < 1e-12, "symmetric about origin");
+    }
+
+    /// depth = -0.0 is rejected (abs(0) <= eps).
+    #[test]
+    fn t_boundary_neg_zero_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, -0.0, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    /// depth = tiny negative (abs ≤ eps) is rejected.
+    #[test]
+    fn t_boundary_tiny_neg_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, -1e-10, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    /// depth = f64::MIN_POSITIVE (≈2.2e-308, abs << eps) is rejected.
+    #[test]
+    fn t_boundary_min_positive_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, f64::MIN_POSITIVE, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    /// depth = f64::MAX is rejected (abs > 1e12 would produce NaN normals).
+    #[test]
+    fn t_boundary_f64_max_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, f64::MAX, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    /// Negative depth 100-run determinism.
+    #[test]
+    fn t_neg_depth_determinism_100_runs() {
+        let plane = Plane::yz();
+        let profile = vec![(-2.0, -3.0), (2.0, -3.0), (2.0, 3.0), (-2.0, 3.0)];
+
+        let mut gen0 = IdGenerator::new(0);
+        let reference = make_extrusion(&plane, &profile, -3.0, &mut gen0).unwrap();
+        let ref_ids: Vec<_> = reference.vertices.iter().map(|v| v.id).collect();
+        let ref_pts: Vec<_> = reference.vertices.iter().map(|v| v.point).collect();
+
+        for i in 0..100 {
+            let mut gen = IdGenerator::new(0);
+            let solid = make_extrusion(&plane, &profile, -3.0, &mut gen).unwrap();
+            let ids: Vec<_> = solid.vertices.iter().map(|v| v.id).collect();
+            let pts: Vec<_> = solid.vertices.iter().map(|v| v.point).collect();
+            assert_eq!(ids, ref_ids, "run {i}: vertex IDs differ");
+            assert_eq!(pts, ref_pts, "run {i}: vertex points differ");
+        }
+    }
+
+    /// Negative depth with large magnitude (-f64::MAX) is rejected (abs > 1e12).
+    #[test]
+    fn t_neg_large_depth_rejected() {
+        let plane = Plane::xy();
+        let profile = rect_profile();
+        let mut gen = IdGenerator::new(0);
+        assert!(matches!(
+            make_extrusion(&plane, &profile, -f64::MAX, &mut gen),
+            Err(KernelError::InvalidParameter { kind: "depth" })
+        ));
+    }
+
+    /// Negative depth on xz plane produces correct outward normals.
+    #[test]
+    fn t_neg_depth_xz_plane_normals() {
+        let plane = Plane::xz();
+        let profile = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)];
+        let mut gen = IdGenerator::new(0);
+        let solid = make_extrusion(&plane, &profile, -5.0, &mut gen).unwrap();
+        solid.validate_manifold().expect("must be manifold");
+
+        // Bottom cap should point +Y (outward from negative depth side)
+        if let Surface::Plane { normal, .. } = &solid.faces[0].surface {
+            assert!(
+                (*normal - Vec3::y()).norm() < 1e-12,
+                "bottom cap should be +Y, got {normal:?}"
+            );
+        }
+        // Top cap should point -Y (outward from origin side)
+        if let Surface::Plane { normal, .. } = &solid.faces[1].surface {
+            assert!(
+                (*normal + Vec3::y()).norm() < 1e-12,
+                "top cap should be -Y, got {normal:?}"
+            );
+        }
     }
 }

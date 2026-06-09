@@ -19,6 +19,7 @@ import {
   faceOffsetFromPlane,
   insetRect,
   CUT_INSET_RATIO,
+  faceSignFromFaceId,
 } from "./extrude";
 import { postFeature } from "./api";
 import type { Feature } from "./generated/Feature";
@@ -37,6 +38,23 @@ function boxTopFaceData() {
   const faceIds = [
     "N(v0;face:f_z_pos)",
     "N(v0;face:f_z_pos)",
+  ];
+  return { positions, indices, faceIds };
+}
+
+// Helper: build positions/indices/faceIds for a 10×10 box bottom face (f_z_neg).
+// 4 vertices at Z=0: v0=(0,0,0) v1=(10,0,0) v2=(10,10,0) v3=(0,10,0)
+function boxNegFaceData() {
+  const positions = new Float32Array([
+    0, 0, 0,
+    10, 0, 0,
+    10, 10, 0,
+    0, 10, 0,
+  ]);
+  const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+  const faceIds = [
+    "N(v0;face:f_z_neg)",
+    "N(v0;face:f_z_neg)",
   ];
   return { positions, indices, faceIds };
 }
@@ -76,6 +94,10 @@ describe("T02 planeForFaceId", () => {
 
   it("f_x_neg → yz", () => {
     expect(planeForFaceId("N(fid;face:f_x_neg)")).toBe("yz");
+  });
+
+  it("feature_id contains f_y_neg but face is f_z_pos → xy (Codex F01 regression)", () => {
+    expect(planeForFaceId("N(f_y_neg_part;face:f_z_pos)")).toBe("xy");
   });
 });
 
@@ -1001,3 +1023,47 @@ describe("T05_plan: buildExtrudeCutFeatures EPSILON_GUARD depth clamp", () => {
 
 // T06: insetRect ratio=0.25 (covered in T14)
 // T06_boundary_degen: covered in T14 collapse case
+
+// ---------------------------------------------------------------------------
+// #110: faceSignFromFaceId — neg face → negative depth, pos face → positive depth
+// ---------------------------------------------------------------------------
+describe("#110 faceSignFromFaceId", () => {
+  it("front_neg_sign: f_z_neg face → extrude.depth < 0", () => {
+    const faceId = "N(v0;face:f_z_neg)";
+    const { positions, indices, faceIds } = boxNegFaceData();
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, new Set());
+    expect(result).not.toBeNull();
+    expect((result!.extrude as any).depth).toBeLessThan(0);
+    expect(faceSignFromFaceId(faceId)).toBe(-1);
+  });
+
+  it("front_pos_sign: f_z_pos face → extrude.depth > 0", () => {
+    const faceId = "N(v0;face:f_z_pos)";
+    const { positions, indices, faceIds } = boxTopFaceData();
+    const result = buildExtrudeFeatures(faceId, positions, indices, faceIds, 5, new Set());
+    expect(result).not.toBeNull();
+    expect((result!.extrude as any).depth).toBeGreaterThan(0);
+    expect(faceSignFromFaceId(faceId)).toBe(1);
+  });
+
+  it("f_z_neg → sign -1", () => {
+    expect(faceSignFromFaceId("N(v0;face:f_z_neg)")).toBe(-1);
+  });
+
+  it("f_y_pos → sign +1", () => {
+    expect(faceSignFromFaceId("N(v0;face:f_y_pos)")).toBe(1);
+  });
+
+  it("no face pattern → sign +1 (default)", () => {
+    expect(faceSignFromFaceId("some_other_string")).toBe(1);
+  });
+
+  it("feature_id contains f_z_neg but face is f_z_pos → sign +1 (Codex F01 regression)", () => {
+    // N(f_z_neg_box;face:f_z_pos) — neg in feature_id must not be confused with face sign
+    expect(faceSignFromFaceId("N(f_z_neg_box;face:f_z_pos)")).toBe(1);
+  });
+
+  it("feature_id contains f_z_pos but face is f_z_neg → sign -1 (Codex F01 regression)", () => {
+    expect(faceSignFromFaceId("N(f_z_pos_box;face:f_z_neg)")).toBe(-1);
+  });
+});

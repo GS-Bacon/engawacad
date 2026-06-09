@@ -154,6 +154,10 @@ pub fn build_bodies_from_features(
                 depth,
                 target,
             } => {
+                if *depth <= 0.0 {
+                    return Err(KernelError::InvalidParameter { kind: "depth" });
+                }
+
                 let (sketch_plane, segments, _offset) =
                     sketches
                         .get(sketch.as_str())
