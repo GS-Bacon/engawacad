@@ -186,7 +186,12 @@ fn acceptance() -> ExitCode {
         let status = cmd.status().expect("failed to execute playwright test");
         if !status.success() {
             eprintln!("FAILED: Playwright E2E tests");
-            return ExitCode::FAILURE;
+            if !record {
+                return ExitCode::FAILURE;
+            }
+            // In record mode, continue to generate the promo video even when some tests
+            // fail — those failures are expected (known kernel bugs) and should appear
+            // as RED tiles in the dashboard video.
         }
         if record {
             tile_videos(&pw_web_dir);
