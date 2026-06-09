@@ -1,0 +1,7 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "ファズハーネス実装完了。fuzz_features.rs に T01（決定性）・T02（30秒ランダム投入、HTTP 500 ゼロ）を実装。xtask に acceptance --fuzz サブコマンド追加。rand 0.9 を workspace.dependencies に追加。既存3ファイルの clippy 警告も修正し cargo clippy -D warnings / cargo test --workspace / cargo fmt --check 全通過。T03-T05 は TODO スタブ（後続フェーズ実装）。",
+  "tests_added": 2,
+  "failed_reason": ""
+}
