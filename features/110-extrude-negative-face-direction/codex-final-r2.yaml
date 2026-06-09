@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/src/extrude.ts"
+    line_hint: 13
+    finding: "`faceSignFromFaceId()` の正規表現が `;face:` セグメントにアンカーされていないため、`N(f_z_neg_box;face:f_z_pos)` のような妥当な faceId で actual face ではなく feature_id 側の `f_z_neg` を拾います。`validate_feature_id()` は英数字/`_`/`-` を許可しているのでこの入力は実在し、正の面でも `depth` が負に反転して #110 の押し出し方向修正が壊れます。"
+    suggestion: "`faceSignFromFaceId` は `;face:f_<axis>_<sign>` だけを解析するように修正し（例: `/;face:f_[xyz]_([a-z]+)/`）、同じ faceId パースを使う `planeForFaceId` も同条件に揃えたうえで、feature_id に `f_z_neg` を含む回帰テストを追加する"
+
+verdict: fail

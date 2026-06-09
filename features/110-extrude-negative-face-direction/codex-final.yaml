@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/primitives/extrusion.rs"
+    line_hint: 145
+    finding: "`depth.abs() <= eps` だけで負 depth を受理するため `-f64::MAX` も通りますが、side face 法線の `cross(...).normalize()` はこの入力で `inf/inf` になり NaN 法線を持つ `Surface::Plane` を生成します。`validate_manifold()` は法線の有限性を見ないので `t_neg_large_depth_manifold` でも見逃され、後段の tessellation / boolean で不正な幾何を流します。"
+    suggestion: "depth の上限を設けるか side normal 計算を overflow-safe にし、`±f64::MAX` を成功ケースとして扱わないようにする"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-build/tests/feature_dispatcher.rs"
+    line_hint: 2711
+    finding: "`t04_negative_extrude_fuse_integration` は `build_features(features)` がどんな `Err` を返しても成功扱いなので、コメントで主張している『Extrude 分岐が負 depth を reject しない』ことを実際には検証していません。`InvalidParameter { kind: \"depth\" }` への退行もこのテストでは見逃します。"
+    suggestion: "失敗を許容するなら許可する boolean 系エラーだけを明示的に許容し、`depth` reject は fail させる"
+
+verdict: fail

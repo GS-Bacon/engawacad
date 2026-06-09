@@ -1,0 +1,138 @@
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| 負側面（外向き法線 -X/-Y/-Z）からの押し出しが外向きに伸びるよう修正 | `ExtrudeCut`（カット方向）の修正 |
+| `make_extrusion` が負の `depth` を受理し `-plane.normal` 方向へ押し出す | 任意傾斜面・モデル面上スケッチ（Phase 8） |
+| 押し出し方向を `depth` の符号でエンコード（`depth>0`→+normal, `depth<0`→-normal） | `SketchPlane`/`Feature` スキーマへの新フィールド追加 |
+| フロント `buildExtrudeFeatures` が面 ID の符号を depth に反映 | `sign(offset)` ベースの方向決定（原点中心形状でしか正しくない） |
+| リグレッションテスト `t02` を符号付き depth 契約に補正し `#[ignore]` 解除 | tessellation/boolean アルゴリズム本体の変更 |
+
+## Non-Goals
+- `ExtrudeCut` のカット方向修正: 本 Issue は add 押し出しに限定（カットはフロントで depth を正値クランプして送るため挙動不変）
+- `SketchPlane`/`Feature` への方向専用フィールド追加: 既存 `depth: f64` を符号付きと解釈して表現する
+- `sign(offset)` ヒューリスティック採用: X∈[2,12] のボックスの X=2 面（offset=+2, 外向き -X）で破綻するため不採用
+- 任意傾斜面・モデル面上スケッチ: Phase 8 で対応予定
+
+## 実装対象
+<!-- Issue: #110 -->
+影響クレート/ファイル:
+- `crates/mycad-kernel/src/primitives/extrusion.rs` — `make_extrusion`（符号付き depth 対応）
+- `web/src/extrude.ts` — `buildExtrudeFeatures` + 新ヘルパ `faceSignFromFaceId`
+- `crates/mycad-build/src/lib.rs` — Extrude 分岐は `*depth` 透過のみ（**変更不要**、確認のみ）
+- `crates/mycad-build/tests/feature_dispatcher.rs` — `t02_reg_negative_extrude_centroid` 入力補正
+
+### 修正 1: `make_extrusion`（`extrusion.rs`）— 負 depth を受理し向きを符号で扱う
+
+**L145 検証（非有限・ほぼゼロは拒否、負値は許可）**
+before:
+```rust
+if !depth.is_finite() || depth <= length_eps {
+    return Err(KernelError::InvalidParameter { kind: "depth" });
+}
+```
+after:
+```rust
+if !depth.is_finite() || depth.abs() <= length_eps {
+    return Err(KernelError::InvalidParameter { kind: "depth" });
+}
+```
+
+**L195 winding（押し出し反転で外向き整合も反転するため depth 符号を乗算）**
+before:
+```rust
+let winding = sa.signum() * handedness;
+```
+after:
+```rust
+let winding = sa.signum() * handedness * depth.signum();
+```
+
+**L294 bottom cap 法線（origin 側、ソリッドの反対を向く）**
+before:
+```rust
+            normal: -plane.normal,
+```
+after:
+```rust
+            normal: plane.normal * -depth.signum(),
+```
+
+**L321 top cap 法線（origin + depth*normal 側）**
+before:
+```rust
+            normal: plane.normal,
+```
+after:
+```rust
+            normal: plane.normal * depth.signum(),
+```
+
+> L207 頂点配置 `p + depth * plane.normal`、L321 top cap origin `plane.origin + depth * plane.normal` は負 depth で自然に -normal 側へ伸びるため変更不要。
+
+### 修正 2: `web/src/extrude.ts` — 面の外向き法線の符号を depth に反映
+
+新ヘルパ追加（`planeForFaceId` の正規表現を流用）:
+```ts
+/** face_id (`f_<axis>_<sign>`) の sign から押し出し方向符号を返す。neg→-1, それ以外→+1。 */
+export function faceSignFromFaceId(faceId: string): number {
+  const m = faceId.match(/f_[xyz]_([a-z]+)/);
+  return m && m[1].startsWith("neg") ? -1 : 1;
+}
+```
+
+`buildExtrudeFeatures`（L218 の `depth <= 0` ガードは入力大きさ検証として維持、出力に符号を乗算）:
+before:
+```ts
+  const extrude: Feature = {
+    type: "extrude",
+    id: extrudeId,
+    sketch: sketchId,
+    depth,
+    ...(targetBody ? { fuse_target: targetBody } : {}),
+  };
+```
+after:
+```ts
+  const dir = faceSignFromFaceId(faceId);
+  const extrude: Feature = {
+    type: "extrude",
+    id: extrudeId,
+    sketch: sketchId,
+    depth: dir * depth,
+    ...(targetBody ? { fuse_target: targetBody } : {}),
+  };
+```
+
+### 修正 3: `feature_dispatcher.rs` t02 補正（符号付き depth 契約へ）
+
+`t02_reg_negative_extrude_centroid`（L2584〜）:
+- `#[ignore = "known bug: #110"]` を削除
+- `Feature::Extrude { ... depth: 3.0, ... }` → `depth: -3.0`（offset=-5 の面から -X 方向へ外向き押し出し）
+- アサーション `centroid_x < -5.0` および `validate_manifold` は不変
+
+## 設計方針
+- **決定性**: `make_extrusion` は `IdGenerator` 順序を変えない（頂点/エッジ/面の生成順は不変、cap 法線ベクトルの符号のみ変更）。同一入力→同一出力を維持。
+- **B-rep 妥当性**: トポロジー構造（V/E/F 数、loop 構成）は depth 符号で変化しない。負 depth では side face の winding と cap 法線が反転し、外向き法線整合と Euler-Poincaré V-E+F=2 を保つ。
+- **退化幾何**: `depth.abs() <= length_eps` で near-zero と非有限を引き続き排除。
+- **エラーハンドリング**: 既存 `KernelError::InvalidParameter { kind: "depth" }` を流用。
+
+### 数値モデル
+- ε_len = `LENGTH_TOLERANCE`（既存）— `depth.abs()` 比較に使用。tolerance 方針は ADR-004 既存準拠（変更なし）。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| t01_kernel_neg_depth_determinism | 決定性 | 負 depth の `make_extrusion` を同 seed で2回実行 | 全 ID・座標一致 |
+| t02_kernel_neg_depth_manifold | 正常系 | 負 depth 押し出し → top 頂点が -normal 側、`validate_manifold` OK | Ok(()) |
+| t02_reg_negative_extrude_centroid | 正常系(回帰) | dispatcher: offset=-5, depth=-3 で左面外向き | centroid_x < -5.0 |
+| t01_positive_extrude_centroid | 正常系(回帰) | dispatcher: offset=+5, depth=+3 で右面外向き（リグレッション無し） | centroid_x > 5.0 |
+| t_boundary_zero_depth_rejected | 境界 | depth=0（abs≤ε）を `make_extrusion` に渡す | Err(InvalidParameter) |
+| t_degen_nonfinite_depth_rejected | 退化 | depth=NaN/∞ を渡す | Err(InvalidParameter) |
+| front_neg_sign | 正常系 | `buildExtrudeFeatures` に `f_x_neg` → extrude.depth < 0 | depth<0 |
+| front_pos_sign | 正常系 | `f_x_pos` → extrude.depth > 0 | depth>0 |
+
+## 幾何的不変条件チェックリスト
+- [ ] 負 depth で side face の winding が外向きに整合（`winding *= depth.signum()`）
+- [ ] bottom/top cap 法線がソリッド外側を向く（`±depth.signum()`）
+- [ ] Euler-Poincaré V-E+F=2 が depth 符号に依らず成立
+- [x] N/A: partition/assemble/pslg は本 Issue 非該当（boolean アルゴリズム不変）

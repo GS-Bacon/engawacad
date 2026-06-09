@@ -1,0 +1,286 @@
+{
+  "totals": {
+    "passed": 875,
+    "failed": 0,
+    "ignored": 11
+  },
+  "by_crate": {
+    "mycad_api-8802c7a0d0b762ce": {
+      "passed": 7,
+      "failed": 0
+    },
+    "mycad_api-4994bc7dc603a5b4": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-4a945905f1127cbb": {
+      "passed": 2,
+      "failed": 0
+    },
+    "api_fallback_edge-7d38581dfb70fc25": {
+      "passed": 11,
+      "failed": 0
+    },
+    "assembly_acceptance-3968308d7b54383e": {
+      "passed": 11,
+      "failed": 0
+    },
+    "e2e_api_scenarios-f1fa14130a2a3719": {
+      "passed": 16,
+      "failed": 0
+    },
+    "extrude_cut_acceptance-7af3bd4e2e84f438": {
+      "passed": 2,
+      "failed": 0
+    },
+    "extrude_fuse_acceptance-3cb3229367a8ad24": {
+      "passed": 1,
+      "failed": 0
+    },
+    "extrude_ui_acceptance-40820f8cca22a42b": {
+      "passed": 1,
+      "failed": 0
+    },
+    "features_get_acceptance-01be87e4f5841112": {
+      "passed": 9,
+      "failed": 0
+    },
+    "mesh_api-fbba96c639f3c253": {
+      "passed": 16,
+      "failed": 0
+    },
+    "post_features_acceptance-056d71906b15b6d1": {
+      "passed": 15,
+      "failed": 0
+    },
+    "state_invariants-cbc26bf7e9eb7e2b": {
+      "passed": 1,
+      "failed": 0
+    },
+    "static_assets-5db5e3f50592e22b": {
+      "passed": 6,
+      "failed": 0
+    },
+    "static_assets_edge-9bd538bd824d3cf9": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_build-467ac184f40e306b": {
+      "passed": 0,
+      "failed": 0
+    },
+    "a1_1_plane_cyl_fuse_isect_acceptance-dbdb3c016cb95771": {
+      "passed": 21,
+      "failed": 0
+    },
+    "assembly_acceptance-a7b52fb795a02031": {
+      "passed": 16,
+      "failed": 0
+    },
+    "boolean_example_layout_acceptance-5d6ba748639f0456": {
+      "passed": 0,
+      "failed": 0
+    },
+    "cyl_sph_intersect_acceptance-c284db9ec064c38f": {
+      "passed": 18,
+      "failed": 0
+    },
+    "examples_smoke-7120a1bf686f3f8d": {
+      "passed": 19,
+      "failed": 0
+    },
+    "extrude_offset_fuse_acceptance-e85d7bc65c37b2f5": {
+      "passed": 4,
+      "failed": 0
+    },
+    "feature_dispatcher-971a7d5301e8968f": {
+      "passed": 53,
+      "failed": 0
+    },
+    "fuse_box_cyl_acceptance-5e8887fe93ec008a": {
+      "passed": 8,
+      "failed": 0
+    },
+    "hole_tessellation_acceptance-113c4a7a310c2a87": {
+      "passed": 7,
+      "failed": 0
+    },
+    "m5x20_acceptance-e1ff95e4d67b46f6": {
+      "passed": 3,
+      "failed": 0
+    },
+    "position_params_acceptance-ba7d9b3222d2ca13": {
+      "passed": 14,
+      "failed": 0
+    },
+    "surface_boolean_a2_acceptance-f5a58ae79084ce45": {
+      "passed": 13,
+      "failed": 0
+    },
+    "transform_acceptance-291c91427ad72dfc": {
+      "passed": 21,
+      "failed": 0
+    },
+    "mycad-792df3931e7b8ad5": {
+      "passed": 12,
+      "failed": 0
+    },
+    "assembly_acceptance-64bba1d7a0f31ea2": {
+      "passed": 11,
+      "failed": 0
+    },
+    "close_gate_acceptance-b42af29eb071d2fe": {
+      "passed": 4,
+      "failed": 0
+    },
+    "export-039f89f754adfb79": {
+      "passed": 5,
+      "failed": 0
+    },
+    "mycad_format-cb78ec6616537fb7": {
+      "passed": 101,
+      "failed": 0
+    },
+    "golden_examples-31523050b0dff8e3": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_kernel-94d1b87a3255f061": {
+      "passed": 294,
+      "failed": 0
+    },
+    "bool_naked_edge_acceptance-7365bbf69ceb9b03": {
+      "passed": 9,
+      "failed": 0
+    },
+    "boolean_proptest-91805906a2cd6b94": {
+      "passed": 17,
+      "failed": 0
+    },
+    "box_sphere_void_acceptance-dea1754391d4690e": {
+      "passed": 11,
+      "failed": 0
+    },
+    "cuboid_roundtrip-a8ed2ecd5d8d2275": {
+      "passed": 2,
+      "failed": 0
+    },
+    "cyl_sph_surface_intersect-f6edfd8ad01369a8": {
+      "passed": 7,
+      "failed": 0
+    },
+    "debug_offsets-8f4faeee50c67a00": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_cut_degenerate_acceptance-1e14b18ae9224bd4": {
+      "passed": 7,
+      "failed": 0
+    },
+    "extrude_negative_direction_acceptance-1b615a60e871f9bf": {
+      "passed": 0,
+      "failed": 0
+    },
+    "face_ids_acceptance-0b50744b013b2eaa": {
+      "passed": 6,
+      "failed": 0
+    },
+    "kernel_surface_cut_manifold_acceptance-862daa2a84421e3c": {
+      "passed": 7,
+      "failed": 0
+    },
+    "rotate_acceptance-8f8bf6bb808c381c": {
+      "passed": 24,
+      "failed": 0
+    },
+    "tessellation_cap_acceptance-9df98e30e921032a": {
+      "passed": 12,
+      "failed": 0
+    },
+    "test_bool_probe-c11eb438f31662ad": {
+      "passed": 0,
+      "failed": 0
+    },
+    "translate_acceptance-93ea8a7b72877357": {
+      "passed": 7,
+      "failed": 0
+    },
+    "mycad_viewer-4b92dea51e117472": {
+      "passed": 0,
+      "failed": 0
+    },
+    "xtask-30fe61d461b37a2b": {
+      "passed": 11,
+      "failed": 0
+    },
+    "mycad_api-785831210a6451a6": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api-758f4150e88ebfc1": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-866b23c41f03de10": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback_edge-04912f802c1a478d": {
+      "passed": 1,
+      "failed": 0
+    },
+    "assembly_acceptance-f00833565376137a": {
+      "passed": 0,
+      "failed": 0
+    },
+    "e2e_api_scenarios-37e3b09b5705d00e": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_cut_acceptance-a0cdba345dea79fe": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_fuse_acceptance-3273ee8193fe43bc": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_ui_acceptance-45593e23927fdd4a": {
+      "passed": 0,
+      "failed": 0
+    },
+    "features_get_acceptance-1eae972ecdd7d895": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mesh_api-ede4942318b4a9c5": {
+      "passed": 0,
+      "failed": 0
+    },
+    "post_features_acceptance-fe7bfdc375fa52a3": {
+      "passed": 0,
+      "failed": 0
+    },
+    "state_invariants-82c542a7269eec25": {
+      "passed": 0,
+      "failed": 0
+    },
+    "static_assets-a8a81e37af80bb10": {
+      "passed": 2,
+      "failed": 0
+    },
+    "static_assets_edge-bd854bf668add7de": {
+      "passed": 0,
+      "failed": 0
+    }
+  },
+  "added_in_round": [],
+  "coverage_hints": {
+    "total_added": 0,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

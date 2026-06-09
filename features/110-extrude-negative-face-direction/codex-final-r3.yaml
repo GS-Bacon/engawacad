@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/mycad-kernel/src/primitives/extrusion.rs"
+    line_hint: 145
+    finding: "新規の `depth.abs() > 1e12` ガードでカーネルが有限 depth を拒否する一方、viewer の `buildExtrudeFeatures` は `Number.isFinite(depth) && depth > 0` しか見ておらず、`web/src/extrude.test.ts` の T07 も `Number.MAX_VALUE` を valid と期待したままです。結果として Web 側で生成できる `extrude` が build 時に `InvalidParameter { kind: \"depth\" }` で落ちるため、差分で Web→kernel の depth 契約が不整合になっています。"
+    suggestion: "`1e12` 上限を維持するなら `web/src/extrude.ts` / `web/src/main.ts` 側でも同じ境界を reject し、T07 の期待値を更新する。上限を契約にしたくないなら、固定閾値ではなく実際に非有限座標・法線が発生するケースを検出する。"
+
+verdict: pass

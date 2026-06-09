@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "幾何的不変条件チェックリスト"
+    finding: "チェックリストの全項目が `[ ]` 状態。t02 で validate_manifold を確認しているが、Euler-Poincaré 公式 V-E+F=2 の明示的な検証テストがテスト計画に含まれていない。"
+    suggestion: "t02_kernel_neg_depth_manifold または別テストで、生成された Solid に対して V - E + F == 2 を直接 assert すること。validate_manifold が内部でこのチェックを行っているとしても、単体テストの不変条件表明として明示的に記述すること。"
+
+verdict: pass
