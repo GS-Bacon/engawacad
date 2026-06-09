@@ -90,7 +90,7 @@ async fn t05_features_not_found() {
     assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
     let err: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(
-        err["error"].as_str().unwrap_or("").len() > 0,
+        !err["error"].as_str().unwrap_or("").is_empty(),
         "error message must be non-empty"
     );
 }

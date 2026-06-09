@@ -69,7 +69,7 @@ async fn t01_normal_box() {
         "positions must not be empty"
     );
     assert!(
-        bodies[0].mesh.indices.len() % 3 == 0,
+        bodies[0].mesh.indices.len().is_multiple_of(3),
         "indices count must be multiple of 3"
     );
 }
@@ -87,7 +87,7 @@ async fn t02_normal_cylinder() {
         "positions must not be empty"
     );
     assert!(
-        bodies[0].mesh.indices.len() % 3 == 0,
+        bodies[0].mesh.indices.len().is_multiple_of(3),
         "indices count must be multiple of 3"
     );
 }

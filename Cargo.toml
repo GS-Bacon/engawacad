@@ -28,6 +28,7 @@ schemars = "0.8"
 approx = "0.5"
 tempfile = "3"
 proptest = "1"
+rand = "0.9"
 # Error handling
 thiserror = "2"
 # CLI

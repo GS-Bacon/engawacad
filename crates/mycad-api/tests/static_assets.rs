@@ -120,7 +120,7 @@ async fn t09_real_viewer_asset_served() {
     let asset_path = script_src.trim_start_matches("./");
     let app2 = test_app();
     let req = Request::builder()
-        .uri(&format!("/{asset_path}"))
+        .uri(format!("/{asset_path}"))
         .header("host", "127.0.0.1:7878")
         .body(Body::empty())
         .unwrap();

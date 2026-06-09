@@ -24,6 +24,7 @@ tower = { workspace = true, features = ["util"] }
 mycad-kernel = { workspace = true }
 tempfile = { workspace = true }
 urlencoding = { workspace = true }
+rand = { workspace = true }
 
 [[bin]]
 name = "mycad-api"

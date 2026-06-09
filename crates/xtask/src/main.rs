@@ -9,13 +9,15 @@ fn main() -> ExitCode {
         "ci" => ci(),
         "web" => web(),
         "gen-ts" => gen_ts(),
+        "acceptance" => acceptance(),
         "help" | "--help" | "-h" => {
             println!("Usage: cargo xtask <TASK>");
             println!();
             println!("Tasks:");
-            println!("  ci      Run web build, then fmt check, clippy, tests, build, TS drift, web checks, release verification");
-            println!("  web     Generate TS types and build web frontend (vite build)");
-            println!("  gen-ts  Generate TypeScript types to web/src/generated/");
+            println!("  ci          Run web build, then fmt check, clippy, tests, build, TS drift, web checks, release verification");
+            println!("  web         Generate TS types and build web frontend (vite build)");
+            println!("  gen-ts      Generate TypeScript types to web/src/generated/");
+            println!("  acceptance  Run acceptance tests (add --fuzz for fuzz harness)");
             ExitCode::SUCCESS
         }
         other => {
@@ -113,6 +115,50 @@ pub(crate) fn gen_ts_to(out_dir: &std::path::Path) -> ExitCode {
     }
 
     println!("TypeScript types exported to {}", out_dir.display());
+    ExitCode::SUCCESS
+}
+
+fn acceptance() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    let fuzz = args.iter().any(|a| a == "--fuzz");
+
+    println!("=== Running acceptance tests ===");
+    let status = Command::new("cargo")
+        .args([
+            "test",
+            "-p",
+            "mycad-api",
+            "--test",
+            "post_features_acceptance",
+        ])
+        .status()
+        .expect("failed to execute cargo test");
+    if !status.success() {
+        eprintln!("FAILED: acceptance tests");
+        return ExitCode::FAILURE;
+    }
+
+    if fuzz {
+        println!("\n=== Running fuzz tests ===");
+        let status = Command::new("cargo")
+            .args([
+                "test",
+                "-p",
+                "mycad-api",
+                "--test",
+                "fuzz_features",
+                "--",
+                "--include-ignored",
+            ])
+            .status()
+            .expect("failed to execute fuzz tests");
+        if !status.success() {
+            eprintln!("FAILED: fuzz tests");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    println!("\n=== Acceptance tests passed ===");
     ExitCode::SUCCESS
 }
 

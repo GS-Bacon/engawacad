@@ -670,6 +670,7 @@ dependencies = [
  "mycad-build",
  "mycad-format",
  "mycad-kernel",
+ "rand",
  "rust-embed",
  "serde",
  "serde_json",
