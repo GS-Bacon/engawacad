@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { setupPageWithServer } from "./helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,9 +63,9 @@ async function setupPageWithFixture(
   return consoleErrors;
 }
 
-// T01: Console no error - simple_box
+// T01: Console no error — real API server (no fixture mock)
 test("T01 console no error - simple_box", async ({ page }) => {
-  const consoleErrors = await setupPageWithFixture(page, "simple_box");
+  const consoleErrors = await setupPageWithServer(page);
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
 

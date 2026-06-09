@@ -158,6 +158,22 @@ fn acceptance() -> ExitCode {
         }
     }
 
+    println!("\n=== Running Playwright E2E tests ===");
+    if which("npx").is_some() {
+        let pw_web_dir = workspace_root().join("web");
+        let status = Command::new("npx")
+            .args(["playwright", "test"])
+            .current_dir(&pw_web_dir)
+            .status()
+            .expect("failed to execute playwright test");
+        if !status.success() {
+            eprintln!("FAILED: Playwright E2E tests");
+            return ExitCode::FAILURE;
+        }
+    } else {
+        eprintln!("WARNING: npx not found — skipping Playwright E2E tests (install Node.js >= 20)");
+    }
+
     println!("\n=== Acceptance tests passed ===");
     ExitCode::SUCCESS
 }

@@ -247,12 +247,13 @@ async function main() {
   process.stderr.write(`  agent:  ${agentFile}\n`);
   process.stderr.write(`  result: ${resultFile}\n`);
 
+  const maxTurns = process.env.GLM_MAX_TURNS ?? "5";
   const proc = Bun.spawn(
     [
       "claude", "-p", prompt,
       "--append-system-prompt-file", agentFile,
       "--allowedTools", "Read",
-      "--max-turns", "3",
+      "--max-turns", maxTurns,
       "--output-format", "text",
     ],
     { env: glmEnv, stdout: "pipe", stderr: "pipe" }
