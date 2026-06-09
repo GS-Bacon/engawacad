@@ -189,6 +189,7 @@ test("T06_extrude_cut_normal depth=1.0", async ({ request }) => {
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain('"feature_id":"box_1"');
 });
 
 // T07: ExtrudeCut depth=face距離-0.01=14.999 — 境界手前
@@ -208,6 +209,7 @@ test("T07_extrude_cut_near_boundary depth=14.999", async ({ request }) => {
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain('"feature_id":"box_1"');
 });
 
 // T08: ExtrudeCut depth=face距離=15.0 — 境界値 (#111 回帰)
@@ -229,6 +231,7 @@ test("T08_degen_extrude_cut_at_boundary depth=15.0 (#111 regression)", async ({
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain('"feature_id":"box_1"');
 });
 
 // T09: ExtrudeCut depth=face距離+0.1=15.1 — 境界超え
@@ -248,6 +251,7 @@ test("T09_extrude_cut_beyond_boundary depth=15.1", async ({ request }) => {
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain('"feature_id":"box_1"');
 });
 
 // ---------------------------------------------------------------------------

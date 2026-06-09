@@ -17,8 +17,9 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
-      // cwd: repo root so "examples/simple_box.mycad" resolves correctly
-      command: "cargo run -p mycad-api -- examples/simple_box.mycad",
+      // Copy to /tmp to prevent POST mutations from polluting the source-controlled file
+      command:
+        "bash -c 'cp examples/simple_box.mycad /tmp/mycad-test-server.mycad && cargo run -p mycad-api -- /tmp/mycad-test-server.mycad'",
       url: "http://127.0.0.1:7878/api/v0/mesh",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
