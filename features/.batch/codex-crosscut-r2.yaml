@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/tests/acceptance_extrude.spec.ts"
+    line_hint: 18
+    finding: "POST 系の受け入れテストが共有 API サーバー `http://127.0.0.1:7878` に固定 ID (`sk_t01` / `ext_t01` など) で書き込むため、再実行・retry・他 spec との並列実行で状態が漏れ、duplicate ID や変更済み `box_1` を前提にした非決定な結果になる"
+    suggestion: "worker/test ごとに temp copy の `.mycad` を使う API サーバーを起動し、状態を共有しない構成に変更する"
+  - id: F02
+    severity: high
+    file: "web/tests/acceptance_extrude.spec.ts"
+    line_hint: 47
+    finding: "`hasMeshVertices()` は『何らかのメッシュが返った』ことしか見ておらず、元の `simple_box` がそのまま返る no-op でも T02-T09 の大半が通る。#110/#111 の回帰テストとしては成功条件が弱すぎる"
+    suggestion: "各ケースで baseline との差分（頂点数/ボディ数/feature_id/期待する形状変化）を明示的に検証し、200 応答だけでは通らないようにする"
+  - id: F03
+    severity: high
+    file: "crates/mycad-api/tests/fuzz_features.rs"
+    line_hint: 246
+    finding: "T03 は NaN/Infinity を検証すると書いているが、実際に送っているのは `0.0`、`1e15`、`-1e15`、`1e-15`、`f64::MIN` だけで、不正 float トークン (`NaN`/`Infinity`/`-Infinity`) の経路が未検証のままになっている"
+    suggestion: "raw body に `NaN`・`Infinity`・`-Infinity` を含む JSON を明示的に送って、422/4xx を返すことを確認するテストを追加する"
+
+verdict: fail

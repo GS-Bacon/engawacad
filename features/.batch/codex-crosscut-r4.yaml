@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "features/124-api-http/test-summary.json"
+    line_hint: 10
+    finding: "coverage_hints が `total_added: 0`, `determinism: 0`, `degenerate: 0` のままで、実際に追加された `crates/mycad-api/tests/fuzz_features.rs` の T01-T05 を反映していない。決定性と退化入力検出が要件の Issue #124 で、このメタデータを使うゲート/レビューは『テスト未追加』と誤判定する。"
+    suggestion: "test-summary.json を実差分に合わせて再生成し、少なくとも `total_added`、`determinism`、`degenerate`、`boundary` を T01-T05 に対応する値へ更新する。"
+  - id: F02
+    severity: high
+    file: "web/playwright.config.ts"
+    line_hint: 24
+    finding: "実 API サーバ側でも `reuseExistingServer: !process.env.CI` が有効なため、ローカルで 7878 番ポートに既存 `mycad-api` が居ると `cp examples/simple_box.mycad ...` を含む起動コマンドがスキップされる。新しい Playwright 実サーバテストはその外部プロセスの状態/対象ファイルに依存し、`simple_box` 前提の隔離と決定性が崩れる。"
+    suggestion: "API サーバの `reuseExistingServer` は `false` にするか、毎回ユニークなポートと temp `.mycad` を割り当てて、Playwright 実行ごとに必ず専用プロセスを起動する。"
+
+verdict: fail

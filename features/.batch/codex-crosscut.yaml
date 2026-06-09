@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "web/tests/acceptance_extrude.spec.ts"
+    line_hint: 18
+    finding: "この spec は共有 API サーバー (`127.0.0.1:7878`) に固定 ID (`sk_t01` / `ext_t01` など) を POST しており、サーバー側が `.mycad` を永続更新するため実際には独立実行になっていない。1回目の実行で文書が汚染されるので、2回目以降は duplicate ID で失敗し、`--workers N` でも同一 `box_1` への更新順序に依存する。"
+    suggestion: "各テスト/worker ごとに temp copy の `.mycad` と独立した `mycad-api` プロセスを使うか、少なくとも各ケース開始前に入力ファイルを初期状態へ戻して共有状態をなくす。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-api/tests/fuzz_features.rs"
+    line_hint: 256
+    finding: "`t03_degen_special_float_values` はコメントと異なり NaN/Infinity を一度も送っておらず、`t04_degen_unknown_type` / `t05_degen_null_body` も 422 / 4xx 契約ではなく `non-500` や任意の 4xx しか見ていない。設計で合意した T03-T05 の退化入力回帰をそのまま検出できない。"
+    suggestion: "NaN/Infinity 系は raw body で明示的に送り、unknown type は 422、null/non-object body は期待する 4xx を assert してテスト計画 T03-T05 と一致させる。"
+
+verdict: fail
