@@ -171,11 +171,20 @@ test("T05_degen_extrude_neg_min depth=-0.01 (#110 regression)", async ({
 // ---------------------------------------------------------------------------
 // ExtrudeCut
 // ---------------------------------------------------------------------------
+// 各テストは専用の box を作成して独立性を確保する。
+// extrude_cut は target body を consume し、cut ID で新 body を生成するため
+// feature_id は cut 操作の ID になる（target box の ID ではない）。
+
+function makeBox(id: string) {
+  return { type: "create_box", id, width: 10.0, height: 20.0, depth: 30.0 };
+}
 
 // T06: ExtrudeCut depth=1.0 — 正常値
 test("T06_extrude_cut_normal depth=1.0", async ({ request }) => {
+  const box = `${RUN}_box_t06`;
   const sk = `${RUN}_sk_t06`;
   const cut = `${RUN}_cut_t06`;
+  await postFeature(request, makeBox(box));
   const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
@@ -184,18 +193,20 @@ test("T06_extrude_cut_normal depth=1.0", async ({ request }) => {
     id: cut,
     sketch: sk,
     depth: 1.0,
-    target: "box_1",
+    target: box,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
-  expect(text).toContain('"feature_id":"box_1"');
+  expect(text).toContain(`"feature_id":"${cut}"`);
 });
 
 // T07: ExtrudeCut depth=face距離-0.01=14.999 — 境界手前
 test("T07_extrude_cut_near_boundary depth=14.999", async ({ request }) => {
+  const box = `${RUN}_box_t07`;
   const sk = `${RUN}_sk_t07`;
   const cut = `${RUN}_cut_t07`;
+  await postFeature(request, makeBox(box));
   const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
@@ -204,20 +215,25 @@ test("T07_extrude_cut_near_boundary depth=14.999", async ({ request }) => {
     id: cut,
     sketch: sk,
     depth: 14.999,
-    target: "box_1",
+    target: box,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
-  expect(text).toContain('"feature_id":"box_1"');
+  expect(text).toContain(`"feature_id":"${cut}"`);
 });
 
 // T08: ExtrudeCut depth=face距離=15.0 — 境界値 (#111 回帰)
+// depth == face_dist は UI が EPSILON_GUARD=1e-6 で回避する退化ケース。
+// カーネルは "multiple positive-volume shells" エラーで 422 を返す。
+// これが #111 の修正結果：無言退化 B-rep → 適切な 422 エラー。
 test("T08_degen_extrude_cut_at_boundary depth=15.0 (#111 regression)", async ({
   request,
 }) => {
+  const box = `${RUN}_box_t08`;
   const sk = `${RUN}_sk_t08`;
   const cut = `${RUN}_cut_t08`;
+  await postFeature(request, makeBox(box));
   const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
@@ -226,18 +242,19 @@ test("T08_degen_extrude_cut_at_boundary depth=15.0 (#111 regression)", async ({
     id: cut,
     sketch: sk,
     depth: 15.0,
-    target: "box_1",
+    target: box,
   });
-  expect(status).toBe(200);
-  expect(text).not.toContain('"error"');
-  expect(hasMeshVertices(text)).toBeTruthy();
-  expect(text).toContain('"feature_id":"box_1"');
+  // 退化ケース: ツール上面がボックス上面と完全一致 → カーネルが 422 を返す
+  expect(status).toBe(422);
+  expect(text).toContain('"error"');
 });
 
 // T09: ExtrudeCut depth=face距離+0.1=15.1 — 境界超え
 test("T09_extrude_cut_beyond_boundary depth=15.1", async ({ request }) => {
+  const box = `${RUN}_box_t09`;
   const sk = `${RUN}_sk_t09`;
   const cut = `${RUN}_cut_t09`;
+  await postFeature(request, makeBox(box));
   const { status: s1 } = await postFeature(request, makeSketch(sk));
   expect(s1).toBe(200);
 
@@ -246,12 +263,12 @@ test("T09_extrude_cut_beyond_boundary depth=15.1", async ({ request }) => {
     id: cut,
     sketch: sk,
     depth: 15.1,
-    target: "box_1",
+    target: box,
   });
   expect(status).toBe(200);
   expect(text).not.toContain('"error"');
   expect(hasMeshVertices(text)).toBeTruthy();
-  expect(text).toContain('"feature_id":"box_1"');
+  expect(text).toContain(`"feature_id":"${cut}"`);
 });
 
 // ---------------------------------------------------------------------------

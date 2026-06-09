@@ -12,6 +12,19 @@ export async function setupPageWithServer(page: Page): Promise<string[]> {
       consoleErrors.push(msg.text());
     }
   });
+  // ロガーサイドカー (port 7879) は test 環境では起動しない。
+  // CORS preflight が console.error を出すのを防ぐためにモックする。
+  await page.route("http://127.0.0.1:7879/**", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type",
+      },
+      body: "",
+    }),
+  );
   return consoleErrors;
 }
 

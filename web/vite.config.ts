@@ -13,6 +13,14 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:7878",
+        changeOrigin: true,
+      },
+    },
+  },
   test: {
     include: ["src/**/*.test.ts"],
   },
