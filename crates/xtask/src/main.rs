@@ -122,6 +122,18 @@ fn acceptance() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(2).collect();
     let fuzz = args.iter().any(|a| a == "--fuzz");
 
+    // --workers N  or  --workers=N
+    let workers: String = args
+        .windows(2)
+        .find(|w| w[0] == "--workers")
+        .map(|w| w[1].clone())
+        .or_else(|| {
+            args.iter()
+                .find(|a| a.starts_with("--workers="))
+                .map(|a| a.trim_start_matches("--workers=").to_owned())
+        })
+        .unwrap_or_else(|| "1".to_owned());
+
     println!("=== Running acceptance tests ===");
     let status = Command::new("cargo")
         .args([
@@ -158,11 +170,11 @@ fn acceptance() -> ExitCode {
         }
     }
 
-    println!("\n=== Running Playwright E2E tests ===");
+    println!("\n=== Running Playwright E2E tests (workers={workers}) ===");
     if which("npx").is_some() {
         let pw_web_dir = workspace_root().join("web");
         let status = Command::new("npx")
-            .args(["playwright", "test"])
+            .args(["playwright", "test", "--workers", &workers])
             .current_dir(&pw_web_dir)
             .status()
             .expect("failed to execute playwright test");

@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "web/tests/acceptance_extrude.spec.ts"
+    line_hint: 8
+    finding: "Issue は 'simple_box.mycad top face (z=1.0)' としているが、実装は z∈[-15,15], face距離=15.0 としている。数値不一致（Issue 側の誤記可能性あり）"
+    suggestion: "simple_box.mycad の実際の幾何を確認し、実装の z=15.0 が正しければ Issue 側を修正する"
+
+verdict: pass
