@@ -8,6 +8,7 @@ export default defineConfig({
     launchOptions: { args: ["--use-gl=swiftshader"] },
     headless: true,
     baseURL: "http://127.0.0.1:4173",
+    video: process.env.PLAYWRIGHT_VIDEO === "1" ? "on" : "off",
   },
   webServer: [
     {

@@ -121,6 +121,7 @@ pub(crate) fn gen_ts_to(out_dir: &std::path::Path) -> ExitCode {
 fn acceptance() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(2).collect();
     let fuzz = args.iter().any(|a| a == "--fuzz");
+    let record = args.iter().any(|a| a == "--record");
 
     // --workers N  or  --workers=N
     let workers: String = args
@@ -170,17 +171,23 @@ fn acceptance() -> ExitCode {
         }
     }
 
-    println!("\n=== Running Playwright E2E tests (workers={workers}) ===");
+    let record_label = if record { " [recording]" } else { "" };
+    println!("\n=== Running Playwright E2E tests (workers={workers}){record_label} ===");
     if which("npx").is_some() {
         let pw_web_dir = workspace_root().join("web");
-        let status = Command::new("npx")
-            .args(["playwright", "test", "--workers", &workers])
-            .current_dir(&pw_web_dir)
-            .status()
-            .expect("failed to execute playwright test");
+        let mut cmd = Command::new("npx");
+        cmd.args(["playwright", "test", "--workers", &workers])
+            .current_dir(&pw_web_dir);
+        if record {
+            cmd.env("PLAYWRIGHT_VIDEO", "1");
+        }
+        let status = cmd.status().expect("failed to execute playwright test");
         if !status.success() {
             eprintln!("FAILED: Playwright E2E tests");
             return ExitCode::FAILURE;
+        }
+        if record {
+            tile_videos(&pw_web_dir);
         }
     } else {
         eprintln!("WARNING: npx not found — skipping Playwright E2E tests (install Node.js >= 20)");
@@ -188,6 +195,94 @@ fn acceptance() -> ExitCode {
 
     println!("\n=== Acceptance tests passed ===");
     ExitCode::SUCCESS
+}
+
+fn tile_videos(web_dir: &std::path::Path) {
+    let Some(_ffmpeg) = which("ffmpeg") else {
+        eprintln!("WARNING: ffmpeg が見つかりません — タイル合成をスキップします");
+        return;
+    };
+
+    let results_dir = web_dir.join("test-results");
+    let videos = collect_webm_files(&results_dir);
+
+    if videos.is_empty() {
+        eprintln!("WARNING: --record が指定されましたが動画ファイルが見つかりませんでした");
+        return;
+    }
+
+    let output = results_dir.join("acceptance-tiled.mp4");
+    println!("\n=== Tiling {} video(s) with FFmpeg ===", videos.len());
+
+    let status = if videos.len() == 1 {
+        Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-i",
+                videos[0].to_str().unwrap(),
+                output.to_str().unwrap(),
+            ])
+            .status()
+    } else {
+        let mut ffmpeg_args: Vec<String> = vec!["-y".into()];
+        for v in &videos {
+            ffmpeg_args.push("-i".into());
+            ffmpeg_args.push(v.to_str().unwrap().to_owned());
+        }
+        let filter = build_xstack_filter(videos.len());
+        ffmpeg_args.extend(["-filter_complex".into(), filter, "-vcodec".into(), "libx264".into()]);
+        ffmpeg_args.push(output.to_str().unwrap().to_owned());
+        Command::new("ffmpeg").args(&ffmpeg_args).status()
+    };
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("Tiled video saved to {}", output.display());
+        }
+        Ok(_) => eprintln!("WARNING: ffmpeg タイル合成に失敗しました"),
+        Err(e) => eprintln!("WARNING: ffmpeg 実行エラー: {e}"),
+    }
+}
+
+fn collect_webm_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut videos = Vec::new();
+    if !dir.exists() {
+        return videos;
+    }
+    if let Ok(read_dir) = std::fs::read_dir(dir) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                videos.extend(collect_webm_files(&path));
+            } else if path.extension().and_then(|e| e.to_str()) == Some("webm") {
+                videos.push(path);
+            }
+        }
+    }
+    videos.sort();
+    videos
+}
+
+fn build_xstack_filter(n: usize) -> String {
+    const COLS: usize = 4;
+    let mut positions: Vec<String> = Vec::with_capacity(n);
+    for i in 0..n {
+        let col = i % COLS;
+        let row = i / COLS;
+        let x = match col {
+            0 => "0".to_owned(),
+            1 => "w0".to_owned(),
+            2 => "w0+w1".to_owned(),
+            _ => "w0+w1+w2".to_owned(),
+        };
+        let y = if row == 0 {
+            "0".to_owned()
+        } else {
+            format!("{}*h0", row)
+        };
+        positions.push(format!("{x}_{y}"));
+    }
+    format!("xstack=inputs={}:layout={}:fill=black", n, positions.join("|"))
 }
 
 fn ci() -> ExitCode {

@@ -1,0 +1,21 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "crates/xtask/src/main.rs"
+    line_hint: 253
+    finding: "unwrap() 呼び出し（パスに非ASCII文字が含まれる場合にパニック）"
+    suggestion: "to_str().unwrap() を使用せず、OsStr::to_string_lossy() またはエラー処理を検討"
+  - id: FN02
+    severity: low
+    file: "crates/xtask/src/main.rs"
+    line_hint: 273
+    finding: "xstack フィルタが 20 入力未満の場合でも w0+w1+w2 等を参照する可能性がある（無効な入力参照）"
+    suggestion: "FFmpeg 側で不足入力は無視される動作だが、コメント等で挙動を明示すると安全"
+  - id: FN03
+    severity: low
+    file: "crates/xtask/src/main.rs"
+    line_hint: 202
+    finding: "ログメッセージが日本語で周囲は英語（一貫性なし）"
+    suggestion: "eprintln! のメッセージを英語に統一すると CI ログ等で扱いやすい"
+
+verdict: pass
