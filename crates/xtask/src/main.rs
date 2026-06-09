@@ -275,10 +275,11 @@ fn build_xstack_filter(n: usize) -> String {
             2 => "w0+w1".to_owned(),
             _ => "w0+w1+w2".to_owned(),
         };
+        // xstack では N*h0 形式の乗算が効かないため h0+h1+...hN-1 で累積する
         let y = if row == 0 {
             "0".to_owned()
         } else {
-            format!("{}*h0", row)
+            (0..row).map(|r| format!("h{}", r * COLS)).collect::<Vec<_>>().join("+")
         };
         positions.push(format!("{x}_{y}"));
     }
