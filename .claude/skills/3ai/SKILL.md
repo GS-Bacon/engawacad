@@ -369,12 +369,23 @@ fn t02_build_manifold_euler() { todo!() }
 ```
 
 3. `cargo test --workspace 2>&1 | head -20` でスケルトンがコンパイルエラーなく通ることを確認（ignored は OK）
-4. **examples/ smoke テストチェック**: plan.md または Issue の変更対象を確認し、`examples/*.mycad` を新規追加・変更する場合は `crates/mycad-build/tests/examples_smoke.rs` にも対応エントリを追加する:
+
+4. **バグ修正 Issue の「再現ファースト」確認**（Issue に `bug` ラベルがある場合のみ、feature/chore は不要）:
+
+   バグ再現テスト（テスト計画の T01 または「repro/regression/現象確認」に相当する関数）について:
+   - **`todo!()` のままにしない**: バグの現象を直接アサートするテストボディを Claude が記述する。  
+     例: naked edge バグなら `assert_eq!(count_naked_edges(&mesh), 0)` など、バグが直ると通過し直らないと失敗する assertion を書く。
+   - **`#[ignore]` を外して `cargo test -p <crate> <test_fn_name>` を実行し、テストが `FAILED` になることを確認する**（= バグが再現できた）。
+     - `FAILED` になる → バグを正しく捕捉している。`#[ignore = "STEP 6 で修正後に解除"]` を付け直して次へ進む。
+     - `FAILED` にならない（通過する / `todo!()` のまま panic する）→ テストがバグを捕捉できていない。テストボディを修正してから再確認する。
+   - この確認なしに `#[ignore]` を付けたままにしてはいけない（GLM が「テストと修正を同時に書いてどちらも通す」という偽陽性を防ぐため）。
+
+6. **examples/ smoke テストチェック**: plan.md または Issue の変更対象を確認し、`examples/*.mycad` を新規追加・変更する場合は `crates/mycad-build/tests/examples_smoke.rs` にも対応エントリを追加する:
    - 新規追加: 新しい関数を追加し `smoke(include_str!("../../../examples/<file>.mycad"))` を呼ぶ
    - 変更のみ（既存 example の修正）: 既存テストがあれば追加不要
    - このステップで追加したテストを `cargo test -p mycad-build --test examples_smoke` で確認する
    - 現時点で build が通らないことが既知の場合は `#[ignore = "known bug: #<N>"]` を付ける
-5. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
+7. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
 
 ---
 
@@ -441,6 +452,15 @@ Claude が以下を実行する（crates/** の **Read のみ**）:
 1. `git diff main..HEAD` で実装差分を読む
 2. plan のテスト計画 ID 表と突き合わせ、未実装のものを特定する
 3. 実装差分を見て「plan に書いていなかったが生じた分岐・ケース」を特定する
+
+3.5. **類似ケース追加チェック（バグ修正 Issue のみ）**:
+   修正したバグと同じ根本原因を持ちうる構造的類似ケースを確認し、未カバーなら test-spec.md に追記する。
+   1. 修正した関数・モジュールを `grep -r` で探し、同じコードパスを通る他の呼び出しパターンや入力の組み合わせを列挙する
+   2. 各パターンに対応するテストが既存コードに存在するか `cargo test --list 2>&1 | grep <keyword>` で確認する
+   3. 未カバーの類似ケースを後述の test-spec.md に **`## 類似ケース（未カバー）`** セクションとして追記する  
+      例: boolean_box_cut を修正したなら `boolean_box_void` / `boolean_intersect_box_cyl` / `boolean_fuse_box_cyl` 等で同じ問題が起きていないかを確認する
+   4. 既存テストが `#[ignore]` であれば「修正で解除できる可能性がある」として test-spec.md に記録する
+
 4. **期待値乖離チェック**: 以下を実行し、plan の T ID 期待値と実装の assertion 値が一致するか確認する:
    ```bash
    bun .claude/skills/3ai/scripts/check-spec-divergence.ts \
