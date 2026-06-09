@@ -182,3 +182,94 @@ test("E02_cut extrude cut button triggers ordered POST sequence @stage2", async 
   expect(cutPost).toBeDefined();
   expect(cutPost!.target).toBeTruthy();
 });
+
+// ---------------------------------------------------------------------------
+// Input-validation: invalid depth values must not fire POST
+// ---------------------------------------------------------------------------
+
+async function setupAndSelectFace(page: Page): Promise<void> {
+  await setupExtrudePage(page);
+  const canvas = page.locator("canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas not found");
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await expect(page.locator('[data-testid="extrude-panel"]')).not.toHaveCSS(
+    "display",
+    "none",
+  );
+}
+
+// I2: depth = 0 → no POST, panel stays visible
+test("I2 depth=0 does not POST and leaves panel open", async ({ page }) => {
+  const posted: string[] = [];
+  await page.route("/api/v0/features", (route) => {
+    posted.push(JSON.parse(route.request().postData() ?? "{}").type ?? "?");
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(loadFacesFixture()),
+    });
+  });
+  await setupAndSelectFace(page);
+
+  await page.fill('[data-testid="extrude-depth"]', "0");
+  await page.click('[data-testid="btn-extrude"]');
+  await page.waitForTimeout(300);
+
+  expect(posted).toHaveLength(0);
+  await expect(page.locator('[data-testid="extrude-panel"]')).not.toHaveCSS(
+    "display",
+    "none",
+  );
+});
+
+// I3: empty depth → no POST
+test("I3 empty depth does not POST", async ({ page }) => {
+  const posted: string[] = [];
+  await page.route("/api/v0/features", (route) => {
+    posted.push("posted");
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(loadFacesFixture()),
+    });
+  });
+  await setupAndSelectFace(page);
+
+  // Clear the input entirely
+  await page.fill('[data-testid="extrude-depth"]', "");
+  await page.click('[data-testid="btn-extrude"]');
+  await page.waitForTimeout(300);
+
+  expect(posted).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Error handling: API failure must surface to the user
+// ---------------------------------------------------------------------------
+
+// I4: API 500 → #error element becomes visible with non-empty message
+test("I4 API 500 shows error message to user", async ({ page }) => {
+  await setupExtrudePage(page);
+  await page.route("/api/v0/features", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "simulated server error" }),
+    }),
+  );
+
+  const canvas = page.locator("canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas not found");
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+
+  await page.fill('[data-testid="extrude-depth"]', "5");
+  await page.click('[data-testid="btn-extrude"]');
+  await page.waitForTimeout(500);
+
+  const errorEl = page.locator('[data-testid="error-msg"]');
+  await expect(errorEl).toBeVisible();
+  const text = await errorEl.textContent();
+  expect(text?.length).toBeGreaterThan(0);
+});
