@@ -10,6 +10,14 @@ export interface Judgment {
   rejected: number;
 }
 
+/** raise-issue-on-failure.ts が起票した Issue の記録 */
+export interface RaisedIssue {
+  /** GitHub Issue 番号 */
+  number: number;
+  /** 起票したステップ名 (STEP X-Y ...) */
+  step: string;
+}
+
 export interface StateData {
   issue: number;
   slug: string;
@@ -20,6 +28,8 @@ export interface StateData {
     core_impl: PhaseStats;
     test_impl: PhaseStats;
   };
+  /** このフィーチャーで自動起票された GitHub Issue のリスト */
+  raised_issues?: RaisedIssue[];
 }
 
 export interface VerdictData {

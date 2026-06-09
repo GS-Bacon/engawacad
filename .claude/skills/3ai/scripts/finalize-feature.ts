@@ -137,44 +137,97 @@ function collectOrphanedDirs(): string[] {
  */
 function sweep(dryRun: boolean): void {
   const dirs = collectOrphanedDirs();
+  const sharedDirs = collectSharedArtifacts();
+  const hasFeatureDirs = dirs.length > 0;
+  const hasSharedDirs = sharedDirs.length > 0;
 
-  if (dirs.length === 0) {
+  if (!hasFeatureDirs && !hasSharedDirs) {
     console.log("no orphaned artifacts — 全成果物は追跡済みです");
     return;
   }
 
-  const issueNums = dirs.map((d) => {
-    const m = d.match(/features\/(\d+)-/);
-    return m ? `#${m[1]}` : d;
-  });
+  // --- feature ディレクトリ部分 ---
+  if (hasFeatureDirs) {
+    const issueNums = dirs.map((d) => {
+      const m = d.match(/features\/(\d+)-/);
+      return m ? `#${m[1]}` : d;
+    });
+    console.log(`feature 対象 ${dirs.length} 件: ${issueNums.join(", ")}`);
 
-  console.log(`対象 ${dirs.length} 件: ${issueNums.join(", ")}`);
-
-  if (dryRun) {
-    console.log("(--dry-run: コミットは行いません)");
-    for (const dir of dirs) console.log(`  ${dir}`);
-    return;
-  }
-
-  // setState を git add の前に実行し、state.json の更新も同一コミットに含める
-  for (const dir of dirs) {
-    const statePath = `${dir}/state.json`;
-    if (existsSync(statePath)) {
-      setState(statePath, "artifacts_committed", "passed");
+    if (!dryRun) {
+      // setState を git add の前に実行し、state.json の更新も同一コミットに含める
+      for (const dir of dirs) {
+        const statePath = `${dir}/state.json`;
+        if (existsSync(statePath)) {
+          setState(statePath, "artifacts_committed", "passed");
+        }
+      }
+      for (const dir of dirs) {
+        gitAdd(dir);
+        console.log(`  staged: ${dir}`);
+      }
+      const numsStr = issueNums.join(" ");
+      const message = `chore(3ai): 完了 feature の作業成果物を回収 (${numsStr})`;
+      gitCommit(message);
+      console.log(`✓ feature ${dirs.length} 件の成果物をコミットしました`);
+    } else {
+      console.log("(--dry-run: feature コミットは行いません)");
+      for (const dir of dirs) console.log(`  ${dir}`);
     }
   }
 
-  // 一括 git add
-  for (const dir of dirs) {
-    gitAdd(dir);
-    console.log(`  staged: ${dir}`);
+  // --- 共有成果物部分 (.intake / .batch) ---
+  if (hasSharedDirs) {
+    console.log(`\n共有成果物 対象 ${sharedDirs.length} ディレクトリ: ${sharedDirs.join(", ")}`);
+
+    if (!dryRun) {
+      for (const dir of sharedDirs) {
+        gitAdd(dir);
+        console.log(`  staged: ${dir}`);
+      }
+      if (hasStagedDiff("features/.intake") || hasStagedDiff("features/.batch")) {
+        const message = `chore(3ai): 共有成果物 (intake/batch) を回収`;
+        gitCommit(message);
+        console.log(`✓ 共有成果物をコミットしました`);
+      } else {
+        console.log("共有成果物: 差分なし（コミット不要）");
+      }
+    } else {
+      console.log("(--dry-run: 共有成果物コミットは行いません)");
+      for (const dir of sharedDirs) console.log(`  ${dir}`);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// 共有成果物（.intake / .batch）回収
+// -----------------------------------------------------------------------
+
+/**
+ * features/.intake/ と features/.batch/ 直下の未追跡/変更ファイルが存在するディレクトリを返す。
+ * state.json に依存しない（intake は issue 採番前の共有成果物のため state.json を持たない）。
+ */
+function collectSharedArtifacts(): string[] {
+  let statusOutput: string;
+  try {
+    statusOutput = execSync("git status --porcelain -- features/.intake features/.batch", {
+      encoding: "utf-8",
+    });
+  } catch {
+    statusOutput = "";
   }
 
-  // まとめて 1 コミット
-  const numsStr = issueNums.join(" ");
-  const message = `chore(3ai): 完了 feature の作業成果物を回収 (${numsStr})`;
-  gitCommit(message);
-  console.log(`✓ ${dirs.length} 件の成果物をコミットしました`);
+  const dirSet = new Set<string>();
+  for (const line of statusOutput.split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.trimStart().split(/\s+/);
+    const filePath = parts[parts.length - 1];
+    // features/.intake/... または features/.batch/... にマッチ
+    const match = filePath.match(/^(features\/\.(intake|batch))\//);
+    if (match) dirSet.add(match[1]);
+  }
+
+  return [...dirSet].sort();
 }
 
 // -----------------------------------------------------------------------

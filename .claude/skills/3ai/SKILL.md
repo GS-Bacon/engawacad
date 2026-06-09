@@ -126,7 +126,32 @@ bun .claude/skills/3ai/scripts/dispatch-codex.ts \
   5. 2 回ループ後も critical ≥ 1 が残る場合のみユーザーにエスカレーション; critical = 0 なら Claude 裁量で受け切る
 - **対話モード（`batch_arg !== null`）**: `blocking ≥ 1` → ユーザーに報告（バッチ全体の自動ループはせずエスカレーション）
 - medium/low のみ → `features/.batch/codex-crosscut-findings.md` に記録
-- 任意: `bun .claude/skills/3ai/scripts/finalize-feature.ts --sweep --dry-run` で取りこぼしを確認する
+
+---
+
+### B-7: バッチ終端 reconciliation（**必須**・全グループ + B-6 完了後）
+
+> B-6 が終わったら**必ずここを実行する**。任意でも dry-run でもない。
+
+**1. 成果物回収（intake/batch 含む）**
+```bash
+# --sweep は .intake/.batch の共有成果物も一括回収する（B-2 是正後の拡張動作）
+bun .claude/skills/3ai/scripts/finalize-feature.ts --sweep
+```
+- 未コミット成果物が 0 件なら no-op（冪等）。
+
+**2. 解消済み auto-raise Issue の close**
+```bash
+# sweep モードで全 feature の raised_issues を走査し、対応 step が passed なら close する
+bun .claude/skills/3ai/scripts/resolve-issues.ts --sweep
+```
+- dry-run で事前確認してから本番実行してもよい:
+  `bun .claude/skills/3ai/scripts/resolve-issues.ts --sweep --dry-run`
+
+**3. ROADMAP/マイルストーン突合（ADR-002 手続き）**
+- 現 Phase の `type: feature` Issue が**全 closed** かどうかを確認する。
+- 全 closed なら: ROADMAP の当 Phase を `🚧` → `✅` に更新 + マイルストーンを close。
+- 未 closed が残るなら何もしない（次バッチへ持ち越し）。
 
 ---
 
@@ -635,6 +660,8 @@ bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
 
 **補助チェックスクリプト（各 STEP で活用）:**
 - `check-dispatch-result.ts --result <json> --auto-raise --feature-dir <dir> --step <name>` — dispatch 結果の status/ci_passed を確認（STEP 6-B, 6.6, 7 後）。`--auto-raise` を付けるとエラー時に自動起票する
-- `pre-step8-check.ts --auto-raise --feature-dir <dir>` — STEP 8 直前に crates/ の unstaged/untracked を検出。`--auto-raise` を付けるとエラー時に自動起票する
+- `pre-step8-check.ts [--feature-dir <dir>]` — STEP 8 直前に crates/ の unstaged/untracked を検出。exit 1 で停止のみ（自動起票しない。繰り返し発生する場合は手動で `raise-issue-on-failure.ts` を呼ぶこと）
+- `resolve-issues.ts --feature-dir <dir> [--dry-run]` — state.json の raised_issues[] を読み、対応 step が passed なら Issue を close する（B-7 の手順 2 で使用）
+- `resolve-issues.ts --sweep [--dry-run]` — 全 feature を走査して解消済み auto-raise Issue を一括 close する
 - `build-codex-input.ts --plan-file ... --test-summary ... --output ...` — STEP 7.5-A で使用（Non-Goals を自動注入）
 - `lint-test-semantics.ts` — STEP 6.6 後に BooleanOp 命名不整合をチェック

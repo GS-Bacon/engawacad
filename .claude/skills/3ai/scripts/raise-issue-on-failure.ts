@@ -12,7 +12,8 @@
 // exit 0: Issue 起票成功 or dry-run
 // exit 1: 起票失敗
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import type { StateData } from "./types.ts";
 
 const args = process.argv.slice(2);
 let step = "";
@@ -115,4 +116,24 @@ if (createProc.exitCode !== 0) {
   process.exit(1);
 }
 
-process.stdout.write(`OK: Issue を起票しました: ${createOut.trim()}\n`);
+const issueUrl = createOut.trim();
+process.stdout.write(`OK: Issue を起票しました: ${issueUrl}\n`);
+
+// 起票した Issue 番号を state.json の raised_issues[] に記録する（ベストエフォート）
+const numMatch = issueUrl.match(/\/(\d+)$/);
+if (numMatch && existsSync(stateFile)) {
+  try {
+    const stateData = JSON.parse(readFileSync(stateFile, "utf-8")) as StateData;
+    if (!stateData.raised_issues) stateData.raised_issues = [];
+    const raisedNum = parseInt(numMatch[1], 10);
+    // 重複登録しない
+    if (!stateData.raised_issues.some((r) => r.number === raisedNum)) {
+      stateData.raised_issues.push({ number: raisedNum, step });
+      writeFileSync(stateFile, JSON.stringify(stateData), "utf-8");
+      process.stdout.write(`  → state.json に raised_issues[${raisedNum}] を記録しました\n`);
+    }
+  } catch (e) {
+    // ベストエフォート: 記録失敗しても起票自体は成功扱い
+    process.stderr.write(`WARN: state.json への raised_issues 記録に失敗: ${e}\n`);
+  }
+}
