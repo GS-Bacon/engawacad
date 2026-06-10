@@ -238,10 +238,9 @@ fn t04_watertight_cut_hole() {
 }
 
 /// T05: box(10³) ∪ cylinder(r=2, h=15, origin=(0,0,-7.5)) — watertight via welded vertex check.
-/// Ignored: 384 seam edges not shared by exactly 2 triangles — known earcut same_sense=false
-/// winding / seam vertex mismatch issue. Tracked separately as out-of-scope for #56.
+/// Previously ignored due to seam mismatch (u_min=0.0 hardcoded). Fixed in #129 by deriving
+/// u_min from the circle edge's t_range, aligning UV grid seam with cap boundary.
 #[test]
-#[ignore = "known seam mismatch: tracked separately"]
 fn t05_watertight_fuse() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();

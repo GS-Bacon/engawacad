@@ -348,9 +348,14 @@ fn tessellate_face_earcut(
     }
 
     for chunk in indices.chunks(3) {
-        mesh.indices.push(base_idx + chunk[0] as u32);
-        mesh.indices.push(base_idx + chunk[1] as u32);
-        mesh.indices.push(base_idx + chunk[2] as u32);
+        let (a, b, c) = if face.same_sense {
+            (chunk[0], chunk[1], chunk[2])
+        } else {
+            (chunk[0], chunk[2], chunk[1]) // flip winding for reversed face
+        };
+        mesh.indices.push(base_idx + a as u32);
+        mesh.indices.push(base_idx + b as u32);
+        mesh.indices.push(base_idx + c as u32);
         mesh.face_ids.push(face_id.to_string());
     }
 
@@ -462,11 +467,53 @@ fn tessellate_face_uv_grid(
 
     let v_min = corner_uvs.iter().map(|(_, v)| *v).fold(f64::MAX, f64::min);
     let v_max = corner_uvs.iter().map(|(_, v)| *v).fold(f64::MIN, f64::max);
+
+    // u_min: The UV grid covers a full 2π revolution. For primitive cylinders the seam
+    // starts at u=0. After boolean operations the seam may relocate, but the UV grid
+    // starts at u=0 regardless — adjacent face boundary alignment is achieved through
+    // the n_u matching heuristic below, not by shifting u_min.
     let u_min = 0.0_f64;
 
     // Clamp at point of use — callers may bypass TessellationOptions::new() via public fields
     // or deserialization, so we defensively enforce minimum viable values here.
-    let n_u = opts.angular_segments.max(3);
+    //
+    // For boolean-fuse cylinders whose adjacent cap is a plane, derive n_u from the number of
+    // circle arcs per revolution. The planar cap's collect_loop_points returns 1 point per Line
+    // HE, so the cap boundary has exactly circle_arc_count vertices. The UV grid must match.
+    //
+    // For boolean-intersect cylinders whose adjacent cap is a sphere, the sphere face samples
+    // its boundary ring at angular_segments resolution. Using arcs_per_rev would mismatch, so
+    // we fall back to angular_segments.
+    //
+    // Heuristic: the fuse case produces many non-seam Line HEs in the outer loop (one per
+    // circle arc, shared with the planar cap). The intersect case has only 2 Line HEs (seam).
+    // We check line_he_count > 2 to distinguish.
+    let circle_arc_count: usize = outer_loop
+        .half_edges
+        .iter()
+        .filter(|&&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+        })
+        .count();
+    let line_he_count: usize = outer_loop
+        .half_edges
+        .iter()
+        .filter(|&&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(solid.edges[he.edge].curve, Curve::Line { .. })
+        })
+        .count();
+    let arcs_per_rev = if full_rev_count > 0 {
+        circle_arc_count / full_rev_count as usize
+    } else {
+        0
+    };
+    let n_u = if arcs_per_rev > 1 && line_he_count > 2 {
+        arcs_per_rev
+    } else {
+        opts.angular_segments.max(3)
+    };
     let n_v = opts.axial_segments.max(1);
 
     let base_idx = mesh.positions.len() as u32;

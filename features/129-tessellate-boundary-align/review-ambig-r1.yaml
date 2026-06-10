@@ -1,0 +1,14 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "修正 A > GLM 確認事項"
+    finding: "「total_circle_span チェックが既に保証する」とあるが、該当コードのファイルパス・行番号が記載されていない。実装者がこの保証をどこで確認すべきか不明確。"
+    suggestion: "「total_circle_span チェック（mod.rs:XXX 行目）が既に保証する」のように具体的なコード位置を記載すること。"
+
+  - id: AM02
+    severity: low
+    section: "修正 B > GLM 確認事項"
+    finding: "「事前に is_polygon_convex で使っている投影軸（u_idx, v_idx）と法線の向きを確認し」とあるが、is_polygon_convex がどこにあるか（ファイルパス・行数）が記載されていない。"
+    suggestion: "「is_polygon_convex（mod.rs:YYY）で使っている投影軸」のように具体的なコード位置を記載すること。"
+
+verdict: pass

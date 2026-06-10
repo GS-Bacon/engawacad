@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 512
+    finding: "`n_u` を `arcs_per_rev` に切り替える条件が `line_he_count > 2` に固定されているため、`boolean(box,cyl,Intersect)` の円筒側面は依然として 32 分割にフォールバックし、隣接境界のサンプリング数と一致しません。新規 `t05_intersect_box_cyl_watertight` が `#[ignore]` のままなのも、この `tessellate_face_uv_grid` 経路の非ウォータータイトが残っていることを示しています。"
+    suggestion: "共有エッジまたは隣接面のサンプリング規則から `n_u` を決める形にして `line_he_count` ヒューリスティックを外し、`t05_intersect_box_cyl_watertight` を有効化する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/boundary_align_acceptance.rs"
+    line_hint: 150
+    finding: "`t03_boundary_cylinder_cap_alignment` は `z=±7.5` の円筒端面だけを拾って「同一点が 2 個ある」ことを見ており、#129 で問題になった boolean 生成の plane/cylinder 共有境界そのものを検証していません。実際の共有境界が再度ずれても、このテストは通る余地があります。"
+    suggestion: "共有 boundary を face/edge から特定し、円筒 UV 行と隣接キャップのループ点集合を直接比較する `1e-9` アサートに置き換える。"
+
+verdict: fail

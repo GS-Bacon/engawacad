@@ -296,8 +296,12 @@ fn classify(tags: &[String], title: &str) -> Option<Stage> {
 fn collect_tiles(suite: &PwSuite, out: &mut Vec<TileInput>) {
     for spec in &suite.specs {
         // Use the last result of the first test variant
-        let Some(test) = spec.tests.first() else { continue };
-        let Some(result) = test.results.last() else { continue };
+        let Some(test) = spec.tests.first() else {
+            continue;
+        };
+        let Some(result) = test.results.last() else {
+            continue;
+        };
 
         // Find the video attachment
         let video_path = result
@@ -318,7 +322,12 @@ fn collect_tiles(suite: &PwSuite, out: &mut Vec<TileInput>) {
         // Shorten the label: strip @stageN suffix and leading test code
         let label = shorten_label(&spec.title);
 
-        out.push(TileInput { label, passed, stage, video });
+        out.push(TileInput {
+            label,
+            passed,
+            stage,
+            video,
+        });
     }
     for child in &suite.suites {
         collect_tiles(child, out);
@@ -378,10 +387,7 @@ pub(crate) fn find_font() -> Option<PathBuf> {
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
     ];
-    candidates
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists())
+    candidates.iter().map(PathBuf::from).find(|p| p.exists())
 }
 
 /// Build the xstack layout string (pure: positions only, no filter_complex header).
@@ -394,13 +400,19 @@ pub(crate) fn build_xstack_layout(n: usize, cols: usize) -> String {
         let x = if col == 0 {
             "0".to_owned()
         } else {
-            (0..col).map(|c| format!("w{c}")).collect::<Vec<_>>().join("+")
+            (0..col)
+                .map(|c| format!("w{c}"))
+                .collect::<Vec<_>>()
+                .join("+")
         };
         // xstack では N*h0 形式の乗算が効かないため h0+h1+...hN-1 で累積する
         let y = if row == 0 {
             "0".to_owned()
         } else {
-            (0..row).map(|r| format!("h{}", r * cols)).collect::<Vec<_>>().join("+")
+            (0..row)
+                .map(|r| format!("h{}", r * cols))
+                .collect::<Vec<_>>()
+                .join("+")
         };
         positions.push(format!("{x}_{y}"));
     }
@@ -493,9 +505,7 @@ fn build_title_card(
     output: &std::path::Path,
 ) -> bool {
     let size = format!("{canvas_w}x{canvas_h}");
-    let mut vf_parts = vec![format!(
-        "fps={fps},setsar=1,format=yuv420p"
-    )];
+    let mut vf_parts = vec![format!("fps={fps},setsar=1,format=yuv420p")];
     if let Some(fp) = font {
         let esc = escape_drawtext(text);
         let font_str = fp.to_str().unwrap_or("");
@@ -509,11 +519,16 @@ fn build_title_card(
     let status = Command::new("ffmpeg")
         .args([
             "-y",
-            "-f", "lavfi",
-            "-i", &format!("color=c=0x1A1A2E:s={size}:d={duration_secs}"),
-            "-vf", &vf,
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("color=c=0x1A1A2E:s={size}:d={duration_secs}"),
+            "-vf",
+            &vf,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
             output.to_str().unwrap(),
         ])
         .status();
@@ -542,15 +557,7 @@ fn run_stage(
     // Build xstack grid
     let grid_tmp = output.with_extension("grid.mp4");
     {
-        let filter = build_tile_filtergraph(
-            tiles,
-            TILE_COLS,
-            TILE_W,
-            TILE_H,
-            fps,
-            slow,
-            font,
-        );
+        let filter = build_tile_filtergraph(tiles, TILE_COLS, TILE_W, TILE_H, fps, slow, font);
         let mut args: Vec<String> = vec!["-y".into()];
         for tile in tiles {
             args.push("-i".into());
@@ -643,7 +650,9 @@ fn tile_videos(web_dir: &std::path::Path) {
     let report_path = results_dir.join("report.json");
 
     if !report_path.exists() {
-        eprintln!("WARNING: test-results/report.json が見つかりません — タイル合成をスキップします");
+        eprintln!(
+            "WARNING: test-results/report.json が見つかりません — タイル合成をスキップします"
+        );
         return;
     }
 
@@ -761,7 +770,11 @@ fn tile_videos(web_dir: &std::path::Path) {
     }
 
     let output = results_dir.join("acceptance-promo.mp4");
-    println!("=== Concatenating {} segment(s) → {} ===", segments.len(), output.display());
+    println!(
+        "=== Concatenating {} segment(s) → {} ===",
+        segments.len(),
+        output.display()
+    );
 
     if concat_segments(&segments, &output) {
         println!("Promo video saved to {}", output.display());
@@ -1235,20 +1248,17 @@ export type ErrorResponse = { error: string, };
     fn t_shorten_label_truncates() {
         let long = "T03 console no error - boolean_intersect_cyl_sphere_extra_long @stage1";
         let result = shorten_label(long);
-        assert!(result.chars().count() <= 38, "label should be ≤38 chars, got: {result}");
+        assert!(
+            result.chars().count() <= 38,
+            "label should be ≤38 chars, got: {result}"
+        );
         assert!(result.ends_with(".."));
     }
 
     #[test]
     fn t_classify_stage_tag() {
-        assert_eq!(
-            classify(&["@stage1".to_owned()], "title"),
-            Some(Stage::One)
-        );
-        assert_eq!(
-            classify(&["@stage2".to_owned()], "title"),
-            Some(Stage::Two)
-        );
+        assert_eq!(classify(&["@stage1".to_owned()], "title"), Some(Stage::One));
+        assert_eq!(classify(&["@stage2".to_owned()], "title"), Some(Stage::Two));
         assert_eq!(classify(&[], "title with @stage1 text"), Some(Stage::One));
         assert_eq!(classify(&[], "untagged title"), None);
     }
@@ -1306,7 +1316,10 @@ export type ErrorResponse = { error: string, };
         }"#;
         let tiles = parse_report(json).unwrap();
         // Path doesn't exist → skipped
-        assert!(tiles.is_empty(), "nonexistent video path → should be skipped");
+        assert!(
+            tiles.is_empty(),
+            "nonexistent video path → should be skipped"
+        );
     }
 
     #[test]
@@ -1319,7 +1332,10 @@ export type ErrorResponse = { error: string, };
             video: PathBuf::from("/fake/video.webm"),
         };
         let fg = build_tile_filtergraph(&[tile], 4, 480, 360, 30, false, None);
-        assert!(fg.contains("drawbox"), "must include drawbox for colour border");
+        assert!(
+            fg.contains("drawbox"),
+            "must include drawbox for colour border"
+        );
         assert!(fg.contains("0x4CAF50"), "pass tile must use green colour");
         assert!(!fg.contains("drawtext"), "no font → no drawtext");
         // Single tile should map to [out] directly
@@ -1355,8 +1371,14 @@ export type ErrorResponse = { error: string, };
             },
         ];
         let fg = build_tile_filtergraph(&tiles, 4, 480, 360, 30, false, None);
-        assert!(fg.contains("xstack=inputs=2"), "must use xstack for 2 tiles");
-        assert!(fg.contains("[v0]") && fg.contains("[v1]"), "must label per-tile outputs");
+        assert!(
+            fg.contains("xstack=inputs=2"),
+            "must use xstack for 2 tiles"
+        );
+        assert!(
+            fg.contains("[v0]") && fg.contains("[v1]"),
+            "must label per-tile outputs"
+        );
     }
 
     #[test]
@@ -1369,7 +1391,13 @@ export type ErrorResponse = { error: string, };
         };
         let fg_slow = build_tile_filtergraph(&[tile.clone()], 4, 480, 360, 30, true, None);
         let fg_normal = build_tile_filtergraph(&[tile], 4, 480, 360, 30, false, None);
-        assert!(fg_slow.contains("setpts=2.0*PTS"), "slow=true must include setpts");
-        assert!(!fg_normal.contains("setpts"), "slow=false must not include setpts");
+        assert!(
+            fg_slow.contains("setpts=2.0*PTS"),
+            "slow=true must include setpts"
+        );
+        assert!(
+            !fg_normal.contains("setpts"),
+            "slow=false must not include setpts"
+        );
     }
 }

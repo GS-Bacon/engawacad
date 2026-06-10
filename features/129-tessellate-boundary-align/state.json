@@ -1,0 +1,1 @@
+{"issue":129,"slug":"tessellate-boundary-align","steps":{"design_review":"passed","acceptance_skeleton":"passed","core_impl":"passed","glm_impl":"passed","final_review":"passed","codex_review":"passed"},"loops":{"design_loops":1},"judgments":[{"round":1,"adopted":3,"rejected":1}],"phases":{"core_impl":{"glm_runs":2},"test_impl":{"glm_runs":1}}}

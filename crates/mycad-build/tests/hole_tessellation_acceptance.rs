@@ -41,8 +41,11 @@ fn t02_total_vertex_count_under_threshold() {
     );
 }
 
-/// T03: Top face (z ≈ 5.0) vertex count ≤ 130.
-/// Donut face outer(4) + inner rim(64) + cylinder wall top rim(~33) + margin.
+/// T03: Top face (z ≈ 5.0) vertex count ≤ 200.
+/// Donut face outer(4) + inner rim(64) + cylinder wall top rim(~65, matches 64 arc segments
+/// from boolean result per #129 Fix C) + margin. Was ≤ 130 before #129 fix; increased because
+/// n_u now derives from arc count (64) instead of default angular_segments (32) for boolean
+/// cylinder faces, ensuring watertight boundary alignment.
 #[test]
 fn t03_top_face_vertex_count_under_threshold() {
     let (positions, _) = build_and_tessellate_hole();
@@ -51,8 +54,8 @@ fn t03_top_face_vertex_count_under_threshold() {
         .filter(|p| (p[2] - 5.0).abs() <= LENGTH_TOLERANCE)
         .count();
     assert!(
-        top_count <= 130,
-        "top face vertex count = {}, expected ≤ 130",
+        top_count <= 200,
+        "top face vertex count = {}, expected ≤ 200",
         top_count
     );
 }
