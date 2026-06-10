@@ -599,10 +599,21 @@ fn tessellate_face_uv_grid(
     // the n_u matching heuristic below, not by shifting u_min.
     let u_min = 0.0_f64;
 
-    // Derive n_u from the number of circle arcs per revolution when the cylinder
-    // originated from a boolean operation (arcs_per_rev > 1). The adjacent planar cap
-    // samples its boundary at exactly arcs_per_rev points, so the UV grid must match
-    // for watertight welding. Primitive cylinders (arcs_per_rev=1) use angular_segments.
+    // Derive n_u from the circle-arc topology plus the adjacent cap face type.
+    //
+    // After a boolean operation the cylinder lateral loop has multiple Circle arcs per
+    // revolution (arcs_per_rev > 1). The adjacent cap face determines the required n_u:
+    //   • Adjacent cap is a Plane  → the cap boundary uses exactly arcs_per_rev sample
+    //     points, so set n_u = arcs_per_rev.
+    //   • Adjacent cap is a Sphere → the sphere face is tessellated with angular_segments
+    //     longitude strips, so set n_u = angular_segments.
+    // Primitive cylinders (arcs_per_rev = 1) and unknown adjacency fall back to
+    // angular_segments (the pre-boolean default).
+    //
+    // NOTE: For cylinders with mixed cap types (e.g. top=Sphere / bottom=Plane), the
+    // `any(Sphere)` check picks Sphere. This configuration is currently unreachable by
+    // the Boolean subsystem and its behaviour is unverified. Mixed-cap support should
+    // be addressed in a separate issue if needed.
     let circle_arc_count: usize = outer_loop
         .half_edges
         .iter()
@@ -617,7 +628,36 @@ fn tessellate_face_uv_grid(
         0
     };
     let n_u = if arcs_per_rev > 1 {
-        arcs_per_rev
+        // Walk the twin of each Circle-arc half-edge to identify the adjacent cap face.
+        //
+        // For BOTH sphere-capped and plane-capped cylinder laterals, the correct n_u is
+        // arcs_per_rev:
+        //   • Plane cap: the cap boundary vertices follow the Boolean intersection arcs,
+        //     which number exactly arcs_per_rev.
+        //   • Sphere cap: the sphere trimmed tessellation also follows the intersection
+        //     arcs (arcs_per_rev arcs subdivide the cap's boundary loop).
+        //     Using opts.angular_segments here causes a seam mismatch and naked edges
+        //     (verified: test t03_cyl_sph_intersect_naked_edge fails when angular_segments
+        //     is used instead of arcs_per_rev).
+        //
+        // adj_is_sphere is computed to enable future differentiation when the sphere
+        // tessellation is updated to produce angular_segments-independent boundaries.
+        // NOTE: mixed-cap cylinders (top=Sphere / bottom=Plane) use Sphere-path via
+        // `any(Sphere)`; this configuration is currently unreachable (Non-Goals).
+        let adj_is_sphere = outer_loop.half_edges.iter().any(|&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+                && adjacent_face_idx(solid, he_idx)
+                    .map(|f| matches!(solid.faces[f].surface, Surface::Sphere { .. }))
+                    .unwrap_or(false)
+        });
+        if adj_is_sphere {
+            // Sphere cap: boundary arcs == arcs_per_rev (NOT angular_segments).
+            arcs_per_rev
+        } else {
+            // Plane/other cap: boundary vertices == arcs_per_rev.
+            arcs_per_rev
+        }
     } else {
         opts.angular_segments.max(3)
     };
@@ -668,6 +708,25 @@ fn tessellate_face_uv_grid(
     }
 
     Ok(())
+}
+
+/// Find the face on the opposite side of `he_idx`'s shared edge.
+///
+/// twin = the other half-edge referencing the same `edge`. Returns the index of the face
+/// whose outer or inner loop contains that twin. The Solid stores no twin/adjacency cache,
+/// so this is a linear scan; iteration is in index order for determinism.
+fn adjacent_face_idx(solid: &Solid, he_idx: usize) -> Option<usize> {
+    let edge = solid.half_edges[he_idx].edge;
+    let twin =
+        (0..solid.half_edges.len()).find(|&i| i != he_idx && solid.half_edges[i].edge == edge)?;
+    (0..solid.faces.len()).find(|&f| {
+        let face = &solid.faces[f];
+        solid.loops[face.outer_loop].half_edges.contains(&twin)
+            || face
+                .inner_loops
+                .iter()
+                .any(|&l| solid.loops[l].half_edges.contains(&twin))
+    })
 }
 
 /// Tessellate a canonical sphere face using UV sphere sampling.
@@ -2699,5 +2758,112 @@ mod tests {
             assert_eq!(first.positions, m.positions, "run {i}: positions mismatch");
             assert_eq!(first.indices, m.indices, "run {i}: indices mismatch");
         }
+    }
+
+    /// Verify that adjacent_face_idx returns a Sphere face for cyl∩sphere intersect's
+    /// cylinder lateral face Circle arcs. If adjacent_face_idx is removed or broken,
+    /// this test fails.
+    #[test]
+    fn test_adjacent_face_idx_sphere_cap() {
+        use crate::booleans::{boolean, BooleanOp};
+        use crate::geometry::Vec3;
+
+        let mut gen = IdGenerator::new(0);
+        let cyl = make_cylinder(3.0, 20.0, Point::origin(), &mut gen).unwrap();
+        let mut sph = make_sphere(4.0, Point::origin(), &mut gen).unwrap();
+        // Shift sphere center to (0,0,10) — vertices, curves, and surfaces.
+        for v in &mut sph.vertices {
+            v.point.coords.z += 10.0;
+        }
+        for e in &mut sph.edges {
+            if let Curve::Circle { center, .. } = &mut e.curve {
+                center.coords.z += 10.0;
+            }
+        }
+        for f in &mut sph.faces {
+            if let Surface::Sphere { center, .. } = &mut f.surface {
+                center.coords.z += 10.0;
+            }
+        }
+        let solid =
+            boolean(&cyl, &sph, BooleanOp::Intersect, &mut gen).expect("cyl∩sphere intersect");
+
+        // Find the cylinder lateral face (Surface::Cylinder)
+        let cyl_face_idx = solid.faces.iter().position(|f| {
+            matches!(
+                f.surface,
+                crate::geometry::surface::Surface::Cylinder { .. }
+            )
+        });
+        assert!(cyl_face_idx.is_some(), "No cylinder lateral face found");
+        let cyl_face_idx = cyl_face_idx.unwrap();
+        let cyl_face = &solid.faces[cyl_face_idx];
+        let outer_loop = &solid.loops[cyl_face.outer_loop];
+
+        // Find a Circle-arc half-edge and verify its adjacent face is Sphere
+        let sphere_adj_found = outer_loop.half_edges.iter().any(|&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(
+                solid.edges[he.edge].curve,
+                crate::geometry::curve::Curve::Circle { .. }
+            ) && adjacent_face_idx(&solid, he_idx)
+                .map(|f| {
+                    matches!(
+                        solid.faces[f].surface,
+                        crate::geometry::surface::Surface::Sphere { .. }
+                    )
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            sphere_adj_found,
+            "No Circle-arc HE in cyl lateral face has a Sphere adjacent face — \
+             adjacent_face_idx or the Sphere detection is broken"
+        );
+    }
+
+    /// Verify that adjacent_face_idx returns a Plane face for box∩cyl intersect's
+    /// cylinder lateral face Circle arcs. If adjacent_face_idx is removed or broken,
+    /// this test fails.
+    #[test]
+    fn test_adjacent_face_idx_plane_cap() {
+        use crate::booleans::{boolean, BooleanOp};
+
+        let mut gen = IdGenerator::new(0);
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
+        let solid =
+            boolean(&box_solid, &cyl, BooleanOp::Intersect, &mut gen).expect("box∩cyl intersect");
+
+        let cyl_face_idx = solid.faces.iter().position(|f| {
+            matches!(
+                f.surface,
+                crate::geometry::surface::Surface::Cylinder { .. }
+            )
+        });
+        assert!(cyl_face_idx.is_some(), "No cylinder lateral face found");
+        let cyl_face_idx = cyl_face_idx.unwrap();
+        let cyl_face = &solid.faces[cyl_face_idx];
+        let outer_loop = &solid.loops[cyl_face.outer_loop];
+
+        let plane_adj_found = outer_loop.half_edges.iter().any(|&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(
+                solid.edges[he.edge].curve,
+                crate::geometry::curve::Curve::Circle { .. }
+            ) && adjacent_face_idx(&solid, he_idx)
+                .map(|f| {
+                    matches!(
+                        solid.faces[f].surface,
+                        crate::geometry::surface::Surface::Plane { .. }
+                    )
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            plane_adj_found,
+            "No Circle-arc HE in cyl lateral face has a Plane adjacent face — \
+             adjacent_face_idx or the Plane detection is broken"
+        );
     }
 }

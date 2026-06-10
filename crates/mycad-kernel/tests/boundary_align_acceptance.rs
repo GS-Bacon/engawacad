@@ -227,14 +227,12 @@ fn t04_no_nan_degenerate_fuse_box_cyl() {
 }
 
 // ---------------------------------------------------------------------------
-// T05_intersect: Similar case — intersect_box_cyl is watertight after fix
-// Ignored: the cylinder lateral face in box∩cyl intersect has the same topology as
-// cyl∩sphere intersect (128 Circle HEs, 2 seam Line HEs, 0 horizontal Line HEs).
-// The n_u heuristic cannot distinguish planar-cap intersect from sphere-cap intersect.
-// Fixing this requires cross-face adjacency awareness, tracked as a follow-up.
+// T05_intersect: box∩cyl intersect produces planar caps; cross-face adjacency (#131)
+// selects n_u = arcs_per_rev so the cylinder seam rows align with the planar cap
+// boundary. This is the planar-cap regression for the adjacency logic (sphere-cap
+// branch is covered by tessellation_cap_acceptance::t02_watertight_intersect).
 // ---------------------------------------------------------------------------
 #[test]
-#[ignore = "n_u heuristic cannot distinguish planar-cap vs sphere-cap intersect; needs cross-face adjacency awareness (see #131)"]
 fn t05_intersect_box_cyl_watertight() {
     let solid = build_intersect_box_cyl();
     let mesh = tessellate_solid(&solid).expect("tessellate intersect box cyl");
