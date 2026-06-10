@@ -137,10 +137,8 @@ fn t03_cyl_sph_intersect_naked_edge() {
     );
 }
 
-/// T04: box(10³)−cylinder(r=2,h=6) Cut は naked_edge > 0 の既知問題。
-/// seam vertex mismatch (#56 out-of-scope) のため ignore。
+/// T04: box(10³)−cylinder(r=2,h=6) Cut の naked_edge = 0。
 #[test]
-#[ignore = "known seam mismatch: tracked separately"]
 fn t04_boundary_degen_cut_cyl() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");

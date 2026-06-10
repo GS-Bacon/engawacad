@@ -1,0 +1,9 @@
+issues:
+  - id: T01
+    severity: high
+    file: "crates/mycad-kernel/tests/"
+    line_hint: 1
+    finding: "決定性テストが追加されていない（determinism_tests = 0）。トリム曲面テッセレーションが決定的であることを検証するテストがない。"
+    suggestion: "トリム曲面を持つモデルに対して、同じ IdGenerator で2回 tessellate_solid を実行し、全 TriangleMesh データが一致することを assert するテストを追加すること"
+
+verdict: fail

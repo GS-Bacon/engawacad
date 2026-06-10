@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/trim_surface_tessellation_acceptance.rs"
+    line_hint: 1
+    finding: "合意済みテスト計画の T01/T02/T03/T04/T07/T08 はこの untracked ファイルにしか入っておらず、実際の `git diff` には含まれていない。現状の差分だけを適用すると、trimmed-cylinder / trimmed-sphere 経路の決定性・naked_edge・退化 inner_loop・seam unwrap を回帰から守るテストが落ちる。"
+    suggestion: "`trim_surface_tessellation_acceptance.rs` を差分に含めるか、同等のケースを既存の tracked acceptance test へ統合する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 499
+    finding: "`il_3d.len() < 3` の inner_loop は 463 行で earcut 入力から `continue` しているのに、499-505 行では `face.inner_loops` を無条件に再収集して `all_points` へ積んでいる。退化 loop の後ろに有効 hole がある face では、earcut の頂点番号と `mesh.positions` の並びがずれて、三角形が誤った 3D 点を参照する。"
+    suggestion: "`flat_coords` に実際に追加した inner-loop の点列だけを保持して、その順序で `all_points` を構築する。スキップした退化 loop は頂点配列にも入れない。"
+
+verdict: fail

@@ -82,9 +82,13 @@ export async function assertMeshHealthy(page: Page): Promise<void> {
       // different vertex indices.  Position-based grouping correctly identifies
       // genuinely shared edges regardless of the indexing scheme.
       const PREC = 6;
-      // Normalize -0 → 0 before toFixed so that "-0.000000" and "0.000000"
+      // Normalize -0 → 0 and near-zero values before toFixed so that
+      // e.g. "-0.000000" (from -6e-17) and "0.000000" (from +6e-17)
       // are treated as the same position key.
-      const round = (x: number) => (x === 0 ? 0 : x).toFixed(PREC);
+      const round = (x: number): string => {
+        const r = parseFloat(x.toFixed(PREC));
+        return (r === 0 ? 0 : r).toFixed(PREC);
+      };
       // Map each vertex index to a canonical position key
       const posKey = (idx: number) =>
         `${round(positions[idx * 3])},${round(positions[idx * 3 + 1])},${round(positions[idx * 3 + 2])}`;
