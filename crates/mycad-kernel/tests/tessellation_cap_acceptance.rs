@@ -203,10 +203,7 @@ fn t03_outward_normals_intersect() {
 }
 
 /// T04: box(10³) − cylinder(r=2, h=6) at origin — watertight via welded vertex check.
-/// Ignored: 192 seam edges not shared by exactly 2 triangles — known earcut same_sense=false
-/// winding / seam vertex mismatch issue. Tracked separately as out-of-scope for #56.
 #[test]
-#[ignore = "known seam mismatch: tracked separately"]
 fn t04_watertight_cut_hole() {
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();

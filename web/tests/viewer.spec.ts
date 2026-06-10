@@ -92,24 +92,10 @@ test("T02 screenshot - simple_box @stage1", async ({ page }) => {
 // T03: Console no error + mesh geometric invariants - all non-assembly examples
 // Checks: triangle count > 0, no NaN/Infinity, non-degenerate bbox, edge-manifold.
 //
-// Known-broken curved-surface booleans that fail the edge-manifold check (naked edges):
-// - boolean_box_cut: 192 naked edges (trimmed surface, #3)
-// - boolean_box_intersect: 4 naked edges (trimmed surface)
-// - boolean_box_void: 4 naked edges (trimmed surface)
-// - boolean_cut_cylinder_hole: 4 naked edges (trimmed surface, #3)
-// - boolean_cut_sphere_dimple: 4 naked edges (trimmed surface)
-// - boolean_intersect_box_cyl: 192 naked edges (n_u heuristic, #129 follow-up)
-// - boolean_fuse_box_cyl: 2 naked edges (UV-grid seam float precision; Rust assert_watertight_welded(1e-6) passes)
-// - boolean_intersect_cyl_sphere: 8 naked edges (sphere-cap boundary mismatch)
+// Known-broken curved-surface booleans that still have naked edges:
+// - boolean_intersect_box_cyl: n_u resolution mismatch across face boundary (#131 follow-up)
 const KNOWN_NAKED_EDGE_EXAMPLES = new Set([
-  "boolean_box_cut",
-  "boolean_box_intersect",
-  "boolean_box_void",
-  "boolean_cut_cylinder_hole",
-  "boolean_cut_sphere_dimple",
   "boolean_intersect_box_cyl",
-  "boolean_fuse_box_cyl",
-  "boolean_intersect_cyl_sphere",
 ]);
 
 const LOOPED_EXAMPLES = NON_ASSEMBLY_EXAMPLES.filter((n) => n !== "simple_box");

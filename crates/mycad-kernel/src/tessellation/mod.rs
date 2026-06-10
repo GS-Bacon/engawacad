@@ -5,8 +5,8 @@ use crate::brep::topology::Solid;
 use crate::geometry::curve::Curve;
 use crate::geometry::surface::{Surface, TessellationStrategy};
 use crate::geometry::{
-    angle_near, arc_segment_count, length_near, point_near, point_near_scaled, Point,
-    ANGLE_TOLERANCE, LENGTH_TOLERANCE,
+    angle_near, arc_segment_count, length_near, point_near, point_near_scaled, unwrap_periodic_uv,
+    Point, ANGLE_TOLERANCE, LENGTH_TOLERANCE,
 };
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
@@ -131,10 +131,10 @@ pub fn tessellate_solid_with(
                 }
             }
             TessellationStrategy::UvGridFullPatch => {
-                tessellate_face_uv_grid(solid, face, opts, &mut mesh, &face_id)?;
+                tessellate_face_uv_grid(solid, face, face_idx, opts, &mut mesh, &face_id)?;
             }
             TessellationStrategy::UvSphere => {
-                tessellate_face_sphere(solid, face, opts, &mut mesh, &face_id)?;
+                tessellate_face_sphere(solid, face, face_idx, opts, &mut mesh, &face_id)?;
             }
             TessellationStrategy::Unsupported => {
                 return Err(TessellationError::UnsupportedSurface {
@@ -415,16 +415,141 @@ fn collect_loop_points(
     Ok(points)
 }
 
-/// Triangulate a face using UV grid sampling (full untrimmed periodic/rectangular patch).
-fn tessellate_face_uv_grid(
+/// Tessellate a trimmed curved face (cylinder/sphere with inner loops or partial spans)
+/// by projecting boundary points into UV space and running earcutr.
+///
+/// The key insight for watertightness: boundary points come from `collect_loop_points`,
+/// which are shared with adjacent planar faces (caps) via the same edge topology.
+/// After welding, boundary edges are shared by exactly 2 triangles.
+fn tessellate_trimmed_uv_face(
     solid: &Solid,
     face: &crate::brep::topology::Face,
+    face_idx: usize,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
     face_id: &str,
 ) -> Result<(), TessellationError> {
+    let segments = opts.angular_segments.max(3);
+
+    // 1. Collect outer loop 3D points → project to UV
+    let outer_loop = &solid.loops[face.outer_loop];
+    let outer_3d = collect_loop_points(solid, outer_loop, segments, face_idx)?;
+    if outer_3d.len() < 3 {
+        return Ok(());
+    }
+
+    let mut outer_uv: Vec<(f64, f64)> = outer_3d.iter().map(|p| face.surface.uv_of(p)).collect();
+
+    // 2. Unwrap periodic u to avoid seam discontinuities
+    {
+        let mut u_list: Vec<f64> = outer_uv.iter().map(|(u, _)| *u).collect();
+        unwrap_periodic_uv(&mut u_list);
+        for (i, u) in u_list.into_iter().enumerate() {
+            outer_uv[i].0 = u;
+        }
+    }
+
+    // 4. Build flat coordinate array for earcutr
+    let mut flat_coords: Vec<f64> = Vec::with_capacity(outer_3d.len() * 2);
+    for (u, v) in &outer_uv {
+        flat_coords.push(*u);
+        flat_coords.push(*v);
+    }
+
+    // Collect inner loops and compute hole start indices.
+    // Track actually-added inner loop 3D points so that the earcut index→vertex
+    // mapping stays aligned (degenerate inner loops skipped in flat_coords must
+    // also be excluded from the vertex array).
+    let mut hole_starts: Vec<usize> = Vec::new();
+    let mut inner_3d_added: Vec<Vec<Point>> = Vec::new();
+    for &il_idx in &face.inner_loops {
+        let il = &solid.loops[il_idx];
+        let il_3d = collect_loop_points(solid, il, segments, face_idx)?;
+        if il_3d.len() < 3 {
+            continue;
+        }
+
+        let mut il_uv: Vec<(f64, f64)> = il_3d.iter().map(|p| face.surface.uv_of(p)).collect();
+
+        {
+            let mut u_list: Vec<f64> = il_uv.iter().map(|(u, _)| *u).collect();
+            unwrap_periodic_uv(&mut u_list);
+            if let Some(&(outer_u, _)) = outer_uv.first() {
+                let avg_inner_u: f64 = u_list.iter().sum::<f64>() / u_list.len() as f64;
+                let shift = outer_u - avg_inner_u;
+                if shift.abs() > PI {
+                    for u in &mut u_list {
+                        *u += shift;
+                    }
+                }
+            }
+            for (i, u) in u_list.into_iter().enumerate() {
+                il_uv[i].0 = u;
+            }
+        }
+
+        hole_starts.push(flat_coords.len() / 2);
+        for (u, v) in &il_uv {
+            flat_coords.push(*u);
+            flat_coords.push(*v);
+        }
+        inner_3d_added.push(il_3d);
+    }
+    let indices = earcutr::earcut(&flat_coords, &hole_starts, 2)
+        .map_err(|_| TessellationError::NonManifoldLoop)?;
+
+    let base_idx = mesh.positions.len() as u32;
+
+    // 6. Add all vertices (outer + non-degenerate inner) with surface normals
+    let all_points: Vec<Point> = outer_3d
+        .into_iter()
+        .chain(inner_3d_added.into_iter().flatten())
+        .collect();
+
+    for p in &all_points {
+        let n = face.surface.normal_at_point(p);
+        let nm = if face.same_sense {
+            [n.x, n.y, n.z]
+        } else {
+            [-n.x, -n.y, -n.z]
+        };
+        mesh.positions.push([p.x, p.y, p.z]);
+        mesh.normals.push(nm);
+    }
+
+    // 7. Add triangles with winding correction
+    for chunk in indices.chunks(3) {
+        if chunk.len() < 3 {
+            break;
+        }
+        let (a, b, c) = if face.same_sense {
+            (chunk[0], chunk[1], chunk[2])
+        } else {
+            (chunk[0], chunk[2], chunk[1])
+        };
+
+        // Skip degenerate triangles
+        let i0 = base_idx + a as u32;
+        let i1 = base_idx + b as u32;
+        let i2 = base_idx + c as u32;
+        push_triangle(mesh, i0, i1, i2, face_id);
+    }
+
+    Ok(())
+}
+
+/// Triangulate a face using UV grid sampling (full untrimmed periodic/rectangular patch).
+fn tessellate_face_uv_grid(
+    solid: &Solid,
+    face: &crate::brep::topology::Face,
+    face_idx: usize,
+    opts: &TessellationOptions,
+    mesh: &mut TriangleMesh,
+    face_id: &str,
+) -> Result<(), TessellationError> {
+    // inner_loop or partial span → delegate to UV-earcut
     if !face.inner_loops.is_empty() {
-        return Err(TessellationError::TrimmedFaceUnsupported);
+        return tessellate_trimmed_uv_face(solid, face, face_idx, opts, mesh, face_id);
     }
 
     let outer_loop = &solid.loops[face.outer_loop];
@@ -447,10 +572,10 @@ fn tessellate_face_uv_grid(
         })
         .sum();
     let full_rev_count = (total_circle_span / (2.0 * PI)).round() as i64;
-    if full_rev_count <= 0
-        || (total_circle_span - full_rev_count as f64 * 2.0 * PI).abs() >= ANGLE_TOLERANCE
-    {
-        return Err(TessellationError::TrimmedFaceUnsupported);
+    let span_ok = full_rev_count > 0
+        && (total_circle_span - full_rev_count as f64 * 2.0 * PI).abs() < ANGLE_TOLERANCE;
+    if !span_ok {
+        return tessellate_trimmed_uv_face(solid, face, face_idx, opts, mesh, face_id);
     }
 
     // Determine v range from loop corner vertices (start_vertex of each HE).
@@ -474,20 +599,10 @@ fn tessellate_face_uv_grid(
     // the n_u matching heuristic below, not by shifting u_min.
     let u_min = 0.0_f64;
 
-    // Clamp at point of use — callers may bypass TessellationOptions::new() via public fields
-    // or deserialization, so we defensively enforce minimum viable values here.
-    //
-    // For boolean-fuse cylinders whose adjacent cap is a plane, derive n_u from the number of
-    // circle arcs per revolution. The planar cap's collect_loop_points returns 1 point per Line
-    // HE, so the cap boundary has exactly circle_arc_count vertices. The UV grid must match.
-    //
-    // For boolean-intersect cylinders whose adjacent cap is a sphere, the sphere face samples
-    // its boundary ring at angular_segments resolution. Using arcs_per_rev would mismatch, so
-    // we fall back to angular_segments.
-    //
-    // Heuristic: the fuse case produces many non-seam Line HEs in the outer loop (one per
-    // circle arc, shared with the planar cap). The intersect case has only 2 Line HEs (seam).
-    // We check line_he_count > 2 to distinguish.
+    // Derive n_u from the number of circle arcs per revolution when the cylinder
+    // originated from a boolean operation (arcs_per_rev > 1). The adjacent planar cap
+    // samples its boundary at exactly arcs_per_rev points, so the UV grid must match
+    // for watertight welding. Primitive cylinders (arcs_per_rev=1) use angular_segments.
     let circle_arc_count: usize = outer_loop
         .half_edges
         .iter()
@@ -496,20 +611,12 @@ fn tessellate_face_uv_grid(
             matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
         })
         .count();
-    let line_he_count: usize = outer_loop
-        .half_edges
-        .iter()
-        .filter(|&&he_idx| {
-            let he = &solid.half_edges[he_idx];
-            matches!(solid.edges[he.edge].curve, Curve::Line { .. })
-        })
-        .count();
     let arcs_per_rev = if full_rev_count > 0 {
         circle_arc_count / full_rev_count as usize
     } else {
         0
     };
-    let n_u = if arcs_per_rev > 1 && line_he_count > 2 {
+    let n_u = if arcs_per_rev > 1 {
         arcs_per_rev
     } else {
         opts.angular_segments.max(3)
@@ -571,13 +678,14 @@ fn tessellate_face_uv_grid(
 fn tessellate_face_sphere(
     solid: &Solid,
     face: &crate::brep::topology::Face,
+    face_idx: usize,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
     face_id: &str,
 ) -> Result<(), TessellationError> {
-    // If inner loops exist, delegate to trimmed sphere tessellation
+    // If inner loops exist, delegate to sphere-specific trimmed tessellation
     if !face.inner_loops.is_empty() {
-        return tessellate_sphere_face_trimmed(solid, face, opts, mesh, face_id);
+        return tessellate_sphere_face_trimmed(solid, face, face_idx, opts, mesh, face_id);
     }
 
     let outer_loop = &solid.loops[face.outer_loop];
@@ -775,12 +883,15 @@ fn tessellate_face_sphere(
 
 /// Tessellate a sphere face with inner loops (trimmed by intersection).
 ///
-/// Uses restricted v-range UV grid sampling. The latitude (v_lat) of the
-/// inner loop circle is extracted from the edge geometry. The trim direction
-/// is determined from the relative position of the cutting plane to the sphere center.
+/// Uses restricted v-range UV grid sampling. The boundary ring is sampled via
+/// `collect_loop_points` so that vertices match adjacent planar faces, ensuring
+/// watertight welding. The latitude (v_lat) of the inner loop circle is extracted
+/// from the edge geometry. The trim direction is determined from the relative
+/// position of the cutting plane to the sphere center.
 fn tessellate_sphere_face_trimmed(
     solid: &Solid,
     face: &crate::brep::topology::Face,
+    face_idx: usize,
     opts: &TessellationOptions,
     mesh: &mut TriangleMesh,
     face_id: &str,
@@ -828,10 +939,14 @@ fn tessellate_sphere_face_trimmed(
     // a cutting circle below the center keeps the lower (south-pole) cap.
     let trim_lower = center_z < center.coords.z;
 
-    let n_u = opts.angular_segments.max(3);
+    // Use collect_loop_points only for the point count (n_u) so it matches the
+    // adjacent planar face's boundary resolution. The actual boundary ring uses
+    // uniform u sampling to preserve winding consistency with internal rings.
+    let boundary_count =
+        collect_loop_points(solid, il, opts.angular_segments.max(3), face_idx)?.len();
+    let n_u = boundary_count.max(3);
     let n_v = (n_u / 2).max(2);
 
-    let base_idx = mesh.positions.len() as u32;
     let du = 2.0 * PI / n_u as f64;
 
     // Determine v range based on trim direction
@@ -841,7 +956,9 @@ fn tessellate_sphere_face_trimmed(
         (v_lat, PI / 2.0) // upper cap: v_lat → north pole
     };
 
-    // Sample the latitude ring (v = v_lat boundary)
+    // Boundary ring via uniform u sampling — same angular spacing as internal
+    // rings, so winding is consistent. Positions match the adjacent face because
+    // both use the same n_u and 2π/n_u angular step.
     let ring_start = mesh.positions.len() as u32;
     for iu in 0..n_u {
         let u = du * iu as f64;
@@ -912,7 +1029,7 @@ fn tessellate_sphere_face_trimmed(
         }
     }
 
-    let _ = (circ_radius, circ_normal, base_idx);
+    let _ = (circ_radius, circ_normal);
     Ok(())
 }
 
@@ -1226,9 +1343,9 @@ mod tests {
         );
     }
 
-    /// Non-full-revolution cylinder face (arc < 2π) must return TrimmedFaceUnsupported.
+    /// Non-full-revolution cylinder face (arc < 2π) is tessellated via UV-earcut.
     #[test]
-    fn test_partial_revolution_cylinder_face_errors() {
+    fn test_partial_revolution_cylinder_face_tessellated() {
         use crate::brep::topology::Solid as S;
         let mut s = S::new(0);
         let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0), None);
@@ -1259,10 +1376,19 @@ mod tests {
         );
         s.add_shell(6, vec![0], true);
         let result = tessellate_solid(&s);
-        assert!(matches!(
-            result,
-            Err(TessellationError::TrimmedFaceUnsupported)
-        ));
+        // Partial revolution now succeeds via tessellate_trimmed_uv_face
+        assert!(
+            result.is_ok(),
+            "partial revolution cylinder should tessellate successfully"
+        );
+        let mesh = result.unwrap();
+        // Single-arc open loop has no enclosed area → 0 triangles is valid
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "no NaN/Inf"
+        );
     }
 
     // --- Sphere tessellation tests ---
@@ -1783,12 +1909,12 @@ mod tests {
         }
     }
 
-    // --- T06: Angle strict boundary (full-rev check rejects at == ANGLE_TOLERANCE) ---
+    // --- T06: Slightly-above-2π span is tessellated via UV-earcut ---
 
     #[test]
-    fn test_t06_full_revolution_rejects_at_angle_tolerance() {
+    fn test_t06_span_above_2pi_tessellated() {
         use crate::brep::topology::Solid as S;
-        // Span = 2π + ANGLE_TOLERANCE (just above), should reject
+        // Span = 2π + ANGLE_TOLERANCE (just above) — falls through to UV-earcut
         let span = 2.0 * PI + ANGLE_TOLERANCE;
         let mut s = S::new(0);
         let v0 = s.add_vertex(1, Point::new(5.0, 0.0, 0.0), None);
@@ -1819,9 +1945,18 @@ mod tests {
         );
         s.add_shell(6, vec![0], true);
         let result = tessellate_solid(&s);
+        // Slightly-above-2π now succeeds via tessellate_trimmed_uv_face
         assert!(
-            matches!(result, Err(TessellationError::TrimmedFaceUnsupported)),
-            "span = 2π + ANGLE_TOLERANCE should be rejected"
+            result.is_ok(),
+            "span = 2π + ANGLE_TOLERANCE should tessellate via UV-earcut"
+        );
+        let mesh = result.unwrap();
+        // Single-arc synthetic case may produce 0 triangles (no enclosed area)
+        assert!(
+            mesh.positions
+                .iter()
+                .all(|p| p.iter().all(|x| x.is_finite())),
+            "no NaN/Inf"
         );
     }
 

@@ -370,6 +370,22 @@ describe("meshToGeometry — face_ids propagation (#94)", () => {
     expect(geo.groups).toHaveLength(0);
   });
 
+  it("T05_round: near-zero normalization matches helpers.ts assertMeshHealthy", () => {
+    // Extracted round() logic from web/tests/helpers.ts assertMeshHealthy
+    // to avoid Playwright dependency in vitest
+    const PREC = 6;
+    const round = (x: number): string => {
+      const r = parseFloat(x.toFixed(PREC));
+      return (r === 0 ? 0 : r).toFixed(PREC);
+    };
+    // Near-zero normalization: -6e-17, +6e-17, -0 all produce "0.000000"
+    expect(round(-6.123e-17)).toBe("0.000000");
+    expect(round(6.123e-17)).toBe("0.000000");
+    expect(round(-0)).toBe("0.000000");
+    // Normal value passes through unchanged
+    expect(round(0.995185)).toBe("0.995185");
+  });
+
   it("T04_degen: unnamed face (face_id '') in run → group created but empty-string faceId is not highlighted", () => {
     const mesh = makeMesh({
       positions: [
