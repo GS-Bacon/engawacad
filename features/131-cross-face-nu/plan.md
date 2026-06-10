@@ -1,0 +1,175 @@
+## In-Scope / Out-of-Scope
+<!-- ADR-006 §plan.md 必須セクション。GLM SCOPE ペルソナが存在を検証する。 -->
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `tessellate_face_uv_grid` の `n_u` 決定を、隣接キャップ面の surface 型から導出するロジックへ昇格 | `tessellate_trimmed_uv_face` / earcut 経路の変更 |
+| twin half-edge → 隣接面を辿る `adjacent_face_idx` ヘルパー追加 | Solid への twin/隣接インデックスのキャッシュ構造追加 |
+| 隣接が Sphere → `angular_segments`、それ以外（Plane）→ `arcs_per_rev` | Cone キャップ・混在キャップ（上下で型が異なる円柱）の特別扱い |
+| `t05_intersect_box_cyl_watertight` の `#[ignore]` 解除（平面キャップ分岐の回帰化） | 新規 cyl∩sphere テスト追加（既存 t02 がカバー済み） |
+| 未追跡デバッグ空スタブ12本の除去 | tessellation アルゴリズム本体（UV サンプリング式）の変更 |
+
+## Non-Goals
+<!-- Out-of-Scope と同内容でも重複 OK。dispatch-codex-auto.ts の guard が参照する。 -->
+- メッシュ出力の変更: 本変更は挙動保存（box∩cyl→n_u=64, cyl∩sphere→n_u=32 を現行と同値で導出）。positions/indices は不変。
+- 性能最適化: `adjacent_face_idx` は O(n) 線形走査のまま（隣接キャッシュは導入しない）。
+- 混在キャップ円柱（上=平面 / 下=球）の厳密対応: 現状到達不能。`any(Sphere)` で球優先のみ。該当時は別 Issue。
+- Cone キャップ: Out-of-Scope。Plane と同じ `arcs_per_rev` 分岐に落ちる（既存挙動踏襲）。
+
+## 実装対象
+<!-- Issue: #131 -->
+<!-- 影響クレート/ファイル: crates/mycad-kernel/src/tessellation/mod.rs, crates/mycad-kernel/tests/boundary_align_acceptance.rs -->
+
+### 背景（自律判断ログ）
+Issue #131 が前提とする `arcs_per_rev > 1 && line_he_count > 2` の "Fix C" は**現作業ツリーに存在しない**（`line_he_count` 変数自体が無い）。現行は #130 由来の `if arcs_per_rev > 1 { arcs_per_rev } else { angular_segments }`（mod.rs:619-623）。この単純版で box∩cyl（t05, 現状 ignore だが明示実行でパス）と cyl∩sphere（t02, アクティブでパス）の両方が既に水密。理由は Boolean 生成の境界円弧数が偶然キャップ分割数を符号化しているため（box∩cyl=64弧, cyl∩sphere=32弧）。本変更は**実バグ修正ではなく、その偶然依存を隣接面型ベースの原理的ロジックへ昇格させる堅牢化リファクタ**（挙動保存）。ユーザーは #131 解消済みを認識の上で cross-face 実装（方針 B）を選択済み。
+
+### 変更1: tessellation/mod.rs — n_u 決定ロジック差し替え
+
+before（mod.rs:602-623 付近）:
+```rust
+    // Derive n_u from the number of circle arcs per revolution when the cylinder
+    // originated from a boolean operation (arcs_per_rev > 1). The adjacent planar cap
+    // samples its boundary at exactly arcs_per_rev points, so the UV grid must match
+    // for watertight welding. Primitive cylinders (arcs_per_rev=1) use angular_segments.
+    let circle_arc_count: usize = outer_loop
+        .half_edges
+        .iter()
+        .filter(|&&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+        })
+        .count();
+    let arcs_per_rev = if full_rev_count > 0 {
+        circle_arc_count / full_rev_count as usize
+    } else {
+        0
+    };
+    let n_u = if arcs_per_rev > 1 {
+        arcs_per_rev
+    } else {
+        opts.angular_segments.max(3)
+    };
+```
+
+after:
+```rust
+    // Derive n_u from the circle-arc topology plus the adjacent cap face type.
+    //
+    // After a boolean operation the cylinder lateral loop has multiple Circle arcs per
+    // revolution (arcs_per_rev > 1). The adjacent cap face determines the required n_u:
+    //   • Adjacent cap is a Plane  → the cap boundary uses exactly arcs_per_rev sample
+    //     points, so set n_u = arcs_per_rev.
+    //   • Adjacent cap is a Sphere → the sphere face is tessellated with angular_segments
+    //     longitude strips, so set n_u = angular_segments.
+    // Primitive cylinders (arcs_per_rev = 1) and unknown adjacency fall back to
+    // angular_segments (the pre-boolean default).
+    let circle_arc_count: usize = outer_loop
+        .half_edges
+        .iter()
+        .filter(|&&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+        })
+        .count();
+    let arcs_per_rev = if full_rev_count > 0 {
+        circle_arc_count / full_rev_count as usize
+    } else {
+        0
+    };
+    let n_u = if arcs_per_rev > 1 {
+        // Walk the twin of each Circle-arc half-edge to identify the adjacent cap face.
+        let adj_is_sphere = outer_loop.half_edges.iter().any(|&he_idx| {
+            let he = &solid.half_edges[he_idx];
+            matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+                && adjacent_face_idx(solid, he_idx)
+                    .map(|f| matches!(solid.faces[f].surface, Surface::Sphere { .. }))
+                    .unwrap_or(false)
+        });
+        if adj_is_sphere {
+            opts.angular_segments.max(3)
+        } else {
+            arcs_per_rev
+        }
+    } else {
+        opts.angular_segments.max(3)
+    };
+```
+
+### 変更2: tessellation/mod.rs — 新ヘルパー追加（tessellate_face_uv_grid の直後など、ファイル下部）
+
+```rust
+/// Find the face on the opposite side of `he_idx`'s shared edge.
+///
+/// twin = the other half-edge referencing the same `edge`. Returns the index of the face
+/// whose outer or inner loop contains that twin. The Solid stores no twin/adjacency cache,
+/// so this is a linear scan; iteration is in index order for determinism.
+fn adjacent_face_idx(solid: &Solid, he_idx: usize) -> Option<usize> {
+    let edge = solid.half_edges[he_idx].edge;
+    let twin = (0..solid.half_edges.len())
+        .find(|&i| i != he_idx && solid.half_edges[i].edge == edge)?;
+    (0..solid.faces.len()).find(|&f| {
+        let face = &solid.faces[f];
+        solid.loops[face.outer_loop].half_edges.contains(&twin)
+            || face
+                .inner_loops
+                .iter()
+                .any(|&l| solid.loops[l].half_edges.contains(&twin))
+    })
+}
+```
+- `Surface` は mod.rs line 6 で import 済み、追加 import 不要。
+
+### 変更3: tests/boundary_align_acceptance.rs — t05 の ignore 解除
+
+before（229-237 付近）:
+```rust
+// Ignored: the cylinder lateral face in box∩cyl intersect has the same topology as
+// cyl∩sphere intersect (128 Circle HEs, 2 seam Line HEs, 0 horizontal Line HEs).
+// The n_u heuristic cannot distinguish planar-cap intersect from sphere-cap intersect.
+// Fixing this requires cross-face adjacency awareness, tracked as a follow-up.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "n_u heuristic cannot distinguish planar-cap vs sphere-cap intersect; needs cross-face adjacency awareness (see #131)"]
+fn t05_intersect_box_cyl_watertight() {
+```
+after:
+```rust
+// box∩cyl intersect produces planar caps; cross-face adjacency (#131) selects
+// n_u = arcs_per_rev so the cylinder seam rows align with the planar cap boundary.
+// This is the planar-cap regression for the adjacency logic (sphere-cap branch is
+// covered by tessellation_cap_acceptance::t02_watertight_intersect).
+// ---------------------------------------------------------------------------
+#[test]
+fn t05_intersect_box_cyl_watertight() {
+```
+
+### 変更4: 未追跡デバッグ空スタブの除去（crates/mycad-kernel/tests 配下）
+`debug_trim.rs`〜`debug_trim5.rs`(5), `diag_box_cut.rs`〜`diag_box_cut5.rs`(5), `diag_intersect.rs`, `diagnose_trim.rs` の計12本（中身は一行コメントのみの空スタブ）。未追跡のため履歴影響なし。STEP 8 で Claude が直接除去する（GLM 実装対象外）。
+
+## 設計方針
+- **決定性**: `adjacent_face_idx` は `(0..len)` の index 昇順走査のみ。乱数・時刻・HashMap 反復順に依存しない。同一 Solid → 同一隣接面 → 同一 n_u。既存決定性テストで担保。
+- **B-rep トポロジー妥当性**: 本変更はトポロジーを生成・改変しない（テッセレーション時の読み取りのみ）。Euler-Poincaré は対象外（N/A）。
+- **退化幾何**: `adjacent_face_idx` は twin が見つからない／loop に属さない場合 `None` を返し、`unwrap_or(false)` で従来分岐（arcs_per_rev）に安全フォールバック。自己隣接周期面（seam）は Circle ではなく Line なので Circle フィルタで除外され影響なし。
+- **derive 規約**: 新規型なし、N/A。
+- **エラーハンドリング**: 新規エラー型なし。`Option` で表現、panic 経路追加なし。
+- **workspace.dependencies**: 依存追加なし、N/A。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | box∩cyl intersect を2回テッセレートし positions/normals/indices 一致 | 新規 assert_eq! テスト（box∩cyl intersect を adjacent_face_idx 経由で2回実行・完全一致, STEP 6.6 で GLM 実装） |
+| T02 | 正常系（平面キャップ） | `t05_intersect_box_cyl_watertight` の ignore 解除：box∩cyl intersect が welded watertight | 全 undirected edge が exactly 2 triangle 共有 |
+| T03 | 正常系（球キャップ） | 既存 `tessellation_cap_acceptance::t02_watertight_intersect`（cyl∩sphere）が引き続きパス | watertight 維持（リグレッション無し） |
+| T04_boundary | 境界（プリミティブ円柱） | arcs_per_rev<=1 の素の円柱が従来通り angular_segments で分割されメッシュ不変 | 既存円柱テスト維持 |
+| T05_degen | 退化（隣接判定失敗） | twin が辿れない／非 Sphere 隣接で arcs_per_rev フォールバックが選ばれる | panic せず従来分岐へ |
+| T06 | 挙動保存 | 全カーネルテスト + cargo xtask ci がグリーン（メッシュ出力不変） | 0 failed |
+
+## 幾何的不変条件チェックリスト
+- N/A: partition 出力の polygon 頂点順と assemble の normal 処理（本変更は partition/assemble を触らない）
+- N/A: 各プリミティブの face ごとの outer_loop 2D 向き（生成側未変更）
+- N/A: flip_normals / same_sense の意味論（本変更は same_sense 既存ロジックを変更しない）
+- N/A: pslg_subdivide の出力向き（本変更は pslg を触らない）
+
+## 実装補足（レビュー反映 round 3）
+- **AM01（混在キャップ）**: 変更1 の after コードコメント、または `adjacent_face_idx` 付近に以下を明記すること:
+  「上下キャップで型が混在する円柱（例: 上=Sphere / 下=Plane）の場合、`any(Sphere)` により Sphere 優先で `angular_segments` を選ぶ。これは現状の Boolean では到達不能な構成であり実挙動は未検証（Non-Goals）。混在対応が必要になった場合は別 Issue。」
+- **SC01（Issue 本文の古い前提）**: 後処理として Issue #131 に「現行は #130 由来の単純版で既に水密だったが偶然依存があったため、cross-face 実装を堅牢化リファクタとして採用した」旨のクローズコメントを付す（commit 本文にも同趣旨を記載）。

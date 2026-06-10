@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: low
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 2769
+    finding: "`test_adjacent_face_idx_sphere_cap` 内の `use crate::geometry::Vec3;` が未使用です。`cargo clippy --tests -- -D warnings` では `unused_imports` で失敗します。"
+    suggestion: "未使用の `Vec3` import を削除する。"
+
+verdict: pass

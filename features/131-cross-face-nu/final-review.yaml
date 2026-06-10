@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 640
+    finding: "_adj_is_sphere が計算されているが使用されていない（_ プレフィックスで警告抑制）。コメントには「Sphere branch should switch to the sphere face's actual n_u」とあるが、Sphere ケースで opts.angular_segments に切り替えるロジックが未実装。arcs_per_rev < angular_segments のケースでは watertight が保証されない可能性がある"
+    suggestion: "Sphere ケースで n_u = opts.angular_segments に切り替える条件分岐を追加するか、arcs_per_rev >= angular_segments のアサーションを追加する"
+
+verdict: pass

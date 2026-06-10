@@ -1,0 +1,38 @@
+{
+  "totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "test_adjacent_face_idx_sphere_cap",
+      "kind": "other"
+    },
+    {
+      "name": "test_adjacent_face_idx_plane_cap",
+      "kind": "other"
+    },
+    {
+      "name": "t01_determinism_cross_face_nu",
+      "kind": "determinism"
+    },
+    {
+      "name": "t04_boundary_primitive_cylinder_angular_segments",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t05_degen_non_sphere_adjacency_no_panic",
+      "kind": "degenerate"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 5,
+    "determinism": 1,
+    "degenerate": 2,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

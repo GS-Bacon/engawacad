@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: high
+    section: "テスト計画"
+    finding: "T01 決定性テストが「既存 t01 系で担保」と記載されているが、既存テストが cross-face adjacency ロジックを通ることを確認する必要がある。adjacent_face_idx の index 順走査は決定的だが、新ロジックが既存テストカバレッジで実際に実行されることを検証すべき"
+    suggestion: "T01 を単一の決定性テストとして明示的に実装し、adjacent_face_idx 通過経路を含めた 2 回実行で positions/normals/indices が完全一致することを assert する"
+
+verdict: pass

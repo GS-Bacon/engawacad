@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "変更1 > after コード"
+    finding: "`.any(|&he_idx| ...)` で「最初に見つかった Sphere 隣接」で判定しているが、同一ループ内に Plane キャップと Sphere キャップが混在する場合の挙動が未定義（Non-Goals では「現状到達不能」としつつ `any(Sphere)` で球優先のみとあるが、コード上の挙動が明記されていない）"
+    suggestion: "Non-Goals に記載済みのため指摘レベルは medium で留めるが、コードコメントまたは Non-Goals に「混在時は Sphere 優先で angular_segments にフォールバック（現状到達不能のため実振る舞いは未検証）」と補足すること"
+
+verdict: pass
