@@ -415,6 +415,32 @@ fn collect_loop_points(
     Ok(points)
 }
 
+/// 内側ループ u 列を、外側ループ u スパンの中央値に「2π の整数倍」だけシフトする。
+///
+/// 周期保存: `shift = round((outer_center - avg_inner) / 2π) * 2π`。
+/// outer 配列が空のときは入力をそのまま返す (no-op、保険ガード)。
+pub fn periodic_u_shift(outer_us: &[f64], inner_us: &mut [f64]) {
+    if outer_us.is_empty() || inner_us.is_empty() {
+        return;
+    }
+    let (u_min, u_max) = outer_us
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &u| {
+            (lo.min(u), hi.max(u))
+        });
+    let outer_center = 0.5 * (u_min + u_max);
+    let avg_inner: f64 = inner_us.iter().sum::<f64>() / inner_us.len() as f64;
+    let raw_shift = outer_center - avg_inner;
+    let two_pi = 2.0 * PI;
+    let k = (raw_shift / two_pi).round();
+    let shift = k * two_pi;
+    if shift != 0.0 {
+        for u in inner_us.iter_mut() {
+            *u += shift;
+        }
+    }
+}
+
 /// Tessellate a trimmed curved face (cylinder/sphere with inner loops or partial spans)
 /// by projecting boundary points into UV space and running earcutr.
 ///
@@ -474,15 +500,8 @@ fn tessellate_trimmed_uv_face(
         {
             let mut u_list: Vec<f64> = il_uv.iter().map(|(u, _)| *u).collect();
             unwrap_periodic_uv(&mut u_list);
-            if let Some(&(outer_u, _)) = outer_uv.first() {
-                let avg_inner_u: f64 = u_list.iter().sum::<f64>() / u_list.len() as f64;
-                let shift = outer_u - avg_inner_u;
-                if shift.abs() > PI {
-                    for u in &mut u_list {
-                        *u += shift;
-                    }
-                }
-            }
+            let outer_us: Vec<f64> = outer_uv.iter().map(|(u, _)| *u).collect();
+            periodic_u_shift(&outer_us, &mut u_list);
             for (i, u) in u_list.into_iter().enumerate() {
                 il_uv[i].0 = u;
             }
