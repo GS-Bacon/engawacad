@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "crates/mycad-kernel/tests/trim_surface_uv_shift_acceptance.rs"
+    line_hint: 124
+    finding: "Issue 作業内容3「穴位置を周方向に掃引するパラメタライズドテスト追加 (u ≈ 0 / π/2 / π / -π/2 / -π、シーム横断含む)」および「naked_edge = 0 / 三角形数の検証」が未実装"
+    suggestion: "Boolean Cut で穴の u 座標を変化させるパラメトラライズドテストを追加し、各ケースで naked_edge == 0 かつ三角形数が正しいことを検証すること。T09 は単一回帰テストであり、シーム横断 (u≈±π) の網羅が欠如している。"
+
+verdict: fail
