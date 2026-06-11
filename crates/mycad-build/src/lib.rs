@@ -2,6 +2,7 @@ use mycad_format::Feature;
 use mycad_kernel::booleans::boolean;
 use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::error::KernelError;
+use mycad_kernel::geometry::transform::{euler_to_matrix, rotate_vec};
 use mycad_kernel::geometry::Plane;
 use mycad_kernel::geometry::Point;
 use mycad_kernel::geometry::Vec3;
@@ -9,6 +10,29 @@ use mycad_kernel::primitives::{make_cuboid, make_cylinder, make_extrusion, make_
 use mycad_kernel::BooleanOp;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+const IDENTITY3: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+/// 3×3 行列積 (純関数、決定的)
+fn matrix_mul3(a: [[f64; 3]; 3], b: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    [
+        [
+            a[0][0] * b[0][0] + a[0][1] * b[1][0] + a[0][2] * b[2][0],
+            a[0][0] * b[0][1] + a[0][1] * b[1][1] + a[0][2] * b[2][1],
+            a[0][0] * b[0][2] + a[0][1] * b[1][2] + a[0][2] * b[2][2],
+        ],
+        [
+            a[1][0] * b[0][0] + a[1][1] * b[1][0] + a[1][2] * b[2][0],
+            a[1][0] * b[0][1] + a[1][1] * b[1][1] + a[1][2] * b[2][1],
+            a[1][0] * b[0][2] + a[1][1] * b[1][2] + a[1][2] * b[2][2],
+        ],
+        [
+            a[2][0] * b[0][0] + a[2][1] * b[1][0] + a[2][2] * b[2][0],
+            a[2][0] * b[0][1] + a[2][1] * b[1][1] + a[2][2] * b[2][1],
+            a[2][0] * b[0][2] + a[2][1] * b[1][2] + a[2][2] * b[2][2],
+        ],
+    ]
+}
 
 #[derive(Debug, Clone)]
 pub struct Body {
@@ -341,8 +365,13 @@ const MAX_REFERENCE_DEPTH: usize = 16;
 /// and aggregating all live Bodies.
 ///
 /// `base_dir` is the parent directory of the `.mycad` file being built.
-/// Each Component's `transform.position` is accumulated along the tree path
-/// and applied as a translation to the resulting Bodies.
+/// Each Component's `transform` (position + rotation) is accumulated along the tree path
+/// and applied to the resulting Bodies.
+///
+/// Transform composition:
+///   total_rotation = accumulated_rotation * local_rotation
+///   total_offset   = accumulated_offset + accumulated_rotation * local_offset
+///   Apply order: rotate (around origin) → translate
 pub fn build_assembly(
     doc: &Document,
     base_dir: &Path,
@@ -356,22 +385,25 @@ pub fn build_assembly(
         &mut visiting,
         0,
         Vec3::zeros(),
+        IDENTITY3,
         gen,
         &mut bodies,
     )?;
     Ok(bodies)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_component_tree(
     component: &Component,
     base_dir: &Path,
     visiting: &mut Vec<PathBuf>,
     depth: usize,
     accumulated_offset: Vec3,
+    accumulated_rotation: [[f64; 3]; 3],
     gen: &mut IdGenerator,
     out: &mut Vec<Body>,
 ) -> Result<(), KernelError> {
-    // Accumulate this component's position into the running offset (rotation ignored until #77)
+    // --- position ---
     let p = &component.transform.position;
     if p.iter().any(|v| !v.is_finite()) {
         return Err(KernelError::InvalidParameter {
@@ -379,12 +411,33 @@ fn build_component_tree(
         });
     }
     let local_offset = Vec3::new(p[0], p[1], p[2]);
-    let total_offset = accumulated_offset + local_offset;
 
-    // 1. Build this component's own features and apply accumulated translation
+    // --- rotation (deg → rad → matrix) ---
+    let r = &component.transform.rotation;
+    if r.iter().any(|v| !v.is_finite()) {
+        return Err(KernelError::InvalidParameter {
+            kind: "transform.rotation",
+        });
+    }
+    let local_rotation = euler_to_matrix(r[0].to_radians(), r[1].to_radians(), r[2].to_radians());
+
+    // 累積:
+    //   p_world(p_local) = accumulated_offset + accumulated_rotation * (local_offset + local_rotation * p_local)
+    // を分配すると:
+    //   total_offset   = accumulated_offset + accumulated_rotation * local_offset
+    //   total_rotation = accumulated_rotation * local_rotation
+    let rotated_local_offset = rotate_vec(local_offset, accumulated_rotation);
+    let total_offset = accumulated_offset + rotated_local_offset;
+    let total_rotation = matrix_mul3(accumulated_rotation, local_rotation);
+
+    // 1. Build this component's own features and apply total transform
     if !component.features.is_empty() {
         let built = build_bodies_from_features(&component.features, gen)?;
         for mut body in built.live().cloned() {
+            // 順序: rotate (around origin) → translate
+            if total_rotation != IDENTITY3 {
+                body.solid.rotate(total_rotation, Point::origin());
+            }
             if total_offset != Vec3::zeros() {
                 body.solid.translate(total_offset);
             }
@@ -392,7 +445,7 @@ fn build_component_tree(
         }
     }
 
-    // 2. Resolve reference (if any) — propagates total_offset into the referenced tree
+    // 2. Resolve reference (if any) — propagates total_offset/total_rotation into the referenced tree
     if let Some(reference) = &component.reference {
         if depth >= MAX_REFERENCE_DEPTH {
             return Err(KernelError::MaxDepthExceeded {
@@ -420,15 +473,25 @@ fn build_component_tree(
             visiting,
             depth + 1,
             total_offset,
+            total_rotation,
             gen,
             out,
         )?;
         visiting.pop();
     }
 
-    // 3. Recurse into children, propagating total_offset
+    // 3. Recurse into children, propagating total_offset and total_rotation
     for child in &component.children {
-        build_component_tree(child, base_dir, visiting, depth, total_offset, gen, out)?;
+        build_component_tree(
+            child,
+            base_dir,
+            visiting,
+            depth,
+            total_offset,
+            total_rotation,
+            gen,
+            out,
+        )?;
     }
     Ok(())
 }

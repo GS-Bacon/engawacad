@@ -1,6 +1,9 @@
 //! Acceptance tests for Issue #77 — kernel rotation transform.
 //!
 //! T01–T09 from the test plan plus additional edge-case tests.
+//!
+//! # euler_to_matrix シグネチャ変更 (Issue #135)
+//! `euler_to_matrix` は rad 入力を受け取る。deg 値でテストする場合は `.to_radians()` で変換する。
 
 use mycad_kernel::brep::topology::{IdGenerator, Solid};
 use mycad_kernel::geometry::curve::Curve;
@@ -22,7 +25,11 @@ fn make_test_cuboid() -> Solid {
 #[test]
 fn t01_determinism_100x() {
     let cuboid = make_test_cuboid();
-    let matrix = euler_to_matrix(30.0, 45.0, 60.0);
+    let matrix = euler_to_matrix(
+        30.0_f64.to_radians(),
+        45.0_f64.to_radians(),
+        60.0_f64.to_radians(),
+    );
     let pivot = Point::origin();
     let mut first: Option<String> = None;
     for _ in 0..100 {
@@ -42,7 +49,11 @@ fn t01_determinism_100x() {
 #[test]
 fn t02_x90_cuboid_normals_align() {
     let mut cuboid = make_test_cuboid();
-    let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     cuboid.rotate(matrix, Point::origin());
 
     let principal = [
@@ -74,7 +85,11 @@ fn t02_x90_cuboid_normals_align() {
 #[test]
 fn t03_inverse_roundtrip() {
     let original = make_test_cuboid();
-    let matrix = euler_to_matrix(30.0, 45.0, 60.0);
+    let matrix = euler_to_matrix(
+        30.0_f64.to_radians(),
+        45.0_f64.to_radians(),
+        60.0_f64.to_radians(),
+    );
     let inv = [
         [matrix[0][0], matrix[1][0], matrix[2][0]],
         [matrix[0][1], matrix[1][1], matrix[2][1]],
@@ -126,7 +141,11 @@ fn t03_inverse_roundtrip() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t04_identity_matrix() {
-    let m = euler_to_matrix(0.0, 0.0, 0.0);
+    let m = euler_to_matrix(
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let identity: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     assert_eq!(m, identity);
 }
@@ -136,7 +155,11 @@ fn t04_identity_matrix() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t05_snap_values_x90() {
-    let m = euler_to_matrix(90.0, 0.0, 0.0);
+    let m = euler_to_matrix(
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     // Rx(90°) = [[1,0,0],[0,0,-1],[0,1,0]]
     assert_eq!(m[0], [1.0, 0.0, 0.0]);
     assert_eq!(m[1], [0.0, 0.0, -1.0]);
@@ -153,7 +176,11 @@ fn t06_cylinder_basis_consistency() {
         axis: Vec3::z(),
         radius: 2.5,
     };
-    let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let rotated = cyl.rotate(matrix, Point::origin());
 
     if let Surface::Cylinder {
@@ -184,7 +211,11 @@ fn t06_cylinder_basis_consistency() {
 #[test]
 fn t07_boundary_zero_rotation() {
     let original = make_test_cuboid();
-    let matrix = euler_to_matrix(0.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let mut rotated = original.clone();
     rotated.rotate(matrix, Point::origin());
 
@@ -215,7 +246,11 @@ fn t07_boundary_zero_rotation() {
 fn t08_boundary_180_flip() {
     let mut cuboid = make_test_cuboid();
     let original = cuboid.clone();
-    let matrix = euler_to_matrix(180.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        180.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     cuboid.rotate(matrix, Point::origin());
 
     for (o, r) in original.vertices.iter().zip(cuboid.vertices.iter()) {
@@ -232,7 +267,11 @@ fn t08_boundary_180_flip() {
 #[test]
 fn t09_degen_pivot_at_vertex() {
     let cuboid = make_test_cuboid();
-    let matrix = euler_to_matrix(45.0, 30.0, 60.0);
+    let matrix = euler_to_matrix(
+        45.0_f64.to_radians(),
+        30.0_f64.to_radians(),
+        60.0_f64.to_radians(),
+    );
     let pivot = cuboid.vertices[0].point;
     let mut rotated = cuboid.clone();
     rotated.rotate(matrix, pivot);
@@ -263,7 +302,11 @@ fn t09_degen_pivot_at_vertex() {
 // ---------------------------------------------------------------------------
 #[test]
 fn edge_y90_rotation_snap() {
-    let m = euler_to_matrix(0.0, 90.0, 0.0);
+    let m = euler_to_matrix(
+        0.0_f64.to_radians(),
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     // Ry(90°) = [[0,0,1],[0,1,0],[-1,0,0]]
     assert_eq!(m[0], [0.0, 0.0, 1.0]);
     assert_eq!(m[1], [0.0, 1.0, 0.0]);
@@ -275,7 +318,11 @@ fn edge_y90_rotation_snap() {
 // ---------------------------------------------------------------------------
 #[test]
 fn edge_z90_rotation_snap() {
-    let m = euler_to_matrix(0.0, 0.0, 90.0);
+    let m = euler_to_matrix(
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        90.0_f64.to_radians(),
+    );
     // Rz(90°) = [[0,-1,0],[1,0,0],[0,0,1]]
     assert_eq!(m[0], [0.0, -1.0, 0.0]);
     assert_eq!(m[1], [1.0, 0.0, 0.0]);
@@ -287,7 +334,11 @@ fn edge_z90_rotation_snap() {
 // ---------------------------------------------------------------------------
 #[test]
 fn edge_270_rotation_snap() {
-    let m = euler_to_matrix(270.0, 0.0, 0.0);
+    let m = euler_to_matrix(
+        270.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     // Rx(270°) = Rx(-90°) = [[1,0,0],[0,0,1],[0,-1,0]]
     assert_eq!(m[0], [1.0, 0.0, 0.0]);
     assert_eq!(m[1], [0.0, 0.0, 1.0]);
@@ -300,8 +351,16 @@ fn edge_270_rotation_snap() {
 #[test]
 fn edge_euler_to_matrix_determinism() {
     for _ in 0..100 {
-        let a = euler_to_matrix(37.0, 53.0, 71.0);
-        let b = euler_to_matrix(37.0, 53.0, 71.0);
+        let a = euler_to_matrix(
+            37.0_f64.to_radians(),
+            53.0_f64.to_radians(),
+            71.0_f64.to_radians(),
+        );
+        let b = euler_to_matrix(
+            37.0_f64.to_radians(),
+            53.0_f64.to_radians(),
+            71.0_f64.to_radians(),
+        );
         assert_eq!(a, b);
     }
 }
@@ -315,7 +374,11 @@ fn edge_rotate_vec_preserves_length() {
 
     let v = Vec3::new(3.0, 4.0, 5.0);
     let expected_len = v.norm();
-    let matrix = euler_to_matrix(37.0, 53.0, 71.0);
+    let matrix = euler_to_matrix(
+        37.0_f64.to_radians(),
+        53.0_f64.to_radians(),
+        71.0_f64.to_radians(),
+    );
     let rv = rotate_vec(v, matrix);
     approx::assert_relative_eq!(rv.norm(), expected_len, epsilon = 1e-12);
 }
@@ -330,7 +393,11 @@ fn edge_rotate_point_nonorigin_pivot() {
     let p = Point::new(2.0, 0.0, 0.0);
     let pivot = Point::new(1.0, 0.0, 0.0);
     // 90° around z-axis: (2,0,0) around (1,0,0) → (1,1,0)
-    let matrix = euler_to_matrix(0.0, 0.0, 90.0);
+    let matrix = euler_to_matrix(
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        90.0_f64.to_radians(),
+    );
     let result = rotate_point(p, matrix, pivot);
     approx::assert_relative_eq!(result.x, 1.0, epsilon = 1e-12);
     approx::assert_relative_eq!(result.y, 1.0, epsilon = 1e-12);
@@ -347,7 +414,11 @@ fn edge_curve_circle_rotate() {
         normal: Vec3::z(),
         radius: 2.0,
     };
-    let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let rotated = circle.rotate(matrix, Point::origin());
 
     if let Curve::Circle {
@@ -378,7 +449,11 @@ fn edge_surface_sphere_rotate() {
         center: Point::new(1.0, 2.0, 3.0),
         radius: 5.0,
     };
-    let matrix = euler_to_matrix(0.0, 0.0, 180.0);
+    let matrix = euler_to_matrix(
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        180.0_f64.to_radians(),
+    );
     let rotated = sphere.rotate(matrix, Point::origin());
 
     if let Surface::Sphere { center, radius } = &rotated {
@@ -401,7 +476,11 @@ fn edge_surface_cone_rotate() {
         axis: Vec3::z(),
         half_angle: 0.4,
     };
-    let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let rotated = cone.rotate(matrix, Point::origin());
 
     if let Surface::Cone {
@@ -426,7 +505,11 @@ fn edge_surface_cone_rotate() {
 #[test]
 fn edge_plane_rotate() {
     let plane = Plane::xy();
-    let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        90.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let rotated = plane.rotate(matrix, Point::origin());
 
     // Origin stays at origin (origin of xy-plane is at origin)
@@ -446,7 +529,11 @@ fn edge_plane_rotate() {
 #[test]
 fn edge_rotation_preserves_topology_counts() {
     let original = make_test_cuboid();
-    let matrix = euler_to_matrix(45.0, 30.0, 60.0);
+    let matrix = euler_to_matrix(
+        45.0_f64.to_radians(),
+        30.0_f64.to_radians(),
+        60.0_f64.to_radians(),
+    );
     let mut rotated = original.clone();
     rotated.rotate(matrix, Point::new(1.0, 2.0, 3.0));
 
@@ -465,7 +552,11 @@ fn edge_rotation_preserves_topology_counts() {
 #[test]
 fn edge_rotation_preserves_entity_ids() {
     let original = make_test_cuboid();
-    let matrix = euler_to_matrix(45.0, 30.0, 60.0);
+    let matrix = euler_to_matrix(
+        45.0_f64.to_radians(),
+        30.0_f64.to_radians(),
+        60.0_f64.to_radians(),
+    );
     let mut rotated = original.clone();
     rotated.rotate(matrix, Point::origin());
 
@@ -485,7 +576,11 @@ fn edge_rotation_preserves_entity_ids() {
 // ---------------------------------------------------------------------------
 #[test]
 fn edge_rotation_matrix_orthonormal() {
-    let m = euler_to_matrix(30.0, 45.0, 60.0);
+    let m = euler_to_matrix(
+        30.0_f64.to_radians(),
+        45.0_f64.to_radians(),
+        60.0_f64.to_radians(),
+    );
     // Each row has unit norm
     for row in &m {
         let norm = (row[0] * row[0] + row[1] * row[1] + row[2] * row[2]).sqrt();
@@ -511,7 +606,11 @@ fn edge_rotation_matrix_orthonormal() {
 #[test]
 fn edge_rotation_preserves_topology_indices() {
     let original = make_test_cuboid();
-    let matrix = euler_to_matrix(37.0, 53.0, 71.0);
+    let matrix = euler_to_matrix(
+        37.0_f64.to_radians(),
+        53.0_f64.to_radians(),
+        71.0_f64.to_radians(),
+    );
     let mut rotated = original.clone();
     rotated.rotate(matrix, Point::origin());
 
@@ -545,7 +644,11 @@ fn edge_rotation_preserves_topology_indices() {
 fn edge_yaml_roundtrip_after_rotation() {
     let mut gen = IdGenerator::new(1);
     let cuboid = make_cuboid(2.0, 3.0, 4.0, &mut gen).unwrap();
-    let matrix = euler_to_matrix(45.0, 0.0, 0.0);
+    let matrix = euler_to_matrix(
+        45.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+        0.0_f64.to_radians(),
+    );
     let pivot = Point::origin();
 
     let mut rotated = cuboid.clone();

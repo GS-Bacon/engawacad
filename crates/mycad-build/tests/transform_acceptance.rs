@@ -550,9 +550,10 @@ fn ec09_parent_and_child_both_have_features() {
     }
 }
 
-// EC10: Non-zero rotation is silently ignored — same coordinates as zero rotation
+// EC10: Non-zero rotation is applied — vertices are rotated
 #[test]
-fn ec10_nonzero_rotation_ignored() {
+fn ec10_nonzero_rotation_applied() {
+    // rotation=[45, 90, 180] は頂点を回転させる
     let doc_rot = single_box_doc(Transform {
         position: [5.0, 0.0, 0.0],
         rotation: [45.0, 90.0, 180.0],
@@ -569,11 +570,20 @@ fn ec10_nonzero_rotation_ignored() {
     let bodies_no_rot = build_assembly(&doc_no_rot, dir.path(), &mut gen2).unwrap();
 
     assert_eq!(bodies_rot.len(), bodies_no_rot.len());
+    // rotation 適用後の頂点は異なるはず
     for (a, b) in bodies_rot.iter().zip(bodies_no_rot.iter()) {
         assert_eq!(a.solid.vertices.len(), b.solid.vertices.len());
+        let mut any_different = false;
         for (va, vb) in a.solid.vertices.iter().zip(b.solid.vertices.iter()) {
-            assert_eq!(va.point, vb.point, "rotation must not affect result");
+            if (va.point.x - vb.point.x).abs() > 1e-10
+                || (va.point.y - vb.point.y).abs() > 1e-10
+                || (va.point.z - vb.point.z).abs() > 1e-10
+            {
+                any_different = true;
+                break;
+            }
         }
+        assert!(any_different, "rotation should change vertex coordinates");
     }
 }
 

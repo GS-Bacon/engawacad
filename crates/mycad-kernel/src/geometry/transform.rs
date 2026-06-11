@@ -22,12 +22,13 @@ fn snap(v: f64) -> f64 {
     }
 }
 
-/// Euler angles (degrees) → 3×3 rotation matrix (ZYX order: R = Rx(rx) * Ry(ry) * Rz(rz)).
-pub fn euler_to_matrix(rx_deg: f64, ry_deg: f64, rz_deg: f64) -> [[f64; 3]; 3] {
-    let to_rad = std::f64::consts::PI / 180.0;
-    let (sx, cx) = (snap((rx_deg * to_rad).sin()), snap((rx_deg * to_rad).cos()));
-    let (sy, cy) = (snap((ry_deg * to_rad).sin()), snap((ry_deg * to_rad).cos()));
-    let (sz, cz) = (snap((rz_deg * to_rad).sin()), snap((rz_deg * to_rad).cos()));
+/// Euler angles (**radians**) → 3×3 rotation matrix (ZYX order: R = Rx(rx) * Ry(ry) * Rz(rz)).
+///
+/// ADR-004 §単位系: kernel は rad のみを扱う。deg→rad 変換は format/build 層の責務。
+pub fn euler_to_matrix(rx: f64, ry: f64, rz: f64) -> [[f64; 3]; 3] {
+    let (sx, cx) = (snap(rx.sin()), snap(rx.cos()));
+    let (sy, cy) = (snap(ry.sin()), snap(ry.cos()));
+    let (sz, cz) = (snap(rz.sin()), snap(rz.cos()));
     [
         [cy * cz, -cy * sz, sy],
         [sx * sy * cz + cx * sz, -sx * sy * sz + cx * cz, -sx * cy],
@@ -77,7 +78,11 @@ mod tests {
     /// T04: euler_to_matrix(0,0,0) → identity matrix (exact).
     #[test]
     fn t04_euler_identity() {
-        let m = euler_to_matrix(0.0, 0.0, 0.0);
+        let m = euler_to_matrix(
+            0.0_f64.to_radians(),
+            0.0_f64.to_radians(),
+            0.0_f64.to_radians(),
+        );
         let identity: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
         assert_eq!(m, identity);
     }
@@ -85,7 +90,11 @@ mod tests {
     /// T05: euler_to_matrix(90,0,0) produces snap-cleaned values.
     #[test]
     fn t05_euler_90_snap() {
-        let m = euler_to_matrix(90.0, 0.0, 0.0);
+        let m = euler_to_matrix(
+            90.0_f64.to_radians(),
+            0.0_f64.to_radians(),
+            0.0_f64.to_radians(),
+        );
         // Rx(90°) = [[1,0,0],[0,0,-1],[0,1,0]]
         assert_eq!(m[0], [1.0, 0.0, 0.0]);
         assert_eq!(m[1], [0.0, 0.0, -1.0]);
@@ -95,7 +104,11 @@ mod tests {
     /// Row norms = 1 (rotation is length-preserving).
     #[test]
     fn t_rotation_is_isometry() {
-        let m = euler_to_matrix(30.0, 45.0, 60.0);
+        let m = euler_to_matrix(
+            30.0_f64.to_radians(),
+            45.0_f64.to_radians(),
+            60.0_f64.to_radians(),
+        );
         for row in &m {
             let norm = (row[0] * row[0] + row[1] * row[1] + row[2] * row[2]).sqrt();
             assert!((norm - 1.0).abs() < 1e-12, "row norm must be 1, got {norm}");
@@ -105,7 +118,11 @@ mod tests {
     /// Rows are mutually orthogonal.
     #[test]
     fn t_rotation_rows_orthogonal() {
-        let m = euler_to_matrix(30.0, 45.0, 60.0);
+        let m = euler_to_matrix(
+            30.0_f64.to_radians(),
+            45.0_f64.to_radians(),
+            60.0_f64.to_radians(),
+        );
         for i in 0..3 {
             for j in (i + 1)..3 {
                 let dot = m[i][0] * m[j][0] + m[i][1] * m[j][1] + m[i][2] * m[j][2];

@@ -1492,7 +1492,11 @@ mod tests {
     #[test]
     fn t01_rotate_determinism() {
         let cuboid = make_test_cuboid();
-        let matrix = euler_to_matrix(30.0, 45.0, 60.0);
+        let matrix = euler_to_matrix(
+            30.0_f64.to_radians(),
+            45.0_f64.to_radians(),
+            60.0_f64.to_radians(),
+        );
         let pivot = Point::origin();
         let mut first: Option<String> = None;
         for _ in 0..100 {
@@ -1510,7 +1514,7 @@ mod tests {
     #[test]
     fn t02_rotate_90deg_face_normals() {
         let mut cuboid = make_test_cuboid();
-        let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+        let matrix = euler_to_matrix(90.0_f64.to_radians(), 0.0, 0.0);
         cuboid.rotate(matrix, Point::origin());
 
         for face in &cuboid.faces {
@@ -1544,7 +1548,11 @@ mod tests {
         use approx::assert_relative_eq;
 
         let original = make_test_cuboid();
-        let matrix = euler_to_matrix(30.0, 45.0, 60.0);
+        let matrix = euler_to_matrix(
+            30.0_f64.to_radians(),
+            45.0_f64.to_radians(),
+            60.0_f64.to_radians(),
+        );
         // Transpose = inverse for orthogonal matrices
         let inv = [
             [matrix[0][0], matrix[1][0], matrix[2][0]],
@@ -1635,7 +1643,7 @@ mod tests {
             axis: Vec3::z(),
             radius: 2.5,
         };
-        let matrix = euler_to_matrix(90.0, 0.0, 0.0);
+        let matrix = euler_to_matrix(90.0_f64.to_radians(), 0.0, 0.0);
         let rotated = cyl.rotate(matrix, Point::origin());
 
         if let Surface::Cylinder {
@@ -1666,7 +1674,7 @@ mod tests {
     #[test]
     fn t07_boundary_zero_rotation() {
         let original = make_test_cuboid();
-        let matrix = euler_to_matrix(0.0, 0.0, 0.0);
+        let matrix = euler_to_matrix(0.0, 0.0, 0.0); // 0° = 0 rad, to_radians() not needed
         let mut rotated = original.clone();
         rotated.rotate(matrix, Point::origin());
 
@@ -1697,7 +1705,7 @@ mod tests {
 
         let mut cuboid = make_test_cuboid();
         let pivot = Point::origin();
-        let matrix = euler_to_matrix(180.0, 0.0, 0.0);
+        let matrix = euler_to_matrix(180.0_f64.to_radians(), 0.0, 0.0);
         let original = cuboid.clone();
         cuboid.rotate(matrix, pivot);
 
@@ -1715,7 +1723,11 @@ mod tests {
         use approx::assert_relative_eq;
 
         let cuboid = make_test_cuboid();
-        let matrix = euler_to_matrix(45.0, 30.0, 60.0);
+        let matrix = euler_to_matrix(
+            45.0_f64.to_radians(),
+            30.0_f64.to_radians(),
+            60.0_f64.to_radians(),
+        );
         let pivot = cuboid.vertices[0].point;
         let mut rotated = cuboid.clone();
         rotated.rotate(matrix, pivot);
