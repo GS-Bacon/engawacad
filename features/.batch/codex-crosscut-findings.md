@@ -82,3 +82,23 @@ verdict: fail | critical=1, medium=0, high=1, blocking=2
 
 B-6 ループ上限 2 回を超過。critical F01 は docs-only として修正済み（コードファイル変更なし）。
 F02 (high) は棄却。→ Claude 裁量で B-6 完了とする。
+
+---
+
+## B-6 R5 (バッチ: bug-batch #135 + #136) — codex-crosscut.yaml (2026-06-11)
+
+verdict: **pass** | critical=0, high=0, medium=1, low=0, blocking=0
+
+**batch_start_sha**: `7ee1dbf`
+**対象コミット**: #135 (transform.rotation 配線) + #136 (trimmed UV face u shift) + 各 features/* artifacts
+
+### F01 (medium) — `total_rotation != IDENTITY3` の exact 比較
+
+**file**: `crates/mycad-build/src/lib.rs:438`
+
+> `total_rotation != IDENTITY3` と `total_offset != Vec3::zeros()` を exact な `f64` 比較で分岐しているため、親 `+45°` / 子 `-45°` のように変換が数学的に相殺される階層でも near-identity の回転・平行移動が適用され、不要な座標ノイズが B-rep に焼き込まれる。
+
+**状態**: **#135 STEP 7.5 でも同内容を Codex が medium 指摘 → `features/135-build-component-transform-rotation/codex-findings.md` に既記録**。本 B-6 で再確認 (重複指摘) されたことで、別 Issue 起票の優先度が上がる候補。
+
+**判定**: blocking=0 のため B-6 pass、本バッチでは対応せず記録のみ。将来 Issue 起票候補 (snap or `Tolerance` newtype 導入と合わせて検討、ADR-004 §段階移行プラン Issue #34 と並行可)。
+
