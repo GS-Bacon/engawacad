@@ -150,33 +150,34 @@ export function isOnelineStub(text: string): boolean {
   return hasTemporaryDiagnostic || hasSafelyDeleted;
 }
 
-// 「すべての #[test] が #[ignore] + 関数本体が実質 todo!() のみ」
-// 偽陽性ガード: 本体に他の assertion/return/expr があれば対象外
+// 「すべての #[test] が #[ignore] + 関数本体が実質 todo!()/unimplemented!() のみ」
+// helper 関数 (#[test] なし) は判定から除外。属性挿入 (#[cfg(...)] 等) や
+// メッセージ付き todo!("msg") / unimplemented!("msg") も検出する。
 export function isAllTodoIgnoreStub(text: string): boolean {
-  // #[test] 個数
-  const testFnCount = (text.match(/#\[test\]/g) || []).length;
-  if (testFnCount === 0) return false;
-
-  // #[test] と #[ignore...] の隣接ペア数
-  const ignoreTestPattern = /#\[ignore[^\]]*\]\s*\n\s*#\[test\]|#\[test\]\s*\n\s*#\[ignore[^\]]*\]/g;
-  const ignoreCount = (text.match(ignoreTestPattern) || []).length;
-  if (ignoreCount !== testFnCount) return false;
-
-  // 各 fn 本体が todo!() のみで構成されているかを波括弧ベースで簡易判定
-  // 関数定義 fn xxx(...) { ... } を順に抽出
-  const fnBodies = extractFnBodies(text);
-  if (fnBodies.length !== testFnCount) return false;
-  return fnBodies.every((body) => isBodyEffectivelyTodo(body));
+  const testFns = extractTestFunctions(text);
+  if (testFns.length === 0) return false;
+  return testFns.every((f) => f.hasIgnore && isBodyEffectivelyTodo(f.body));
 }
 
-// 関数本体を抽出 (波括弧バランスで対応)
-// `fn name(...) { ... }` の `{` から対応する `}` までを返す
-function extractFnBodies(text: string): string[] {
-  const bodies: string[] = [];
-  const fnRegex = /\bfn\s+\w+\s*\([^)]*\)\s*(?:->\s*[^{]+)?\{/g;
+type TestFn = { hasIgnore: boolean; body: string };
+
+// `#[test]` 属性が付いた関数のみを抽出。
+// 各 fn の直前に並ぶ連続属性ブロック (#[ignore], #[cfg(...)] 等) を集めて
+// hasIgnore を判定する。helper fn (#[test] を含まない属性ブロックまたは無属性) は無視。
+function extractTestFunctions(text: string): TestFn[] {
+  const results: TestFn[] = [];
+  // 連続する #[...] 属性ブロック + fn name(...) {
+  // 属性間の改行・空白は許容
+  const fnHead = /((?:#\[[^\]]*\]\s*)+)fn\s+\w+\s*\([^)]*\)\s*(?:->\s*[^{]+)?\{/g;
   let m: RegExpExecArray | null;
-  while ((m = fnRegex.exec(text)) !== null) {
-    const openIdx = m.index + m[0].length - 1; // `{` の位置
+  while ((m = fnHead.exec(text)) !== null) {
+    const attrBlock = m[1];
+    if (!/#\[test\]/.test(attrBlock)) continue; // #[test] でなければ helper として無視
+
+    const hasIgnore = /#\[ignore(?:\s*=\s*[^\]]*)?\]/.test(attrBlock);
+
+    // 波括弧バランスで関数本体を抽出
+    const openIdx = m.index + m[0].length - 1;
     let depth = 1;
     let i = openIdx + 1;
     while (i < text.length && depth > 0) {
@@ -184,18 +185,22 @@ function extractFnBodies(text: string): string[] {
       else if (text[i] === "}") depth--;
       i++;
     }
-    if (depth === 0) bodies.push(text.slice(openIdx + 1, i - 1));
+    if (depth === 0) {
+      results.push({ hasIgnore, body: text.slice(openIdx + 1, i - 1) });
+    }
   }
-  return bodies;
+  return results;
 }
 
-// 本体が空白・コメント・todo!()/unimplemented!() のみで構成されているか
+// 本体が空白・コメント・todo!(...)/unimplemented!(...) のみで構成されているか
+// メッセージ付き呼び出し (todo!("WIP"), unimplemented!("see #X")) も検出対象。
 function isBodyEffectivelyTodo(body: string): boolean {
-  // コメント (// ... と /* ... */) を除去
+  // コメント除去 (// ... と /* ... */)
   let stripped = body.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   // 空白を圧縮
   stripped = stripped.replace(/\s+/g, "");
   // 終止セミコロンを許容
   stripped = stripped.replace(/;$/, "");
-  return stripped === "todo!()" || stripped === "unimplemented!()";
+  // 引数なしも引数あり (メッセージ文字列等) も許容
+  return /^(?:todo|unimplemented)!\(.*\)$/.test(stripped);
 }

@@ -126,4 +126,88 @@ fn t02() { todo!() }
 `;
     expect(isAllTodoIgnoreStub(text)).toBe(false);
   });
+
+  // 以下は Codex F01 (#139 STEP 7.5 review) の指摘に対する回帰テスト
+  test("Codex F01a: helper 関数があっても全 #[test] が stub なら flagged (helper は無視)", () => {
+    const text = `
+fn build_fixture() -> u32 { 42 }
+
+fn helper(x: u32) -> u32 { x * 2 }
+
+#[test]
+#[ignore = "STEP 6 で実装後に解除"]
+fn t01_foo() {
+    todo!()
+}
+
+#[test]
+#[ignore]
+fn t02_bar() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01a': helper 関数 + 一部 test が本実装 → not flagged", () => {
+    const text = `
+fn build_fixture() -> u32 { 42 }
+
+#[test]
+#[ignore]
+fn t01() { todo!() }
+
+#[test]
+fn t02_real() {
+    assert_eq!(build_fixture(), 42);
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(false);
+  });
+
+  test("Codex F01b: #[test] と #[ignore] の間に #[cfg(...)] が挿入されていても flagged", () => {
+    const text = `
+#[test]
+#[cfg(feature = "ci")]
+#[ignore = "..."]
+fn t01_foo() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01c: todo!(\"message\") メッセージ付きでも flagged", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01_foo() {
+    todo!("WIP: implement after #X")
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01c': unimplemented!(\"see #X\") メッセージ付きでも flagged", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01_foo() {
+    unimplemented!("see issue #X")
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01d: #[ignore] が他 attr の間にあっても認識", () => {
+    const text = `
+#[ignore]
+#[cfg(test)]
+#[test]
+fn t01_foo() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
 });
