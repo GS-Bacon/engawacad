@@ -34,7 +34,12 @@ async function main(): Promise<number> {
 
   const proc = Bun.spawn(["git", "status", "--porcelain"], { stdout: "pipe", stderr: "pipe" });
   const output = await new Response(proc.stdout).text();
-  await proc.exited;
+  const procExit = await proc.exited;
+  if (procExit !== 0) {
+    const err = await new Response(proc.stderr).text();
+    process.stderr.write(`ERROR: \`git status --porcelain\` failed (exit ${procExit}):\n${err}\n`);
+    return 1; // fail-closed
+  }
 
   const lines = output.split("\n").filter((l) => l.trim() !== "");
 
@@ -50,7 +55,13 @@ async function main(): Promise<number> {
 
   // (b) stale test stub 検出 (#139): crates/<crate>/tests/*.rs を走査
   // --allow-skeleton 指定時は all_todo_ignore 検出を抑止 (oneline_stub は維持)
-  const stalesRaw = await detectStaleTestStubs();
+  let stalesRaw: StaleStub[];
+  try {
+    stalesRaw = await detectStaleTestStubs();
+  } catch (e) {
+    process.stderr.write(`ERROR: stale stub 検出失敗 (fail-closed): ${(e as Error).message}\n`);
+    return 1;
+  }
   const stales = allowSkeleton
     ? stalesRaw.filter((s) => s.reason !== "all_todo_ignore")
     : stalesRaw;
@@ -120,7 +131,11 @@ export async function detectStaleTestStubs(): Promise<StaleStub[]> {
     { stdout: "pipe", stderr: "pipe" },
   );
   const lsOut = await new Response(lsProc.stdout).text();
-  await lsProc.exited;
+  const lsExit = await lsProc.exited;
+  if (lsExit !== 0) {
+    const err = await new Response(lsProc.stderr).text();
+    throw new Error(`git ls-files failed (exit ${lsExit}): ${err.trim()}`);
+  }
 
   // crates/<crate>/tests/ 直下の .rs ファイルだけ対象 (integration test)
   // src/ 配下の単体テスト inline mod tests は対象外 (TEST_HARNESS = single source)
@@ -185,8 +200,9 @@ function extractTestFunctions(text: string): TestFn[] {
   let m: RegExpExecArray | null;
   while ((m = fnHead.exec(text)) !== null) {
     const attrBlock = m[1];
-    // #[test] または #[<path>::test] (tokio::test, smol::test, ...) を許容
-    if (!/#\[(?:\w+::)*test\]/.test(attrBlock)) continue;
+    // #[test] / #[<path>::test] / #[<path>::test(args...)] を許容
+    // 例: #[tokio::test(flavor = "multi_thread")] / #[smol::test(...)]
+    if (!/#\[(?:\w+::)*test(?:\([^\]]*\))?\]/.test(attrBlock)) continue;
 
     const hasIgnore = /#\[ignore(?:\s*=\s*[^\]]*)?\]/.test(attrBlock);
 

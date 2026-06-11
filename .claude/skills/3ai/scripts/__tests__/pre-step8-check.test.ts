@@ -301,4 +301,38 @@ fn t01() {
 `;
     expect(isAllTodoIgnoreStub(text)).toBe(true);
   });
+
+  // F01 round 4 (#139): 引数付き test 属性
+  test("Codex F01 r4a: #[tokio::test(flavor = \"multi_thread\")] → flagged", () => {
+    const text = `
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn a01() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r4b: #[tokio::test(start_paused = true, flavor=\"current_thread\")] → flagged", () => {
+    const text = `
+#[tokio::test(start_paused = true, flavor = "current_thread")]
+#[ignore]
+async fn a01() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r4c: #[smol::test(...)] 引数付きでも対応", () => {
+    const text = `
+#[smol::test(threads = 4)]
+#[ignore]
+async fn s01() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
 });
