@@ -335,4 +335,71 @@ async fn s01() {
 `;
     expect(isAllTodoIgnoreStub(text)).toBe(true);
   });
+
+  // F01 round 5 (#139): pub fn 修飾子、string 内 brace/comment-chars
+  test("Codex F01 r5a: pub fn テスト関数も認識", () => {
+    const text = `
+#[test]
+#[ignore]
+pub fn t01_foo() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r5b: pub(crate) fn も認識", () => {
+    const text = `
+#[test]
+#[ignore]
+pub(crate) fn t01_foo() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r5c: todo!(\"}\") string 内 brace で brace matcher 走査が崩れない", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01() {
+    todo!("}")
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r5d: todo!(\"// comment-like\") string 内 // で comment strip 走査が崩れない", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01() {
+    todo!("// not a comment")
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r5e: todo!(\"/* not a comment */\") string 内 block comment chars でも崩れない", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01() {
+    todo!("/* hidden */")
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F01 r5f: 実装あり関数の brace matcher 安定性 (string + nested brace)", () => {
+    const text = `
+#[test]
+fn t01_real() {
+    let s = "{ should not affect depth }";
+    assert_eq!(s.len(), 26);
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(false);
+  });
 });
