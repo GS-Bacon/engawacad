@@ -210,4 +210,61 @@ fn t01_foo() {
 `;
     expect(isAllTodoIgnoreStub(text)).toBe(true);
   });
+
+  // F02 (#139 STEP 7.5 round 2): #[tokio::test] / async fn 対応
+  test("Codex F02a: #[tokio::test] async fn 全部 stub → flagged", () => {
+    const text = `
+#[tokio::test]
+#[ignore]
+async fn a01_foo() {
+    todo!()
+}
+
+#[tokio::test]
+#[ignore]
+async fn a02_bar() {
+    unimplemented!("WIP")
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F02b: #[tokio::test] async fn に本実装 → not flagged", () => {
+    const text = `
+#[tokio::test]
+async fn a01_real() {
+    let response = client.get("/api").send().await;
+    assert_eq!(response.status(), 200);
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(false);
+  });
+
+  test("Codex F02c: mixed #[test] + #[tokio::test] 全部 stub → flagged", () => {
+    const text = `
+#[test]
+#[ignore]
+fn sync_t01() {
+    todo!()
+}
+
+#[tokio::test]
+#[ignore]
+async fn async_a01() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F02d: smol::test など他の async runtime test 属性も対応", () => {
+    const text = `
+#[smol::test]
+#[ignore]
+async fn s01() {
+    todo!()
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
 });

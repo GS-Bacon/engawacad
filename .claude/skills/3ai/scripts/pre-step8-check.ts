@@ -1,11 +1,17 @@
 #!/usr/bin/env bun
 // pre-step8-check.ts — STEP 8 前に crates/ の状態を検査する
-// Usage: bun pre-step8-check.ts [--feature-dir <path>]
+// Usage: bun pre-step8-check.ts [--feature-dir <path>] [--allow-skeleton]
 //
 // チェック項目:
 //   (a) crates/ 配下の unstaged/untracked ファイル
-//   (b) crates/<crate>/tests/*.rs に「すべて #[ignore] + todo!() の腐敗 stub」
-//       または「temporary/removed を含む 1〜3 行 stub」が残っていないか (#139)
+//   (b) crates/<crate>/tests/*.rs に「すべて #[ignore] + todo!()/unimplemented!() の腐敗 stub」
+//       または「temporary/probe/safely-deleted を含む 1〜3 行 stub」が残っていないか (#139)
+//
+// 注 (Codex F01 review #139): (b) は /3ai STEP 8 文脈での実行を前提とする厳格判定。
+// この文脈では STEP 5.5 acceptance skeleton は STEP 6 までに実装完了 (#[ignore] 解除)
+// しているのが正常状態であり、STEP 8 時点で `#[ignore] + todo!()` が残る = 腐敗。
+// /3ai 外の文脈 (進行中状態の確認等) で実行する場合は --allow-skeleton で (b) のうち
+// all_todo_ignore 検出を抑止できる (oneline_stub は引き続き対象)。
 //
 // exit 0: 問題なし
 // exit 1: いずれかが検出された (ガード違反)
@@ -17,9 +23,11 @@ export type StaleStub = { path: string; reason: "all_todo_ignore" | "oneline_stu
 async function main(): Promise<number> {
   const cliArgs = process.argv.slice(2);
   let _featureDir = "";
+  let allowSkeleton = false;
 
   for (let i = 0; i < cliArgs.length; i++) {
     if (cliArgs[i] === "--feature-dir") _featureDir = cliArgs[++i];
+    else if (cliArgs[i] === "--allow-skeleton") allowSkeleton = true;
     // --auto-raise は廃止。フラグが渡されても無視する（後方互換）
     else if (cliArgs[i] === "--auto-raise") { /* no-op */ }
   }
@@ -41,7 +49,11 @@ async function main(): Promise<number> {
   const untracked = lines.filter((l) => l.startsWith("??") && l.slice(3).startsWith("crates/"));
 
   // (b) stale test stub 検出 (#139): crates/<crate>/tests/*.rs を走査
-  const stales = await detectStaleTestStubs();
+  // --allow-skeleton 指定時は all_todo_ignore 検出を抑止 (oneline_stub は維持)
+  const stalesRaw = await detectStaleTestStubs();
+  const stales = allowSkeleton
+    ? stalesRaw.filter((s) => s.reason !== "all_todo_ignore")
+    : stalesRaw;
 
   let exitCode = 0;
 
@@ -161,18 +173,20 @@ export function isAllTodoIgnoreStub(text: string): boolean {
 
 type TestFn = { hasIgnore: boolean; body: string };
 
-// `#[test]` 属性が付いた関数のみを抽出。
+// `#[test]` または `#[*::test]` (例: tokio::test) が付いた関数のみを抽出。
 // 各 fn の直前に並ぶ連続属性ブロック (#[ignore], #[cfg(...)] 等) を集めて
-// hasIgnore を判定する。helper fn (#[test] を含まない属性ブロックまたは無属性) は無視。
+// hasIgnore を判定する。helper fn (test 属性を含まない、または無属性) は無視。
+// async fn にも対応 (Codex F02 #139)。
 function extractTestFunctions(text: string): TestFn[] {
   const results: TestFn[] = [];
-  // 連続する #[...] 属性ブロック + fn name(...) {
+  // 連続する #[...] 属性ブロック + (async) fn name(...) {
   // 属性間の改行・空白は許容
-  const fnHead = /((?:#\[[^\]]*\]\s*)+)fn\s+\w+\s*\([^)]*\)\s*(?:->\s*[^{]+)?\{/g;
+  const fnHead = /((?:#\[[^\]]*\]\s*)+)(?:async\s+)?fn\s+\w+\s*\([^)]*\)\s*(?:->\s*[^{]+)?\{/g;
   let m: RegExpExecArray | null;
   while ((m = fnHead.exec(text)) !== null) {
     const attrBlock = m[1];
-    if (!/#\[test\]/.test(attrBlock)) continue; // #[test] でなければ helper として無視
+    // #[test] または #[<path>::test] (tokio::test, smol::test, ...) を許容
+    if (!/#\[(?:\w+::)*test\]/.test(attrBlock)) continue;
 
     const hasIgnore = /#\[ignore(?:\s*=\s*[^\]]*)?\]/.test(attrBlock);
 
