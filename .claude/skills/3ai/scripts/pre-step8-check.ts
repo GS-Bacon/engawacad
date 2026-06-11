@@ -207,7 +207,14 @@ function extractTestFunctions(text: string): TestFn[] {
 }
 
 // 本体が空白・コメント・todo!(...)/unimplemented!(...) のみで構成されているか
-// メッセージ付き呼び出し (todo!("WIP"), unimplemented!("see #X")) も検出対象。
+// メッセージ付き呼び出し (todo!("WIP")) と全マクロ delimiter 形式
+// (todo!() / todo!{} / todo![]) を検出対象 (Codex F02 #139 round 3)。
+//
+// 既知の限界: todo!("text with // or /* chars") のように string literal 内に
+// コメント記号を含む稀ケースで comment 除去が string 中身を切り出すため
+// false negative になる。実用上ほぼ無いケースのため許容する。string-aware な
+// lexer 化は別 Issue にする (本ガードは「腐敗 stub 検出」の heuristic であり
+// 完全な lexer 厳密性は目標外)。
 function isBodyEffectivelyTodo(body: string): boolean {
   // コメント除去 (// ... と /* ... */)
   let stripped = body.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -215,6 +222,6 @@ function isBodyEffectivelyTodo(body: string): boolean {
   stripped = stripped.replace(/\s+/g, "");
   // 終止セミコロンを許容
   stripped = stripped.replace(/;$/, "");
-  // 引数なしも引数あり (メッセージ文字列等) も許容
-  return /^(?:todo|unimplemented)!\(.*\)$/.test(stripped);
+  // todo!() / todo!{} / todo![] (および unimplemented!) のすべての delimiter 形式を許容
+  return /^(?:todo|unimplemented)!(?:\(.*\)|\{.*\}|\[.*\])$/.test(stripped);
 }

@@ -267,4 +267,38 @@ async fn s01() {
 `;
     expect(isAllTodoIgnoreStub(text)).toBe(true);
   });
+
+  // F02 round 3 (#139): マクロ delimiter 形式 todo!{} / todo![]
+  test("Codex F02e: todo!{} curly delimiter → flagged", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01() {
+    todo!{}
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F02f: todo![] square delimiter → flagged", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01() {
+    todo![]
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
+
+  test("Codex F02g: unimplemented!{\"WIP\"} メッセージ + curly → flagged", () => {
+    const text = `
+#[test]
+#[ignore]
+fn t01() {
+    unimplemented!{"WIP"}
+}
+`;
+    expect(isAllTodoIgnoreStub(text)).toBe(true);
+  });
 });
