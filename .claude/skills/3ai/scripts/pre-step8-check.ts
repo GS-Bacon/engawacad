@@ -13,6 +13,13 @@
 // /3ai 外の文脈 (進行中状態の確認等) で実行する場合は --allow-skeleton で (b) のうち
 // all_todo_ignore 検出を抑止できる (oneline_stub は引き続き対象)。
 //
+// Known limitations (Codex #139 round 6 棄却分):
+//   - cwd が repo root でない場合の `git ls-files crates/` は空を返しうる。本スクリプト
+//     は /3ai STEP 8 文脈 (cwd = repo root) を前提とする。非 root 起動は想定外。
+//   - 属性ブロックと fn の間に挟まれた `// コメント` は extractTestFunctions の
+//     regex が認識しない (現状の Rust テストコードで遭遇していないため未対応)。
+//   - raw string の極端な hash ネスト数等の lexer 厳密性は heuristic 上の範囲外。
+//
 // exit 0: 問題なし
 // exit 1: いずれかが検出された (ガード違反)
 
