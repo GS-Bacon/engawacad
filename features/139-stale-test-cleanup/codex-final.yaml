@@ -1,0 +1,8 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 155
+    finding: "`isAllTodoIgnoreStub` が `#[test]` 数とファイル内の全 `fn` 数の一致、および裸の `todo!()/unimplemented!()` だけを前提にしているため、helper 関数を含むテストファイル、`#[test]` と `#[ignore]` の間に別属性が入るケース、`todo!(\"...\")`/`unimplemented!(\"...\")` を使う stub を検出できません。#139 の stale stub ガードを容易にすり抜け、意図した腐敗 stub 排除が成立しません。"
+    suggestion: "`#[test]` が付いた関数だけを属性込みで対応付けて抽出し、その本体が `todo!(...)` / `unimplemented!(...)` のみかを判定する実装に置き換える。少なくとも helper 関数あり・追加属性あり・メッセージ付き macro の回帰テストを追加する。"
+verdict: fail

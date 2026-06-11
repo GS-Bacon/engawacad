@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 189
+    finding: "`extractTestFunctions` の test 属性判定が `#[*::test]` の完全一致しか受け付けないため、`#[tokio::test(flavor = \"multi_thread\")]` のような引数付き async test を一切検出できません。結果として、`#[ignore] + todo!()` の腐敗 stub がこの一般的な書式だけでガードを素通りします。"
+    suggestion: "test 属性の判定を `#[...::test(...)]` まで許容する形に拡張し、`#[tokio::test(flavor = ...)]` / `#[smol::test(...)]` の回帰テストを追加する。"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 35
+    finding: "`git status` と `git ls-files` の終了コードを確認していないため、git コマンドが失敗して stdout が空のときでもスクリプトはそのまま `OK` を返します。STEP 8 前ガードが失敗時に fail-open になっており、未ステージング変更や腐敗 stub を未検出のまま通してしまいます。"
+    suggestion: "`await proc.exited` / `await lsProc.exited` の非 0 を明示的にエラー扱いし、stderr を表示して exit 1 にする。合わせて subprocess 失敗時のテストも追加する。"
+
+verdict: fail

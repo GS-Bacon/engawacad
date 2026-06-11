@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 199
+    finding: "`extractTestFunctions` が Rust 関数を正規表現と単純な波括弧カウントで抽出しているため、正当な `#[test]` 関数を見逃します。`pub fn` は `fnHead` に一致せず丸ごと未検出になり、さらに body 走査は文字列/コメント中の `}` でも depth を減らすので `todo!(\"}\")` のようなメッセージ付き stub を途中で切って `all_todo_ignore` 判定が false になります。結果として、STEP 8 ガードが腐敗 stub を素通しします。"
+    suggestion: "関数抽出を Rust-aware な方法に置き換えるか、少なくとも `pub` などの修飾子を `fnHead` で許容し、文字列・コメントを無視する brace matcher を実装してください。あわせて `#[ignore] pub fn ... { todo!() }` と `todo!(\"}\")` の回帰テストを追加してください。"
+
+verdict: fail

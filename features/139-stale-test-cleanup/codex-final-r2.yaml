@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 156
+    finding: "stale stub 判定が広すぎます。`#[ignore]` + `todo!()` / `unimplemented!()` の integration test を一律で失敗扱いにするため、#139 で除外していた正当な STEP 5.5 acceptance skeleton や `unimplemented!()` ベースの placeholder まで STEP 8 を hard-fail させます。"
+    suggestion: "既知の腐敗パターンだけに条件を絞るか、少なくとも `unimplemented!()` は除外し、正当な STEP 5.5 skeleton を識別して skip してください。"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 171
+    finding: "test 関数抽出が実質 `#[test] fn ...` にしか対応しておらず、repo で既に使っている `#[tokio::test] async fn ...` を走査できません。この形の stale stub は guard を素通りします。"
+    suggestion: "`#[tokio::test]` など `*::test` 属性と `async fn` を扱えるように抽出条件を広げ、回帰テストを追加してください。"
+
+verdict: fail

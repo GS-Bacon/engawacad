@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/extrude_negative_direction_acceptance.rs"
+    line_hint: 1
+    finding: "Issue #110 の acceptance テスト (T01〜T04) をファイルごと削除しており、負方向 extrusion の決定性、manifold/Euler 条件、zero depth、非有限 depth を検証するテストが diff 内で 1 件も置き換えられていない。合意済みテスト計画の消失であり、カーネル要件の未検証状態を固定化する。"
+    suggestion: "削除ではなく同等の実行可能テストを `crates/mycad-kernel/tests/` に追加し、少なくとも T01/T02 と zero/non-finite depth の境界ケースを残す。"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 183
+    finding: "腐敗 stub 検出が Rust 構文を正規表現と生の波括弧カウントで解釈しており、`todo!{}` / `todo![]` のような合法なマクロ区切りや、文字列中に `//`, `/*`, `{`, `}` を含む `todo!(\"...\")` で false negative になる。guard をすり抜ける stale test を残しうる。"
+    suggestion: "少なくとも `todo!` / `unimplemented!` の全 delimiter 形式を扱い、文字列・コメントを意識した字句解析ベースで本体判定する。"
+
+verdict: fail

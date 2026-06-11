@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 105
+    finding: "`detectStaleTestStubs()` が `git ls-files ... crates/` を repo root 解決なしで実行しており、`--full-name` も使っていません。repo ルート以外から起動すると `crates/` の列挙が空になり得るため、stale test stub 検出が実質無効化され、STEP 8 ガードが \"OK\" を返してしまいます。"
+    suggestion: "`git rev-parse --show-toplevel` で top-level を取得し、`git -C <root> ls-files --full-name ...` と `<root>` 基準の `readFileSync` に固定する"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/pre-step8-check.ts"
+    line_hint: 171
+    finding: "`extractTestFunctions()` の正規表現は属性ブロックと `fn` の間にコメントが入る正当な Rust を認識できません。`#[test]`/`#[ignore]` の直後に `//` や `///` を挟むだけで ignored `todo!()` テストが抽出されず、腐敗 stub がすり抜けます。"
+    suggestion: "属性・コメント・関数ヘッダを字句的に走査するか、少なくともコメント行を挟んだケースを許容して回帰テストを追加する"
+
+verdict: fail
