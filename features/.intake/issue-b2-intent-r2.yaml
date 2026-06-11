@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と Phase 7 への寄与が本文で区別されている。
+  単一目的の acceptance テスト追加にスコープが収まっており、数値比較を伴うため `### 数値モデル` が必要な類型であることも明記されている。

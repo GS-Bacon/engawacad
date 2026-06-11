@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests が計測可能で、In-Scope/Out-of-Scope と ADR-009・#131 への依存文脈が明確。Phase 7 の「描いたスケッチから Extrude/ExtrudeCut を実行できる」を支える foundation としての位置付けも本文で判別できる。
+  数値閾値の新規決定を主題とする Issue ではないため、plan.md の `### 数値モデル` セクションは不要。

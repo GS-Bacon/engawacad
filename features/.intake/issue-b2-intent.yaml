@@ -1,0 +1,4 @@
+aligned: no
+reason: |
+  本文で「Phase 7 完了判定には直接寄与しない」と明記しており、ROADMAP の現 Phase 完了条件への寄与が読み取れない。
+  Phase 7 完了条件のどれにどう効くかを明記するか、完了判定と切り離した foundation issue として起票し直すこと。

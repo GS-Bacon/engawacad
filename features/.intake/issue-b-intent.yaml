@@ -1,0 +1,5 @@
+aligned: no
+reason: |
+  現 Phase 7 の完了条件（正準平面スケッチ描画と Extrude/ExtrudeCut）への寄与が本文から読み取れない。
+  Phase 7 のどの完了条件を直接前進させる Issue かを明記するか、現 Phase 外の保守/ADR追随 Issue として位置付け直すこと。
+  なお、閾値を新設する案ではないため plan.md の `### 数値モデル` は不要。
