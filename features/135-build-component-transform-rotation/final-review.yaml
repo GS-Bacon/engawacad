@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "crates/mycad-build/tests/transform_acceptance.rs"
+    line_hint: 560
+    finding: "T01 決定性テストが実装されていない。ec10_nonzero_rotation_applied は rotation 適用検証のみで、同一入力を 2 回実行して結果が一致することを検証していない"
+    suggestion: "ec10 または別テストで同一 rotation 値で 2 回 build し、全 Solid ID と頂点座標が一致することを assert すること"
+
+verdict: pass

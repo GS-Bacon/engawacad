@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/mycad-build/src/lib.rs"
+    line_hint: 438
+    finding: "`total_rotation != IDENTITY3` と `total_offset != Vec3::zeros()` を exact な `f64` 比較で分岐しているため、親 `+45°` / 子 `-45°` のように変換が数学的に相殺される階層でも near-identity の回転・平行移動が適用され、不要な座標ノイズが B-rep に焼き込まれる。"
+    suggestion: "行列積と回転済みオフセットの後に snap か epsilon ベースの `is_identity3` / `is_zero_vec` 判定を使って `rotate` / `translate` を抑止し、親子で相殺する回転の回帰テストを追加する。"
+
+verdict: pass
