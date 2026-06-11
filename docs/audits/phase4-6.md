@@ -232,10 +232,13 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 - **assemble.rs:157 の HashMap イテレーション(ADR-005 §9 違反疑い)**: 直後の `assign_intersection_edge_selectors` が BTreeMap + `edges.sort()` で順序を正規化しており、出力は順序不変。決定性テスト(100-run 多数)も green。意図的な設計として正当化可能。
 - **push_triangle の AREA_EPS 除去(既知懸念 4)**: #29 で指摘された `.sqrt()` 適用位置の誤りは修正済み(`cross_norm_sq < AREA_EPS²` の二乗比較で一貫)。face_ids と indices の同期も保たれている。ADR-004 に private heuristic として記録済みであり、単独では finding にしない(Finding 3 の多段握り潰し構造の一部としてのみ言及)。
 
-## 起票結果(起票セッションが追記)
+## 起票結果(2026-06-11、Opus 4.7 セッションで起票)
 
-- ドラフト 1: #___
-- ドラフト 2: #___
-- ドラフト 3: #___
-- ドラフト 4: #___
-- ドラフト 5: #___
+- ドラフト 1: #135 — `fix(build): Component.transform.rotation を build 層に配線する`
+- ドラフト 2: #136 — `fix(tessellation): trimmed UV face の内側ループ u シフトを 2π 周期保存に正規化する`
+- ドラフト 3: #137 — `fix(tessellation): trimmed sphere tessellation のグローバル Z 決め打ちを circ_normal 基準に一般化する`
+- ドラフト 4: #138 — `docs(adr): boolean 交線離散化とテッセレーション解像度の整合戦略を ADR 化する`
+- ドラフト 5: #139 — `chore(test): /3ai 残骸テスト資産の整理`
+
+すべて milestone Phase 7 に紐づけ。依存関係: #135 は #137 解決を前提に
+「rotation × boolean Cut 球」テストを実施する旨を本文で言及済み。
