@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/mycad-api/tests/startup_log_acceptance.rs"
+    line_hint: 1
+    finding: "T01〜T04 の acceptance テストは実装されていますが、このファイル自体が未追跡 (`git status` で `??`) のため現在の `git diff` には含まれていません。現状の tracked 差分だけをコミットすると `coverage_hints.total_added = 0` のままになり、Issue #145 で合意した新規テスト計画が成果物から欠落します。"
+    suggestion: "`crates/mycad-api/tests/startup_log_acceptance.rs` を version control に追加し、レビュー対象の差分に T01〜T04 が実際に載る状態にしてからマージする。"
+
+verdict: fail

@@ -1,0 +1,137 @@
+# Issue #145: Playwright E2E ERR_CONNECTION_REFUSED 修正
+
+> **重要 (round 1 GLM 実装で判明した真の root cause):**
+> Issue #145 本文の診断 (「port 7878 / mycad-api 起動失敗」) は誤り。実際の原因は
+> **`web/tests/helpers.ts` の `setupPageWithFixture` がロガーサイドカー (port 7879) を
+> mock していない** こと。port 7878 (mycad-api) の release 切替と startup log は
+> 副次改善として保持するが、Issue 解決の主軸は helpers.ts の mock 共通化である。
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| **`web/tests/helpers.ts` に `mockLoggerSidecar` を共通関数化し、`setupPageWithFixture` でも適用 (本 Issue の主軸修正)** | webServer の起動方式そのものの再設計 (`bash -c '...'` 方式は保持) |
+| `web/playwright.config.ts` の API webServer command を release profile に切替 (副次改善: cold cache 保険) | `tracing` クレート等の構造化ログ基盤導入 |
+| `crates/mycad-api/src/main.rs` に bind 成功後の startup ログ (`eprintln!`) を 1 行追加 (副次改善: 再発時の診断容易化) | Phase 7 (スケッチ描画) 関連の機能追加・修正 |
+| `crates/mycad-api/tests/startup_log_acceptance.rs` を新設し T01〜T04 を追加 | ADR-009 (Boolean 交線円) 系のテッセレーション foundation 修正 |
+| `cargo xtask ci` 全体が green に戻ること (最終 acceptance) | timeout の動的調整 / CI・ローカル分岐 / webServer 専用テスト用 binary 化 |
+| webServer timeout は 120s のまま保持 | `tests/export.rs` 内の `failed to build assembly: invalid parameter: profile` の解消 (別 Issue で扱う) |
+
+## Non-Goals
+
+- Playwright webServer の起動方式そのものの再設計
+- `tracing` 等の長期的ログ基盤導入
+- xtask の API サーバ pre-warm 化 (#124/#125 の領域)
+- `/api/v0/mesh` 等のエンドポイント挙動修正
+- 既存テストの semantics 変更
+- 他の Playwright テスト (viewer 系・interactive 系) の追加
+
+## 実装対象
+
+<!-- Issue: #145 -->
+<!-- 影響クレート/ファイル: web/tests/helpers.ts (主軸), web/playwright.config.ts (副次), crates/mycad-api/src/main.rs (副次), crates/mycad-api/tests/startup_log_acceptance.rs (新規) -->
+
+### 0. `web/tests/helpers.ts` — `mockLoggerSidecar` 共通関数化 (主軸修正)
+
+**Before** (重複していた状態):
+- `setupPageWithServer` 内に port 7879 mock の inline ブロック (約 12 行)
+- `setupPageWithFixture` には **同等の mock が無い** ← T03 失敗の真因
+
+**After:**
+- ファイルトップに `mockLoggerSidecar(page: Page)` を private async helper として導入
+- `setupPageWithServer` / `setupPageWithFixture` の両方が冒頭で `await mockLoggerSidecar(page)` を呼ぶ
+- mock 内容は既存の `setupPageWithServer` 実装と同等 (CORS preflight + body 空応答)
+
+### 1. `web/playwright.config.ts:25` — webServer command を release profile に切替
+
+**Before:**
+```typescript
+{
+  // Copy to /tmp to prevent POST mutations from polluting the source-controlled file
+  command:
+    "bash -c 'cp examples/simple_box.mycad /tmp/mycad-test-server.mycad && cargo run -p mycad-api -- /tmp/mycad-test-server.mycad'",
+  url: "http://127.0.0.1:7878/api/v0/mesh",
+  reuseExistingServer: !process.env.CI,
+  timeout: 120_000,
+  cwd: "..",
+},
+```
+
+**After:**
+```typescript
+{
+  // Copy to /tmp to prevent POST mutations from polluting the source-controlled file.
+  // Use --release: xtask ci pre-builds release binary (`cargo test -p mycad-api --release static_assets`),
+  // so launch is instant and avoids debug cold-cache build exceeding the 120s timeout (Issue #145).
+  command:
+    "bash -c 'cp examples/simple_box.mycad /tmp/mycad-test-server.mycad && cargo run -p mycad-api --release -- /tmp/mycad-test-server.mycad'",
+  url: "http://127.0.0.1:7878/api/v0/mesh",
+  reuseExistingServer: !process.env.CI,
+  timeout: 120_000,
+  cwd: "..",
+},
+```
+
+### 2. `crates/mycad-api/src/main.rs:13-18` — bind 成功後の startup ログ追加
+
+**Before:**
+```rust
+let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
+    .await
+    .expect("failed to bind to 127.0.0.1:7878");
+axum::serve(listener, app(Arc::new(file)))
+    .await
+    .expect("server error");
+```
+
+**After:**
+```rust
+let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
+    .await
+    .expect("failed to bind to 127.0.0.1:7878");
+eprintln!("mycad-api listening on 127.0.0.1:7878");
+axum::serve(listener, app(Arc::new(file)))
+    .await
+    .expect("server error");
+```
+
+### 3. `crates/mycad-api/tests/startup_log_acceptance.rs` (新規) — T01〜T04 acceptance
+
+新規ファイルを追加し、後述「テスト計画」の T01〜T04 を整合性のある integration test として実装する。
+基本構造:
+- `Command::cargo_bin("mycad-api")` 相当で subprocess を起動 (`assert_cmd` または `std::process::Command` を直接使用、既存 crate の慣習に合わせる)
+- T01/T02: subprocess を spawn → stderr を読みつつ `listening on 127.0.0.1:7878` を一定時間内に検出 → kill
+- T03/T04: subprocess を spawn → 即終了と non-zero exit code を確認
+
+## 設計方針
+
+- **決定性要件**: 本修正は infrastructure 修正のため `IdGenerator` には触れない。決定性は既存テスト群が保証
+- **B-rep トポロジー妥当性**: N/A (infrastructure 修正、幾何処理に変更なし)
+- **退化幾何の扱い**: N/A (geometry 不変)
+- **derive 規約**: 新規型を追加しないため変更なし
+- **エラーハンドリング**: 既存の `expect` パターン (panic on bind failure) を維持。tracing 等の導入は Out-of-Scope
+- **workspace.dependencies 規約**: 新規依存は追加しない。テスト用に `assert_cmd` 等を追加する場合は `[workspace.dependencies]` に登録した上で各 crate から `{ workspace = true }` で参照すること
+- **release profile 依存の前提**: 修正後の Playwright config は xtask が直前に `cargo test -p mycad-api --release static_assets` (`crates/xtask/src/main.rs:870`) を実行している前提に乗っている。この依存関係はコメントで明示する (Approach の After スニペットに記載済み)
+
+## テスト計画（ID 付き）
+
+> infrastructure 修正なので unit test での検証は限定的。最終 acceptance は `cargo xtask ci` 全体 green で確認する。
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01_startup_log | 正常系 | `mycad-api <valid-path>` を spawn し stderr を読む → `listening on 127.0.0.1:7878` が一定時間内に出力される | `assert!(stderr_contains("listening on 127.0.0.1:7878"))` |
+| T02_release_bin_runs | 正常系 | release プロファイルでビルドした binary が `--release -- <path>` で起動して port 7878 を listen | `assert!(stderr_contains("listening on"))` + `TcpStream::connect("127.0.0.1:7878")` 成功 |
+| T03_boundary_invalid_path | 境界 | `mycad-api /nonexistent/path.mycad` を起動 → `canonicalize` 失敗で `expect` panic | `assert!(!status.success())` + 非ゼロ exit code |
+| T04_degen_no_args | 退化 | `mycad-api` を引数なしで起動 → `nth(1)` が `None` → `expect` panic | `assert!(!status.success())` + 非ゼロ exit code |
+| T05_e2e_playwright_green | acceptance | `cargo xtask ci` 内で Playwright T03 console-no-error 系 14 件が pass | xtask ci 全体 success |
+
+退化/境界ガード命名: **T03_boundary_invalid_path** および **T04_degen_no_args** で `_boundary_` / `_degen_` プレフィックスを満たす。
+
+## 幾何的不変条件チェックリスト
+
+本 Issue は infrastructure 修正のため全項目 N/A。
+
+- [N/A] partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか
+- [N/A] 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか
+- [N/A] flip_normals / same_sense の意味論が明確か（頂点順を変えるか vs 法線だけ変えるか）
+- [N/A] pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか

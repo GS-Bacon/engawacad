@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/playwright.config.ts"
+    line_hint: 29
+    finding: "API webServer が `reuseExistingServer: !process.env.CI` のままなので、ローカルで 7878 に既存 `mycad-api` がいると `cp examples/simple_box.mycad ... && cargo run -p mycad-api --release ...` が実行されず、その外部プロセスを再利用する。Issue #145 の実サーバ系 Playwright は毎回 `/tmp/mycad-test-server.mycad` を前提にしており、`cargo xtask ci` のローカル実行結果が既存プロセス状態に依存して非決定になる。"
+    suggestion: "API サーバ側の `reuseExistingServer` は `false` にして、Playwright 実行ごとに専用の `mycad-api` を必ず起動する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-api/tests/startup_log_acceptance.rs"
+    line_hint: 101
+    finding: "`t02_release_bin_runs` は `target/release/mycad-api` が無ければ成功扱いで return し、存在してもその既存ファイルをそのまま実行するだけで現行ソースからの再ビルドを保証しない。`cargo xtask ci` ではこの test が release build より前の `cargo test --workspace` で走るため、クリーン環境では未実行、汚れた環境では古い release 生成物を検証してしまう。"
+    suggestion: "T02 は `cargo run -p mycad-api --release -- ...` を直接起動するか、release プロファイルでこの integration test 自体を実行して、現行ソースから作った binary を必ず検証する。"
+
+verdict: fail

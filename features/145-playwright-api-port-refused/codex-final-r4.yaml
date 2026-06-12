@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-api/tests/startup_log_acceptance.rs"
+    line_hint: 136
+    finding: "T02_release_bin_runs は release 起動経路で確認しているのが `stderr` の startup log と kill 後のポート解放だけで、プロセス生存中に 7878 へ接続できることを一度も検証していません。合意済み T02 の期待値は `port 7878 listen` であり、現状だとログを出した直後にサーバが落ちる回帰でもこのテストは通ってしまうため、Issue #145 の『ERR_CONNECTION_REFUSED を防ぐ』成果物を固定できていません。"
+    suggestion: "child を kill する前に `TcpStream::connect(\"127.0.0.1:7878\")` または `GET /api/v0/mesh` を成功させる待機ループを入れ、release 起動経路で実際に接続可能になったことを assert してください。"
+
+verdict: fail

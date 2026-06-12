@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-api/tests/startup_log_acceptance.rs"
+    line_hint: 73
+    finding: "T01/T02 の timeout は blocking な `stderr.read()` に依存しているため、`mycad-api` が stderr を出さずに起動した場合にループが timeout せず、そのまま CI を hang させる。今回追加した startup log 回帰を検出すべきテストが、肝心の failure mode で fail ではなく停止になる。"
+    suggestion: "stderr 読み取りを別スレッド + `recv_timeout` で扱うか nonblocking I/O を使い、timeout 時は child を kill して明示的に失敗させる。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-api/tests/startup_log_acceptance.rs"
+    line_hint: 139
+    finding: "`T02_release_bin_runs` は `env!(\"CARGO_BIN_EXE_mycad-api\")` を直接 spawn しており、`web/playwright.config.ts` で切り替えた `cargo run -p mycad-api --release -- ...` の経路を実際には検証していない。通常の `cargo test` 実行では test/profile 側のバイナリを叩くため、release 起動専用の回帰を取り逃がす。"
+    suggestion: "テストでも Playwright と同じ `cargo run -p mycad-api --release -- <path>` を起動するか、`target/release/mycad-api` を明示的に実行して release 経路を直接検証する。"
+
+verdict: fail
