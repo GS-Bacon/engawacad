@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  タイトルと位置付けで #137 follow-up として何を直し、なぜ Phase 7 を支えるのかが示され、前提関係も追える。
+  完了条件は `cargo xtask ci` と個別テスト件数で計測可能で、In-Scope/Out-of-Scope・Non-Goals・必要な `数値モデル` セクションも明確。
