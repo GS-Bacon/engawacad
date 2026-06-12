@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "orthonormal_basis(axis) が決定的と記載されているが、具体的な決定性保証が不明"
+    suggestion: "math.rs:50-60 の実装が決定的であることを確認し、T01 テストで同一入力に対する複数回実行の結果を比較すること"
+
+verdict: pass

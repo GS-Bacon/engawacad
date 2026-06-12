@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 1050
+    finding: "`InvalidTrimCircle` の検証が `signed_offset` だけで、`circ_center` の軸直交ずれや `circ_radius` の整合性を見ていません。`circ_center` が `axis` から外れている円や、`radius^2 != signed_offset^2 + circ_radius^2` の円でも受理され、実際の B-rep edge とは別の緯線を球面上に再合成して共有境界を壊します。"
+    suggestion: "`perp = (circ_center - center) - signed_offset * axis` のノルムと、期待半径 `sqrt(radius * radius - signed_offset * signed_offset)` に対する `circ_radius` の差を `LENGTH_TOLERANCE` で検証し、外れた場合は `InvalidTrimCircle` を返してください。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 593
+    finding: "合意済みの T04_shared_boundary が未実装です。計画では `HalfEdge.twin` と `TriangleMesh::face_ids` を使って trimmed sphere face と隣接 cyl face の共有境界頂点を index 順に直接比較するはずでしたが、現在は既存の `naked_edge == 0` 再確認に置き換わっており、この refactor で起こり得る境界列の位相ずれ・向きずれを検出できません。"
+    suggestion: "trimmed sphere face の inner loop から `twin` で隣接 cyl lateral face を特定し、両 face の境界 ring 頂点列を抽出して各 index で `LENGTH_TOLERANCE` 以内かを比較する、計画どおりの T04 に差し替えてください。"
+
+verdict: fail

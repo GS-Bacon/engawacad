@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 1023
+    finding: "sub-tolerance の `circ_normal` が `InvalidTrimCircle` にならない。`circ_normal` を先に normalize してから長さを判定しているため、ゼロ以外の極小ベクトルは単位長に化けて通常メッシュ化され、IN01 の退化入力検出を満たしていない。"
+    suggestion: "normalize 前に `circ_normal.norm()` または `norm_squared()` を検査し、非有限値または `<= LENGTH_TOLERANCE` を即 `InvalidTrimCircle` にする。あわせて near-zero normal の回帰テストを追加する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 145
+    finding: "T03/T_boundary/T_degen 系の inner loop が各 edge を `t_range=[0, 2π]` の full circle として 4 本つないでおり、edge の start/end vertex と curve が整合していない。現状は実装が最初の edge と点数しか見ないため通るだけで、実際の分割円弧ループを検証できていない。"
+    suggestion: "plan 通り 1 本の full-sweep edge を使うか、4 分割するなら各 edge の `t_range` を quarter arc にして start/end vertex と pcurve を整合させる。"
+
+verdict: fail

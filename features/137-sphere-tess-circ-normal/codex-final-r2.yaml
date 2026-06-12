@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 1001
+    finding: "inner loop の許容条件を `>=1 HE` に広げた一方で、その 1 本が periodic な full-sweep circle（start=end かつ span≈2π）であることを検証していない。半円などの 1-edge loop でも `Ok(())` になり、`edge.t_range` を無視した 360° の trim cap を生成してしまう。"
+    suggestion: "1HE を許可する場合は `edge.vertices[0] == edge.vertices[1]` と `|t_range[1]-t_range[0]| ≈ 2π` を必須条件にし、満たさない単一 arc は `TrimmedFaceUnsupported` で拒否する。1-edge partial arc を弾く回帰テストも追加する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 1036
+    finding: "`InvalidTrimCircle` の検証が `signed_offset` だけに限られており、`circ_center - sphere_center` の法線直交成分や `circ_radius` の整合性を見ていない。中心が軸からずれた円や半径不整合の円でも受理され、B-rep edge と別の境界を球面上に再合成して隣接面との共有境界を壊せる。"
+    suggestion: "`perp = (circ_center - center) - signed_offset * axis` のノルムと、期待半径 `sqrt(radius^2 - signed_offset^2)` との差を `LENGTH_TOLERANCE` で検証し、外れた場合は `InvalidTrimCircle` を返す。"
+verdict: fail

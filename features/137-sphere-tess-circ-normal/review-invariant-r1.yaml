@@ -1,0 +1,15 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "設計方針 > 退化幾何の扱い"
+    finding: "axis ≈ 0 のケースで debug_assert!(axis.norm() > 0.0) による defensive check となっているが、release build では無効化されるため NaN 伝搬が発生する可能性がある。NaN の挙動はプラットフォーム依存であり、決定性リスクになる。"
+    suggestion: "Release build でも有効な validation (axis.norm() <= 0.0 なら InvalidTrimCircle エラー等) を追加するか、上流の circ_normal が正規ベクトルであることを contract として明記し、NaN が発生した場合の挙動をテストで contract 化する"
+
+  - id: IN02
+    severity: low
+    section: "実装対象 > 主要変更 1"
+    finding: "clamp(-1.0, 1.0) が残されているが、上の validation 後に到達する論理が直感的でない。validation で signed_offset.abs() > radius + LENGTH_TOLERANCE を弾いているので、clamp は実質的に丸め誤差吸収のためだけに残されている。"
+    suggestion: "これは低 severityだが、clamp の目的をコメントで明確にすると「なぜ validation があるのに clamp が必要か」が理解しやすくなる。現在の設計方針には「接円 ε 内での丸め誤差吸収のみ clamp を残す」とあるため実装は妥当"
+
+verdict: pass
+# medium/low のみで critical/high なし、pass と判断

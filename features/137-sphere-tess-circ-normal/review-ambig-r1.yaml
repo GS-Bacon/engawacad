@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "テスト計画 > T_boundary_tangent_circle"
+    finding: "期待結果が「期待挙動どおり (test で contract 化)」と書かれており、どの挙動を contract として固定するかが実装者の判断に委ねられている"
+    suggestion: "「v_lat = ±π/2 で極のみで構成される退化メッシュが生成される、または既存 TrimmedFaceUnsupported で reject されるどちらかを確認し、確認した挙動を assert で固定する」のように、判定ロジックを含めること。ただし severity は low（既存コードの挙動確認テストであるため）"
+
+verdict: pass

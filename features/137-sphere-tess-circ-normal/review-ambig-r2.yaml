@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: high
+    section: "テスト計画 > T04_shared_boundary"
+    finding: "「隣接 cyl lateral face の境界 ring 頂点を直接比較」だが、隣接面をどう特定するか（どの Face を比較対象とするか）が未定義。また「隣接 cyl lateral face」という既存テスト・ユーティリティの有無が不明確"
+    suggestion: "「boolean_cut_sphere_dimple 結果の TrimmedFace の境界ring と、同じ Solid 内の CylindricalLateralFace の境界ringを、HalfEdge 経由で pair ペアとして比較する」など、隣接面の特定方法を具体化すること"
+
+verdict: fail

@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: low
+    section: "数値モデル > tolerance"
+    finding: "LENGTH_TOLERANCE = 1e-9 を流用とあるが、球面トポロジー(uv座標系)の「角度方向」のtoleranceは言及がない。asin/atan2系の数値不安定箇所(例: v_lat ≈ ±π/2での極近傍)での境界挙動が未定義"
+    suggestion: "角度方向の ε (例: ANGLE_EPS = 1e-12 rad) を導入し、極近傍での除算安定化やグリッド生成のスキップ判定に適用することを検討。ただし現行の signed_offset バリデーションで実害は限定的と判断されるため low severity"
+
+verdict: pass
