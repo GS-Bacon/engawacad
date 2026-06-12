@@ -27,6 +27,7 @@
    - `aligned: yes` → `gh issue create` で起票
    - `aligned: no` → ユーザーと相談して Issue 案を修正 → 再チェック
 3. Phase 着手時は当 Phase の ADR にペルソナ構成を記載する (Common 3 + Phase オプション)
+4. `type:feature` 以外 (`bug` / `enhancement` 等) の Issue にも、内容に応じて `batch:kernel` / `batch:data` / `batch:viewer` / `batch:skill` のいずれかを必ず付与する。`batch:*` が無い Light tier Issue は `/3ai` auto 選定 (`.claude/skills/3ai/scripts/batch-select.ts` の bug-batch / enh-batch ラダー) から漏れて取り残される
 
 ## Project Overview
 

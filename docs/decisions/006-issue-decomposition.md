@@ -34,6 +34,7 @@ Phase 4 (Boolean) の作業データを分析した結果、以下の法則が�
 - [ ] ADR の決定と実装が混在していないか? (ADR 決定は別 Issue)
 - [ ] 完了条件が「テストが通る / export で確認できる」で計測可能か?
 - [ ] 「前提として必要な別 Issue」はすでに closed か?
+- [ ] `type:feature` 以外 (`bug` / `enhancement` 等) なら `batch:{kernel|data|viewer|skill}` のいずれかを付けたか? (`batch:*` 無しの Light tier Issue は `/3ai` auto 選定の bug-batch / enh-batch ラダー (`.claude/skills/3ai/scripts/batch-select.ts`) に乗らず取り残される)
 
 **NG パターン:**
 - "曲面 Boolean 全部" → (Plane×Cyl A1) + (Plane×Sphere A2) + (Cyl×Sphere A3) に分割
