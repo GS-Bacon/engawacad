@@ -126,19 +126,11 @@ export async function assertMeshHealthy(page: Page): Promise<void> {
 }
 
 /**
- * Set up a page connected to the real API server (no route mocking).
- * The API server is started automatically by playwright.config.ts webServer.
- * Returns an array of console error messages captured during the test.
+ * Mock the logger sidecar (port 7879) which is not started in the test environment.
+ * Without this mock, the viewer's logger fetch surfaces ERR_CONNECTION_REFUSED as
+ * console.error and trips T03 console-no-error assertions (Issue #145).
  */
-export async function setupPageWithServer(page: Page): Promise<string[]> {
-  const consoleErrors: string[] = [];
-  page.on("console", (msg) => {
-    if (msg.type() === "error") {
-      consoleErrors.push(msg.text());
-    }
-  });
-  // ロガーサイドカー (port 7879) は test 環境では起動しない。
-  // CORS preflight が console.error を出すのを防ぐためにモックする。
+export async function mockLoggerSidecar(page: Page): Promise<void> {
   await page.route("http://127.0.0.1:7879/**", (route) =>
     route.fulfill({
       status: 200,
@@ -150,6 +142,21 @@ export async function setupPageWithServer(page: Page): Promise<string[]> {
       body: "",
     }),
   );
+}
+
+/**
+ * Set up a page connected to the real API server (no route mocking).
+ * The API server is started automatically by playwright.config.ts webServer.
+ * Returns an array of console error messages captured during the test.
+ */
+export async function setupPageWithServer(page: Page): Promise<string[]> {
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      consoleErrors.push(msg.text());
+    }
+  });
+  await mockLoggerSidecar(page);
   return consoleErrors;
 }
 
@@ -167,6 +174,7 @@ export async function setupPageWithFixture(
       consoleErrors.push(msg.text());
     }
   });
+  await mockLoggerSidecar(page);
   await page.route("/api/v0/mesh", (route) =>
     route.fulfill({
       status: 200,

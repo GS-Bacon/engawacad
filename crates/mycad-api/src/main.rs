@@ -13,6 +13,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
         .await
         .expect("failed to bind to 127.0.0.1:7878");
+    eprintln!("mycad-api listening on 127.0.0.1:7878");
     axum::serve(listener, app(Arc::new(file)))
         .await
         .expect("server error");

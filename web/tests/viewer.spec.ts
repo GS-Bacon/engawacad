@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { setupPageWithServer, assertMeshHealthy } from "./helpers.js";
+import { setupPageWithServer, assertMeshHealthy, mockLoggerSidecar } from "./helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +43,8 @@ async function setupPageWithFixture(
       consoleErrors.push(msg.text());
     }
   });
+
+  await mockLoggerSidecar(page);
 
   const fixture = loadFixture(fixtureName);
   await page.route("/api/v0/mesh", (route) =>
