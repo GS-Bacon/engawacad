@@ -98,16 +98,24 @@ fn export_invalid_profile_fails_no_stl() {
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let output = tmp.path();
 
-    let status = Command::new(bin)
+    let result = Command::new(bin)
         .arg("export")
         .arg(&input)
         .arg("-o")
         .arg(output)
-        .status()
+        .output()
         .expect("run mycad export");
     assert!(
-        !status.success(),
+        !result.status.success(),
         "export should fail for self-intersecting profile"
+    );
+
+    // Stderr must contain the expected error message
+    // (regression guard for KernelError::InvalidParameter { kind: "profile" })
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("invalid parameter: profile"),
+        "stderr should contain expected error, got: {stderr}"
     );
 
     // Output file should be absent or empty
