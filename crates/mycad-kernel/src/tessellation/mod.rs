@@ -3,10 +3,11 @@ pub use stl::to_ascii_stl;
 
 use crate::brep::topology::Solid;
 use crate::geometry::curve::Curve;
+use crate::geometry::math::orthonormal_basis;
 use crate::geometry::surface::{Surface, TessellationStrategy};
 use crate::geometry::{
     angle_near, arc_segment_count, length_near, point_near, point_near_scaled, unwrap_periodic_uv,
-    Point, ANGLE_TOLERANCE, LENGTH_TOLERANCE,
+    Point, Vec3, ANGLE_TOLERANCE, LENGTH_TOLERANCE,
 };
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
@@ -94,6 +95,13 @@ pub enum TessellationError {
     TrimmedFaceUnsupported,
     #[error("non-manifold loop detected")]
     NonManifoldLoop,
+    #[error(
+        "trim circle outside sphere surface: signed_offset={signed_offset}, radius={sphere_radius}"
+    )]
+    InvalidTrimCircle {
+        signed_offset: f64,
+        sphere_radius: f64,
+    },
 }
 
 /// Tessellate a B-rep solid into a triangle mesh using default options.
@@ -966,7 +974,13 @@ fn tessellate_face_sphere(
 /// watertight welding. The latitude (v_lat) of the inner loop circle is extracted
 /// from the edge geometry. The trim direction is determined from the relative
 /// position of the cutting plane to the sphere center.
-fn tessellate_sphere_face_trimmed(
+///
+/// 上流制約 (2026-06 時点): surface_intersect の MVP では plane×sphere /
+/// cyl×sphere とも軸 ±Z のみをサポートする。すなわち本関数が受け取る
+/// circ_normal は実際上 ±Z しか到達しない。ただし将来 (rotation 配線 #135 や
+/// 任意軸 surface_intersect 拡張) で他の circ_normal が来ても、本実装は
+/// circ_normal を局所軸として正しく動作する。
+pub fn tessellate_sphere_face_trimmed(
     solid: &Solid,
     face: &crate::brep::topology::Face,
     face_idx: usize,
@@ -984,15 +998,32 @@ fn tessellate_sphere_face_trimmed(
     let radius = *sph_radius;
     let center = *sph_center;
 
-    // Validate inner loop structure: exactly 1 inner loop with ≥2 HEs
+    // Validate inner loop structure: exactly 1 inner loop with ≥1 HE
+    // (周期エッジ: 1 HE で full circle を表現可能、F02)
     if face.inner_loops.len() != 1 {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
     let il_idx = face.inner_loops[0];
     let il = &solid.loops[il_idx];
-    if il.half_edges.len() < 2 {
+    if il.half_edges.is_empty() {
         return Err(TessellationError::TrimmedFaceUnsupported);
     }
+
+    // F01 round 2: 1HE ループは周期エッジ (full circle) のみ許容
+    if il.half_edges.len() == 1 {
+        let he = &solid.half_edges[il.half_edges[0]];
+        let edge = &solid.edges[he.edge];
+        // start == end vertex (周期エッジ)
+        if edge.vertices[0] != edge.vertices[1] {
+            return Err(TessellationError::TrimmedFaceUnsupported);
+        }
+        // t_range が full sweep 2π
+        let span = (edge.t_range[1] - edge.t_range[0]).abs();
+        if (span - 2.0 * std::f64::consts::PI).abs() > ANGLE_TOLERANCE {
+            return Err(TessellationError::TrimmedFaceUnsupported);
+        }
+    }
+
     let he = &solid.half_edges[il.half_edges[0]];
     let edge = &solid.edges[he.edge];
     let Curve::Circle {
@@ -1004,18 +1035,39 @@ fn tessellate_sphere_face_trimmed(
         return Err(TessellationError::TrimmedFaceUnsupported);
     };
 
-    // The circle center z gives us the latitude
-    let center_z = circ_center.coords.z;
-    // v_lat = asin((center_z - sph_center_z) / R)
-    let rel_z = (center_z - center.coords.z) / radius;
-    let rel_z = rel_z.clamp(-1.0, 1.0);
-    let v_lat = rel_z.asin();
+    // 球ローカル軸 = circ_normal 方向。球は回転対称なので circ_normal を
+    // 「極軸」として扱い、v_lat = この軸方向の緯度として再解釈する。
+    // F01: normalize 前に circ_normal.norm() をチェックし、極小ベクトルも検出する
+    let circ_normal_norm = circ_normal.norm();
+    if !circ_normal_norm.is_finite() || circ_normal_norm <= LENGTH_TOLERANCE {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset: f64::NAN,
+            sphere_radius: radius,
+        });
+    }
+    let axis = circ_normal.normalize();
 
-    // Both intersection circles share normal +Z, so circ_normal cannot tell the
-    // upper cap from the lower cap. Decide from the circle's position relative to
-    // the sphere center (same criterion as classify::get_fragment_interior_point):
-    // a cutting circle below the center keeps the lower (south-pole) cap.
-    let trim_lower = center_z < center.coords.z;
+    // circ_center から sph_center へのベクトルの axis 方向成分が signed_offset。
+    // |signed_offset| = sph_radius * sin(v_lat)
+    let signed_offset = (circ_center - center).dot(&axis);
+
+    // 球外円は退化吸収せず InvalidTrimCircle としてエラー化する。
+    // 接円 (|signed_offset| ≈ sph_radius) は許容、それを超える場合は逸脱。
+    if signed_offset.abs() > radius + LENGTH_TOLERANCE {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset,
+            sphere_radius: radius,
+        });
+    }
+
+    // 上の validation で |signed_offset| <= radius + ε まで絞ったため、
+    // clamp は接円 (|signed_offset| = radius) 近傍の浮動小数誤差で asin が
+    // NaN を返すのを防ぐ「丸め誤差吸収のみ」の役割 (INVARIANT IN02)
+    let rel_axis = (signed_offset / radius).clamp(-1.0, 1.0);
+    let v_lat = rel_axis.asin();
+
+    // trim_lower (axis 基準): cut 円が axis 負側 → axis 負側の極 (-axis) のキャップを生成
+    let trim_lower = signed_offset < 0.0;
 
     // Use collect_loop_points only for the point count (n_u) so it matches the
     // adjacent planar face's boundary resolution. The actual boundary ring uses
@@ -1034,16 +1086,29 @@ fn tessellate_sphere_face_trimmed(
         (v_lat, PI / 2.0) // upper cap: v_lat → north pole
     };
 
+    // axis 周りの orthonormal basis を構築。球面の径方向を (bu, bv) で表す。
+    let (bu, bv) = orthonormal_basis(&axis);
+
+    // 球面 (u, v) 評価: sph_center + R * (sin(v) * axis + cos(v) * (cos(u) * bu + sin(u) * bv))
+    let eval_axis = |u: f64, v: f64| -> Point {
+        let radial = u.cos() * bu + u.sin() * bv;
+        center + radius * (v.sin() * axis + v.cos() * radial)
+    };
+
+    // 法線: 球面外向きは (point - sph_center) / R
+    let normal_axis =
+        |u: f64, v: f64| -> Vec3 { ((eval_axis(u, v) - center) / radius).normalize() };
+
     // Boundary ring via uniform u sampling — same angular spacing as internal
     // rings, so winding is consistent. Positions match the adjacent face because
     // both use the same n_u and 2π/n_u angular step.
     let ring_start = mesh.positions.len() as u32;
     for iu in 0..n_u {
         let u = du * iu as f64;
-        let p = face.surface.evaluate(u, v_boundary);
-        let normal = face.surface.normal_at(u, v_boundary);
+        let p = eval_axis(u, v_boundary);
+        let n = normal_axis(u, v_boundary);
         mesh.positions.push([p.x, p.y, p.z]);
-        mesh.normals.push(normal_arr(&normal, face.same_sense));
+        mesh.normals.push(normal_arr(&n, face.same_sense));
     }
 
     // Sample internal rings between v_boundary and pole
@@ -1053,10 +1118,10 @@ fn tessellate_sphere_face_trimmed(
         let ring_base = mesh.positions.len() as u32;
         for iu in 0..n_u {
             let u = du * iu as f64;
-            let p = face.surface.evaluate(u, v);
-            let normal = face.surface.normal_at(u, v);
+            let p = eval_axis(u, v);
+            let n = normal_axis(u, v);
             mesh.positions.push([p.x, p.y, p.z]);
-            mesh.normals.push(normal_arr(&normal, face.same_sense));
+            mesh.normals.push(normal_arr(&n, face.same_sense));
         }
         // Triangles between this ring and previous ring (or boundary ring)
         let prev_start = if iv == 1 {
@@ -1080,8 +1145,9 @@ fn tessellate_sphere_face_trimmed(
     }
 
     // Pole vertex + fan
-    let pole_p = face.surface.evaluate(0.0, pole_v);
-    let pole_normal = face.surface.normal_at(0.0, pole_v);
+    // pole_v は ±π/2、eval_axis(0, ±π/2) = center ± R * axis
+    let pole_p = eval_axis(0.0, pole_v);
+    let pole_normal = normal_axis(0.0, pole_v);
     let pole_idx = mesh.positions.len() as u32;
     mesh.positions.push([pole_p.x, pole_p.y, pole_p.z]);
     mesh.normals.push(normal_arr(&pole_normal, face.same_sense));
@@ -1107,7 +1173,7 @@ fn tessellate_sphere_face_trimmed(
         }
     }
 
-    let _ = (circ_radius, circ_normal);
+    let _ = (circ_radius,);
     Ok(())
 }
 
@@ -1660,7 +1726,9 @@ mod tests {
             ));
         }
 
-        // Case 2: inner loops present
+        // Case 2: full sphere face with inner loops (unsupported)
+        // F02 修正後: 1 inner_loop (1 edge full-sweep) は許容されるが、
+        // full sphere face 本来 inner_loop を持つ構造は不正
         {
             let mut s = S::new(0);
             let v0 = s.add_vertex(1, Point::new(0.0, 0.0, -5.0), None);
@@ -1679,19 +1747,34 @@ mod tests {
             let he0 = s.add_half_edge(4, v0, e0, true);
             let he1 = s.add_half_edge(5, v1, e0, false);
             let lp_outer = s.add_loop(6, vec![he0, he1]);
-            let lp_inner = s.add_loop(7, vec![he0]);
-            s.add_face(
+            // 2 つ以上の inner_loop は不正
+            let v_trim = s.add_vertex(7, Point::new(0.0, 0.0, 0.0), None);
+            let e_trim = s.add_edge(
                 8,
+                [v_trim, v_trim],
+                Curve::Circle {
+                    center: Point::origin(),
+                    normal: Vec3::z(),
+                    radius: 3.0,
+                },
+                [0.0, 2.0 * PI],
+                None,
+            );
+            let he_trim = s.add_half_edge(9, v_trim, e_trim, true);
+            let lp_inner1 = s.add_loop(10, vec![he_trim]);
+            let lp_inner2 = s.add_loop(11, vec![he_trim]); // 同じ HE を使う 2 つ目の loop
+            s.add_face(
+                12,
                 Surface::Sphere {
                     center: Point::origin(),
                     radius: 5.0,
                 },
                 lp_outer,
-                vec![lp_inner],
+                vec![lp_inner1, lp_inner2], // 2 inner loops: unsupported
                 true,
                 None,
             );
-            s.add_shell(9, vec![0], true);
+            s.add_shell(13, vec![0], true);
             assert!(matches!(
                 tessellate_solid(&s),
                 Err(TessellationError::TrimmedFaceUnsupported)
