@@ -14,6 +14,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import type { StateData } from "./types.ts";
+import { extractCiFailureContext } from "./extract-ci-failure-context.ts";
 
 const args = process.argv.slice(2);
 let step = "";
@@ -59,6 +60,19 @@ if (resultFile && existsSync(resultFile)) {
   } catch {}
 }
 
+// ci.log の失敗周辺抜粋 (#150 — 自動起票 Issue 受領側が真因を読みやすくする)
+let ciExcerpt = "";
+const ciLogPath = `${featureDir}/ci.log`;
+if (existsSync(ciLogPath)) {
+  try {
+    const ciLog = readFileSync(ciLogPath, "utf-8");
+    const excerpt = extractCiFailureContext(ciLog, 40);
+    if (excerpt) {
+      ciExcerpt = `\n\n## ci.log 失敗周辺 (抜粋)\n\`\`\`\n${excerpt}\n\`\`\``;
+    }
+  } catch {}
+}
+
 const title = `fix(3ai): [自動起票] ${step} でエラー — Issue #${issueNum} (${slug})`;
 const body = `## 発生ステップ
 ${step}
@@ -70,6 +84,7 @@ ${step}
 
 ## エラー概要
 ${errorSummary}
+${ciExcerpt}
 
 ## state.json
 \`\`\`json

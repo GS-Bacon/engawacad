@@ -180,6 +180,17 @@ ROADMAP.md の現 Phase に紐づく Milestone の未着手 Issue を提案し�
 bun .claude/skills/3ai/scripts/init-feature.ts --issue $ISSUE_NUM --slug $ISSUE_SLUG
 ```
 
+### STEP 1-A: 自動起票 Issue 検出時の前回 ci.log 必須調査 (#150)
+
+Issue タイトルに `[自動起票]` が含まれる、または body に `*このIssueは raise-issue-on-failure.ts により自動起票されました。*` が含まれる場合は **必ず以下を実行する**:
+
+1. Issue body の `feature-dir: features/N-slug/` から元の作業ディレクトリを抽出する
+2. **必須**: その feature-dir の `ci.log` を読み、`FAILED` / `error:` / `panicked at` / `error[E` などのキーワードでエラー周辺を確認する (`grep -nE '(FAILED|error:|panicked at|error\[E)' features/N-slug/ci.log | tail -20`)
+3. plan.md の「根本原因」セクションは **その grep 結果 + 関連コードを読んで自分の言葉で書く**。Issue 本文の `error_summary` を鵜呑みにしない
+4. 起票元 Issue の本文 `## ci.log 失敗周辺 (抜粋)` セクション (本 Issue #150 で `raise-issue-on-failure.ts` が出力するようになった) も併読すると効率的
+
+これにより「Issue 本文の誤診断を信じて plan を作り、後段の CI で真因判明 → やり直し」の構造的再発を防ぐ。
+
 ---
 
 ## STEP 2: 壁打ち・設計・テスト設計
