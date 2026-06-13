@@ -30,8 +30,8 @@ fn run_export(bin: &str, input: &std::path::Path) -> std::process::Output {
 /// T01: Determinism — assembly export produces identical STL bytes on repeated runs.
 #[test]
 fn t01_determinism_assembly_export() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = example_path("assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = example_path("assembly.engawa");
 
     let tmp1 = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let tmp2 = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
@@ -62,8 +62,8 @@ fn t01_determinism_assembly_export() {
 /// T02: Assembly export succeeds — exit 0 and non-empty STL output.
 #[test]
 fn t02_assembly_export_succeeds() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = example_path("assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = example_path("assembly.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
 
     let status = Command::new(bin)
@@ -82,8 +82,8 @@ fn t02_assembly_export_succeeds() {
 /// T05: Simple part (features only, no children) still works after assembly wiring.
 #[test]
 fn t05_boundary_simple_part_still_works() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = example_path("simple_box.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = example_path("simple_box.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
 
     let status = Command::new(bin)
@@ -103,11 +103,11 @@ fn t05_boundary_simple_part_still_works() {
 // Edge-case tests (adversarial persona)
 // ---------------------------------------------------------------------------
 
-/// Determinism 100x: 100 consecutive exports of assembly.mycad produce identical STL bytes.
+/// Determinism 100x: 100 consecutive exports of assembly.engawa produce identical STL bytes.
 #[test]
 fn edge_determinism_100x_assembly_export() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = example_path("assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = example_path("assembly.engawa");
 
     let tmp_ref = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let status = Command::new(bin)
@@ -138,8 +138,8 @@ fn edge_determinism_100x_assembly_export() {
 /// Determinism 100x: Simple part also produces identical output 100 times.
 #[test]
 fn edge_determinism_100x_simple_part_export() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = example_path("simple_box.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = example_path("simple_box.engawa");
 
     let tmp_ref = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let status = Command::new(bin)
@@ -170,8 +170,8 @@ fn edge_determinism_100x_simple_part_export() {
 /// Deep nested assembly: 3 levels of children with a leaf box exports successfully.
 #[test]
 fn edge_deep_nested_assembly_export() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = fixture_path("deep_nested_assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = fixture_path("deep_nested_assembly.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
 
     let status = Command::new(bin)
@@ -193,8 +193,8 @@ fn edge_deep_nested_assembly_export() {
 /// Deep nested assembly determinism: two runs produce identical output.
 #[test]
 fn edge_deep_nested_determinism() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = fixture_path("deep_nested_assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = fixture_path("deep_nested_assembly.engawa");
 
     let tmp1 = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let tmp2 = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
@@ -225,8 +225,8 @@ fn edge_deep_nested_determinism() {
 /// Sibling assembly: two sibling components with transform offset export successfully.
 #[test]
 fn edge_siblings_assembly_export() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = fixture_path("siblings_assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = fixture_path("siblings_assembly.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
 
     let status = Command::new(bin)
@@ -241,7 +241,7 @@ fn edge_siblings_assembly_export() {
     let stl = std::fs::read(tmp.path()).expect("read stl");
     assert!(!stl.is_empty(), "siblings STL must not be empty");
     // Two boxes combined: sibling output must differ from single box
-    let single_input = example_path("simple_box.mycad");
+    let single_input = example_path("simple_box.engawa");
     let tmp_single = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let s_single = Command::new(bin)
         .arg("export")
@@ -261,8 +261,8 @@ fn edge_siblings_assembly_export() {
 /// Empty children assembly: children with no features → CLI succeeds but produces empty STL.
 #[test]
 fn edge_empty_children_assembly_cli_produces_empty_stl() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = fixture_path("empty_children_assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = fixture_path("empty_children_assembly.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
 
     let status = Command::new(bin)
@@ -294,8 +294,8 @@ fn edge_empty_children_assembly_cli_produces_empty_stl() {
 /// Negative dimension box assembly: CLI exits with error, does not panic.
 #[test]
 fn edge_negative_box_assembly_cli_fails() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = fixture_path("negative_box_assembly.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = fixture_path("negative_box_assembly.engawa");
     let output = run_export(bin, &input);
     assert!(
         !output.status.success(),
@@ -312,8 +312,8 @@ fn edge_negative_box_assembly_cli_fails() {
 /// Nonexistent input file: CLI exits with error, not panic.
 #[test]
 fn edge_nonexistent_input_cli_fails() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
-    let input = PathBuf::from("/tmp/absolutely_nonexistent_76_test.mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
+    let input = PathBuf::from("/tmp/absolutely_nonexistent_76_test.engawa");
     let output = run_export(bin, &input);
     assert!(
         !output.status.success(),

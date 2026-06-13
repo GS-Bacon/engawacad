@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Write a minimal .mycad file with a single create_box feature.
+/// Write a minimal .engawa file with a single create_box feature.
 fn write_box_mycad(dir: &Path, filename: &str, box_id: &str, size: f64) -> PathBuf {
-    let mut doc = Document::new(filename.trim_end_matches(".mycad"));
+    let mut doc = Document::new(filename.trim_end_matches(".engawa"));
     doc.root_component.features.push(Feature::CreateBox {
         id: box_id.to_string(),
         width: size,
@@ -64,7 +64,7 @@ fn t01_determinism() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    write_box_mycad(base, "child.mycad", "box_child", 5.0);
+    write_box_mycad(base, "child.engawa", "box_child", 5.0);
 
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
@@ -74,7 +74,7 @@ fn t01_determinism() {
         depth: 10.0,
     });
     let mut child_comp = Component::new("RefChild");
-    child_comp.reference = Some(ComponentRef::File("child.mycad".to_string()));
+    child_comp.reference = Some(ComponentRef::File("child.engawa".to_string()));
     doc.root_component.children.push(child_comp);
 
     let mut gen1 = IdGenerator::new(0);
@@ -119,7 +119,7 @@ fn t02_stdlib_reference_resolved() {
     let stdlib_dir = dir.path().join("stdlib");
     fs::create_dir_all(&stdlib_dir).unwrap();
 
-    write_box_mycad(&stdlib_dir, "part.mycad", "box_stdlib", 3.0);
+    write_box_mycad(&stdlib_dir, "part.engawa", "box_stdlib", 3.0);
 
     let doc = stdlib_ref_doc("Parent", "part");
 
@@ -142,9 +142,9 @@ fn t03_file_reference_resolved() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    write_box_mycad(base, "child.mycad", "box_child", 5.0);
+    write_box_mycad(base, "child.engawa", "box_child", 5.0);
 
-    let doc = file_ref_doc("Parent", "child.mycad");
+    let doc = file_ref_doc("Parent", "child.engawa");
 
     let mut gen = IdGenerator::new(0);
     let bodies = build_assembly(&doc, base, &mut gen).unwrap();
@@ -205,10 +205,10 @@ fn t05_circular_reference_detected() {
     let base = dir.path();
 
     // A references B, B references A
-    let yaml_a = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: A\n  ref: b.mycad\n  features: []\n";
-    let yaml_b = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: B\n  ref: a.mycad\n  features: []\n";
-    fs::write(base.join("a.mycad"), yaml_a).unwrap();
-    fs::write(base.join("b.mycad"), yaml_b).unwrap();
+    let yaml_a = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: A\n  ref: b.engawa\n  features: []\n";
+    let yaml_b = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: B\n  ref: a.engawa\n  features: []\n";
+    fs::write(base.join("a.engawa"), yaml_a).unwrap();
+    fs::write(base.join("b.engawa"), yaml_b).unwrap();
 
     let doc = Document::from_yaml(yaml_a).unwrap();
     let mut gen = IdGenerator::new(0);
@@ -229,8 +229,8 @@ fn t06_boundary_self_reference() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    let yaml = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: A\n  ref: self.mycad\n  features: []\n";
-    fs::write(base.join("self.mycad"), yaml).unwrap();
+    let yaml = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: A\n  ref: self.engawa\n  features: []\n";
+    fs::write(base.join("self.engawa"), yaml).unwrap();
 
     let doc = Document::from_yaml(yaml).unwrap();
     let mut gen = IdGenerator::new(0);
@@ -254,18 +254,18 @@ fn t07_boundary_depth_16_vs_17() {
     // Create chain: level_0 → level_1 → ... → level_N
     // level_N has no reference (leaf with a box).
     let leaf_yaml = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: leaf\n  features:\n    - type: create_box\n      id: leaf_box\n      width: 1.0\n      height: 1.0\n      depth: 1.0\n";
-    fs::write(base.join("level_16.mycad"), leaf_yaml).unwrap();
+    fs::write(base.join("level_16.engawa"), leaf_yaml).unwrap();
 
     for i in (0..16).rev() {
         let yaml = format!(
-            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: level_{i}\n  ref: level_{}.mycad\n  features: []\n",
+            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: level_{i}\n  ref: level_{}.engawa\n  features: []\n",
             i + 1
         );
-        fs::write(base.join(format!("level_{i}.mycad")), &yaml).unwrap();
+        fs::write(base.join(format!("level_{i}.engawa")), &yaml).unwrap();
     }
 
     // --- 16 levels should succeed (0..15 reference level 1..16, level_16 is leaf) ---
-    let doc_16 = Document::from_path(&base.join("level_0.mycad")).unwrap();
+    let doc_16 = Document::from_path(&base.join("level_0.engawa")).unwrap();
     let mut gen = IdGenerator::new(0);
     let result = build_assembly(&doc_16, base, &mut gen);
     assert!(result.is_ok(), "16 reference levels should succeed");
@@ -274,12 +274,12 @@ fn t07_boundary_depth_16_vs_17() {
     assert_eq!(bodies[0].feature_id, "leaf_box");
 
     // --- 17 levels: create level_17 as leaf, level_16 references it ---
-    fs::write(base.join("level_17.mycad"), leaf_yaml).unwrap();
+    fs::write(base.join("level_17.engawa"), leaf_yaml).unwrap();
     // Overwrite level_16 to point to level_17 instead of being a leaf
-    let yaml_16 = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: level_16\n  ref: level_17.mycad\n  features: []\n";
-    fs::write(base.join("level_16.mycad"), yaml_16).unwrap();
+    let yaml_16 = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: level_16\n  ref: level_17.engawa\n  features: []\n";
+    fs::write(base.join("level_16.engawa"), yaml_16).unwrap();
 
-    let doc_17 = Document::from_path(&base.join("level_0.mycad")).unwrap();
+    let doc_17 = Document::from_path(&base.join("level_0.engawa")).unwrap();
     let mut gen = IdGenerator::new(0);
     let result = build_assembly(&doc_17, base, &mut gen);
     match result {
@@ -333,7 +333,7 @@ fn t09_determinism_100_runs() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    write_box_mycad(base, "child.mycad", "box_child", 5.0);
+    write_box_mycad(base, "child.engawa", "box_child", 5.0);
 
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
@@ -343,7 +343,7 @@ fn t09_determinism_100_runs() {
         depth: 10.0,
     });
     let mut child_comp = Component::new("RefChild");
-    child_comp.reference = Some(ComponentRef::File("child.mycad".to_string()));
+    child_comp.reference = Some(ComponentRef::File("child.engawa".to_string()));
     doc.root_component.children.push(child_comp);
 
     // Build a reference result
@@ -391,8 +391,8 @@ fn t10_roundtrip_yaml_build() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    // Create a child .mycad file on disk
-    write_box_mycad(base, "child.mycad", "box_child", 5.0);
+    // Create a child .engawa file on disk
+    write_box_mycad(base, "child.engawa", "box_child", 5.0);
 
     // Build a parent doc with features + a child referencing the file
     let mut doc = Document::new("Parent");
@@ -403,7 +403,7 @@ fn t10_roundtrip_yaml_build() {
         depth: 10.0,
     });
     let mut ref_child = Component::new("RefChild");
-    ref_child.reference = Some(ComponentRef::File("child.mycad".to_string()));
+    ref_child.reference = Some(ComponentRef::File("child.engawa".to_string()));
     doc.root_component.children.push(ref_child);
 
     // Original build
@@ -471,7 +471,7 @@ fn t12_features_and_reference_combined() {
     let base = dir.path();
 
     // Child with a box
-    write_box_mycad(base, "child.mycad", "box_child", 3.0);
+    write_box_mycad(base, "child.engawa", "box_child", 3.0);
 
     // Root has its own features AND a reference
     let mut doc = Document::new("Parent");
@@ -481,7 +481,7 @@ fn t12_features_and_reference_combined() {
         height: 10.0,
         depth: 10.0,
     });
-    doc.root_component.reference = Some(ComponentRef::File("child.mycad".to_string()));
+    doc.root_component.reference = Some(ComponentRef::File("child.engawa".to_string()));
 
     let mut gen = IdGenerator::new(0);
     let bodies = build_assembly(&doc, base, &mut gen).unwrap();
@@ -502,7 +502,7 @@ fn t13_nonexistent_file_reference() {
     let base = dir.path();
 
     // Reference to a file that does not exist on disk
-    let doc = file_ref_doc("Parent", "nonexistent_child.mycad");
+    let doc = file_ref_doc("Parent", "nonexistent_child.engawa");
 
     let mut gen = IdGenerator::new(0);
     let result = build_assembly(&doc, base, &mut gen);
@@ -580,7 +580,7 @@ fn t15_mixed_tree_features_ref_children() {
     let base = dir.path();
 
     // External child file
-    write_box_mycad(base, "ext.mycad", "box_ext", 7.0);
+    write_box_mycad(base, "ext.engawa", "box_ext", 7.0);
 
     let mut doc = Document::new("Root");
     doc.root_component.features.push(Feature::CreateBox {
@@ -598,7 +598,7 @@ fn t15_mixed_tree_features_ref_children() {
         height: 5.0,
         depth: 6.0,
     });
-    child_a.reference = Some(ComponentRef::File("ext.mycad".to_string()));
+    child_a.reference = Some(ComponentRef::File("ext.engawa".to_string()));
 
     // Child B: features only
     let mut child_b = Component::new("ChildB");

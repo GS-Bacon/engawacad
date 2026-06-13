@@ -25,7 +25,7 @@ fn example_path(name: &str) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or_else(|_| panic!("example not found: {:?}", path))
 }
 
-/// Copy an example .mycad into a temp dir so POST can mutate it safely.
+/// Copy an example .engawa into a temp dir so POST can mutate it safely.
 fn temp_copy(example_name: &str) -> (tempfile::TempDir, PathBuf) {
     let src = example_path(example_name);
     let dir = tempfile::tempdir().unwrap();
@@ -73,12 +73,12 @@ async fn t01_determinism() {
     let feature_json = r#"{"type":"create_box","id":"box_2","width":5.0,"height":5.0,"depth":5.0}"#;
 
     // Two independent temp copies so each POST starts from the same initial state
-    let (_dir1, path1) = temp_copy("simple_box.mycad");
+    let (_dir1, path1) = temp_copy("simple_box.engawa");
     let app1 = make_app(path1);
     let (status1, body1) = send_post(app1, feature_json).await;
     assert_eq!(status1, StatusCode::OK, "body1: {body1}");
 
-    let (_dir2, path2) = temp_copy("simple_box.mycad");
+    let (_dir2, path2) = temp_copy("simple_box.engawa");
     let app2 = make_app(path2);
     let (status2, body2) = send_post(app2, feature_json).await;
     assert_eq!(status2, StatusCode::OK, "body2: {body2}");
@@ -89,7 +89,7 @@ async fn t01_determinism() {
 // T02: Normal — POST a valid CreateBox Feature → 200, Vec<BodyMesh> non-empty, features +1
 #[tokio::test]
 async fn t02_post_creates_body() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     let feature_json = r#"{"type":"create_box","id":"box_2","width":5.0,"height":5.0,"depth":5.0}"#;
 
     let app = make_app(path);
@@ -110,7 +110,7 @@ async fn t02_post_creates_body() {
 // T03: Idempotency — POST response == subsequent GET /api/v0/mesh
 #[tokio::test]
 async fn t03_idempotency_post_eq_get() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     let feature_json = r#"{"type":"create_box","id":"box_2","width":5.0,"height":5.0,"depth":5.0}"#;
 
     let app = make_app(path.clone());
@@ -131,7 +131,7 @@ async fn t03_idempotency_post_eq_get() {
 // T04: Accumulation — two consecutive POSTs with different IDs → features +2
 #[tokio::test]
 async fn t04_accumulation() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let feature_a = r#"{"type":"create_box","id":"box_a","width":3.0,"height":3.0,"depth":3.0}"#;
     let feature_b = r#"{"type":"create_box","id":"box_b","width":7.0,"height":7.0,"depth":7.0}"#;
@@ -169,8 +169,8 @@ async fn t04_accumulation() {
 // T05_boundary: duplicate feature_id → 422, file and in-memory doc unchanged
 #[tokio::test]
 async fn t05_boundary_duplicate_id_rollback() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
-    // box_1 already exists in simple_box.mycad → duplicate
+    let (_dir, path) = temp_copy("simple_box.engawa");
+    // box_1 already exists in simple_box.engawa → duplicate
     let dup_json = r#"{"type":"create_box","id":"box_1","width":2.0,"height":2.0,"depth":2.0}"#;
 
     let app = make_app(path.clone());
@@ -192,7 +192,7 @@ async fn t05_boundary_duplicate_id_rollback() {
 // T06_degen: shape-invalid body (valid JSON but wrong shape) → 422, state unchanged
 #[tokio::test]
 async fn t06_degen_invalid_body_shape() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     // Valid JSON but missing required fields for any Feature variant
     let bad_json = r#"{"type":"create_box","width":5.0}"#; // missing id
 
@@ -217,7 +217,7 @@ async fn t06_degen_invalid_body_shape() {
 // E01: Completely invalid (non-JSON) body → 400 (axum JsonRejection), state unchanged
 #[tokio::test]
 async fn edge_non_json_body_returns_400() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let app = make_app(path.clone());
     let (status, _body) = send_post(app, "this is not json at all!!!").await;
@@ -239,12 +239,12 @@ async fn edge_non_json_body_returns_400() {
 async fn edge_determinism_100_runs() {
     let feature_json = r#"{"type":"create_box","id":"box_2","width":5.0,"height":5.0,"depth":5.0}"#;
 
-    let (_dir_ref, path_ref) = temp_copy("simple_box.mycad");
+    let (_dir_ref, path_ref) = temp_copy("simple_box.engawa");
     let app_ref = make_app(path_ref);
     let (_, reference_body) = send_post(app_ref, feature_json).await;
 
     for i in 1..100 {
-        let (_dir, path) = temp_copy("simple_box.mycad");
+        let (_dir, path) = temp_copy("simple_box.engawa");
         let app = make_app(path);
         let (_, body) = send_post(app, feature_json).await;
         assert_eq!(body, reference_body, "POST response differs at run {i}");
@@ -254,7 +254,7 @@ async fn edge_determinism_100_runs() {
 // E03: POST with zero-width box → 422 (degenerate geometry), state unchanged
 #[tokio::test]
 async fn edge_zero_width_box_returns_error() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     let feature_json =
         r#"{"type":"create_box","id":"box_zero","width":0.0,"height":5.0,"depth":5.0}"#;
 
@@ -277,7 +277,7 @@ async fn edge_zero_width_box_returns_error() {
 // E04: POST with negative dimensions → error, state unchanged
 #[tokio::test]
 async fn edge_negative_dimension_box_returns_error() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     let feature_json =
         r#"{"type":"create_box","id":"box_neg","width":-5.0,"height":5.0,"depth":5.0}"#;
 
@@ -300,7 +300,7 @@ async fn edge_negative_dimension_box_returns_error() {
 // E05: POST with unknown feature type → 422, state unchanged
 #[tokio::test]
 async fn edge_unknown_feature_type_returns_422() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     let bad_json = r#"{"type":"create_torus","id":"torus_1","radius":5.0}"#;
 
     let app = make_app(path.clone());
@@ -322,7 +322,7 @@ async fn edge_unknown_feature_type_returns_422() {
 // E06: POST then GET on the SAME app instance → in-memory doc reflects POST
 #[tokio::test]
 async fn edge_post_then_get_same_instance() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
     let feature_json = r#"{"type":"create_box","id":"box_2","width":5.0,"height":5.0,"depth":5.0}"#;
 
     // POST and GET share the same Arc<Mutex<AppState>> through the same app
@@ -343,7 +343,7 @@ async fn edge_post_then_get_same_instance() {
 // E07: POST with empty JSON object → 422
 #[tokio::test]
 async fn edge_empty_json_object_returns_422() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let app = make_app(path.clone());
     let (status, _body) = send_post(app, "{}").await;
@@ -364,7 +364,7 @@ async fn edge_empty_json_object_returns_422() {
 // E08: POST with array JSON body → 422
 #[tokio::test]
 async fn edge_json_array_returns_422() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let app = make_app(path.clone());
     let (status, _body) = send_post(app, "[]").await;
@@ -385,7 +385,7 @@ async fn edge_json_array_returns_422() {
 // E09: POST with empty string body → 400 (axum JsonRejection), state unchanged
 #[tokio::test]
 async fn edge_empty_body_returns_4xx() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let app = make_app(path.clone());
     let (status, _body) = send_post(app, "").await;

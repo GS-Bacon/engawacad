@@ -14,7 +14,7 @@ fn default_schema_version() -> u32 {
 /// The top-level document representing a MyCad design file.
 #[derive(Debug, Clone, Serialize, JsonSchema, TS)]
 pub struct Document {
-    /// Format schema version. Increment when the .mycad file format changes in a breaking way.
+    /// Format schema version. Increment when the .engawa file format changes in a breaking way.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
     /// Kernel version that created this document.
@@ -65,10 +65,10 @@ impl Document {
         Ok(doc)
     }
 
-    /// Load a Document from a `.mycad` file path.
+    /// Load a Document from a `.engawa` file path.
     pub fn from_path(path: &Path) -> Result<Self, FormatError> {
         let ext = path.extension().and_then(|s| s.to_str());
-        if ext != Some("mycad") {
+        if ext != Some("engawa") {
             return Err(FormatError::InvalidExtension(ext.map(str::to_string)));
         }
         let content = std::fs::read_to_string(path)?;
@@ -218,7 +218,7 @@ mod tests {
             .join("..")
             .join("..")
             .join("examples")
-            .join("simple_box.mycad");
+            .join("simple_box.engawa");
         let doc = Document::from_path(&path).unwrap();
         assert_eq!(doc.version, "0.1.0");
         assert_eq!(doc.root_component.name, "Simple Box");
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_from_path_missing_file_returns_io_error() {
-        let path = Path::new("does_not_exist.mycad");
+        let path = Path::new("does_not_exist.engawa");
         let err = Document::from_path(path).unwrap_err();
         assert!(matches!(err, FormatError::Io(_)));
     }
@@ -246,7 +246,7 @@ mod tests {
             .join("..")
             .join("..")
             .join("examples")
-            .join("assembly.mycad");
+            .join("assembly.engawa");
         let doc = Document::from_path(&path).unwrap();
 
         // Bolt child has a stdlib reference
@@ -283,7 +283,7 @@ mod tests {
         );
     }
 
-    /// T08: TS derive 追加後も .mycad fixture の YAML 表現が不変であること。
+    /// T08: TS derive 追加後も .engawa fixture の YAML 表現が不変であること。
     #[test]
     fn test_ts_derive_backward_compat() {
         let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -294,7 +294,7 @@ mod tests {
         for entry in std::fs::read_dir(&examples_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().map_or(true, |e| e != "mycad") {
+            if path.extension().map_or(true, |e| e != "engawa") {
                 continue;
             }
 
@@ -312,12 +312,12 @@ mod tests {
             );
         }
 
-        // Golden comparison: simple_box.mycad canonical YAML must be byte-identical
-        let simple_box_path = examples_dir.join("simple_box.mycad");
+        // Golden comparison: simple_box.engawa canonical YAML must be byte-identical
+        let simple_box_path = examples_dir.join("simple_box.engawa");
         let doc = Document::from_path(&simple_box_path).unwrap();
         let yaml = doc.to_yaml().unwrap();
         let golden = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
-        assert_eq!(yaml, golden, "simple_box.mycad golden YAML mismatch");
+        assert_eq!(yaml, golden, "simple_box.engawa golden YAML mismatch");
     }
 
     #[test]
@@ -330,7 +330,7 @@ mod tests {
             .join("..")
             .join("..")
             .join("examples")
-            .join("extruded_rect.mycad");
+            .join("extruded_rect.engawa");
         let doc = Document::from_path(&path).unwrap();
         let yaml = doc.to_yaml().unwrap();
 
@@ -343,7 +343,7 @@ mod tests {
             "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
             "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
         );
-        assert_eq!(yaml, GOLDEN, "extruded_rect.mycad YAML golden mismatch");
+        assert_eq!(yaml, GOLDEN, "extruded_rect.engawa YAML golden mismatch");
 
         // Also verify constructed Document produces same YAML
         let mut doc2 = Document::new("Extruded Rect");
@@ -484,7 +484,7 @@ mod tests {
         for entry in std::fs::read_dir(&examples_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().map_or(true, |e| e != "mycad") {
+            if path.extension().map_or(true, |e| e != "engawa") {
                 continue;
             }
             let content = std::fs::read_to_string(&path).unwrap();
@@ -745,7 +745,7 @@ root_component:
     fn edge_valid_file_ref_passes() {
         let mut doc = Document::new("Test");
         doc.root_component.reference =
-            Some(crate::component::ComponentRef::File("./motor.mycad".into()));
+            Some(crate::component::ComponentRef::File("./motor.engawa".into()));
         assert!(doc.validate().is_ok());
     }
 
@@ -953,7 +953,7 @@ root_component:
             .join("..")
             .join("..")
             .join("examples")
-            .join("simple_box.mycad");
+            .join("simple_box.engawa");
         let doc = Document::from_path(&path).unwrap();
         assert!(doc.validate().is_ok());
     }

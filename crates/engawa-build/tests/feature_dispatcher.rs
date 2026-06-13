@@ -85,9 +85,9 @@ fn t01_determinism_two_bodies() {
         .join("..")
         .join("..")
         .join("examples")
-        .join("two_bodies.mycad");
+        .join("two_bodies.engawa");
 
-    let doc = Document::from_path(&path).expect("load two_bodies.mycad");
+    let doc = Document::from_path(&path).expect("load two_bodies.engawa");
 
     let mut g1 = IdGenerator::new(0);
     let mut g2 = IdGenerator::new(0);
@@ -150,9 +150,9 @@ fn t03_simple_box_regression() {
         .join("..")
         .join("..")
         .join("examples")
-        .join("simple_box.mycad");
+        .join("simple_box.engawa");
 
-    let doc = Document::from_path(&path).expect("load .mycad");
+    let doc = Document::from_path(&path).expect("load .engawa");
     let mut g = IdGenerator::new(0);
     let bodies =
         build_bodies_from_features(&doc.root_component.features, &mut g).expect("build solid");
@@ -171,9 +171,9 @@ fn t03_sphere_regression() {
         .join("..")
         .join("..")
         .join("examples")
-        .join("sphere.mycad");
+        .join("sphere.engawa");
 
-    let doc = Document::from_path(&path).expect("load sphere.mycad");
+    let doc = Document::from_path(&path).expect("load sphere.engawa");
     let mut g = IdGenerator::new(0);
     let bodies =
         build_bodies_from_features(&doc.root_component.features, &mut g).expect("build sphere");
@@ -192,9 +192,9 @@ fn t03_extruded_rect_regression() {
         .join("..")
         .join("..")
         .join("examples")
-        .join("extruded_rect.mycad");
+        .join("extruded_rect.engawa");
 
-    let doc = Document::from_path(&path).expect("load extruded_rect.mycad");
+    let doc = Document::from_path(&path).expect("load extruded_rect.engawa");
     let mut g = IdGenerator::new(0);
     let bodies =
         build_bodies_from_features(&doc.root_component.features, &mut g).expect("build extrude");
@@ -213,9 +213,9 @@ fn t03_cylinder_regression() {
         .join("..")
         .join("..")
         .join("examples")
-        .join("cylinder.mycad");
+        .join("cylinder.engawa");
 
-    let doc = Document::from_path(&path).expect("load cylinder.mycad");
+    let doc = Document::from_path(&path).expect("load cylinder.engawa");
     let mut g = IdGenerator::new(0);
     let bodies =
         build_bodies_from_features(&doc.root_component.features, &mut g).expect("build cylinder");
@@ -707,9 +707,9 @@ fn t01_determinism_100_runs() {
         .join("..")
         .join("..")
         .join("examples")
-        .join("two_bodies.mycad");
+        .join("two_bodies.engawa");
 
-    let doc = Document::from_path(&path).expect("load two_bodies.mycad");
+    let doc = Document::from_path(&path).expect("load two_bodies.engawa");
 
     let mut g0 = IdGenerator::new(0);
     let first = build_bodies_from_features(&doc.root_component.features, &mut g0).expect("build 0");

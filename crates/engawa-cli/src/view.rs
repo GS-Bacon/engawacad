@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn t07_run_view_missing_file() {
-        let result = run_view(Path::new("/nonexistent/path.mycad"), 7878);
+        let result = run_view(Path::new("/nonexistent/path.engawa"), 7878);
         assert!(result.is_err(), "should fail for nonexistent file");
     }
 

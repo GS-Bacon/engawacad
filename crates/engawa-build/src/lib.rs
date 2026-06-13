@@ -364,7 +364,7 @@ const MAX_REFERENCE_DEPTH: usize = 16;
 /// Build an assembly by traversing the Component tree, resolving references,
 /// and aggregating all live Bodies.
 ///
-/// `base_dir` is the parent directory of the `.mycad` file being built.
+/// `base_dir` is the parent directory of the `.engawa` file being built.
 /// Each Component's `transform` (position + rotation) is accumulated along the tree path
 /// and applied to the resulting Bodies.
 ///
@@ -506,7 +506,7 @@ fn resolve_reference(
                 path: format!("stdlib://{rel}"),
                 reason: "stdlib root not found (set MYCAD_STDLIB_PATH or provide stdlib/)".into(),
             })?;
-            root.join(format!("{rel}.mycad"))
+            root.join(format!("{rel}.engawa"))
         }
         ComponentRef::File(rel) => base_dir.join(rel),
     };

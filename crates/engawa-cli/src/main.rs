@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process;
 
 #[derive(Parser)]
-#[command(name = "mycad", version, about = "MyCad CAD kernel CLI")]
+#[command(name = "engawa", version, about = "MyCad CAD kernel CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -19,9 +19,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Convert a .mycad file to STL
+    /// Convert a .engawa file to STL
     Export {
-        /// Input .mycad file
+        /// Input .engawa file
         input: PathBuf,
         /// Output STL file
         #[arg(short, long)]
@@ -32,7 +32,7 @@ enum Commands {
     },
     /// Start a local server and open the model in a browser
     View {
-        /// Input .mycad file
+        /// Input .engawa file
         input: PathBuf,
         /// Port to listen on (default: 7878)
         #[arg(long, default_value_t = view::DEFAULT_PORT)]

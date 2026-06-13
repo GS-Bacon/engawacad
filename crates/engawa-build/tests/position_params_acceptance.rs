@@ -155,7 +155,7 @@ fn build_one(features: &[Feature]) -> engawa_kernel::brep::topology::Solid {
 
 #[test]
 fn t01_determinism() {
-    let path = examples_dir().join("cylinder_offset.mycad");
+    let path = examples_dir().join("cylinder_offset.engawa");
     let doc = Document::from_path(&path).unwrap();
     let mut g1 = IdGenerator::new(0);
     let mut g2 = IdGenerator::new(0);
@@ -226,26 +226,26 @@ fn t03_backward_compatible_cylinder() {
         "origin:[0,0,0] should not appear in YAML: {yaml}"
     );
 
-    // round-trip existing cylinder.mycad unchanged
-    let path = examples_dir().join("cylinder.mycad");
+    // round-trip existing cylinder.engawa unchanged
+    let path = examples_dir().join("cylinder.engawa");
     let doc = Document::from_path(&path).unwrap();
     let yaml1 = doc.to_yaml().unwrap();
     let doc2 = Document::from_yaml(&yaml1).unwrap();
     assert_eq!(
         yaml1,
         doc2.to_yaml().unwrap(),
-        "cylinder.mycad roundtrip mismatch"
+        "cylinder.engawa roundtrip mismatch"
     );
 
-    // Same for sphere.mycad
-    let path = examples_dir().join("sphere.mycad");
+    // Same for sphere.engawa
+    let path = examples_dir().join("sphere.engawa");
     let doc = Document::from_path(&path).unwrap();
     let yaml1 = doc.to_yaml().unwrap();
     let doc2 = Document::from_yaml(&yaml1).unwrap();
     assert_eq!(
         yaml1,
         doc2.to_yaml().unwrap(),
-        "sphere.mycad roundtrip mismatch"
+        "sphere.engawa roundtrip mismatch"
     );
 }
 
@@ -346,7 +346,7 @@ fn t05_derived_names_invariant() {
 
 #[test]
 fn t06_yaml_roundtrip_offset_examples() {
-    for name in &["cylinder_offset.mycad", "sphere_offset.mycad"] {
+    for name in &["cylinder_offset.engawa", "sphere_offset.engawa"] {
         let path = examples_dir().join(name);
         let doc = Document::from_path(&path).unwrap();
         let yaml1 = doc.to_yaml().unwrap();

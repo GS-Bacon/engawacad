@@ -8,7 +8,7 @@ pub enum FormatError {
     #[error("YAML parse error: {0}")]
     Yaml(#[from] serde_yaml::Error),
 
-    #[error("invalid file extension: expected .mycad, got {0:?}")]
+    #[error("invalid file extension: expected .engawa, got {0:?}")]
     InvalidExtension(Option<String>),
 
     #[error("invalid reference {value:?}: {reason}")]

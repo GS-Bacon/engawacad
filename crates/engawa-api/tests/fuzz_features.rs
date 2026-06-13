@@ -19,7 +19,7 @@ fn example_path(name: &str) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or_else(|_| panic!("example not found: {:?}", path))
 }
 
-/// Copy an example .mycad into a temp dir so POST can mutate it safely.
+/// Copy an example .engawa into a temp dir so POST can mutate it safely.
 fn temp_copy(example_name: &str) -> (tempfile::TempDir, PathBuf) {
     let src = example_path(example_name);
     let dir = tempfile::tempdir().unwrap();
@@ -180,11 +180,11 @@ fn t01_determinism() {
         ];
 
         for payload in &payloads {
-            let (_dir1, path1) = temp_copy("simple_box.mycad");
+            let (_dir1, path1) = temp_copy("simple_box.engawa");
             let app1 = make_app(path1);
             let (status1, body1) = send_post(app1, payload).await;
 
-            let (_dir2, path2) = temp_copy("simple_box.mycad");
+            let (_dir2, path2) = temp_copy("simple_box.engawa");
             let app2 = make_app(path2);
             let (status2, body2) = send_post(app2, payload).await;
 
@@ -218,7 +218,7 @@ fn t02_fuzz_no_http_500() {
         let mut errors: Vec<String> = Vec::new();
 
         while Instant::now() < deadline {
-            let (_dir, path) = temp_copy("simple_box.mycad");
+            let (_dir, path) = temp_copy("simple_box.engawa");
             let app = make_app(path);
 
             let payload = match rng.random_range(0..10) {
@@ -267,7 +267,7 @@ fn t03_degen_special_float_values() {
             r#"{"type":"create_box","id":"box_min","width":-1.7976931348623157e308,"height":1.0,"depth":1.0}"#,
         ];
         for payload in &valid_json_payloads {
-            let (_dir, path) = temp_copy("simple_box.mycad");
+            let (_dir, path) = temp_copy("simple_box.engawa");
             let app = make_app(path);
             let (status, body) = send_post(app, payload).await;
             assert_ne!(
@@ -284,7 +284,7 @@ fn t03_degen_special_float_values() {
             r#"{"type":"create_box","id":"neginf_w","width":-Infinity,"height":1.0,"depth":1.0}"#,
         ];
         for payload in &raw_invalid_payloads {
-            let (_dir, path) = temp_copy("simple_box.mycad");
+            let (_dir, path) = temp_copy("simple_box.engawa");
             let app = make_app(path);
             let (status, _body) = send_post(app, payload).await;
             assert!(
@@ -309,7 +309,7 @@ fn t04_degen_unknown_type() {
         ];
 
         for payload in &unknown_payloads {
-            let (_dir, path) = temp_copy("simple_box.mycad");
+            let (_dir, path) = temp_copy("simple_box.engawa");
             let app = make_app(path);
             let (status, body) = send_post(app, payload).await;
             assert_eq!(
@@ -330,7 +330,7 @@ fn t05_degen_null_body() {
         let invalid_payloads = ["null", "[]", "42", r#""string""#, "true", "{}"];
 
         for payload in &invalid_payloads {
-            let (_dir, path) = temp_copy("simple_box.mycad");
+            let (_dir, path) = temp_copy("simple_box.engawa");
             let app = make_app(path);
             let (status, body) = send_post(app, payload).await;
             assert!(

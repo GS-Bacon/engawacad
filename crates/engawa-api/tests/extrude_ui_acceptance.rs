@@ -1,7 +1,7 @@
 /// Acceptance tests for #95: 選択面からの押出(Extrude) UI — A01
 ///
 /// Tests:
-///   A01: create_sketch POST → extrude POST → 頂点数増加 + .mycad に type:extrude 1件
+///   A01: create_sketch POST → extrude POST → 頂点数増加 + .engawa に type:extrude 1件
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use engawa_api::router::app;
@@ -76,16 +76,16 @@ fn total_vertex_count(body: &str) -> usize {
 }
 
 /// A01: create_sketch POST → extrude POST で頂点数が増加し、
-///      書き戻された .mycad に type:extrude が1件存在することを検証する。
+///      書き戻された .engawa に type:extrude が1件存在することを検証する。
 ///
 /// 検証内容:
 ///   1. GET /api/v0/mesh で初期頂点総数を記録する
 ///   2. POST create_sketch (xy 平面, 10×10 の矩形プロファイル) → 200
 ///   3. POST extrude (sketch_0 を depth:5.0 で押出) → 200, 頂点数 > 初期
-///   4. .mycad の内容を読み、features に type: extrude が1件存在する
+///   4. .engawa の内容を読み、features に type: extrude が1件存在する
 #[tokio::test]
 async fn a01_extrude_ui_increases_vertices_and_writes_feature() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // 1. Get initial vertex count
     let app_get = make_app(path.clone());
@@ -116,7 +116,7 @@ async fn a01_extrude_ui_increases_vertices_and_writes_feature() {
         "vertices must increase after extrude: before={initial_vertices}, after={after_vertices}"
     );
 
-    // 5. Verify .mycad file contains type: extrude
+    // 5. Verify .engawa file contains type: extrude
     let engawa_content = std::fs::read_to_string(&path).unwrap();
     let extrude_count = engawa_content
         .lines()
@@ -124,6 +124,6 @@ async fn a01_extrude_ui_increases_vertices_and_writes_feature() {
         .count();
     assert_eq!(
         extrude_count, 1,
-        ".mycad must contain exactly 1 'type: extrude' feature, found {extrude_count}"
+        ".engawa must contain exactly 1 'type: extrude' feature, found {extrude_count}"
     );
 }

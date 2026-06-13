@@ -1,6 +1,6 @@
 use engawa_format::{Document, Feature};
 
-const M5X20_YAML: &str = include_str!("../../../stdlib/fasteners/jis_b1176/M5x20.mycad");
+const M5X20_YAML: &str = include_str!("../../../stdlib/fasteners/jis_b1176/M5x20.engawa");
 
 #[test]
 fn t01_parse_ok() {

@@ -58,7 +58,7 @@ async fn t04_missing_asset_falls_back() {
 
 #[tokio::test]
 async fn t05_mesh_api_still_works() {
-    let fixture = std::path::PathBuf::from("../../examples/simple_box.mycad");
+    let fixture = std::path::PathBuf::from("../../examples/simple_box.engawa");
     let canonical = std::fs::canonicalize(&fixture).unwrap();
 
     let app = app(Arc::new(canonical));

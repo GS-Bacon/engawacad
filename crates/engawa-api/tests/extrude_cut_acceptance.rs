@@ -1,7 +1,7 @@
 /// Acceptance tests for #96: ExtrudeCut Feature 追加と UI
 ///
 /// Tests:
-///   A01: create_sketch POST → extrude_cut POST → face count + face_id uniqueness + volume + .mycad feature
+///   A01: create_sketch POST → extrude_cut POST → face count + face_id uniqueness + volume + .engawa feature
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use engawa_api::router::app;
@@ -105,10 +105,10 @@ fn mesh_volume(bodies: &[BodyMesh]) -> f64 {
 /// XY 平面上のインセット角柱 [-2,2]×[-4,4], depth=3 でカット。
 /// tool z∈[0,3] は box z_top=15 より十分小さい → 完全埋没 void (2 シェル)。
 /// coplanar 面なし(U02 と同一幾何)。
-/// 期待: 頂点数変化 + face count + face_id 一意性 + 体積増加(内殻分) + .mycad に type: extrude_cut が 1 件。
+/// 期待: 頂点数変化 + face count + face_id 一意性 + 体積増加(内殻分) + .engawa に type: extrude_cut が 1 件。
 #[tokio::test]
 async fn a01_extrude_cut_increases_vertices_and_writes_feature() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // 1. GET initial mesh
     let app_get = make_app(path.clone());
@@ -167,7 +167,7 @@ async fn a01_extrude_cut_increases_vertices_and_writes_feature() {
         "extrude_cut void: per-body abs volume sum must exceed initial (outer_abs + inner_abs > box_vol): before={vol_before}, after={vol_after}"
     );
 
-    // 5. Verify .mycad contains type: extrude_cut (1 件)
+    // 5. Verify .engawa contains type: extrude_cut (1 件)
     let engawa_content = std::fs::read_to_string(&path).unwrap();
     let count = engawa_content
         .lines()
@@ -175,7 +175,7 @@ async fn a01_extrude_cut_increases_vertices_and_writes_feature() {
         .count();
     assert_eq!(
         count, 1,
-        ".mycad must have exactly 1 extrude_cut feature, found {count}"
+        ".engawa must have exactly 1 extrude_cut feature, found {count}"
     );
 }
 
@@ -192,7 +192,7 @@ async fn a02_extrude_cut_determinism_100_runs() {
     let mut reference: Option<String> = None;
 
     for i in 0..100 {
-        let (_dir, path) = temp_copy("simple_box.mycad");
+        let (_dir, path) = temp_copy("simple_box.engawa");
 
         let app1 = make_app(path.clone());
         let (s1, b1) = send_post(app1, sketch_json).await;

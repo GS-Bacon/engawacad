@@ -1,5 +1,5 @@
 // Regenerates web/tests/fixtures/*.json using current tessellation code.
-// Run with: cargo test -p mycad-build --test regen_viewer_fixtures -- --include-ignored
+// Run with: cargo test -p engawa-build --test regen_viewer_fixtures -- --include-ignored
 //
 // This test is always #[ignore] in normal CI; invoke manually after tessellation changes.
 
@@ -47,7 +47,7 @@ fn regen_all_fixtures() {
     ];
 
     for name in &example_names {
-        let example_path = examples_dir.join(format!("{}.mycad", name));
+        let example_path = examples_dir.join(format!("{}.engawa", name));
         if !example_path.exists() {
             eprintln!("SKIP {name}: example file not found");
             continue;

@@ -58,7 +58,7 @@ async fn send_mesh_request(file: PathBuf) -> (StatusCode, String) {
 // T01: normal box — now returns Vec<BodyMesh> with len==1
 #[tokio::test]
 async fn t01_normal_box() {
-    let file = example_path("simple_box.mycad");
+    let file = example_path("simple_box.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -77,7 +77,7 @@ async fn t01_normal_box() {
 // T02: normal cylinder
 #[tokio::test]
 async fn t02_normal_cylinder() {
-    let file = example_path("cylinder.mycad");
+    let file = example_path("cylinder.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -95,12 +95,12 @@ async fn t02_normal_cylinder() {
 // T03: determinism
 #[tokio::test]
 async fn t03_determinism() {
-    let file = example_path("simple_box.mycad");
+    let file = example_path("simple_box.engawa");
     let (_, body1) = send_mesh_request(file.clone()).await;
     let (_, body2) = send_mesh_request(file).await;
     assert_eq!(body1, body2, "mesh responses must be deterministic");
 
-    let file2 = example_path("cylinder.mycad");
+    let file2 = example_path("cylinder.engawa");
     let (_, body3) = send_mesh_request(file2.clone()).await;
     let (_, body4) = send_mesh_request(file2).await;
     assert_eq!(
@@ -112,7 +112,7 @@ async fn t03_determinism() {
 // T04: 404 not found — nonexistent file in State triggers error at load time
 #[tokio::test]
 async fn t04_not_found() {
-    let file = PathBuf::from("/tmp/absolutely_nonexistent_file.mycad");
+    let file = PathBuf::from("/tmp/absolutely_nonexistent_file.engawa");
     let req = Request::builder()
         .uri("/api/v0/mesh")
         .body(Body::empty())
@@ -129,7 +129,7 @@ async fn t04_not_found() {
     assert!(!err.error.is_empty());
 }
 
-// T05: 400 non-.mycad extension
+// T05: 400 non-.engawa extension
 #[tokio::test]
 async fn t05_invalid_extension() {
     let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -155,7 +155,7 @@ async fn t05_invalid_extension() {
     assert!(!err.error.is_empty());
     let lower = err.error.to_lowercase();
     assert!(
-        lower.contains("extension") || lower.contains(".mycad") || lower.contains("invalid"),
+        lower.contains("extension") || lower.contains(".engawa") || lower.contains("invalid"),
         "expected extension-related message, got: {}",
         err.error
     );
@@ -164,7 +164,7 @@ async fn t05_invalid_extension() {
 // T06: 403 Host header (DNS rebinding protection)
 #[tokio::test]
 async fn t06_host_header_rebinding() {
-    let file = example_path("simple_box.mycad");
+    let file = example_path("simple_box.engawa");
     let req = Request::builder()
         .uri("/api/v0/mesh")
         .header("Host", "evil.com")
@@ -177,7 +177,7 @@ async fn t06_host_header_rebinding() {
 // T07: Extrude success — 200 + mesh with 12 triangles.
 #[tokio::test]
 async fn t07_extrude_success() {
-    let file = fixture_path("extrude.mycad");
+    let file = fixture_path("extrude.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -192,7 +192,7 @@ async fn t07_extrude_success() {
 // T08: 422 degenerate dimension (zero-width box)
 #[tokio::test]
 async fn t08_degenerate_dimension() {
-    let file = fixture_path("zero_box.mycad");
+    let file = fixture_path("zero_box.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
@@ -202,7 +202,7 @@ async fn t08_degenerate_dimension() {
 // T09: Assembly now supported — API returns 200 with non-empty bodies.
 #[tokio::test]
 async fn t09_assembly_supported() {
-    let file = fixture_path("assembly.mycad");
+    let file = fixture_path("assembly.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -212,7 +212,7 @@ async fn t09_assembly_supported() {
 // T10: 422 empty part — bodies.is_empty() guard returns "empty assembly: no bodies built"
 #[tokio::test]
 async fn t10_empty_part() {
-    let file = fixture_path("empty_part.mycad");
+    let file = fixture_path("empty_part.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
     let err: ErrorResponse = serde_json::from_str(&body).unwrap();
@@ -223,10 +223,10 @@ async fn t10_empty_part() {
     );
 }
 
-// T12: API multi-body — two_bodies.mycad returns Vec<BodyMesh> with exact order
+// T12: API multi-body — two_bodies.engawa returns Vec<BodyMesh> with exact order
 #[tokio::test]
 async fn t12_multi_body() {
-    let file = example_path("two_bodies.mycad");
+    let file = example_path("two_bodies.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -246,7 +246,7 @@ async fn t12_multi_body() {
 // T13: API single body — existing examples return len==1 with correct feature_id
 #[tokio::test]
 async fn t13_single_body() {
-    let file = example_path("simple_box.mycad");
+    let file = example_path("simple_box.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -258,7 +258,7 @@ async fn t13_single_body() {
 // T14: API determinism — same request produces identical response body
 #[tokio::test]
 async fn t14_api_determinism() {
-    let file = example_path("two_bodies.mycad");
+    let file = example_path("two_bodies.engawa");
     let (_, body1) = send_mesh_request(file.clone()).await;
     let (_, body2) = send_mesh_request(file).await;
     assert_eq!(body1, body2, "API responses must be deterministic");
@@ -267,7 +267,7 @@ async fn t14_api_determinism() {
 // T17: Sphere API success — 200 + mesh with 960 triangles.
 #[tokio::test]
 async fn t17_sphere_success() {
-    let file = example_path("sphere.mycad");
+    let file = example_path("sphere.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
@@ -282,7 +282,7 @@ async fn t17_sphere_success() {
 // T18: Extrude determinism — two requests produce identical mesh.
 #[tokio::test]
 async fn t18_extrude_determinism() {
-    let file = fixture_path("extrude.mycad");
+    let file = fixture_path("extrude.engawa");
     let (_, body1) = send_mesh_request(file.clone()).await;
     let (_, body2) = send_mesh_request(file).await;
     assert_eq!(body1, body2, "extrude mesh responses must be deterministic");
@@ -292,11 +292,11 @@ async fn t18_extrude_determinism() {
 // Regression guard for #51 (handler.rs was using bodies.all() instead of bodies.live()).
 #[tokio::test]
 async fn t19_boolean_cut_live_bodies_only() {
-    let file = example_path("boolean_box_cut.mycad");
+    let file = example_path("boolean_box_cut.engawa");
     let (status, body) = send_mesh_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let bodies: Vec<BodyMesh> = serde_json::from_str(&body).unwrap();
-    // boolean_box_cut.mycad: target + tool + cut1 → consumed=2, live=1
+    // boolean_box_cut.engawa: target + tool + cut1 → consumed=2, live=1
     assert_eq!(
         bodies.len(),
         1,

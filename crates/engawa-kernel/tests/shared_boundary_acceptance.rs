@@ -186,7 +186,7 @@ fn assert_shared_boundary(solid: &Solid, label: &str) -> usize {
                 }
             }
 
-            // 各 Edge は HalfEdge を正確に 2 本持つ (B-rep 不変条件 — crates/mycad-kernel/CLAUDE.md
+            // 各 Edge は HalfEdge を正確に 2 本持つ (B-rep 不変条件 — crates/engawa-kernel/CLAUDE.md
             // §Key Invariants 「すべての Edge は正確に 2 つの HalfEdge を持つ」)。
             // ここで `len() != 2` は本 acceptance の skip 条件ではなく invariant 違反なので即失敗させる。
             assert_eq!(

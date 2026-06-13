@@ -45,7 +45,7 @@ async fn edge_traversal_path_serves_index() {
 
 #[tokio::test]
 async fn edge_api_mesh_missing_file() {
-    let app = app(Arc::new(PathBuf::from("/nonexistent/path.mycad")));
+    let app = app(Arc::new(PathBuf::from("/nonexistent/path.engawa")));
     let req = Request::builder()
         .uri("/api/v0/mesh")
         .header("host", "127.0.0.1:7878")
@@ -58,7 +58,7 @@ async fn edge_api_mesh_missing_file() {
 #[tokio::test]
 async fn edge_api_mesh_relative_path_rejected() {
     let app = test_app();
-    let file_param = urlencoding::encode("relative/path.mycad");
+    let file_param = urlencoding::encode("relative/path.engawa");
     let req = Request::builder()
         .uri(format!("/api/v0/mesh?file={file_param}"))
         .header("host", "127.0.0.1:7878")

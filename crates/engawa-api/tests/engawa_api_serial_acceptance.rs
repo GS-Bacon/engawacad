@@ -1,4 +1,4 @@
-//! Acceptance tests for #153: mycad-api integration test の serial_test 導入。
+//! Acceptance tests for #153: engawa-api integration test の serial_test 導入。
 
 use serial_test::file_serial;
 use std::net::TcpListener;
@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// Wait up to `timeout` for port 7878 to become bindable.
-/// Defensive against the previous test's mycad-api leaving the socket in TIME_WAIT
+/// Defensive against the previous test's engawa-api leaving the socket in TIME_WAIT
 /// (Codex B-6 F02 指摘対応: startup_log_acceptance.rs と同等の wait helper)。
 fn wait_port_free(timeout: Duration) {
     let start = Instant::now();

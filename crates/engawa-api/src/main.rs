@@ -8,12 +8,12 @@ async fn main() {
         .nth(1)
         .map(PathBuf::from)
         .and_then(|p| std::fs::canonicalize(p).ok())
-        .expect("Usage: mycad-api <path-to-file.mycad>");
+        .expect("Usage: engawa-api <path-to-file.engawa>");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
         .await
         .expect("failed to bind to 127.0.0.1:7878");
-    eprintln!("mycad-api listening on 127.0.0.1:7878");
+    eprintln!("engawa-api listening on 127.0.0.1:7878");
     axum::serve(listener, app(Arc::new(file)))
         .await
         .expect("server error");

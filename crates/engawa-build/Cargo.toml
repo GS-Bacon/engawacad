@@ -1,6 +1,6 @@
 [package]
 name = "engawa-build"
-description = "Feature dispatcher: converts .mycad Feature history into kernel geometry"
+description = "Feature dispatcher: converts .engawa Feature history into kernel geometry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

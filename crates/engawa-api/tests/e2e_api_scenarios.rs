@@ -88,7 +88,7 @@ async fn send_post_feature(app: axum::Router, body: &str) -> (StatusCode, String
 /// duplicate feature IDs to prevent silent overwrites.
 #[tokio::test]
 async fn s01_reload_no_duplicate_id() {
-    let (_dir, path) = temp_copy("extruded_rect.mycad");
+    let (_dir, path) = temp_copy("extruded_rect.engawa");
 
     // 1. GET /api/v0/features → existing IDs
     let app = make_app(path.clone());
@@ -125,7 +125,7 @@ async fn s01_reload_no_duplicate_id() {
 /// (f_cap_start, f_cap_end, f_side_*) appear in the tessellated mesh.
 #[tokio::test]
 async fn s02_extruded_face_ids_contain_cap() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // POST create_sketch (xy plane, 10x10 rectangle)
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
@@ -180,7 +180,7 @@ async fn s02_extruded_face_ids_contain_cap() {
 /// the extrusion creates a separate body (kernel limitation: no boolean merge).
 #[tokio::test]
 async fn s03_extrude_creates_two_bodies() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // POST create_sketch (xy plane, 10x10 rectangle)
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
@@ -219,7 +219,7 @@ async fn s03_extrude_creates_two_bodies() {
 /// The UI-actual pattern (offset=0, depth≈face_dist) is covered by S04b instead.
 #[tokio::test]
 async fn s04_degen_extrudecut_depth_boundary() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // simple_box: 10x20x30, centered at origin → z ∈ [-15, 15]
     // Sketch on yz plane at offset=5.0 (offset along x)
@@ -245,7 +245,7 @@ async fn s04_degen_extrudecut_depth_boundary() {
 /// Complements S04: depth slightly less than offset avoids the degenerate coplanar case.
 #[tokio::test]
 async fn s04b_extrudecut_depth_just_inside_boundary() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
@@ -269,7 +269,7 @@ async fn s04b_extrudecut_depth_just_inside_boundary() {
 /// be rejected by the kernel rather than silently accepted.
 #[tokio::test]
 async fn s06_zero_depth_extrude_cut_rejected() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
@@ -293,7 +293,7 @@ async fn s06_zero_depth_extrude_cut_rejected() {
 /// must be rejected at the API or kernel level.
 #[tokio::test]
 async fn s07_negative_depth_extrude_cut_rejected() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
@@ -321,7 +321,7 @@ async fn s05_determinism_multi_step() {
     let extrude_json = r#"{"type":"extrude","id":"extrude_0","sketch":"sketch_0","depth":5.0}"#;
 
     // Run 1
-    let (_dir1, path1) = temp_copy("simple_box.mycad");
+    let (_dir1, path1) = temp_copy("simple_box.engawa");
     let app1a = make_app(path1.clone());
     let (s1, _) = send_post_feature(app1a, sketch_json).await;
     assert_eq!(s1, StatusCode::OK);
@@ -329,7 +329,7 @@ async fn s05_determinism_multi_step() {
     let (_, body1) = send_post_feature(app1b, extrude_json).await;
 
     // Run 2
-    let (_dir2, path2) = temp_copy("simple_box.mycad");
+    let (_dir2, path2) = temp_copy("simple_box.engawa");
     let app2a = make_app(path2.clone());
     let (s2, _) = send_post_feature(app2a, sketch_json).await;
     assert_eq!(s2, StatusCode::OK);
@@ -350,7 +350,7 @@ async fn s05_determinism_multi_step() {
 /// After the sequence: 200 OK, bodies.len() >= 2, at least one face_id contains "cut".
 #[tokio::test]
 async fn s08_multistep_extrude_cut() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Step 1: POST create_sketch (xy plane, [-3,3]×[-3,3])
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
@@ -407,7 +407,7 @@ async fn s08_multistep_extrude_cut() {
 /// inside extrude_0 (which extends to x=3). Verifies a near-boundary cut succeeds.
 #[tokio::test]
 async fn s08_boundary_shallow_depth() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Step 1: sketch + extrude → extrude_0 (x∈[-3,3], y∈[-3,3], z∈[0,5])
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
@@ -442,7 +442,7 @@ async fn s08_boundary_shallow_depth() {
 /// Attempting to cut a body that doesn't exist in the assembly must be rejected.
 #[tokio::test]
 async fn s08_degen_nonexistent_target() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Set up a sketch so the cut payload is otherwise valid
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-1.0,-1.0],"to":[1.0,-1.0]},{"id":"seg_1","from":[1.0,-1.0],"to":[1.0,1.0]},{"id":"seg_2","from":[1.0,1.0],"to":[-1.0,1.0]},{"id":"seg_3","from":[-1.0,1.0],"to":[-1.0,-1.0]}]}"#;
@@ -481,7 +481,7 @@ async fn s08_determinism_100x() {
     let mut reference_body: Option<String> = None;
 
     for i in 0..100 {
-        let (_dir, path) = temp_copy("simple_box.mycad");
+        let (_dir, path) = temp_copy("simple_box.engawa");
 
         let app1 = make_app(path.clone());
         let (s, b) = send_post_feature(app1, sketch_json).await;
@@ -517,7 +517,7 @@ async fn s08_determinism_100x() {
 /// case: a valid target but a sketch ID that was never created.
 #[tokio::test]
 async fn s08_degen_nonexistent_sketch() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
     let app1 = make_app(path.clone());
@@ -546,7 +546,7 @@ async fn s08_degen_nonexistent_sketch() {
 /// location must also succeed without corrupting the B-rep.
 #[tokio::test]
 async fn s08_double_cut() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Step 1: sketch_0 + extrude_0
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
@@ -598,7 +598,7 @@ async fn s08_double_cut() {
 /// A depth of 1e-10 is well below that threshold and must be rejected.
 #[tokio::test]
 async fn s08_very_small_depth() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
@@ -623,7 +623,7 @@ async fn s08_very_small_depth() {
 /// cannot form a valid extrusion. The kernel must reject this at extrusion time.
 #[tokio::test]
 async fn s08_degen_zero_length_segment() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Profile with a zero-length segment: seg_1 has from == to
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[2.0,0.0]},{"id":"seg_1","from":[2.0,0.0],"to":[2.0,0.0]},{"id":"seg_2","from":[2.0,0.0],"to":[0.0,2.0]},{"id":"seg_3","from":[0.0,2.0],"to":[0.0,0.0]}]}"#;

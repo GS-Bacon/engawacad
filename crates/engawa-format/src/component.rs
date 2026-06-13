@@ -32,7 +32,7 @@ impl Default for Transform {
 pub enum ComponentRef {
     /// Standard library reference (e.g., `"stdlib://fasteners/jis_b1176/M5x20"`)
     StdLib(String),
-    /// File reference (e.g., `"./motor_v2.mycad"`)
+    /// File reference (e.g., `"./motor_v2.engawa"`)
     File(String),
 }
 

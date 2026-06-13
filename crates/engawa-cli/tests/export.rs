@@ -3,12 +3,12 @@ use std::process::Command;
 
 #[test]
 fn export_simple_box_produces_12_facets() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("examples")
-        .join("simple_box.mycad");
+        .join("simple_box.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let output = tmp.path();
 
@@ -32,12 +32,12 @@ fn export_simple_box_produces_12_facets() {
 /// T14: E2E — sphere export → STL with 960 facets.
 #[test]
 fn export_sphere_produces_960_facets() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("examples")
-        .join("sphere.mycad");
+        .join("sphere.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let output = tmp.path();
 
@@ -61,12 +61,12 @@ fn export_sphere_produces_960_facets() {
 /// T12: E2E — extruded_rect export → STL with 12 facets.
 #[test]
 fn export_extruded_rect_produces_12_facets() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("examples")
-        .join("extruded_rect.mycad");
+        .join("extruded_rect.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let output = tmp.path();
 
@@ -90,11 +90,11 @@ fn export_extruded_rect_produces_12_facets() {
 /// T13: E2E — self-intersecting profile → export fails, no STL written.
 #[test]
 fn export_invalid_profile_fails_no_stl() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("invalid_profile.mycad");
+        .join("invalid_profile.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
     let output = tmp.path();
 
@@ -126,12 +126,12 @@ fn export_invalid_profile_fails_no_stl() {
 /// T16: CLI export of assembly document now succeeds (assembly guard removed).
 #[test]
 fn t16_export_assembly_succeeds() {
-    let bin = env!("CARGO_BIN_EXE_mycad");
+    let bin = env!("CARGO_BIN_EXE_engawa");
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("examples")
-        .join("assembly.mycad");
+        .join("assembly.engawa");
     let tmp = tempfile::NamedTempFile::with_suffix(".stl").expect("tempfile");
 
     let output = Command::new(bin)

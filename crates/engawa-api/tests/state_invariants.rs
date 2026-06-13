@@ -8,8 +8,8 @@ fn simple_box_path() -> PathBuf {
         .join("..")
         .join("..")
         .join("examples")
-        .join("simple_box.mycad");
-    std::fs::canonicalize(&p).expect("simple_box.mycad fixture must exist")
+        .join("simple_box.engawa");
+    std::fs::canonicalize(&p).expect("simple_box.engawa fixture must exist")
 }
 
 /// ensure_loaded の戻り値が読み取り専用 &Document であることを

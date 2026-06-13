@@ -7,7 +7,7 @@
 //   T01 決定性          — 同一入力を 2 回 build し全頂点座標・面数・EntityID が一致
 //   T02 manifold        — 結果 Solid が validate_manifold() を通る
 //   T03 Euler           — V - E + F == 2 (genus-0)
-//   T04 smoke           — examples/boolean_fuse_box_cyl.mycad の build が panic しない
+//   T04 smoke           — examples/boolean_fuse_box_cyl.engawa の build が panic しない
 //   T05 regression      — 既存 boolean smoke テストが引き続き通る
 //   T06 single-pierce   — 片側貫通 Fuse でも manifold が通る
 //   T07 numerical-eps   — 交線円が ε_snap 近傍を通る配置でも manifold OK
@@ -23,8 +23,8 @@ use engawa_kernel::brep::topology::IdGenerator;
 
 fn fuse_box_cyl_features() -> Vec<Feature> {
     let doc: Document =
-        serde_yaml::from_str(include_str!("../../../examples/boolean_fuse_box_cyl.mycad"))
-            .expect("parse boolean_fuse_box_cyl.mycad");
+        serde_yaml::from_str(include_str!("../../../examples/boolean_fuse_box_cyl.engawa"))
+            .expect("parse boolean_fuse_box_cyl.engawa");
     doc.root_component.features
 }
 
@@ -141,7 +141,7 @@ fn t03_euler_poincare() {
 }
 
 // -----------------------------------------------------------------------
-// T04: smoke — examples/boolean_fuse_box_cyl.mycad が build できる
+// T04: smoke — examples/boolean_fuse_box_cyl.engawa が build できる
 // -----------------------------------------------------------------------
 #[test]
 fn t04_smoke_build() {
@@ -159,7 +159,7 @@ fn t04_smoke_build() {
 fn t05_regression_existing_boolean() {
     // boolean_box_fuse (box + box)
     let fuse_doc: Document =
-        serde_yaml::from_str(include_str!("../../../examples/boolean_box_fuse.mycad"))
+        serde_yaml::from_str(include_str!("../../../examples/boolean_box_fuse.engawa"))
             .expect("parse boolean_box_fuse");
     let mut gen = IdGenerator::new(0);
     let fuse_bodies = build_bodies_from_features(&fuse_doc.root_component.features, &mut gen)
@@ -172,7 +172,7 @@ fn t05_regression_existing_boolean() {
 
     // boolean_intersect_box_cyl (box + cylinder intersect)
     let isect_doc: Document = serde_yaml::from_str(include_str!(
-        "../../../examples/boolean_intersect_box_cyl.mycad"
+        "../../../examples/boolean_intersect_box_cyl.engawa"
     ))
     .expect("parse boolean_intersect_box_cyl");
     let mut gen2 = IdGenerator::new(0);

@@ -1,7 +1,7 @@
 /// Acceptance tests for #104: Extrude に fuse_target を追加して単一ボディを返す
 ///
 /// T04 は boolean kernel が box+extrusion の fuse に対応していないため #[ignore]。
-/// fuse_target コードパス自体は mycad-build に実装済み。
+/// fuse_target コードパス自体は engawa-build に実装済み。
 /// 参照: extrude_offset_fuse_acceptance.rs の t04b/t04 テスト（同様に #[ignore]）。
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -63,9 +63,9 @@ async fn send_post(app: axum::Router, body: &str) -> (StatusCode, String) {
 /// 現時点では DisjointFuseResult エラーが返る。コードパスは正しく実装済み。
 /// kernel が対応次第 #[ignore] を外すこと。
 #[tokio::test]
-#[ignore = "boolean kernel cannot fuse CreateBox + extrusion (DisjointFuseResult); fuse_target code path is correct in mycad-build"]
+#[ignore = "boolean kernel cannot fuse CreateBox + extrusion (DisjointFuseResult); fuse_target code path is correct in engawa-build"]
 async fn t04_boundary_fuse_extrude_returns_single_body() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":4.9,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
@@ -97,8 +97,8 @@ async fn t04_boundary_fuse_extrude_returns_single_body() {
 /// create_sketch(offset=5) + extrude を 2 回ビルドして頂点数が一致することを確認。
 #[tokio::test]
 async fn t04_determinism_offset_extrude() {
-    let (_dir, path) = temp_copy("simple_box.mycad");
-    let (_dir2, path2) = temp_copy("simple_box.mycad");
+    let (_dir, path) = temp_copy("simple_box.engawa");
+    let (_dir2, path2) = temp_copy("simple_box.engawa");
 
     let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let extrude_json = r#"{"type":"extrude","id":"extrude_0","sketch":"sketch_0","depth":10.0}"#;

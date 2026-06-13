@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// Wait up to `timeout` for port 7878 to become bindable. Defensive in case the
-/// previous test's mycad-api still has the socket in TIME_WAIT.
+/// previous test's engawa-api still has the socket in TIME_WAIT.
 fn wait_port_free(timeout: Duration) {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -23,11 +23,11 @@ fn example_simple_box() -> PathBuf {
         .parent()
         .and_then(|p| p.parent())
         .expect("workspace root")
-        .join("examples/simple_box.mycad")
+        .join("examples/simple_box.engawa")
 }
 
 /// Spawn `kill -KILL <pid>` after `delay` so subsequent stderr reads see EOF
-/// and the test never hangs even if mycad-api emits nothing to stderr
+/// and the test never hangs even if engawa-api emits nothing to stderr
 /// (Codex #145 F01 — guards against the bare blocking-read regression).
 fn kill_after(pid: u32, delay: Duration) {
     thread::spawn(move || {
@@ -40,7 +40,7 @@ fn kill_after(pid: u32, delay: Duration) {
 }
 
 /// Release-profile binary path. `cargo test` builds with the test profile so
-/// `CARGO_BIN_EXE_mycad-api` resolves to the debug binary; the path Playwright
+/// `CARGO_BIN_EXE_engawa-api` resolves to the debug binary; the path Playwright
 /// actually runs is the release one (Codex #145 F02 — exercise that path here).
 fn release_bin() -> Option<PathBuf> {
     let target_dir: PathBuf = std::env::var("CARGO_TARGET_DIR")
@@ -52,7 +52,7 @@ fn release_bin() -> Option<PathBuf> {
                 .map(|root| root.join("target"))
                 .expect("workspace target")
         });
-    let bin = target_dir.join("release/mycad-api");
+    let bin = target_dir.join("release/engawa-api");
     bin.exists().then_some(bin)
 }
 
@@ -62,12 +62,12 @@ fn t01_startup_log() {
     wait_port_free(Duration::from_secs(10));
 
     let example = example_simple_box();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mycad-api"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_engawa-api"))
         .arg(&example)
         .stderr(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
-        .expect("failed to spawn mycad-api");
+        .expect("failed to spawn engawa-api");
 
     let pid = child.id();
     let mut stderr = child.stderr.take().expect("stderr pipe");
@@ -99,23 +99,23 @@ fn t02_release_bin_runs() {
         .expect("workspace root")
         .to_path_buf();
     let build_status = Command::new("cargo")
-        .args(["build", "-p", "mycad-api", "--release", "--quiet"])
+        .args(["build", "-p", "engawa-api", "--release", "--quiet"])
         .current_dir(&workspace)
         .status()
         .expect("failed to spawn cargo build --release");
     assert!(
         build_status.success(),
-        "cargo build -p mycad-api --release failed"
+        "cargo build -p engawa-api --release failed"
     );
 
-    let bin = release_bin().expect("target/release/mycad-api should exist after build");
+    let bin = release_bin().expect("target/release/engawa-api should exist after build");
     let example = example_simple_box();
     let mut child = Command::new(&bin)
         .arg(&example)
         .stderr(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
-        .expect("failed to spawn release mycad-api");
+        .expect("failed to spawn release engawa-api");
 
     let pid = child.id();
     let stderr = child.stderr.take().expect("stderr pipe");
@@ -133,7 +133,7 @@ fn t02_release_bin_runs() {
 
     // Confirm the server actually accepts TCP connections — not just that the
     // startup log printed (Codex #145 F01 round 4 — guard against a regression
-    // where mycad-api logs then dies before serving).
+    // where engawa-api logs then dies before serving).
     let addr: SocketAddr = "127.0.0.1:7878".parse().expect("addr");
     let connect_deadline = Instant::now() + Duration::from_secs(8);
     let mut connected = false;
@@ -150,7 +150,7 @@ fn t02_release_bin_runs() {
 
     assert!(
         connected,
-        "release mycad-api did not accept TCP connections on 127.0.0.1:7878 within 8s; \
+        "release engawa-api did not accept TCP connections on 127.0.0.1:7878 within 8s; \
          stderr: {:?}",
         buf
     );
@@ -172,8 +172,8 @@ fn t02_release_bin_runs() {
 
 #[test]
 fn t03_boundary_invalid_path() {
-    let status = Command::new(env!("CARGO_BIN_EXE_mycad-api"))
-        .arg("/nonexistent/path.mycad")
+    let status = Command::new(env!("CARGO_BIN_EXE_engawa-api"))
+        .arg("/nonexistent/path.engawa")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -183,7 +183,7 @@ fn t03_boundary_invalid_path() {
 
 #[test]
 fn t04_degen_no_args() {
-    let status = Command::new(env!("CARGO_BIN_EXE_mycad-api"))
+    let status = Command::new(env!("CARGO_BIN_EXE_engawa-api"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()

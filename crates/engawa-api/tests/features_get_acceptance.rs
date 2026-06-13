@@ -39,20 +39,20 @@ async fn send_features_request(file: PathBuf) -> (StatusCode, String) {
     (status, String::from_utf8(body.to_vec()).unwrap())
 }
 
-/// T01: Empty features — GET /api/v0/features returns 200 + [] for a .mycad with no features.
+/// T01: Empty features — GET /api/v0/features returns 200 + [] for a .engawa with no features.
 #[tokio::test]
 async fn t01_degen_empty_features() {
-    let file = fixture_path("empty_part.mycad");
+    let file = fixture_path("empty_part.engawa");
     let (status, body) = send_features_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let ids: Vec<String> = serde_json::from_str(&body).unwrap();
     assert!(ids.is_empty(), "expected empty array, got: {body}");
 }
 
-/// T02: Normal list — extruded_rect.mycad has sketch_1 + extrude_1.
+/// T02: Normal list — extruded_rect.engawa has sketch_1 + extrude_1.
 #[tokio::test]
 async fn t02_normal_list_features() {
-    let file = example_path("extruded_rect.mycad");
+    let file = example_path("extruded_rect.engawa");
     let (status, body) = send_features_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let ids: Vec<String> = serde_json::from_str(&body).unwrap();
@@ -62,7 +62,7 @@ async fn t02_normal_list_features() {
 /// T03: Determinism — same request produces identical response.
 #[tokio::test]
 async fn t03_features_determinism() {
-    let file = example_path("extruded_rect.mycad");
+    let file = example_path("extruded_rect.engawa");
     let (_, body1) = send_features_request(file.clone()).await;
     let (_, body2) = send_features_request(file).await;
     assert_eq!(body1, body2, "features response must be deterministic");
@@ -71,7 +71,7 @@ async fn t03_features_determinism() {
 /// T04: Determinism 100x — same request 100 times produces identical response.
 #[tokio::test]
 async fn t04_features_determinism_100x() {
-    let file = example_path("extruded_rect.mycad");
+    let file = example_path("extruded_rect.engawa");
     let (_, first_body) = send_features_request(file.clone()).await;
     for _ in 0..99 {
         let (_, body) = send_features_request(file.clone()).await;
@@ -85,7 +85,7 @@ async fn t04_features_determinism_100x() {
 /// T05: Nonexistent file → 404 for GET /api/v0/features.
 #[tokio::test]
 async fn t05_features_not_found() {
-    let file = PathBuf::from("/tmp/absolutely_nonexistent_file_for_features.mycad");
+    let file = PathBuf::from("/tmp/absolutely_nonexistent_file_for_features.engawa");
     let (status, body) = send_features_request(file).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
     let err: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -95,20 +95,20 @@ async fn t05_features_not_found() {
     );
 }
 
-/// T06: Single feature — simple_box.mycad has only box_1.
+/// T06: Single feature — simple_box.engawa has only box_1.
 #[tokio::test]
 async fn t06_features_single_feature() {
-    let file = example_path("simple_box.mycad");
+    let file = example_path("simple_box.engawa");
     let (status, body) = send_features_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let ids: Vec<String> = serde_json::from_str(&body).unwrap();
     assert_eq!(ids, vec!["box_1"]);
 }
 
-/// T07: Feature ordering preserved — extruded_rect.mycad lists sketch_1 then extrude_1.
+/// T07: Feature ordering preserved — extruded_rect.engawa lists sketch_1 then extrude_1.
 #[tokio::test]
 async fn t07_features_ordering_preserved() {
-    let file = example_path("extruded_rect.mycad");
+    let file = example_path("extruded_rect.engawa");
     let (status, body) = send_features_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let ids: Vec<String> = serde_json::from_str(&body).unwrap();
@@ -131,7 +131,7 @@ async fn t07_features_ordering_preserved() {
 /// T08: Empty features 100x determinism — empty array consistently returned.
 #[tokio::test]
 async fn t08_empty_features_determinism_100x() {
-    let file = fixture_path("empty_part.mycad");
+    let file = fixture_path("empty_part.engawa");
     let (status, first_body) = send_features_request(file.clone()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(first_body, "[]");
@@ -144,7 +144,7 @@ async fn t08_empty_features_determinism_100x() {
 /// T09: No duplicate IDs — all feature IDs must be unique.
 #[tokio::test]
 async fn t09_features_no_duplicate_ids() {
-    let file = example_path("extruded_rect.mycad");
+    let file = example_path("extruded_rect.engawa");
     let (status, body) = send_features_request(file).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let ids: Vec<String> = serde_json::from_str(&body).unwrap();

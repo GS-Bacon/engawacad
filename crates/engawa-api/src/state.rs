@@ -18,7 +18,7 @@ impl AppState {
     /// # キャッシュ戦略
     /// 初回ロード後はメモリ常駐（再読み込みなし）。
     /// ADR-008 §Decision 3「mycad view はシングルユーザーサーバのため競合問題は発生しない」に基づき、
-    /// 外部プロセスによる .mycad の並行更新は非サポートシナリオとして明示的に除外する。
+    /// 外部プロセスによる .engawa の並行更新は非サポートシナリオとして明示的に除外する。
     pub fn ensure_loaded(&mut self) -> Result<&Document, ApiError> {
         if self.doc.is_none() {
             self.doc = Some(Document::from_path(&self.path)?);
@@ -50,20 +50,20 @@ impl AppState {
 mod tests {
     use super::*;
 
-    /// 存在する .mycad ファイルのパス（テスト用）
+    /// 存在する .engawa ファイルのパス（テスト用）
     fn simple_box_path() -> PathBuf {
         let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let p = std::path::Path::new(&dir)
             .join("..")
             .join("..")
             .join("examples")
-            .join("simple_box.mycad");
-        std::fs::canonicalize(&p).expect("simple_box.mycad fixture must exist")
+            .join("simple_box.engawa");
+        std::fs::canonicalize(&p).expect("simple_box.engawa fixture must exist")
     }
 
     #[test]
     fn ensure_loaded_nonexistent_path_returns_error_and_doc_stays_none() {
-        let mut state = AppState::new(PathBuf::from("/nonexistent/path/file.mycad"));
+        let mut state = AppState::new(PathBuf::from("/nonexistent/path/file.engawa"));
         assert!(state.doc.is_none());
         let result = state.ensure_loaded();
         assert!(result.is_err(), "nonexistent path must error");

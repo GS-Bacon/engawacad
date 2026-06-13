@@ -312,10 +312,10 @@ fn t22b_determinism_across_tessellation_resolution() {
     assert!(mesh_high.triangle_count() > 0);
 }
 
-/// T23: boolean_intersect_cyl_sphere.mycad round-trips YAML byte-identically.
+/// T23: boolean_intersect_cyl_sphere.engawa round-trips YAML byte-identically.
 #[test]
 fn t23_yaml_round_trip_example() {
-    let path = examples_dir().join("boolean_intersect_cyl_sphere.mycad");
+    let path = examples_dir().join("boolean_intersect_cyl_sphere.engawa");
     let doc = Document::from_path(&path).unwrap_or_else(|e| {
         panic!(
             "failed to load {:?}: {e}",
