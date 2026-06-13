@@ -24,7 +24,7 @@ fn run_export(bin: &str, input: &std::path::Path) -> std::process::Output {
         .arg("-o")
         .arg(tmp.path())
         .output()
-        .expect("run mycad export")
+        .expect("run engawa export")
 }
 
 /// T01: Determinism — assembly export produces identical STL bytes on repeated runs.
@@ -42,7 +42,7 @@ fn t01_determinism_assembly_export() {
         .arg("-o")
         .arg(tmp1.path())
         .status()
-        .expect("run mycad export 1");
+        .expect("run engawa export 1");
     assert!(status1.success(), "first export should succeed");
 
     let status2 = Command::new(bin)
@@ -51,7 +51,7 @@ fn t01_determinism_assembly_export() {
         .arg("-o")
         .arg(tmp2.path())
         .status()
-        .expect("run mycad export 2");
+        .expect("run engawa export 2");
     assert!(status2.success(), "second export should succeed");
 
     let stl1 = std::fs::read(tmp1.path()).expect("read stl 1");
@@ -72,7 +72,7 @@ fn t02_assembly_export_succeeds() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "export of assembly must succeed");
 
     let stl = std::fs::read(tmp.path()).expect("read stl");
@@ -92,7 +92,7 @@ fn t05_boundary_simple_part_still_works() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "export of simple part must still succeed");
 
     let stl = std::fs::read(tmp.path()).expect("read stl");
@@ -116,7 +116,7 @@ fn edge_determinism_100x_assembly_export() {
         .arg("-o")
         .arg(tmp_ref.path())
         .status()
-        .expect("run mycad export reference");
+        .expect("run engawa export reference");
     assert!(status.success(), "reference export should succeed");
     let reference = std::fs::read(tmp_ref.path()).expect("read reference stl");
 
@@ -128,7 +128,7 @@ fn edge_determinism_100x_assembly_export() {
             .arg("-o")
             .arg(tmp.path())
             .status()
-            .expect("run mycad export");
+            .expect("run engawa export");
         assert!(s.success(), "export run {i} should succeed");
         let stl = std::fs::read(tmp.path()).expect("read stl");
         assert_eq!(stl, reference, "STL output differs at run {i}");
@@ -148,7 +148,7 @@ fn edge_determinism_100x_simple_part_export() {
         .arg("-o")
         .arg(tmp_ref.path())
         .status()
-        .expect("run mycad export reference");
+        .expect("run engawa export reference");
     assert!(status.success());
     let reference = std::fs::read(tmp_ref.path()).expect("read reference");
 
@@ -160,7 +160,7 @@ fn edge_determinism_100x_simple_part_export() {
             .arg("-o")
             .arg(tmp.path())
             .status()
-            .expect("run mycad export");
+            .expect("run engawa export");
         assert!(s.success(), "simple part run {i} should succeed");
         let stl = std::fs::read(tmp.path()).expect("read stl");
         assert_eq!(stl, reference, "simple part STL differs at run {i}");
@@ -180,7 +180,7 @@ fn edge_deep_nested_assembly_export() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(
         status.success(),
         "deep nested assembly export should succeed"
@@ -235,7 +235,7 @@ fn edge_siblings_assembly_export() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "siblings assembly export should succeed");
 
     let stl = std::fs::read(tmp.path()).expect("read stl");
@@ -271,7 +271,7 @@ fn edge_empty_children_assembly_cli_produces_empty_stl() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     // CLI does not reject empty assemblies — it writes an empty STL
     assert!(
         status.success(),

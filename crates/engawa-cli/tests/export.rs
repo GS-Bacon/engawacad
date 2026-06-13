@@ -18,7 +18,7 @@ fn export_simple_box_produces_12_facets() {
         .arg("-o")
         .arg(output)
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "export should succeed");
 
     let stl = std::fs::read_to_string(output).expect("read stl");
@@ -47,7 +47,7 @@ fn export_sphere_produces_960_facets() {
         .arg("-o")
         .arg(output)
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "export should succeed");
 
     let stl = std::fs::read_to_string(output).expect("read stl");
@@ -76,7 +76,7 @@ fn export_extruded_rect_produces_12_facets() {
         .arg("-o")
         .arg(output)
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "export should succeed");
 
     let stl = std::fs::read_to_string(output).expect("read stl");
@@ -104,7 +104,7 @@ fn export_invalid_profile_fails_no_stl() {
         .arg("-o")
         .arg(output)
         .output()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(
         !result.status.success(),
         "export should fail for self-intersecting profile"
@@ -140,7 +140,7 @@ fn t16_export_assembly_succeeds() {
         .arg("-o")
         .arg(tmp.path())
         .output()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(output.status.success(), "export of assembly must succeed");
     let stl = std::fs::read(tmp.path()).expect("read stl");
     assert!(!stl.is_empty(), "STL output must not be empty");

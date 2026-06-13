@@ -27,7 +27,7 @@ struct BodyMesh {
     mesh: TriangleMesh,
 }
 
-/// T01: `mycad export examples/assembly.engawa` exits with code 0.
+/// T01: `engawa export examples/assembly.engawa` exits with code 0.
 #[test]
 fn t01_export_exits_zero() {
     let bin = env!("CARGO_BIN_EXE_engawa");
@@ -40,7 +40,7 @@ fn t01_export_exits_zero() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
 
     assert!(status.success(), "assembly export must exit 0");
 }
@@ -58,7 +58,7 @@ fn t02_stl_file_size_gt_1kb() {
         .arg("-o")
         .arg(tmp.path())
         .status()
-        .expect("run mycad export");
+        .expect("run engawa export");
     assert!(status.success(), "export must succeed before size check");
 
     let metadata = std::fs::metadata(tmp.path()).expect("stat stl");
@@ -102,7 +102,7 @@ fn t04_boundary_missing_file_nonzero_exit() {
         .arg("-o")
         .arg(tmp.path())
         .output()
-        .expect("run mycad export");
+        .expect("run engawa export");
 
     assert!(
         !output.status.success(),

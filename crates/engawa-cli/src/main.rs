@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process;
 
 #[derive(Parser)]
-#[command(name = "engawa", version, about = "MyCad CAD kernel CLI")]
+#[command(name = "engawa", version, about = "EngawaCAD CAD kernel CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

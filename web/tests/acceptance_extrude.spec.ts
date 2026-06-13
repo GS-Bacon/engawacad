@@ -4,7 +4,7 @@
  * 対象: POST /api/v0/features への Extrude/ExtrudeCut × 境界値
  * 実行: cargo xtask acceptance  (Playwright API テスト、ブラウザ不要)
  *
- * simple_box.mycad: width=10, height=20, depth=30, 原点中心 z∈[-15,15]
+ * simple_box.engawa: width=10, height=20, depth=30, 原点中心 z∈[-15,15]
  * XY 平面スケッチ → z 正方向に Extrude / box_1 へ ExtrudeCut
  * face距離 = 15.0 (XY 平面 z=0 から top face z=+15 まで)
  *

@@ -1,9 +1,9 @@
 # Phase 4-6 全体監査レポート — Fable 5 積年ドリフト検出
 
-- **監査 Issue**: [#134](https://github.com/GS-Bacon/mycad/issues/134)
+- **監査 Issue**: [#134](https://github.com/GS-Bacon/engawacad/issues/134)
 - **実施日**: 2026-06-11
 - **監査者**: Claude Fable 5(単一セッション、レビュー方針 5 ルール遵守)
-- **スコープ**: Phase 4 着手(2026-05-27)〜 Phase 6 完了(2026-06-07)の全コミット(約 105 件)、`crates/mycad-kernel/src/`、ADR-002/004/005/008、`features/<n>-*/` 痕跡
+- **スコープ**: Phase 4 着手(2026-05-27)〜 Phase 6 完了(2026-06-07)の全コミット(約 105 件)、`crates/engawa-kernel/src/`、ADR-002/004/005/008、`features/<n>-*/` 痕跡
 
 ---
 
@@ -35,8 +35,8 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 
 ### Finding 1(高): `Component.transform.rotation` が build 層で無言で無視される
 
-- **箇所**: `crates/mycad-build/src/lib.rs:374-382`(`build_component_tree`)、関連 `crates/mycad-kernel/src/geometry/transform.rs:26`
-- **症状**: `.mycad` の `Component.transform.rotation` は format 層で受理され(`component.rs:15`、docs/file-format.md にも記載)、kernel には `Solid::rotate`(#77、topology.rs:476)が実装済みなのに、build 層は position のみ合成し rotation を黙って捨てる。コメントは「rotation ignored until #77」のままだが #77 は 2026-06-06 に closed。非ゼロ rotation を拒否するバリデーションも存在しない(`is_default_transform` は serde skip 用のみ)。
+- **箇所**: `crates/engawa-build/src/lib.rs:374-382`(`build_component_tree`)、関連 `crates/engawa-kernel/src/geometry/transform.rs:26`
+- **症状**: `.engawa` の `Component.transform.rotation` は format 層で受理され(`component.rs:15`、docs/file-format.md にも記載)、kernel には `Solid::rotate`(#77、topology.rs:476)が実装済みなのに、build 層は position のみ合成し rotation を黙って捨てる。コメントは「rotation ignored until #77」のままだが #77 は 2026-06-06 に closed。非ゼロ rotation を拒否するバリデーションも存在しない(`is_default_transform` は serde skip 用のみ)。
 - **経緯**: #77 本文が「build 層への組み込みは Phase 6 以降に委ねる」と明記して kernel 実装のみで close。しかし後続の配線 Issue は一度も起票されず、Phase 6 も完了。Phase 完了優先で継ぎ目が落ちた典型例。
 - **影響範囲**: rotation を書いたユーザーは**エラーなしで間違ったジオメトリ**を得る(assembly の部品配置、Phase 7 以降のスケッチ平面にも波及)。付随して、ADR-004「deg↔rad 変換は format/build 層の責務、カーネルは rad のみ」に対し `euler_to_matrix(rx_deg, ...)` が**カーネル内で度数を受領**しており、#77 の Issue 文面自体が ADR と矛盾したまま実装された。
 - **推奨アクション**: 第一手(small)として build 層で非ゼロ rotation を `KernelError::UnsupportedFeature` 等で明示拒否。本修正(medium)で `euler_to_matrix` + `Solid::rotate` を `build_component_tree` に配線し、deg→rad 境界を build 層に移動(ADR-004 整合)。rotation×boolean 複合の決定性テストを追加。
@@ -45,7 +45,7 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 
 ### Finding 2(高): trimmed UV face の内側ループ u シフトが 2π の整数倍でなく、穴の周方向位置によって三角形分割が破綻し得る
 
-- **箇所**: `crates/mycad-kernel/src/tessellation/mod.rs:474-489`(`tessellate_trimmed_uv_face`)
+- **箇所**: `crates/engawa-kernel/src/tessellation/mod.rs:474-489`(`tessellate_trimmed_uv_face`)
 - **症状**: 内側ループ(穴)の UV 化後、`shift = outer_u(外周ループ先頭点) - avg_inner_u` を計算し `|shift| > π` のとき**そのままの量**を全 u に加算する。シフト量が 2π の整数倍に丸められないため、(a) シフト適用時は穴が外周先頭点の u 位置へ「平行移動」して earcut の接続トポロジーが歪む、(b) 非適用時(|shift| ≤ π)でも穴の unwrap 後 u が外周ループの u スパン外に落ちると earcut が穴を無視し、切断穴が塞がったメッシュになる。基準が「外周ループの先頭点」という任意の点である点も不安定(Issue #134 既知懸念 2 と同一)。
 - **影響範囲**: Boolean Cut で円筒側面に開けた穴の周方向位置はユーザー入力(tool 位置)で決まるため、**現行機能で到達可能**。#130 のテスト群(t01-t04)は特定配置のみ検証しており、シーム近傍・背面側(u≈±π)の穴は未網羅。症状は naked edge / 自己交差メッシュとして無言で現れる。
 - **推奨アクション**: シフトを `(target - avg_inner_u を 2π で割った最近接整数) * 2π` の周期保存シフトに変更し、基準を外周ループ u スパンの中央値にする。穴位置を周方向に掃引するパラメタライズドテスト(特に u≈π、シーム横断)を追加。
@@ -54,7 +54,7 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 
 ### Finding 3(中): trimmed sphere tessellation がグローバル Z 軸を決め打ちし、回転した形状で無言に破綻する地雷
 
-- **箇所**: `crates/mycad-kernel/src/tessellation/mod.rs:988-999`(`tessellate_sphere_face_trimmed`)
+- **箇所**: `crates/engawa-kernel/src/tessellation/mod.rs:988-999`(`tessellate_sphere_face_trimmed`)
 - **症状**: トリム円の緯度を `circ_center.coords.z`(グローバル Z 成分)から計算し、トリム方向判定も `center_z < center.coords.z`(Z 比較)。エッジが持つ `circ_normal` は読み捨てている(`let _ = (circ_radius, circ_normal)` mod.rs:1091)。さらに `rel_z.clamp(-1.0, 1.0)`(mod.rs:992)が球外円を黙って吸収し、接円(tangent)の退化は `push_triangle` の AREA_EPS 除去に押し付けられる多段の握り潰し構造。境界リングは「隣接面と同じ n_u で u=0 から一様再サンプリングすれば一致するはず」という規約依存(mod.rs:1001-1028)。
 - **影響範囲**: 現状は surface_intersect の MVP 制約(plane×sphere は法線 ±Z のみ、cyl×sphere は軸 ±Z のみ)が非 Z 切断を上流で拒否しているため**未到達**。しかし Finding 1 の rotation 配線、または交線サポート拡張のどちらかが入った瞬間に、回転済み boolean 結果の球面が**エラーなしで誤ったメッシュ**になる。Finding 1 の修正と連動して必ず踏む地雷。
 - **推奨アクション**: `circ_normal` を信頼して球ローカル軸を導出し、緯度・トリム方向・極をその軸基準で計算する。クランプ到達(=円が球面から外れた)を debug_assert または KernelError 化し、接円ケースの明示テストを追加。
@@ -63,7 +63,7 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 
 ### Finding 4(中): boolean 交線の 64 分割ハードコードとテッセレーション解像度の「規約による整合」— #129/#130/#131 連鎖の真因
 
-- **箇所**: `crates/mycad-kernel/src/booleans/partition.rs:11`(`ANGULAR_SEGMENTS_DEFAULT = 64`)、同 :458,:593,:952,:1920-1923、`tessellation/mod.rs:602-663`(n_u ヒューリスティクス)、:713-730(`adjacent_face_idx`)
+- **箇所**: `crates/engawa-kernel/src/booleans/partition.rs:11`(`ANGULAR_SEGMENTS_DEFAULT = 64`)、同 :458,:593,:952,:1920-1923、`tessellation/mod.rs:602-663`(n_u ヒューリスティクス)、:713-730(`adjacent_face_idx`)
 - **症状**: boolean は交線円を一律 64 弦に離散化し、結果の B-rep に**1 円 = 64 円弧エッジ + 64 頂点**のトポロジーを焼き込む(`circle_curve_for_edge` が各弦に正確な円弧 t_range を再構成するため幾何は厳密だが、トポロジーが恒久的に膨張する)。テッセレーション側はこれと辻褄を合わせるため `n_u = arcs_per_rev` 等のヒューリスティクスを持ち、`adj_is_sphere` 分岐(mod.rs:654-660)は **if/else 両腕が同値の死んだ分岐**(#131 の試行錯誤痕跡)。`TessellationOptions.angular_segments` は boolean 結果の側面では事実上無視され(64 固定)、ユーザー解像度指定が効かない。境界の一致は「両側が独立に同じサンプル列を再導出する」ことに依存し、#129(cap 境界不整合)→ #130(トリム面未対応)→ #131(隣接面 n_u 不一致)は全てこの構造の症状。codex-review #129-F02 が提案した「共有境界の直接比較テスト」も未対応のまま。
 - **影響範囲**: 新しい曲面型・トリムケース・boolean ケースを足すたびに「もう一方の側のサンプリング規約」を暗記して再実装する必要があり、漏れると naked edge。プロジェクトの「ビューアは解像度非依存・厳密 B-rep が真実」という出力戦略とも将来衝突する(解像度がトポロジーに固定化されるため)。
 - **推奨アクション**: ADR を 1 本起こし、(a) 交線エッジを「1 円 = 1 周期エッジ(または少数の弧)」として保持し離散化をテッセレーション層に遅延する方向か、(b) 64 分割焼き込みを正式仕様としてテッセレーションが必ずエッジトポロジーからサンプルを導出する(境界サンプリングの single source of truth)方向かを決定する。死んだ if/else の削除と #129-F02 のテスト追加は即時可能。
@@ -72,7 +72,7 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 
 ### Finding 5(中): /3ai STEP 8 クラッシュ経路が残した「嘘をつくテスト資産」群
 
-- **箇所**: `crates/mycad-kernel/tests/extrude_negative_direction_acceptance.rs`(全 4 テストが `#[ignore = "STEP 6 で実装後に解除"]` + `todo!()`)、`tests/test_bool_probe.rs`(空 probe)、untracked の `tests/debug_trim*.rs` / `diag_*.rs` 12 本(全て「// temporary diagnostic file removed」スタブ)
+- **箇所**: `crates/engawa-kernel/tests/extrude_negative_direction_acceptance.rs`(全 4 テストが `#[ignore = "STEP 6 で実装後に解除"]` + `todo!()`)、`tests/test_bool_probe.rs`(空 probe)、untracked の `tests/debug_trim*.rs` / `diag_*.rs` 12 本(全て「// temporary diagnostic file removed」スタブ)
 - **症状**: #110(負方向押し出し)は kernel 実装済み・closed で、実際の regression テストは `src/primitives/extrusion.rs:783-825` にインラインで存在する。一方 tests/ 配下の受け入れテストファイルは**同名テスト**(`t01_kernel_neg_depth_determinism` 等)が `todo!()` のまま ignore されており、実行すると 4 本全て "not yet implemented" で panic する(本監査で実行確認済み)。ファイル名・テスト名だけ見ると受け入れテストが存在するように見え、ignore 理由文「STEP 6 で実装後に解除」は永遠に来ない約束になっている。#121/#126/#127/#128 が示すとおり、/3ai STEP 8 の pre-check クラッシュ時に作業物が中途半端に残る経路が系統化している。
 - **影響範囲**: 将来の読者(人間・AI とも)がテスト名で網羅性を誤認する。とくに /3ai の GLM ワーカーは「既存テストがある」と判断して新規テストを省略し得る。CI は green のため腐敗が検出されない。
 - **推奨アクション**: (1) `extrude_negative_direction_acceptance.rs` はインライン版と重複のため削除(または統合テストとして実装して ignore 解除)、(2) `test_bool_probe.rs` と untracked スタブ 12 本を削除、(3) /3ai STEP 8 の異常終了時に untracked テストファイルを警告列挙するチェックを skill 側に追加。
@@ -95,8 +95,8 @@ Phase 4-6 のコードベースは、決定性については模範的に守ら�
 - **body**:
   ```
   ## 症状
-  `.mycad` の `Component.transform.rotation` は format で受理されるが、
-  `mycad-build/src/lib.rs:374-382` build_component_tree が position のみ合成し
+  `.engawa` の `Component.transform.rotation` は format で受理されるが、
+  `engawa-build/src/lib.rs:374-382` build_component_tree が position のみ合成し
   rotation を黙って捨てる。バリデーションも無いため、非ゼロ rotation を書いた
   ユーザーはエラーなしで間違ったジオメトリを得る。
 

@@ -1,20 +1,20 @@
-# MyCad Architecture
+# EngawaCAD Architecture
 
 ## Overview
 
-MyCad は Feature-based parametric CAD システム。ユーザーの操作履歴（Feature 列）を真実の源とし、B-rep 形状はそこから再生成される。
+EngawaCAD は Feature-based parametric CAD システム。ユーザーの操作履歴（Feature 列）を真実の源とし、B-rep 形状はそこから再生成される。
 
 ## Layer Structure
 
 ```
 ┌─────────────────────┐
-│     mycad-cli       │  CLI / UI 層
+│     engawa-cli       │  CLI / UI 層
 ├─────────────────────┤
-│    mycad-viewer     │  可視化層（テッセレーション結果を描画）
+│    engawa-viewer     │  可視化層（テッセレーション結果を描画）
 ├─────────────────────┤
-│    mycad-format     │  永続化層（YAML <-> Document/Feature/Component）
+│    engawa-format     │  永続化層（YAML <-> Document/Feature/Component）
 ├─────────────────────┤
-│    mycad-kernel     │  コア層（B-rep, geometry, primitives, tessellation）
+│    engawa-kernel     │  コア層（B-rep, geometry, primitives, tessellation）
 └─────────────────────┘
 ```
 
@@ -36,7 +36,7 @@ MyCad は Feature-based parametric CAD システム。ユーザーの操作履�
 
 ### Feature History as Source of Truth
 
-`.mycad` ファイルに保存される Feature 列が設計の唯一の源。B-rep 形状は Feature 列から毎回再生成可能。これにより:
+`.engawa` ファイルに保存される Feature 列が設計の唯一の源。B-rep 形状は Feature 列から毎回再生成可能。これにより:
 - パラメータ変更時の再生成が可能
 - undo/redo が自然に実装できる
 - ファイルサイズが小さい（形状データではなく操作手順のみ）
@@ -49,14 +49,14 @@ MyCad は Feature-based parametric CAD システム。ユーザーの操作履�
 - 人間が読み書きできる
 - git diff でレビューできる
 - スキーマバリデーション可能（schemars で JSON Schema 生成）
-- 拡張子: `.mycad`
+- 拡張子: `.engawa`
 
 ### Kernel の Rendering 非依存
 
-`mycad-kernel` はレンダリングライブラリに一切依存しない。テッセレーション結果（`TriangleMesh`）を生成するのみ。ビューアがそれを消費する。
+`engawa-kernel` はレンダリングライブラリに一切依存しない。テッセレーション結果（`TriangleMesh`）を生成するのみ。ビューアがそれを消費する。
 
 ## Data Flow
 
 ```
-.mycad file → Document → Feature列 → Kernel (B-rep Solid) → Tessellation → TriangleMesh → Viewer
+.engawa file → Document → Feature列 → Kernel (B-rep Solid) → Tessellation → TriangleMesh → Viewer
 ```

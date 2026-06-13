@@ -33,7 +33,7 @@ async fn t03_root_returns_html() {
         .unwrap();
     let body_str = String::from_utf8_lossy(&body);
 
-    if body_str.contains("MYCAD frontend not built") {
+    if body_str.contains("ENGAWA frontend not built") {
         // stub path — acceptable
     } else {
         assert!(
@@ -110,7 +110,7 @@ async fn t09_real_viewer_asset_served() {
         .unwrap();
     let index_html = String::from_utf8_lossy(&body);
 
-    if index_html.contains("MYCAD frontend not built") {
+    if index_html.contains("ENGAWA frontend not built") {
         return;
     }
 

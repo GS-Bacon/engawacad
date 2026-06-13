@@ -1,8 +1,8 @@
-# .mycad ファイルフォーマット仕様
+# .engawa ファイルフォーマット仕様
 
 ## Overview
 
-`.mycad` ファイルは YAML 形式のテキストファイル。
+`.engawa` ファイルは YAML 形式のテキストファイル。
 
 ## Structure
 
@@ -65,6 +65,6 @@ root_component:             # ルートコンポーネント
 コンポーネントは外部ファイルまたは標準ライブラリを参照可能:
 
 ```yaml
-ref: "./other_part.mycad"                    # ファイル参照
+ref: "./other_part.engawa"                    # ファイル参照
 ref: "stdlib://fasteners/jis_b1176/M5x20"   # 標準ライブラリ参照
 ```

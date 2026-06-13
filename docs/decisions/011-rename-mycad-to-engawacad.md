@@ -82,13 +82,14 @@ Phase 6 (対話編集の背骨) 完了 (2026-06-07) 後、Phase 7 (スケッチ�
 
 ---
 
-## Decision 3: ADR-001〜010 本文は **書き換えない**
+## Decision 3: ADR-001〜010 本文 + `features/**/*.md` は **書き換えない**
 
 ### 決定
 
 - `docs/decisions/001-*.md` 〜 `010-*.md` の本文中の "MyCAD" / "mycad" / "MyCad" 表記は **一切書き換えない**。
+- `features/**` 配下の全ファイル (plan.md / test-spec.md / fix-plan.md / 設計レビュー記録 / final-review.yaml / glm-test-result.json / plan-snapshots/ 等) も同様に **書き換えない**。md / yaml / json を問わず決定時点のスナップショットとして ADR と同等の歴史記録扱いとする。
 - 本 ADR-011 のみが「現時点で EngawaCAD」と書く。
-- 機械置換時は `--glob '!docs/decisions/00[0-9]-*.md' --glob '!docs/decisions/010-*.md'` で除外する。
+- 機械置換時は `--glob '!docs/decisions/00[0-9]-*.md' --glob '!docs/decisions/010-*.md' --glob '!features/**'` で除外する。
 
 ### 採用しなかった案
 
@@ -160,6 +161,6 @@ Phase 6 (対話編集の背骨) 完了 (2026-06-07) 後、Phase 7 (スケッチ�
 
 1. `cargo xtask ci` 通過 (fmt + clippy + test + build)
 2. `cargo run --bin engawa -- export examples/simple_box.engawa -o /tmp/test.stl` で従来同等の STL 出力
-3. `rg -i 'mycad' . --glob '!Cargo.lock' --glob '!docs/decisions/00[0-9]-*.md' --glob '!docs/decisions/010-*.md'` の結果が空 (= 意図せぬ残存ゼロ)
+3. `rg -i 'mycad' . --glob '!Cargo.lock' --glob '!docs/decisions/00[0-9]-*.md' --glob '!docs/decisions/010-*.md' --glob '!features/**'` の結果が空 (= 意図せぬ残存ゼロ)
 4. GitHub repo が `GS-Bacon/engawacad` にリネーム済み
 5. 旧 URL `github.com/GS-Bacon/mycad` が新 URL にリダイレクトされる

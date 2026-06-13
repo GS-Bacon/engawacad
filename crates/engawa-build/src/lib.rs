@@ -504,7 +504,7 @@ fn resolve_reference(
         ComponentRef::StdLib(rel) => {
             let root = resolve_stdlib_root().ok_or_else(|| KernelError::ReferenceResolution {
                 path: format!("stdlib://{rel}"),
-                reason: "stdlib root not found (set MYCAD_STDLIB_PATH or provide stdlib/)".into(),
+                reason: "stdlib root not found (set ENGAWA_STDLIB_PATH or provide stdlib/)".into(),
             })?;
             root.join(format!("{rel}.engawa"))
         }
@@ -517,9 +517,9 @@ fn resolve_reference(
     Ok((path, parent))
 }
 
-/// Determine stdlib root: env `MYCAD_STDLIB_PATH` (non-empty) > repo-local `stdlib/`.
+/// Determine stdlib root: env `ENGAWA_STDLIB_PATH` (non-empty) > repo-local `stdlib/`.
 fn resolve_stdlib_root() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("MYCAD_STDLIB_PATH") {
+    if let Ok(p) = std::env::var("ENGAWA_STDLIB_PATH") {
         if !p.trim().is_empty() {
             return Some(PathBuf::from(p));
         }

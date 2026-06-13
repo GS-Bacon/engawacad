@@ -1,5 +1,5 @@
 /**
- * Full-stack integration tests — real browser + real mycad-api.
+ * Full-stack integration tests — real browser + real engawa-api.
  *
  * Design: GET /api/v0/mesh and GET /api/v0/features are mocked with the
  * simple_box_faces fixture so that face IDs are deterministic and plane

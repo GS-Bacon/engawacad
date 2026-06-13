@@ -42,7 +42,7 @@ fn assemble_and_tessellate(doc: &Document, base_dir: &Path) -> Result<Vec<BodyMe
 /// Atomic write: write to tmp file then rename (same-FS atomic).
 /// On rename failure, best-effort remove the tmp file (AM02).
 fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), ApiError> {
-    let tmp = path.with_extension("mycad.tmp");
+    let tmp = path.with_extension("engawa.tmp");
     std::fs::write(&tmp, content)?;
     if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);

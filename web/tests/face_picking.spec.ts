@@ -114,8 +114,8 @@ test("E03 background click clears selection", async ({ page }) => {
   expect(text).toBe("");
 });
 
-// E04: クリック前後で GET /api/v0/mesh レスポンスが不変(.mycad 非変更)
-test("E04 face-pick does not mutate mycad (transient state only)", async ({ page }) => {
+// E04: クリック前後で GET /api/v0/mesh レスポンスが不変(.engawa 非変更)
+test("E04 face-pick does not mutate engawa (transient state only)", async ({ page }) => {
   const fixture = loadFacesFixture();
 
   await page.route("/api/v0/mesh", (route) =>

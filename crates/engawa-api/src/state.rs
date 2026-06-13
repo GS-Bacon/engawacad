@@ -17,7 +17,7 @@ impl AppState {
     ///
     /// # キャッシュ戦略
     /// 初回ロード後はメモリ常駐（再読み込みなし）。
-    /// ADR-008 §Decision 3「mycad view はシングルユーザーサーバのため競合問題は発生しない」に基づき、
+    /// ADR-008 §Decision 3「engawa view はシングルユーザーサーバのため競合問題は発生しない」に基づき、
     /// 外部プロセスによる .engawa の並行更新は非サポートシナリオとして明示的に除外する。
     pub fn ensure_loaded(&mut self) -> Result<&Document, ApiError> {
         if self.doc.is_none() {

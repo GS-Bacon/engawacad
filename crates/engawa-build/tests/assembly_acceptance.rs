@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 // ---------------------------------------------------------------------------
 
 /// Write a minimal .engawa file with a single create_box feature.
-fn write_box_mycad(dir: &Path, filename: &str, box_id: &str, size: f64) -> PathBuf {
+fn write_box_engawa(dir: &Path, filename: &str, box_id: &str, size: f64) -> PathBuf {
     let mut doc = Document::new(filename.trim_end_matches(".engawa"));
     doc.root_component.features.push(Feature::CreateBox {
         id: box_id.to_string(),
@@ -40,18 +40,18 @@ fn stdlib_ref_doc(name: &str, stdlib_path: &str) -> Document {
     doc
 }
 
-/// Set MYCAD_STDLIB_PATH env var for the process. Returns the old value (if any).
+/// Set ENGAWA_STDLIB_PATH env var for the process. Returns the old value (if any).
 fn set_stdlib_env(path: &Path) -> Option<String> {
-    let old = std::env::var("MYCAD_STDLIB_PATH").ok();
-    std::env::set_var("MYCAD_STDLIB_PATH", path);
+    let old = std::env::var("ENGAWA_STDLIB_PATH").ok();
+    std::env::set_var("ENGAWA_STDLIB_PATH", path);
     old
 }
 
-/// Restore MYCAD_STDLIB_PATH to its previous state.
+/// Restore ENGAWA_STDLIB_PATH to its previous state.
 fn restore_stdlib_env(old: Option<String>) {
     match old {
-        Some(v) => std::env::set_var("MYCAD_STDLIB_PATH", v),
-        None => std::env::remove_var("MYCAD_STDLIB_PATH"),
+        Some(v) => std::env::set_var("ENGAWA_STDLIB_PATH", v),
+        None => std::env::remove_var("ENGAWA_STDLIB_PATH"),
     }
 }
 
@@ -64,7 +64,7 @@ fn t01_determinism() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    write_box_mycad(base, "child.engawa", "box_child", 5.0);
+    write_box_engawa(base, "child.engawa", "box_child", 5.0);
 
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
@@ -119,7 +119,7 @@ fn t02_stdlib_reference_resolved() {
     let stdlib_dir = dir.path().join("stdlib");
     fs::create_dir_all(&stdlib_dir).unwrap();
 
-    write_box_mycad(&stdlib_dir, "part.engawa", "box_stdlib", 3.0);
+    write_box_engawa(&stdlib_dir, "part.engawa", "box_stdlib", 3.0);
 
     let doc = stdlib_ref_doc("Parent", "part");
 
@@ -142,7 +142,7 @@ fn t03_file_reference_resolved() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    write_box_mycad(base, "child.engawa", "box_child", 5.0);
+    write_box_engawa(base, "child.engawa", "box_child", 5.0);
 
     let doc = file_ref_doc("Parent", "child.engawa");
 
@@ -296,8 +296,8 @@ fn t07_boundary_depth_16_vs_17() {
 
 #[test]
 fn t08_stdlib_root_not_set_error() {
-    let old = std::env::var("MYCAD_STDLIB_PATH").ok();
-    std::env::remove_var("MYCAD_STDLIB_PATH");
+    let old = std::env::var("ENGAWA_STDLIB_PATH").ok();
+    std::env::remove_var("ENGAWA_STDLIB_PATH");
 
     let doc = stdlib_ref_doc("Parent", "nonexistent/part");
 
@@ -307,7 +307,7 @@ fn t08_stdlib_root_not_set_error() {
 
     // Restore env
     match old {
-        Some(v) => std::env::set_var("MYCAD_STDLIB_PATH", v),
+        Some(v) => std::env::set_var("ENGAWA_STDLIB_PATH", v),
         None => {}
     }
 
@@ -333,7 +333,7 @@ fn t09_determinism_100_runs() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
 
-    write_box_mycad(base, "child.engawa", "box_child", 5.0);
+    write_box_engawa(base, "child.engawa", "box_child", 5.0);
 
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
@@ -392,7 +392,7 @@ fn t10_roundtrip_yaml_build() {
     let base = dir.path();
 
     // Create a child .engawa file on disk
-    write_box_mycad(base, "child.engawa", "box_child", 5.0);
+    write_box_engawa(base, "child.engawa", "box_child", 5.0);
 
     // Build a parent doc with features + a child referencing the file
     let mut doc = Document::new("Parent");
@@ -471,7 +471,7 @@ fn t12_features_and_reference_combined() {
     let base = dir.path();
 
     // Child with a box
-    write_box_mycad(base, "child.engawa", "box_child", 3.0);
+    write_box_engawa(base, "child.engawa", "box_child", 3.0);
 
     // Root has its own features AND a reference
     let mut doc = Document::new("Parent");
@@ -580,7 +580,7 @@ fn t15_mixed_tree_features_ref_children() {
     let base = dir.path();
 
     // External child file
-    write_box_mycad(base, "ext.engawa", "box_ext", 7.0);
+    write_box_engawa(base, "ext.engawa", "box_ext", 7.0);
 
     let mut doc = Document::new("Root");
     doc.root_component.features.push(Feature::CreateBox {

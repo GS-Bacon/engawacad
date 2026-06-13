@@ -1,4 +1,4 @@
-# mycad-kernel — B-rep 幾何カーネル
+# engawa-kernel — B-rep 幾何カーネル
 
 ## Module Dependency Graph
 

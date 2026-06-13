@@ -24,12 +24,12 @@ fn main() {
     }
 }
 
-const STUB_SENTINEL: &str = "MYCAD frontend not built";
+const STUB_SENTINEL: &str = "ENGAWA frontend not built";
 const STUB_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>MyCad — frontend not built</title></head>
+<head><meta charset="utf-8"><title>EngawaCAD — frontend not built</title></head>
 <body>
-<h1>MYCAD frontend not built</h1>
+<h1>ENGAWA frontend not built</h1>
 <p>Run <code>cargo xtask web</code> to build the frontend, then restart the server.</p>
 </body>
 </html>

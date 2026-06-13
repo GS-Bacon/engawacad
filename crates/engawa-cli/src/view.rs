@@ -35,7 +35,7 @@ pub fn run_view(input: &Path, port: u16) -> Result<(), String> {
 
         let _ = open::that(&url);
 
-        println!("MyCad viewer: {url}  (local)");
+        println!("EngawaCAD viewer: {url}  (local)");
         println!("              http://0.0.0.0:{actual_port}  listening on all interfaces");
         println!("Press Ctrl-C to stop.");
 

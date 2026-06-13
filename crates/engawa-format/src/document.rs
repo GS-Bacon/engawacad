@@ -11,7 +11,7 @@ fn default_schema_version() -> u32 {
     CURRENT_SCHEMA_VERSION
 }
 
-/// The top-level document representing a MyCad design file.
+/// The top-level document representing a EngawaCAD design file.
 #[derive(Debug, Clone, Serialize, JsonSchema, TS)]
 pub struct Document {
     /// Format schema version. Increment when the .engawa file format changes in a breaking way.

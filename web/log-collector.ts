@@ -1,6 +1,6 @@
 import { appendFileSync, writeFileSync, readFileSync, existsSync } from "fs";
 
-const LOG_FILE = "/tmp/mycad-action.log";
+const LOG_FILE = "/tmp/engawa-action.log";
 
 if (!existsSync(LOG_FILE)) writeFileSync(LOG_FILE, "");
 

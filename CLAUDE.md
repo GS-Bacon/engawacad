@@ -1,4 +1,4 @@
-# MyCad — Claude Code ガイドライン
+# EngawaCAD — Claude Code ガイドライン
 
 ## AI作業ルール
 
@@ -37,25 +37,25 @@
 
 ## Project Overview
 
-MyCadはRust製のオープンソースB-rep (Boundary Representation) CADカーネル。
+EngawaCADはRust製のオープンソースB-rep (Boundary Representation) CADカーネル。
 設計原則: **決定性** (同じ入力は常に同じ出力)、**パラメトリック履歴** (feature historyが真実の源)、**YAML-based format** (人間可読・diff可能)。
 
 ## Project Map
 
 ```
 crates/
-├── mycad-kernel/     B-rep幾何カーネル
+├── engawa-kernel/     B-rep幾何カーネル
 │   ├── brep/         トポロジー (Solid, Shell, Face, Loop, Edge, HalfEdge, Vertex)
 │   ├── geometry/     幾何型 (Point, Vec3, Plane, Curve, Surface) + 共有数学ユーティリティ
 │   ├── primitives/   プリミティブ生成 (make_cuboid)
 │   └── tessellation/ メッシュ化 (tessellate_solid → TriangleMesh)
-├── mycad-format/     .mycadファイルのYAMLスキーマ・パーサー
+├── engawa-format/     .engawaファイルのYAMLスキーマ・パーサー
 │   ├── document.rs   Document (トップレベル)
 │   ├── feature.rs    Feature enum (操作履歴の1ステップ)
 │   └── component.rs  Component (設計階層)
-├── mycad-build/      Featureディスパッチャー (format → kernel の橋渡し)
-├── mycad-cli/        CLIバイナリ (mycad)
-├── mycad-viewer/     3Dビューア (未実装)
+├── engawa-build/      Featureディスパッチャー (format → kernel の橋渡し)
+├── engawa-cli/        CLIバイナリ (engawa)
+├── engawa-viewer/     3Dビューア (未実装)
 └── xtask/            ビルド自動化タスク
 ```
 
@@ -81,6 +81,6 @@ cargo xtask ci                   # 上記すべてを順次実行
 ## Architecture Principles
 
 - **Index-based topology**: `Solid` 内のトポロジーエンティティはフラット配列に格納し、インデックスで参照（ポインタ不使用）。
-- **Feature history = source of truth**: `mycad-format` の Feature 列が設計の真実の源。B-rep は Feature から再生成される。
+- **Feature history = source of truth**: `engawa-format` の Feature 列が設計の真実の源。B-rep は Feature から再生成される。
 - **Kernel has zero rendering deps**: カーネルはレンダリング非依存。`TriangleMesh` を生成し、ビューアが消費する。
 - **Flat crates layout**: `crates/` 直下にフラットに配置。深いネストは作らない。

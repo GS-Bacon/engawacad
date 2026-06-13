@@ -1,8 +1,8 @@
-# mycad-format — .mycad ファイルフォーマット
+# engawa-format — .engawa ファイルフォーマット
 
 ## Overview
 
-`.mycad` ファイルはYAML形式。`Document` がトップレベルで、`root_component` にComponent階層を持つ。各Componentは `features` (操作履歴) と `children` (子コンポーネント) を持てる。
+`.engawa` ファイルはYAML形式。`Document` がトップレベルで、`root_component` にComponent階層を持つ。各Componentは `features` (操作履歴) と `children` (子コンポーネント) を持てる。
 
 ## File Format Example
 

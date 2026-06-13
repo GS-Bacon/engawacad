@@ -2,11 +2,11 @@
 import type { Component } from "./Component";
 
 /**
- * The top-level document representing a MyCad design file.
+ * The top-level document representing a EngawaCAD design file.
  */
 export type Document = { 
 /**
- * Format schema version. Increment when the .mycad file format changes in a breaking way.
+ * Format schema version. Increment when the .engawa file format changes in a breaking way.
  */
 schema_version: number, 
 /**
