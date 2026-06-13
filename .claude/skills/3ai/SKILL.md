@@ -391,10 +391,10 @@ fn t02_build_manifold_euler() { todo!() }
      - `FAILED` にならない（通過する / `todo!()` のまま panic する）→ テストがバグを捕捉できていない。テストボディを修正してから再確認する。
    - この確認なしに `#[ignore]` を付けたままにしてはいけない（GLM が「テストと修正を同時に書いてどちらも通す」という偽陽性を防ぐため）。
 
-6. **examples/ smoke テストチェック**: plan.md または Issue の変更対象を確認し、`examples/*.mycad` を新規追加・変更する場合は `crates/mycad-build/tests/examples_smoke.rs` にも対応エントリを追加する:
-   - 新規追加: 新しい関数を追加し `smoke(include_str!("../../../examples/<file>.mycad"))` を呼ぶ
+6. **examples/ smoke テストチェック**: plan.md または Issue の変更対象を確認し、`examples/*.engawa` を新規追加・変更する場合は `crates/engawa-build/tests/examples_smoke.rs` にも対応エントリを追加する:
+   - 新規追加: 新しい関数を追加し `smoke(include_str!("../../../examples/<file>.engawa"))` を呼ぶ
    - 変更のみ（既存 example の修正）: 既存テストがあれば追加不要
-   - このステップで追加したテストを `cargo test -p mycad-build --test examples_smoke` で確認する
+   - このステップで追加したテストを `cargo test -p engawa-build --test examples_smoke` で確認する
    - 現時点で build が通らないことが既知の場合は `#[ignore = "known bug: #<N>"]` を付ける
 7. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
 

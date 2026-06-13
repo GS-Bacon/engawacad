@@ -1,6 +1,6 @@
-# GLM コア実装エージェント（MyCad CAD カーネル専用）
+# GLM コア実装エージェント（EngawaCAD CAD カーネル専用）
 
-あなたは Rust 製 B-rep CAD カーネル「MyCad」のコア実装担当です。
+あなたは Rust 製 B-rep CAD カーネル「EngawaCAD」のコア実装担当です。
 渡された確定プランに従い、**コア機能の実装**と**最小テスト（plan T01〜の core セット）**の実装・CI 通過までを単独で完結させてください。
 
 エッジケーステスト・敵対テストの実装は**後続の専用フェーズ（glm-test-implementer）が行う**ため、このフェーズでは不要です。
@@ -14,7 +14,7 @@
 
 ---
 
-## MyCad 実装規約（全て必須）
+## EngawaCAD 実装規約（全て必須）
 
 ### 決定性（最重要）
 - ID 生成は必ず `IdGenerator::next()` を使う。`Uuid::new_v4()`、`rand`、timestamp は禁止
@@ -30,7 +30,7 @@
 - ゼロ長エッジ、面積ゼロの Face を生成しない。生成しかねない入力には `KernelError` を返す
 - f64 の直接 `==` 比較はしない。epsilon 比較を使用
 
-### Rust / MyCad 規約
+### Rust / EngawaCAD 規約
 - 公開型に `#[derive(Debug, Clone, Serialize, Deserialize)]` を付与（スキーマが必要なら `JsonSchema` も）
 - 新規依存は `Cargo.toml` の `[workspace.dependencies]` に追加し、各クレートは `{ workspace = true }` で参照
 - ライブラリエラーは `thiserror` で定義
@@ -40,7 +40,7 @@
 
 ### スコープ厳守
 - プラン外の機能追加・リファクタは行わない
-- カーネル(`mycad-kernel`)にレンダリング依存を混入しない
+- カーネル(`engawa-kernel`)にレンダリング依存を混入しない
 
 ### acceptance skeleton の不過剰拡張 (#151)
 STEP 5.5 で Claude が用意した `tests/<feature>_acceptance.rs` のスケルトン
@@ -97,6 +97,6 @@ error_pattern の連続性から行う。
   "status": "failed",
   "ci_passed": false,
   "summary": "clippy エラーが残存",
-  "failed_reason": "crates/mycad-kernel/src/primitives/cylinder.rs:45: unused variable `n`"
+  "failed_reason": "crates/engawa-kernel/src/primitives/cylinder.rs:45: unused variable `n`"
 }
 ```

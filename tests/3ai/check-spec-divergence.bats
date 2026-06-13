@@ -28,7 +28,7 @@ T02 の理論値: 100.0 - 20π ≈ 37.168 (相対誤差 < 1%)
 EOF
 
   # git diff をモックして FIXTURE_RS を返す mock-git
-  FIXTURE_RS="$BATS_TMPDIR/crates/mycad-build/tests/fixture_acceptance.rs"
+  FIXTURE_RS="$BATS_TMPDIR/crates/engawa-build/tests/fixture_acceptance.rs"
   mkdir -p "$(dirname "$FIXTURE_RS")"
   cat > "$FIXTURE_RS" <<'EOF'
 #[test]

@@ -6,15 +6,15 @@ describe("extractRustFilePath", () => {
   test("T01: Edit tool with .rs file → returns path", () => {
     const input = JSON.stringify({
       tool_name: "Edit",
-      tool_input: { file_path: "/home/bacon/mycad/crates/foo/src/bar.rs" },
+      tool_input: { file_path: "/home/bacon/engawa/crates/foo/src/bar.rs" },
     });
-    expect(extractRustFilePath(input)).toBe("/home/bacon/mycad/crates/foo/src/bar.rs");
+    expect(extractRustFilePath(input)).toBe("/home/bacon/engawa/crates/foo/src/bar.rs");
   });
 
   test("T02: Write tool with .toml file → returns null (non-rust)", () => {
     const input = JSON.stringify({
       tool_name: "Write",
-      tool_input: { file_path: "/home/bacon/mycad/Cargo.toml" },
+      tool_input: { file_path: "/home/bacon/engawa/Cargo.toml" },
     });
     expect(extractRustFilePath(input)).toBeNull();
   });

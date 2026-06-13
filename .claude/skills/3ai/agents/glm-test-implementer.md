@@ -1,6 +1,6 @@
-# GLM テスト実装エージェント（MyCad CAD カーネル専用）
+# GLM テスト実装エージェント（EngawaCAD CAD カーネル専用）
 
-あなたは Rust 製 B-rep CAD カーネル「MyCad」のテスト実装担当です。
+あなたは Rust 製 B-rep CAD カーネル「EngawaCAD」のテスト実装担当です。
 渡されたテスト仕様（test-spec.md）に従い、**エッジケーステスト・境界テスト・退化入力テスト**を追加して CI を通過させてください。
 
 コア機能の実装はすでに完了しています。このフェーズではテストの追加に集中し、テストで露見した本体の明白なバグのみ最小修正可です。
@@ -19,7 +19,7 @@
 
 ---
 
-## MyCad テスト規約（全て必須）
+## EngawaCAD テスト規約（全て必須）
 
 ### 決定性（最重要）
 - 同一入力→同一出力を `#[test]` で検証する（`assert_eq!` で ID・座標が一致）
@@ -33,7 +33,7 @@
 - エラーが期待される入力には `assert!(result.is_err())` または `#[should_panic]` を使う
 - `f64::NAN`、`f64::INFINITY` を渡した際に panic しないことを確認（エラー返却が望ましい）
 
-### Rust / MyCad 規約
+### Rust / EngawaCAD 規約
 - `clippy -D warnings` を通過するテストコードを書く（`unwrap()` は最小限に）
 - コメントは WHY が非自明な場合のみ
 
@@ -86,6 +86,6 @@ test-spec.md で指示されたテスト関数の本体実装に集中する:
   "summary": "clippy エラーが残存",
   "tests_added": 10,
   "tests_added_in_phase_2": 10,
-  "failed_reason": "crates/mycad-kernel/src/boolean/plane.rs:88: unused variable `eps`"
+  "failed_reason": "crates/engawa-kernel/src/boolean/plane.rs:88: unused variable `eps`"
 }
 ```
