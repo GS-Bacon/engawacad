@@ -1,0 +1,15 @@
+issues:
+  - id: FN01
+    severity: medium
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 152
+    finding: "境界頂点探索ロジックが非効率: mesh.positions 全走行を各頂点ごとに実行しており O(N×M)"
+    suggestion: "quantized position → vertex indices の HashMap を事前構築して O(1) 検索にすること"
+  - id: FN02
+    severity: medium
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 100
+    finding: "extract_boundary_edges の返り型 (([i64;3], [i64;3])) では量子化済みキーと original_positions の対応が取れない"
+    suggestion: "quantized key と対応する original position ペアを返す構造体に変更すること"
+
+verdict: pass

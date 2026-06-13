@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": true,
+  "failed_reason": "cargo xtask ci failed — see features/147-tessellation-trimmed-sphere-face/ci.log",
+  "error_pattern": "error[E0277]: the trait bound `[i64; 3]: Borrow<&[i64; 3]>` is not satisfied --> crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs:LINE:COL",
+  "error_pattern_kind": "compile"
+}

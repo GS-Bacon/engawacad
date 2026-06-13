@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 638
+    finding: "`extract_boundary_edges` が 1 triangle 内の重複 edge を除外していないため、量子化後に 2 頂点が同一点へ潰れた三角形では同じ境界 edge を 2 回数えます。結果として `count == 1` から本来の boundary edge が消え、T04_strict が微小 sliver / crack 回帰を見逃す可能性があります。"
+    suggestion: "`count_naked_edges` と同様に triangle ごとの `seen_in_tri` を入れて、正規化済み edge を同一 triangle 内では 1 回だけ数えるようにしてください。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 663
+    finding: "`extract_face_vertex_indices` と `extract_positions_for_keys` が未使用のまま残っています。テストターゲット込みで `clippy -D warnings` を回す運用では `dead_code` warning で落ちます。"
+    suggestion: "未使用なら削除し、使う想定があるなら T04 の検証で実際に使うか `#[allow(dead_code)]` を付けてください。"
+
+verdict: pass
