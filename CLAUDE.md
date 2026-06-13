@@ -24,10 +24,16 @@
 
 1. ADR-006 §1 の粒度チェックリストを全項目 ✓ にする
 2. `dispatch-codex-intent.ts` で Codex intent-check を実施:
-   - `aligned: yes` → `gh issue create` で起票
+   - `aligned: yes` → 次の step 3 (ラベル決定) へ
    - `aligned: no` → ユーザーと相談して Issue 案を修正 → 再チェック
-3. Phase 着手時は当 Phase の ADR にペルソナ構成を記載する (Common 3 + Phase オプション)
-4. `type:feature` 以外 (`bug` / `enhancement` 等) の Issue にも、内容に応じて `batch:kernel` / `batch:data` / `batch:viewer` / `batch:skill` のいずれかを必ず付与する。`batch:*` が無い Light tier Issue は `/3ai` auto 選定 (`.claude/skills/3ai/scripts/batch-select.ts` の bug-batch / enh-batch ラダー) から漏れて取り残される
+3. **ラベルを 2 軸決定する** (ADR-002 / ADR-006 §1):
+   - **type 軸 (必須・1 つ)**: `type: feature` / `type: refactor` / `type: foundation` / `bug` / `docs` のいずれか
+   - **batch 軸**: `type: feature` 以外なら `batch:kernel` / `batch:data` / `batch:viewer` / `batch:skill` のいずれかを**必ず**追加
+   - `enhancement` は ADR-002 type 軸の正規ラベルではない (機能拡張系は `type: foundation` を使う)
+4. `gh issue create --label "<type>,<batch>"` で起票。起票直後に必ず `bun .claude/skills/3ai/scripts/lint-issue-labels.ts --issue <N>` で検証 (exit 0 を確認)
+5. Phase 着手時は当 Phase の ADR にペルソナ構成を記載する (Common 3 + Phase オプション)
+
+⚠️ **ラベル抜けの代償**: `batch:*` または type 軸のいずれかが欠けた Issue は、`/3ai` auto 選定 (`batch-select.ts` の bug-batch / enh-batch / foundation-batch ラダー) から漏れて取り残される
 
 ## Project Overview
 

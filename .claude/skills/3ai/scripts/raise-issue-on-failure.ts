@@ -80,8 +80,35 @@ ${resultDetail}
 ---
 *このIssueは \`raise-issue-on-failure.ts\` により自動起票されました。*`;
 
+// 元 Issue から batch:* ラベルを継承する処理を dry-run 前に実施し、表示に含める
+async function lookupInheritedBatch(): Promise<string | null> {
+  if (issueNum === "unknown") return null;
+  try {
+    const labelProc = Bun.spawn(
+      ["gh", "issue", "view", issueNum, "--json", "labels", "-q", ".labels[].name"],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const labelOut = await new Response(labelProc.stdout).text();
+    await labelProc.exited;
+    const batchLabels = labelOut.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("batch:"));
+    return batchLabels[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const preInheritedBatch = await lookupInheritedBatch();
+const preLabels = preInheritedBatch ? `bug,${preInheritedBatch}` : "bug";
+
 if (dryRun) {
-  process.stdout.write(`[dry-run] Would create issue:\n  title: ${title}\n`);
+  process.stdout.write(
+    `[dry-run] Would create issue:\n  title: ${title}\n  labels: ${preLabels}\n`,
+  );
+  if (!preInheritedBatch && issueNum !== "unknown") {
+    process.stderr.write(
+      `WARN: 元 Issue #${issueNum} から batch:* を継承できませんでした (auto 選定ラダーから漏れます)\n`,
+    );
+  }
   process.exit(0);
 }
 
@@ -102,9 +129,17 @@ try {
   }
 } catch {}
 
+// 元 Issue から継承した batch:* と合わせて gh 起票時のラベルを構築 (dry-run 前と同じ判定を再利用)
+const labels = preLabels;
+if (!preInheritedBatch && issueNum !== "unknown") {
+  process.stderr.write(
+    `WARN: 元 Issue #${issueNum} から batch:* を継承できませんでした (auto 選定ラダーから漏れます)\n`,
+  );
+}
+
 // 起票
 const createProc = Bun.spawn(
-  ["gh", "issue", "create", "--title", title, "--body", body, "--label", "bug"],
+  ["gh", "issue", "create", "--title", title, "--body", body, "--label", labels],
   { stdout: "pipe", stderr: "pipe" }
 );
 const createOut = await new Response(createProc.stdout).text();

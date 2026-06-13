@@ -26,7 +26,8 @@ const AMBIGUITY_MARKERS = /要検討|TBD|どちらか/;
 
 // --- 引数解析 ---
 
-let batchArg: "fixes" | "phase" | null = null;
+type BatchArg = "fixes" | "phase" | "foundation";
+let batchArg: BatchArg | null = null;
 let dryRun = false;
 let roadmapFile = "ROADMAP.md";
 
@@ -36,11 +37,11 @@ let roadmapFile = "ROADMAP.md";
     switch (args[i]) {
       case "--batch": {
         const val = args[++i];
-        if (val !== "fixes" && val !== "phase") {
-          console.error(`--batch の値は 'fixes' または 'phase' を指定してください (got: ${val})`);
+        if (val !== "fixes" && val !== "phase" && val !== "foundation") {
+          console.error(`--batch の値は 'fixes' / 'phase' / 'foundation' を指定してください (got: ${val})`);
           process.exit(1);
         }
-        batchArg = val;
+        batchArg = val as BatchArg;
         break;
       }
       case "--dry-run": dryRun = true; break;
@@ -196,6 +197,8 @@ async function main() {
   const hasBatchLabel = (issue: GhIssue) => labelNames(issue).some(l => l.startsWith("batch:"));
   const isFeatureTier = (labels: string[]) =>
     labels.some(l => l === "type:feature" || l === "type: feature");
+  const isFoundationTier = (labels: string[]) =>
+    labels.some(l => l === "type:foundation" || l === "type: foundation");
 
   // --- 優先順位ラダーで対象 Issue を選択 ---
   let selected: GhIssue[] = [];
@@ -205,6 +208,10 @@ async function main() {
     // --batch fixes: bug + batch:* のみ
     selected = allIssues.filter(i => labelNames(i).includes("bug") && hasBatchLabel(i));
     tier = "bug-batch";
+  } else if (batchArg === "foundation") {
+    // --batch foundation: type:foundation + batch:* のみ
+    selected = allIssues.filter(i => isFoundationTier(labelNames(i)) && hasBatchLabel(i));
+    tier = "foundation-batch";
   } else if (batchArg === "phase") {
     // --batch phase: 現 Phase milestone の type:feature のみ
     selected = allIssues.filter(
@@ -215,7 +222,11 @@ async function main() {
     );
     tier = "phase-feature";
   } else {
-    // 引数なし: 優先順位 1 → 2 → 3
+    // 引数なし: 優先順位 1 → 2 → 3 → 4
+    //   1: bug-batch         (bug + batch:*)
+    //   2: enh-batch         (enhancement + batch:*) — ADR-002 正規外だが歴史互換
+    //   3: foundation-batch  (type:foundation + batch:*)
+    //   4: phase-feature     (現 Phase milestone の type:feature)
     const bugBatch = allIssues.filter(i => labelNames(i).includes("bug") && hasBatchLabel(i));
     if (bugBatch.length > 0) {
       selected = bugBatch;
@@ -228,13 +239,21 @@ async function main() {
         selected = enhBatch;
         tier = "enh-batch";
       } else {
-        selected = allIssues.filter(
-          i => i.milestone !== null &&
-               currentPhase !== null &&
-               i.milestone.title.startsWith(`Phase ${currentPhase}`) &&
-               isFeatureTier(labelNames(i)),
+        const foundationBatch = allIssues.filter(
+          i => isFoundationTier(labelNames(i)) && hasBatchLabel(i),
         );
-        tier = "phase-feature";
+        if (foundationBatch.length > 0) {
+          selected = foundationBatch;
+          tier = "foundation-batch";
+        } else {
+          selected = allIssues.filter(
+            i => i.milestone !== null &&
+                 currentPhase !== null &&
+                 i.milestone.title.startsWith(`Phase ${currentPhase}`) &&
+                 isFeatureTier(labelNames(i)),
+          );
+          tier = "phase-feature";
+        }
       }
     }
   }

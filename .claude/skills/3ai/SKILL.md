@@ -685,3 +685,4 @@ bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
 - `resolve-issues.ts --sweep [--dry-run]` — 全 feature を走査して解消済み auto-raise Issue を一括 close する
 - `build-codex-input.ts --plan-file ... --test-summary ... --output ...` — STEP 7.5-A で使用（Non-Goals を自動注入）
 - `lint-test-semantics.ts` — STEP 6.6 後に BooleanOp 命名不整合をチェック
+- `lint-issue-labels.ts --labels "<csv>" | --issue <N>` — Issue 起票直前/直後にラベル組み合わせを検証 (type 軸 + batch:* 必須)。**プランモードで `gh issue create` する場合は必ず起票直後に `--issue <N>` で検証して exit 0 を確認すること** (CLAUDE.md / ADR-006 §1)
