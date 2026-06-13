@@ -1134,10 +1134,12 @@ fn t_degen_offset_axis_circ_center_rejected() {
     let he_down = solid.add_half_edge(gen.next(), v_north, e_seam, false);
     let outer_loop = solid.add_loop(gen.next(), vec![he_up, he_down]);
 
-    // circ_normal = +Z、signed_offset = 0 (circ_center は球中心にあるべき)
+    // circ_normal = +Z、signed_offset = 0 → 期待 circ_radius = sqrt(R^2 - 0) = R
+    // circ_center だけを axis 直交方向にずらして、perp.norm ガード単独の回帰にする
+    // (circ_radius は期待値 = 5.0 のまま保つ。Codex B-6 F01 指摘対応)
     let circ_normal = Vec3::new(0.0, 0.0, 1.0);
     let circ_center = center + Vec3::new(0.01, 0.0, 0.0); // axis 直交方向に 0.01mm ずらす
-    let circ_radius = 4.0;
+    let circ_radius = radius;
 
     // inner_loop を 1 edge full-sweep に構築 (周期エッジ)
     let loop_vertex = solid.add_vertex(gen.next(), circ_center + circ_radius * Vec3::y(), None);
