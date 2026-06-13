@@ -29,6 +29,7 @@ approx = "0.5"
 tempfile = "3"
 proptest = "1"
 rand = "0.9"
+serial_test = { version = "3", features = ["file_locks"] }
 # Error handling
 thiserror = "2"
 # CLI

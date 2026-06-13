@@ -1,18 +1,10 @@
+use serial_test::file_serial;
 use std::io::Read;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
-
-/// Tests that spawn mycad-api (bound to 127.0.0.1:7878) must run serially.
-/// `cargo test` parallelises tests within a binary by default, so without this
-/// mutex t01 and t02 would race on the same port and one would fail with EADDRINUSE.
-fn port_guard() -> &'static Mutex<()> {
-    static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-    GUARD.get_or_init(|| Mutex::new(()))
-}
 
 /// Wait up to `timeout` for port 7878 to become bindable. Defensive in case the
 /// previous test's mycad-api still has the socket in TIME_WAIT.
@@ -65,8 +57,8 @@ fn release_bin() -> Option<PathBuf> {
 }
 
 #[test]
+#[file_serial(mycad_api_port_7878)]
 fn t01_startup_log() {
-    let _lock = port_guard().lock().unwrap_or_else(|e| e.into_inner());
     wait_port_free(Duration::from_secs(10));
 
     let example = example_simple_box();
@@ -94,8 +86,8 @@ fn t01_startup_log() {
 }
 
 #[test]
+#[file_serial(mycad_api_port_7878)]
 fn t02_release_bin_runs() {
-    let _lock = port_guard().lock().unwrap_or_else(|e| e.into_inner());
     wait_port_free(Duration::from_secs(10));
 
     // Build the release binary from current source so we never validate a stale
