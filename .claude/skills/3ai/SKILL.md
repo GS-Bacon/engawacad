@@ -601,13 +601,15 @@ medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-findings
 ```bash
 bun .claude/skills/3ai/scripts/state.ts inc \
   features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_loops \
-  --raise-at 3 \
+  --raise-at 6 \
   --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
   --step "STEP 7.5 codex_review"
 ```
-`codex-final.yaml` の critical/high 指摘を `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` に転記し、GLM 実装へ再 dispatch（指摘内容がコア実装なら `--mode core`、テスト関連なら `--mode test`）→ `cargo xtask ci` green 確認 → **7.5-A に戻って Codex 再レビュー**（`codex_loops` 上限 2）。
+`codex-final.yaml` の critical/high 指摘を `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` に転記し、GLM 実装へ再 dispatch（指摘内容がコア実装なら `--mode core`、テスト関連なら `--mode test`）→ `cargo xtask ci` green 確認 → **7.5-A に戻って Codex 再レビュー**（`codex_loops` 上限 5、#152 で上限緩和）。
 
-### 7.5-D: ループ上限超過フォールバック（`codex_loops > 2`）
+**自律モード (`batch_arg === null`) の追加判定**: `codex_loops` が 3 以上で **3 round 連続 blocking ≥ 1** が続いた場合 (前 3 round の `codex-final-r*.yaml` をすべて確認して critical/high 残存)、**ユーザーに「続行 or scope 切り出し」を確認** する停止点を設ける。同系統の指摘が無限ループする兆候のため。
+
+### 7.5-D: ループ上限超過フォールバック（`codex_loops > 5`、#152 で上限緩和）
 
 ```bash
 bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
