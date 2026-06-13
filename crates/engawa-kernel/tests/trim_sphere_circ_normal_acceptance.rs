@@ -591,7 +591,10 @@ fn t_degen_zero_circ_normal_returns_error() {
 }
 
 /// Solid から twin HalfEdge を見つける。
-fn find_twin_halfedge(solid: &engawa_kernel::brep::topology::Solid, he_idx: usize) -> Option<usize> {
+fn find_twin_halfedge(
+    solid: &engawa_kernel::brep::topology::Solid,
+    he_idx: usize,
+) -> Option<usize> {
     let target_edge = solid.half_edges[he_idx].edge;
     (0..solid.half_edges.len()).find(|&i| i != he_idx && solid.half_edges[i].edge == target_edge)
 }

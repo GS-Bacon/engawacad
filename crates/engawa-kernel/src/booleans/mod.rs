@@ -345,12 +345,14 @@ mod tests {
         let v0 = solid.add_vertex(
             gen.next(),
             Point::new(0.0, 0.0, 0.0),
-            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v").ok(),
+            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v")
+                .ok(),
         );
         let v1 = solid.add_vertex(
             gen.next(),
             Point::new(0.0, 0.0, 0.0),
-            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v2").ok(),
+            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v2")
+                .ok(),
         );
         let e = solid.add_edge(
             gen.next(),
@@ -511,12 +513,14 @@ mod tests {
         let v0 = solid.add_vertex(
             gen.next(),
             Point::new(0.0, 0.0, 0.0),
-            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v").ok(),
+            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v")
+                .ok(),
         );
         let v1 = solid.add_vertex(
             gen.next(),
             Point::new(0.0, 0.0, 0.0),
-            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v2").ok(),
+            engawa_format::EntityRef::try_named("test", engawa_format::EntityKind::Vertex, "v2")
+                .ok(),
         );
         let e = solid.add_edge(
             gen.next(),

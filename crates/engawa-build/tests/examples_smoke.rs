@@ -106,7 +106,9 @@ fn boolean_cut_sphere_dimple_tessellate() {
 
 #[test]
 fn boolean_fuse_box_cyl() {
-    smoke(include_str!("../../../examples/boolean_fuse_box_cyl.engawa"));
+    smoke(include_str!(
+        "../../../examples/boolean_fuse_box_cyl.engawa"
+    ));
 }
 
 #[test]

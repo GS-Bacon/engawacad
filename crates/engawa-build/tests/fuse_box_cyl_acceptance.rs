@@ -22,9 +22,10 @@ use engawa_kernel::brep::topology::IdGenerator;
 // -----------------------------------------------------------------------
 
 fn fuse_box_cyl_features() -> Vec<Feature> {
-    let doc: Document =
-        serde_yaml::from_str(include_str!("../../../examples/boolean_fuse_box_cyl.engawa"))
-            .expect("parse boolean_fuse_box_cyl.engawa");
+    let doc: Document = serde_yaml::from_str(include_str!(
+        "../../../examples/boolean_fuse_box_cyl.engawa"
+    ))
+    .expect("parse boolean_fuse_box_cyl.engawa");
     doc.root_component.features
 }
 
@@ -296,7 +297,12 @@ fn t08_branch_c_already_cw() {
     let circle_edges = solid
         .edges
         .iter()
-        .filter(|e| matches!(e.curve, engawa_kernel::geometry::curve::Curve::Circle { .. }))
+        .filter(|e| {
+            matches!(
+                e.curve,
+                engawa_kernel::geometry::curve::Curve::Circle { .. }
+            )
+        })
         .count();
     assert!(
         circle_edges >= 2,

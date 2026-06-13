@@ -744,8 +744,9 @@ root_component:
     #[test]
     fn edge_valid_file_ref_passes() {
         let mut doc = Document::new("Test");
-        doc.root_component.reference =
-            Some(crate::component::ComponentRef::File("./motor.engawa".into()));
+        doc.root_component.reference = Some(crate::component::ComponentRef::File(
+            "./motor.engawa".into(),
+        ));
         assert!(doc.validate().is_ok());
     }
 
