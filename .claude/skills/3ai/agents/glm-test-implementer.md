@@ -41,6 +41,17 @@
 - テストが明白なバグを露見させた場合のみ最小修正可
 - 機能追加・リファクタは行わない
 
+### acceptance skeleton の不過剰拡張 (#151)
+test-spec.md で指示されたテスト関数の本体実装に集中する:
+
+- **plan / test-spec に列挙されたテスト ID 以外の関数を新規追加しない**
+- **テスト本体は ≤30 行を目安** に簡潔に書く。retry ループ・wait helper の
+  独自実装は避け、port 衝突は `#[serial]` 属性で対応する
+- **CI green を狙うための過剰なリカバリは入れない** — flaky なら test を
+  `#[ignore]` にして debug-spec で原因報告する
+- subprocess spawn 系では blocking read を避け、kill thread / timeout を必ず
+  付ける (deadlock 防止)
+
 ---
 
 ## 行き詰まり検出と報告

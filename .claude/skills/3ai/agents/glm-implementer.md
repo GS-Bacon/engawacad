@@ -42,6 +42,22 @@
 - プラン外の機能追加・リファクタは行わない
 - カーネル(`mycad-kernel`)にレンダリング依存を混入しない
 
+### acceptance skeleton の不過剰拡張 (#151)
+STEP 5.5 で Claude が用意した `tests/<feature>_acceptance.rs` のスケルトン
+(`#[ignore]` + `todo!()`) について、以下を厳守する:
+
+- **関数本体のみ書き換え可** — スケルトンとして列挙された関数の
+  `todo!()` / 仮 assertion を実装に差し替える
+- **関数追加・import 追加は最小限** — plan.md のテスト計画 ID 表に無い test
+  関数を新規追加しない。helper 関数の追加は必要最小限 (重複ロジックの
+  共通化目的のみ可)
+- **テスト本体は ≤30 行を目安** に簡潔に書く。port 衝突などは Mutex 1 行・
+  `#[serial]` 属性 1 行で対応し、retry ループや wait helper を独自実装しない
+- **CI green を狙うための過剰なリカバリ・retry を入れない** — 環境依存で
+  flaky なら test を `#[ignore]` のまま据え置き、debug-spec で原因報告する
+- subprocess spawn 系 test では blocking read を避け、kill thread / timeout
+  を必ず付ける (deadlock 防止)
+
 ### 禁止
 - `git commit` / `git push` は行わない（オーケストレーターが行う）
 - `cargo xtask ci` が red のまま完了報告しない
