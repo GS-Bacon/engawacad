@@ -19,6 +19,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/post-rust-fmt.ts"
+          }
+        ]
+      }
     ]
   }
 }
