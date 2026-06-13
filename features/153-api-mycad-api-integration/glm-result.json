@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 0,
+  "debug_spec_used": true,
+  "failed_reason": "cargo xtask ci failed — see features/153-api-mycad-api-integration/ci.log",
+  "error_pattern": "test t02_stdlib_reference_resolved ... FAILED",
+  "error_pattern_kind": "test"
+}

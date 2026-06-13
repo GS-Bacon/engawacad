@@ -1,0 +1,361 @@
+===== TEST SUMMARY =====
+{
+  "totals": {
+    "passed": 965,
+    "failed": 0,
+    "ignored": 11
+  },
+  "by_crate": {
+    "mycad_api-56d0f1a51a9b9285": {
+      "passed": 7,
+      "failed": 0
+    },
+    "mycad_api-bbc228cbf2f1983a": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-204225cc46d4126c": {
+      "passed": 2,
+      "failed": 0
+    },
+    "api_fallback_edge-0e69118e99529ac4": {
+      "passed": 11,
+      "failed": 0
+    },
+    "assembly_acceptance-e720c95dbe6ce076": {
+      "passed": 11,
+      "failed": 0
+    },
+    "e2e_api_scenarios-5e25151e17f09e81": {
+      "passed": 16,
+      "failed": 0
+    },
+    "extrude_cut_acceptance-cdbf4752b109d8ee": {
+      "passed": 2,
+      "failed": 0
+    },
+    "extrude_fuse_acceptance-e31e13a2859a8463": {
+      "passed": 1,
+      "failed": 0
+    },
+    "extrude_ui_acceptance-2173f97f23bc73a0": {
+      "passed": 1,
+      "failed": 0
+    },
+    "features_get_acceptance-91e0f9271680aea0": {
+      "passed": 9,
+      "failed": 0
+    },
+    "fuzz_features-3dcd9c163e735123": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mesh_api-8d1d3155ca01b7c3": {
+      "passed": 16,
+      "failed": 0
+    },
+    "mycad_api_serial_acceptance-85b5a1e3bb2de9d2": {
+      "passed": 1,
+      "failed": 0
+    },
+    "post_features_acceptance-16a56f01a4e0f948": {
+      "passed": 15,
+      "failed": 0
+    },
+    "startup_log_acceptance-a418a91fe1a4e331": {
+      "passed": 4,
+      "failed": 0
+    },
+    "state_invariants-b0183d646950e98b": {
+      "passed": 1,
+      "failed": 0
+    },
+    "static_assets-8d99ef7241e136b0": {
+      "passed": 6,
+      "failed": 0
+    },
+    "static_assets_edge-a07ef0d88149858f": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_build-467ac184f40e306b": {
+      "passed": 0,
+      "failed": 0
+    },
+    "a1_1_plane_cyl_fuse_isect_acceptance-dbdb3c016cb95771": {
+      "passed": 21,
+      "failed": 0
+    },
+    "assembly_acceptance-a7b52fb795a02031": {
+      "passed": 16,
+      "failed": 0
+    },
+    "boolean_example_layout_acceptance-5d6ba748639f0456": {
+      "passed": 0,
+      "failed": 0
+    },
+    "cyl_sph_intersect_acceptance-c284db9ec064c38f": {
+      "passed": 18,
+      "failed": 0
+    },
+    "examples_smoke-7120a1bf686f3f8d": {
+      "passed": 19,
+      "failed": 0
+    },
+    "extrude_offset_fuse_acceptance-e85d7bc65c37b2f5": {
+      "passed": 4,
+      "failed": 0
+    },
+    "feature_dispatcher-971a7d5301e8968f": {
+      "passed": 53,
+      "failed": 0
+    },
+    "fuse_box_cyl_acceptance-5e8887fe93ec008a": {
+      "passed": 8,
+      "failed": 0
+    },
+    "hole_tessellation_acceptance-113c4a7a310c2a87": {
+      "passed": 7,
+      "failed": 0
+    },
+    "m5x20_acceptance-e1ff95e4d67b46f6": {
+      "passed": 3,
+      "failed": 0
+    },
+    "position_params_acceptance-ba7d9b3222d2ca13": {
+      "passed": 14,
+      "failed": 0
+    },
+    "regen_viewer_fixtures-ea428e2468327884": {
+      "passed": 0,
+      "failed": 0
+    },
+    "surface_boolean_a2_acceptance-f5a58ae79084ce45": {
+      "passed": 13,
+      "failed": 0
+    },
+    "transform_acceptance-291c91427ad72dfc": {
+      "passed": 21,
+      "failed": 0
+    },
+    "transform_rotation_acceptance-993c9835b90332b5": {
+      "passed": 9,
+      "failed": 0
+    },
+    "mycad-104cafe5fbc59323": {
+      "passed": 12,
+      "failed": 0
+    },
+    "assembly_acceptance-717eabad56e541bb": {
+      "passed": 11,
+      "failed": 0
+    },
+    "close_gate_acceptance-74f3f2874961e5f7": {
+      "passed": 4,
+      "failed": 0
+    },
+    "export-ae8b68bebf9fa247": {
+      "passed": 5,
+      "failed": 0
+    },
+    "mycad_format-cb78ec6616537fb7": {
+      "passed": 101,
+      "failed": 0
+    },
+    "golden_examples-31523050b0dff8e3": {
+      "passed": 15,
+      "failed": 0
+    },
+    "mycad_kernel-3fdb0ae2137f5923": {
+      "passed": 296,
+      "failed": 0
+    },
+    "bool_naked_edge_acceptance-c92f8335f45d3df0": {
+      "passed": 10,
+      "failed": 0
+    },
+    "boolean_proptest-6bf211ef56f00406": {
+      "passed": 17,
+      "failed": 0
+    },
+    "boundary_align_acceptance-9969dcff7411f48a": {
+      "passed": 4,
+      "failed": 0
+    },
+    "box_sphere_void_acceptance-7ca278185bcd0344": {
+      "passed": 11,
+      "failed": 0
+    },
+    "cross_face_nu_acceptance-edf9f2c9877f5439": {
+      "passed": 9,
+      "failed": 0
+    },
+    "cuboid_roundtrip-84bd17f2516dcfbb": {
+      "passed": 2,
+      "failed": 0
+    },
+    "cyl_lateral_deadbranch_acceptance-44d27a4e6aea0fe4": {
+      "passed": 5,
+      "failed": 0
+    },
+    "cyl_sph_surface_intersect-e8a387566cd3a8d6": {
+      "passed": 7,
+      "failed": 0
+    },
+    "extrude_cut_degenerate_acceptance-4f8f8dc645a2d524": {
+      "passed": 7,
+      "failed": 0
+    },
+    "face_ids_acceptance-5814d13e4287c156": {
+      "passed": 6,
+      "failed": 0
+    },
+    "kernel_surface_cut_manifold_acceptance-8702101e7265525a": {
+      "passed": 7,
+      "failed": 0
+    },
+    "rotate_acceptance-42067d09b8e1d6f2": {
+      "passed": 24,
+      "failed": 0
+    },
+    "shared_boundary_acceptance-c5bc43966c506445": {
+      "passed": 7,
+      "failed": 0
+    },
+    "tessellation_cap_acceptance-a47dbbffc5c666d8": {
+      "passed": 14,
+      "failed": 0
+    },
+    "translate_acceptance-5ef2c8cf04b1b5c1": {
+      "passed": 7,
+      "failed": 0
+    },
+    "trim_sphere_circ_normal_acceptance-43f0646d690b1369": {
+      "passed": 14,
+      "failed": 0
+    },
+    "trim_surface_tessellation_acceptance-e73e886e57c5fa27": {
+      "passed": 6,
+      "failed": 0
+    },
+    "trim_surface_uv_shift_acceptance-17a72e48880b3615": {
+      "passed": 9,
+      "failed": 0
+    },
+    "mycad_viewer-4b92dea51e117472": {
+      "passed": 0,
+      "failed": 0
+    },
+    "xtask-747c9715c788dd2b": {
+      "passed": 28,
+      "failed": 0
+    },
+    "mycad_api-8199c1be2d335dd2": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api-8c92a3e8cd8716cf": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-95da53d5525afc5c": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback_edge-f64a74ffc2b922d2": {
+      "passed": 1,
+      "failed": 0
+    },
+    "assembly_acceptance-52a39dbe8bfbc4f7": {
+      "passed": 0,
+      "failed": 0
+    },
+    "e2e_api_scenarios-d74357e11f40a988": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_cut_acceptance-9d064444eaf736c8": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_fuse_acceptance-a40a12da5e7d9d66": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_ui_acceptance-a6ecf99267072ca6": {
+      "passed": 0,
+      "failed": 0
+    },
+    "features_get_acceptance-0837e5afb4c7e1b7": {
+      "passed": 0,
+      "failed": 0
+    },
+    "fuzz_features-4cb8c31a6bfaa1d4": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mesh_api-ccd568018dc9a208": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mycad_api_serial_acceptance-c53e216112144c68": {
+      "passed": 0,
+      "failed": 0
+    },
+    "post_features_acceptance-429fe8567673f943": {
+      "passed": 0,
+      "failed": 0
+    },
+    "startup_log_acceptance-74de4af5acf6ac36": {
+      "passed": 0,
+      "failed": 0
+    },
+    "state_invariants-55cec03a6a58e4c7": {
+      "passed": 0,
+      "failed": 0
+    },
+    "static_assets-64bdccae9aaecc5d": {
+      "passed": 2,
+      "failed": 0
+    },
+    "static_assets_edge-41a9beadf9285618": {
+      "passed": 0,
+      "failed": 0
+    }
+  },
+  "added_in_round": [],
+  "coverage_hints": {
+    "total_added": 0,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}
+===== END TEST SUMMARY =====
+
+===== NON-GOALS (SCOPE OUT — Codex はこれらを指摘しないこと) =====
+- 案 B (port 動的割り当て) は API 仕様変更を伴うため別 Issue
+- 他の integration test ファイル (mock-based 系) の serial 化 (今は不要)
+- e2e_api_scenarios.rs 等の改修 (spawn しないため衝突しない)
+===== END NON-GOALS =====
+
+===== KNOWN IGNORED TESTS (理由付き #[ignore] — watertight 不可等の既知制約) =====
+- t04_boundary_fuse_extrude_returns_single_body: boolean kernel cannot fuse CreateBox + extrusion (DisjointFuseResult); fuse_target code path is correct in mycad-build
+- t01_determinism: fuzz: run with cargo xtask acceptance --fuzz
+- t02_fuzz_no_http_500: fuzz: run with cargo xtask acceptance --fuzz
+- t03_degen_special_float_values: fuzz: run with cargo xtask acceptance --fuzz
+- t04_degen_unknown_type: fuzz: run with cargo xtask acceptance --fuzz
+- t05_degen_null_body: fuzz: run with cargo xtask acceptance --fuzz
+- t04_fuse_target_overlapping_box: boolean kernel cannot fuse cuboid + extrusion (DisjointFuseResult)
+- t04b_box_extrude_fuse_via_feature: boolean kernel cannot fuse cuboid + extrusion (DisjointFuseResult)
+- t04_negative_extrude_fuse_integration: known limitation: boolean engine produces non-manifold result for offset-plane fuse
+- regen_all_fixtures: run manually to regenerate viewer fixtures after tessellation changes
+- t10_blocked_rotation_cut_sphere: blocked: #137 trimmed sphere tessellation
+===== END KNOWN IGNORED TESTS =====
+
+===== NOTE: total_added=0 について =====
+テスト名が t01_/t02_/... 形式（test_ prefix なし）の場合 extract-test-summary の
+集計に乗らないことがある。git diff で実際の追加テストを確認すること。
+===== END NOTE =====
