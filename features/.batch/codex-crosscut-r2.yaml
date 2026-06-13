@@ -1,21 +1,9 @@
 issues:
   - id: F01
     severity: high
-    file: "web/tests/acceptance_extrude.spec.ts"
-    line_hint: 18
-    finding: "POST 系の受け入れテストが共有 API サーバー `http://127.0.0.1:7878` に固定 ID (`sk_t01` / `ext_t01` など) で書き込むため、再実行・retry・他 spec との並列実行で状態が漏れ、duplicate ID や変更済み `box_1` を前提にした非決定な結果になる"
-    suggestion: "worker/test ごとに temp copy の `.mycad` を使う API サーバーを起動し、状態を共有しない構成に変更する"
-  - id: F02
-    severity: high
-    file: "web/tests/acceptance_extrude.spec.ts"
-    line_hint: 47
-    finding: "`hasMeshVertices()` は『何らかのメッシュが返った』ことしか見ておらず、元の `simple_box` がそのまま返る no-op でも T02-T09 の大半が通る。#110/#111 の回帰テストとしては成功条件が弱すぎる"
-    suggestion: "各ケースで baseline との差分（頂点数/ボディ数/feature_id/期待する形状変化）を明示的に検証し、200 応答だけでは通らないようにする"
-  - id: F03
-    severity: high
-    file: "crates/mycad-api/tests/fuzz_features.rs"
-    line_hint: 246
-    finding: "T03 は NaN/Infinity を検証すると書いているが、実際に送っているのは `0.0`、`1e15`、`-1e15`、`1e-15`、`f64::MIN` だけで、不正 float トークン (`NaN`/`Infinity`/`-Infinity`) の経路が未検証のままになっている"
-    suggestion: "raw body に `NaN`・`Infinity`・`-Infinity` を含む JSON を明示的に送って、422/4xx を返すことを確認するテストを追加する"
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 760
+    finding: "`t04_shared_boundary_with_cyl_lateral` が triangle 所有者の特定に `face.name.as_ref().map(...).unwrap_or_default()` を使っており、`Face.name == None` / 空名の face が複数あると `mesh.face_ids` 上で全部 `\"\"` に潰れます。すると strict 比較が対象の trimmed sphere face / 隣接 face 以外の triangle を混ぜてしまい、共有境界が壊れても偽陽性で通るため、この Issue の boundary strict 回帰を実際には固定できません。"
+    suggestion: "tessellate 前に比較対象 face へ一意な test-local name を付けるか、`TriangleMesh` 側に face index 等の一意な所有者情報を伝搬して triangle 集合を曖昧なく引けるようにしてください。"
 
 verdict: fail

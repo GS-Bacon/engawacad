@@ -1,9 +1,21 @@
 issues:
   - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 1116
+    finding: "`t_degen_offset_axis_circ_center_rejected` は `signed_offset = 0` なのに `circ_radius = 4.0` を入れており、期待半径 `sqrt(5^2 - 0^2) = 5.0` との不一致だけで `InvalidTrimCircle` になります。`perp.norm()` の新規ガードを外してもこのテストは通るため、軸直交ずれ回帰を固定できていません。"
+    suggestion: "`circ_radius` は期待値の 5.0 に合わせたまま `circ_center` だけを軸直交方向へずらし、`circ_center` オフセット専用の回帰テストにしてください。"
+  - id: F02
+    severity: high
+    file: "crates/mycad-api/tests/mycad_api_serial_acceptance.rs"
+    line_hint: 7
+    finding: "`#[file_serial]` は同時実行は防げますが、直前の `startup_log_acceptance` が残す `TIME_WAIT` までは解消しません。この新規テストは `127.0.0.1:7878` を即座に `bind()` しており、既存 `startup_log_acceptance.rs` が必要としている `wait_port_free()` 相当の待機がないため、別 binary 実行直後に `EADDRINUSE` で不安定に落ち得ます。"
+    suggestion: "`startup_log_acceptance.rs` と同じ `wait_port_free(Duration::from_secs(...))` を共通化して先に呼ぶか、即時再 bind を前提にしない検証へ変えてください。"
+  - id: F03
     severity: medium
-    file: "crates/mycad-build/src/lib.rs"
-    line_hint: 438
-    finding: "`total_rotation != IDENTITY3` と `total_offset != Vec3::zeros()` を exact な `f64` 比較で分岐しているため、親 `+45°` / 子 `-45°` のように変換が数学的に相殺される階層でも near-identity の回転・平行移動が適用され、不要な座標ノイズが B-rep に焼き込まれる。"
-    suggestion: "行列積と回転済みオフセットの後に snap か epsilon ベースの `is_identity3` / `is_zero_vec` 判定を使って `rotate` / `translate` を抑止し、相殺回転の回帰テストを追加する。"
+    file: "crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs"
+    line_hint: 748
+    finding: "`sphere_face_id` / `adj_face_id` を `face.name.as_ref().map(|n| n.canonical_name()).unwrap_or_default()` で作っているため、未命名 face があると `\"\"` に潰れて `extract_face_triangles()` が複数 face の triangle を混在させます。face 名が非一意でも同様で、T04_strict が意図した 2 face 間の共有境界だけを比較している保証がありません。"
+    suggestion: "tessellate 前に対象 2 face へ一意な一時 name を付けるか、`face.name` に依存せず triangle を対象 face へ対応付ける方法に変えてください。"
 
-verdict: pass
+verdict: fail

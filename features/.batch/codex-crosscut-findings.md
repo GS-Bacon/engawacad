@@ -102,3 +102,58 @@ verdict: **pass** | critical=0, high=0, medium=1, low=0, blocking=0
 
 **判定**: blocking=0 のため B-6 pass、本バッチでは対応せず記録のみ。将来 Issue 起票候補 (snap or `Tolerance` newtype 導入と合わせて検討、ADR-004 §段階移行プラン Issue #34 と並行可)。
 
+---
+
+# 2026-06-13 B-6 (#147 + #153 + skill batch) round 1
+
+verdict: fail | critical=0, high=2, medium=1, blocking=2
+
+## F01 (high, 採用→修正済み): t_degen_offset_axis_circ_center_rejected で perp ガード単独の回帰になっていない
+
+**file**: `crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs:1116`
+
+> `signed_offset = 0` なのに `circ_radius = 4.0` を入れており、期待半径 `sqrt(5^2 - 0^2) = 5.0` との不一致だけで `InvalidTrimCircle` になる。perp.norm の新規ガードを外してもこのテストは通るため、軸直交ずれ回帰を固定できていない。
+
+**修正**: `circ_radius = 4.0` → `circ_radius = radius` (期待値 5.0) に変更し、`circ_center` だけが reject 要因になる形にした。
+
+## F02 (high, 採用→修正済み): mycad_api_serial_acceptance.rs で TIME_WAIT 待機がない
+
+**file**: `crates/mycad-api/tests/mycad_api_serial_acceptance.rs:7`
+
+> `#[file_serial]` は同時実行は防げるが TIME_WAIT は解消しない。新規テストは即座に bind しており、別 binary 実行直後に EADDRINUSE で flaky になり得る。
+
+**修正**: startup_log_acceptance.rs と同等の `wait_port_free(Duration::from_secs(10))` を本ファイル内に追加。
+
+## F03 (medium, 記録のみ・将来対応): T04_strict での face name 一意性保証不足
+
+**file**: `crates/mycad-kernel/tests/trim_sphere_circ_normal_acceptance.rs:748`
+
+> `face.name.as_ref().map(|n| n.canonical_name()).unwrap_or_default()` で未命名 face があると `""` に潰れて `extract_face_triangles()` が複数 face を混在させる。face 名が非一意でも同様で、T04_strict が意図した 2 face 間の共有境界だけを比較している保証がない。
+
+**現状**: `boolean_cut_sphere_dimple` の出力 face は実装上 name が一意に付与されている前提で T04 は green。
+
+**判定**: medium で blocking=0、本バッチでは対応せず記録のみ。将来 face name が無い primitive を T04 系のターゲットに使う Issue が出てきたら別 Issue で「tessellate 前に対象 face に一時 name を付ける補助」を実装する。
+
+---
+
+## Round 2: 1 high (F01)
+
+### F01 (high, 採用→修正済み): T04_strict での face name 一意性が保証されていない
+
+- 同 round 1 の F03 を high に昇格しての再指摘。修正: T04 内で tessellate 前に `result.faces[sphere_face_idx].name` / `result.faces[adj_face_idx].name` に `EntityRef::Named("t04_strict_sphere_face" / "t04_strict_adj_face", ...)` を設定し、他 face との canonical_name 衝突を assert で固定した。
+
+---
+
+## Round 3: 2 high (F01 + F02)
+
+### F01 (high, 採用→修正済み): post-rust-fmt.ts と settings.json が `/home/bacon/mycad` 絶対パスを固定している
+
+- 修正: `post-rust-fmt.ts` で `import.meta.dir` から 4 階層上を repo root として導出する形に変更。`.claude/settings.json` の hook command も `bun .claude/skills/3ai/scripts/post-rust-fmt.ts` 相対パス化。これで任意のチェックアウト先でも動作する。
+
+### F02 (high, partial 採用→将来別 Issue): T04 helper の twin / ring 構築が strict ではない
+
+- 指摘: `find_twin_halfedge` は `half_edges[he_idx].twin` を使わず同 `edge` を線形探索しているため、保存済み twin index との相互参照を assert していない。`try_build_ordered_ring_mesh` は最初の閉サイクルで return するため、non-manifold や複数サイクルの共有境界でも通過してしまう。
+- **判定**: #147 の本 Issue 主目的 (validation + 共有境界の基本検証) はすでに固定済みで、現状の test は `boolean_cut_sphere_dimple` の単一閉境界には十分。Codex 提案の「twin index 相互参照 assert」「ring 全消費 assert」は別 Issue で `tests/` ヘルパとして共通化して適用する候補。
+- **本バッチでは対応せず記録のみ**。自律モードの skill 規定「2 回ループ後も critical = 0 なら Claude 裁量で受け切る」に従い B-6 を pass 扱いとする (critical=0、すべて high で test 厳密性向上の余地)。
+
+

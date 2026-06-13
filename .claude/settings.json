@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/post-rust-fmt.ts"
+            "command": "bun .claude/skills/3ai/scripts/post-rust-fmt.ts"
           }
         ]
       }

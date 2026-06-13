@@ -4,7 +4,11 @@
 // stdin から JSON を読み、file_path が *.rs なら fmt を実行。
 // 失敗しても flow を block しない（stderr にログ出力して exit 0）。
 
-const CWD = "/home/bacon/mycad";
+import { resolve } from "node:path";
+
+// repo root は本スクリプトから 4 階層上 (.claude/skills/3ai/scripts/ → repo root)
+// 絶対パス固定を避けて任意のチェックアウト先で動作させる (Codex B-6 round 3 F01 指摘対応)
+const REPO_ROOT = resolve(import.meta.dir, "../../../..");
 
 /**
  * stdin JSON から .rs ファイルパスを抽出する純関数。
@@ -34,7 +38,7 @@ async function main(): Promise<void> {
   }
 
   const proc = Bun.spawn(["cargo", "fmt", "--all"], {
-    cwd: CWD,
+    cwd: REPO_ROOT,
     stderr: "pipe",
     stdout: "pipe",
   });
