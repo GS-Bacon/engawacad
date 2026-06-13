@@ -626,21 +626,13 @@ fn tessellate_face_uv_grid(
     // the n_u matching heuristic below, not by shifting u_min.
     let u_min = 0.0_f64;
 
-    // Derive n_u from the circle-arc topology plus the adjacent cap face type.
+    // Derive n_u from the circle-arc topology.
+    // After a Boolean op the lateral loop has arcs_per_rev > 1 Circle arcs; matching that
+    // count produces seam-aligned tessellation regardless of the adjacent cap face type
+    // (Plane / Sphere). Primitive cylinders (arcs_per_rev = 1) fall back to angular_segments.
     //
-    // After a boolean operation the cylinder lateral loop has multiple Circle arcs per
-    // revolution (arcs_per_rev > 1). The adjacent cap face determines the required n_u:
-    //   • Adjacent cap is a Plane  → the cap boundary uses exactly arcs_per_rev sample
-    //     points, so set n_u = arcs_per_rev.
-    //   • Adjacent cap is a Sphere → the sphere face is tessellated with angular_segments
-    //     longitude strips, so set n_u = angular_segments.
-    // Primitive cylinders (arcs_per_rev = 1) and unknown adjacency fall back to
-    // angular_segments (the pre-boolean default).
-    //
-    // NOTE: For cylinders with mixed cap types (e.g. top=Sphere / bottom=Plane), the
-    // `any(Sphere)` check picks Sphere. This configuration is currently unreachable by
-    // the Boolean subsystem and its behaviour is unverified. Mixed-cap support should
-    // be addressed in a separate issue if needed.
+    // ADR-009 Phase 2 (boolean intersection curve storage) でこのヒューリスティクス全体が
+    // エッジ駆動境界共有に置換予定。それまでの暫定実装。
     let circle_arc_count: usize = outer_loop
         .half_edges
         .iter()
@@ -655,36 +647,7 @@ fn tessellate_face_uv_grid(
         0
     };
     let n_u = if arcs_per_rev > 1 {
-        // Walk the twin of each Circle-arc half-edge to identify the adjacent cap face.
-        //
-        // For BOTH sphere-capped and plane-capped cylinder laterals, the correct n_u is
-        // arcs_per_rev:
-        //   • Plane cap: the cap boundary vertices follow the Boolean intersection arcs,
-        //     which number exactly arcs_per_rev.
-        //   • Sphere cap: the sphere trimmed tessellation also follows the intersection
-        //     arcs (arcs_per_rev arcs subdivide the cap's boundary loop).
-        //     Using opts.angular_segments here causes a seam mismatch and naked edges
-        //     (verified: test t03_cyl_sph_intersect_naked_edge fails when angular_segments
-        //     is used instead of arcs_per_rev).
-        //
-        // adj_is_sphere is computed to enable future differentiation when the sphere
-        // tessellation is updated to produce angular_segments-independent boundaries.
-        // NOTE: mixed-cap cylinders (top=Sphere / bottom=Plane) use Sphere-path via
-        // `any(Sphere)`; this configuration is currently unreachable (Non-Goals).
-        let adj_is_sphere = outer_loop.half_edges.iter().any(|&he_idx| {
-            let he = &solid.half_edges[he_idx];
-            matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
-                && adjacent_face_idx(solid, he_idx)
-                    .map(|f| matches!(solid.faces[f].surface, Surface::Sphere { .. }))
-                    .unwrap_or(false)
-        });
-        if adj_is_sphere {
-            // Sphere cap: boundary arcs == arcs_per_rev (NOT angular_segments).
-            arcs_per_rev
-        } else {
-            // Plane/other cap: boundary vertices == arcs_per_rev.
-            arcs_per_rev
-        }
+        arcs_per_rev
     } else {
         opts.angular_segments.max(3)
     };
@@ -737,11 +700,11 @@ fn tessellate_face_uv_grid(
     Ok(())
 }
 
-/// Find the face on the opposite side of `he_idx`'s shared edge.
-///
-/// twin = the other half-edge referencing the same `edge`. Returns the index of the face
-/// whose outer or inner loop contains that twin. The Solid stores no twin/adjacency cache,
-/// so this is a linear scan; iteration is in index order for determinism.
+/// ADR-009 Phase 2 のエッジ駆動境界共有実装で再利用予定の補助関数。
+/// 唯一の本番呼び出し箇所 (cylinder lateral の adj_is_sphere 分岐) は #143 で死に分岐として
+/// 削除済みのため、現在は inline テスト 2 本 (test_adjacent_face_idx_sphere_cap / _plane_cap)
+/// からのみ参照される。
+#[allow(dead_code)]
 fn adjacent_face_idx(solid: &Solid, he_idx: usize) -> Option<usize> {
     let edge = solid.half_edges[he_idx].edge;
     let twin =
