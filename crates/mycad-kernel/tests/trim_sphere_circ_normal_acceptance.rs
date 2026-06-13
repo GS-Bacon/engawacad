@@ -725,10 +725,88 @@ fn point_diff_3d(a: &[f64; 3], b: &[f64; 3]) -> f64 {
 /// 6. 向きずれ検出: boundary edges から構築した polyline ring を比較
 #[test]
 fn t04_shared_boundary_with_cyl_lateral() {
+    use mycad_format::{EntityKind, EntityRef};
+    use mycad_kernel::geometry::surface::Surface;
+
     let mut gen = IdGenerator::new(0);
     let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
     let sphere = make_sphere(3.0, Point::new(0.0, 0.0, 6.0), &mut gen).expect("sphere");
-    let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
+    let mut result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
+
+    // 1. Surface::Sphere 型の trimmed face (inner_loops.len() == 1) を特定
+    let sphere_face_idx = result
+        .faces
+        .iter()
+        .position(|f| matches!(f.surface, Surface::Sphere { .. }) && f.inner_loops.len() == 1)
+        .expect("No trimmed sphere face found");
+
+    // 2. inner_loops[0].half_edges[0] の twin から対面 face を特定
+    let sphere_he_idx = {
+        let sphere_face = &result.faces[sphere_face_idx];
+        let sphere_inner_loop = &result.loops[sphere_face.inner_loops[0]];
+        *sphere_inner_loop
+            .half_edges
+            .first()
+            .expect("sphere inner loop has at least one half-edge")
+    };
+    let twin_he_idx = find_twin_halfedge(&result, sphere_he_idx)
+        .expect("No twin half-edge found for sphere inner loop edge");
+    let adj_face_idx = find_face_for_halfedge(&result, twin_he_idx)
+        .expect("No adjacent face found via twin half-edge");
+
+    // 確認: 対面は Plane 型であるはず (box の上面)
+    assert!(
+        matches!(result.faces[adj_face_idx].surface, Surface::Plane { .. }),
+        "Adjacent face should be Plane, got {:?}",
+        result.faces[adj_face_idx].surface
+    );
+
+    // Codex B-6 round 2 F01 対応: tessellate 前に対象 2 face へ一意な test-local name を設定し、
+    // mesh.face_ids 経由の triangle 抽出が「未命名 → 空文字列に潰れる」混在を起こさないようにする。
+    let sphere_face_id = "t04_strict_sphere_face".to_string();
+    let adj_face_id = "t04_strict_adj_face".to_string();
+    result.faces[sphere_face_idx].name = Some(
+        EntityRef::try_named(&sphere_face_id, EntityKind::Face, "main")
+            .expect("EntityRef for sphere face"),
+    );
+    result.faces[adj_face_idx].name = Some(
+        EntityRef::try_named(&adj_face_id, EntityKind::Face, "main")
+            .expect("EntityRef for adj face"),
+    );
+
+    let sphere_face_id = result.faces[sphere_face_idx]
+        .name
+        .as_ref()
+        .map(|n| n.canonical_name())
+        .expect("sphere face name set above");
+    let adj_face_id = result.faces[adj_face_idx]
+        .name
+        .as_ref()
+        .map(|n| n.canonical_name())
+        .expect("adj face name set above");
+
+    // 一意性検証: 設定後の 2 face name は他 face と canonical_name 衝突しない
+    assert_ne!(
+        sphere_face_id, adj_face_id,
+        "test-local face names must differ"
+    );
+    for (i, f) in result.faces.iter().enumerate() {
+        if i == sphere_face_idx || i == adj_face_idx {
+            continue;
+        }
+        let cn = f
+            .name
+            .as_ref()
+            .map(|n| n.canonical_name())
+            .unwrap_or_default();
+        assert_ne!(
+            cn, sphere_face_id,
+            "face #{} collides with sphere_face_id",
+            i
+        );
+        assert_ne!(cn, adj_face_id, "face #{} collides with adj_face_id", i);
+    }
+
     let mesh = tessellate_solid(&result).expect("tessellate");
 
     // naked_edge が 0 であれば watertight (回帰テスト)
@@ -737,56 +815,6 @@ fn t04_shared_boundary_with_cyl_lateral() {
         naked, 0,
         "shared boundary should be watertight (zero naked edges)"
     );
-
-    // strict 版: twin ベース境界頂点比較
-    // 1. Surface::Sphere 型の trimmed face (inner_loops.len() == 1) を特定
-    use mycad_kernel::geometry::surface::Surface;
-    let sphere_face_idx = result
-        .faces
-        .iter()
-        .position(|f| matches!(f.surface, Surface::Sphere { .. }) && f.inner_loops.len() == 1);
-    assert!(sphere_face_idx.is_some(), "No trimmed sphere face found");
-    let sphere_face_idx = sphere_face_idx.unwrap();
-    let sphere_face = &result.faces[sphere_face_idx];
-
-    // sphere face の face_id を取得
-    let sphere_face_id = sphere_face
-        .name
-        .as_ref()
-        .map(|n| n.canonical_name())
-        .unwrap_or_default();
-
-    // 2. inner_loops[0].half_edges[0] の twin から対面 face を特定
-    let sphere_inner_loop = &result.loops[sphere_face.inner_loops[0]];
-    let sphere_he_idx = sphere_inner_loop.half_edges.first().unwrap();
-    let twin_he_idx = find_twin_halfedge(&result, *sphere_he_idx);
-    assert!(
-        twin_he_idx.is_some(),
-        "No twin half-edge found for sphere inner loop edge"
-    );
-    let twin_he_idx = twin_he_idx.unwrap();
-
-    let adj_face_idx = find_face_for_halfedge(&result, twin_he_idx);
-    assert!(
-        adj_face_idx.is_some(),
-        "No adjacent face found via twin half-edge"
-    );
-    let adj_face_idx = adj_face_idx.unwrap();
-    let adj_face = &result.faces[adj_face_idx];
-
-    // 確認: 対面は Plane 型であるはず (box の上面)
-    assert!(
-        matches!(adj_face.surface, Surface::Plane { .. }),
-        "Adjacent face should be Plane, got {:?}",
-        adj_face.surface
-    );
-
-    // adjacent face の face_id を取得
-    let adj_face_id = adj_face
-        .name
-        .as_ref()
-        .map(|n| n.canonical_name())
-        .unwrap_or_default();
 
     // 3. mesh から両 face の triangle 集合を抽出 (face_id 経由のみ、B-rep vertex/edge 不使用)
     let sphere_tris = extract_face_triangles(&mesh, &sphere_face_id);
