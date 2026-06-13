@@ -45,7 +45,7 @@ fn count_naked_edges(mesh: &TriangleMesh, tol: f64) -> usize {
     edge_count.values().filter(|&&c| c == 1).count()
 }
 
-/// T01: 既存の boolean_cut_sphere_dimple (cyl×sphere, 軸 +Z) を 2 回 tessellate し、
+/// T01: 既存の boolean_cut_sphere_dimple (box×sphere, 軸 +Z) を 2 回 tessellate し、
 /// メッシュが完全一致 (positions / indices / normals) することを確認する。
 #[test]
 fn t01_determinism_axis_z() {
@@ -590,11 +590,139 @@ fn t_degen_zero_circ_normal_returns_error() {
     );
 }
 
-/// T04: boolean_cut_sphere_dimple 結果で、trimmed sphere face と
-/// 隣接 cyl lateral face の共有境界頂点が一致することを確認。
+/// Solid から twin HalfEdge を見つける。
+fn find_twin_halfedge(solid: &mycad_kernel::brep::topology::Solid, he_idx: usize) -> Option<usize> {
+    let target_edge = solid.half_edges[he_idx].edge;
+    (0..solid.half_edges.len()).find(|&i| i != he_idx && solid.half_edges[i].edge == target_edge)
+}
+
+/// HalfEdge が属する face の index を見つける。
+fn find_face_for_halfedge(
+    solid: &mycad_kernel::brep::topology::Solid,
+    he_idx: usize,
+) -> Option<usize> {
+    (0..solid.faces.len()).find(|&f| {
+        let face = &solid.faces[f];
+        solid.loops[face.outer_loop].half_edges.contains(&he_idx)
+            || face
+                .inner_loops
+                .iter()
+                .any(|&l| solid.loops[l].half_edges.contains(&he_idx))
+    })
+}
+
+/// mesh から特定の face_id に属する triangle のインデックス集合を抽出する。
+fn extract_face_triangles(mesh: &TriangleMesh, face_id: &str) -> Vec<usize> {
+    mesh.face_ids
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| *id == face_id)
+        .map(|(tri_idx, _)| tri_idx)
+        .collect()
+}
+
+/// triangles から boundary edge (1 triangle にしか含まれない edge) を抽出する。
+/// 返り値は量子化済み edge (q0, q1) の集合 (q0 < q1 で正規化済み)。
 ///
-/// 現実装では TriangleMesh に face_id 情報があるため、直接頂点を比較するのは困難。
-/// 代わりに naked_edge カウントが 0 であることで watertight 性を保証する。
+/// 同一 triangle 内で量子化後に重複する edge は 1 回だけ数える
+/// (sliver triangle で 2 頂点が同一点へ潰れる場合に boundary edge が消えるのを防ぐ)。
+fn extract_boundary_edges(
+    mesh: &TriangleMesh,
+    tri_indices: &[usize],
+    tol: f64,
+) -> std::collections::HashSet<([i64; 3], [i64; 3])> {
+    let quantize = |p: &[f64; 3]| -> [i64; 3] {
+        [
+            (p[0] / tol).round() as i64,
+            (p[1] / tol).round() as i64,
+            (p[2] / tol).round() as i64,
+        ]
+    };
+    let mut edge_count: std::collections::HashMap<([i64; 3], [i64; 3]), usize> =
+        std::collections::HashMap::new();
+    for &tri_idx in tri_indices {
+        let i0 = mesh.indices[tri_idx * 3] as usize;
+        let i1 = mesh.indices[tri_idx * 3 + 1] as usize;
+        let i2 = mesh.indices[tri_idx * 3 + 2] as usize;
+        let p0 = quantize(&mesh.positions[i0]);
+        let p1 = quantize(&mesh.positions[i1]);
+        let p2 = quantize(&mesh.positions[i2]);
+        let mut seen_in_tri: Vec<([i64; 3], [i64; 3])> = Vec::with_capacity(3);
+        for (qa, qb) in &[(p0, p1), (p1, p2), (p2, p0)] {
+            if qa == qb {
+                continue;
+            }
+            let key = if qa <= qb { (*qa, *qb) } else { (*qb, *qa) };
+            if seen_in_tri.contains(&key) {
+                continue;
+            }
+            seen_in_tri.push(key);
+            *edge_count.entry(key).or_insert(0) += 1;
+        }
+    }
+    edge_count
+        .into_iter()
+        .filter(|(_, count)| *count == 1)
+        .map(|(key, _)| key)
+        .collect()
+}
+
+/// boundary edge 集合から順序付き polyline ring を構築する (panic 安全)。
+/// closed ring (各 vertex の degree = 2) を仮定。条件外なら None を返す。
+fn try_build_ordered_ring_mesh(
+    boundary_edges: &std::collections::HashSet<([i64; 3], [i64; 3])>,
+) -> Option<Vec<[i64; 3]>> {
+    if boundary_edges.is_empty() {
+        return None;
+    }
+    let mut adj: std::collections::HashMap<[i64; 3], Vec<[i64; 3]>> =
+        std::collections::HashMap::new();
+    for (a, b) in boundary_edges.iter() {
+        adj.entry(*a).or_default().push(*b);
+        adj.entry(*b).or_default().push(*a);
+    }
+    if adj.values().any(|v| v.len() != 2) {
+        return None;
+    }
+    let start = *adj.keys().next()?;
+    let mut ring = vec![start];
+    let mut prev = start;
+    let mut current = start;
+    let max_steps = boundary_edges.len() + 1;
+    for _ in 0..max_steps {
+        let neighbors = adj.get(&current)?;
+        let next = if ring.len() == 1 {
+            neighbors[0]
+        } else if neighbors[0] == prev {
+            neighbors[1]
+        } else {
+            neighbors[0]
+        };
+        if next == start {
+            return Some(ring);
+        }
+        ring.push(next);
+        prev = current;
+        current = next;
+    }
+    None
+}
+
+/// quantize された 3D 点同士の差ノルム (mesh 頂点列の microscopic 比較用)。
+fn point_diff_3d(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+/// T04_strict: boolean_cut_sphere_dimple 結果で、trimmed sphere face と
+/// 隣接 face (Plane) の共有境界頂点が twin 経由で厳密に一致することを確認。
+///
+/// #147 strict 版実装 (F01 round 2):
+/// 1. twin HalfEdge 経由で sphere face と adjacent face を対応付け
+/// 2. mesh.face_ids と mesh.indices から各 face の triangle 集合を抽出
+/// 3. 各 face の triangles 内で boundary edge (1 triangle にしか属さない edge) を抽出
+/// 4. 位相一致: sphere 側と adj 側の boundary edge 集合が量子化下で完全一致
+/// 5. microscopic check: 各 face の mesh 頂点のみで境界頂点を比較
+/// 6. 向きずれ検出: boundary edges から構築した polyline ring を比較
 #[test]
 fn t04_shared_boundary_with_cyl_lateral() {
     let mut gen = IdGenerator::new(0);
@@ -603,11 +731,198 @@ fn t04_shared_boundary_with_cyl_lateral() {
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");
 
-    // naked_edge が 0 であれば、隣接面間の境界が一致している
+    // naked_edge が 0 であれば watertight (回帰テスト)
     let naked = count_naked_edges(&mesh, 1e-10);
     assert_eq!(
         naked, 0,
         "shared boundary should be watertight (zero naked edges)"
+    );
+
+    // strict 版: twin ベース境界頂点比較
+    // 1. Surface::Sphere 型の trimmed face (inner_loops.len() == 1) を特定
+    use mycad_kernel::geometry::surface::Surface;
+    let sphere_face_idx = result
+        .faces
+        .iter()
+        .position(|f| matches!(f.surface, Surface::Sphere { .. }) && f.inner_loops.len() == 1);
+    assert!(sphere_face_idx.is_some(), "No trimmed sphere face found");
+    let sphere_face_idx = sphere_face_idx.unwrap();
+    let sphere_face = &result.faces[sphere_face_idx];
+
+    // sphere face の face_id を取得
+    let sphere_face_id = sphere_face
+        .name
+        .as_ref()
+        .map(|n| n.canonical_name())
+        .unwrap_or_default();
+
+    // 2. inner_loops[0].half_edges[0] の twin から対面 face を特定
+    let sphere_inner_loop = &result.loops[sphere_face.inner_loops[0]];
+    let sphere_he_idx = sphere_inner_loop.half_edges.first().unwrap();
+    let twin_he_idx = find_twin_halfedge(&result, *sphere_he_idx);
+    assert!(
+        twin_he_idx.is_some(),
+        "No twin half-edge found for sphere inner loop edge"
+    );
+    let twin_he_idx = twin_he_idx.unwrap();
+
+    let adj_face_idx = find_face_for_halfedge(&result, twin_he_idx);
+    assert!(
+        adj_face_idx.is_some(),
+        "No adjacent face found via twin half-edge"
+    );
+    let adj_face_idx = adj_face_idx.unwrap();
+    let adj_face = &result.faces[adj_face_idx];
+
+    // 確認: 対面は Plane 型であるはず (box の上面)
+    assert!(
+        matches!(adj_face.surface, Surface::Plane { .. }),
+        "Adjacent face should be Plane, got {:?}",
+        adj_face.surface
+    );
+
+    // adjacent face の face_id を取得
+    let adj_face_id = adj_face
+        .name
+        .as_ref()
+        .map(|n| n.canonical_name())
+        .unwrap_or_default();
+
+    // 3. mesh から両 face の triangle 集合を抽出 (face_id 経由のみ、B-rep vertex/edge 不使用)
+    let sphere_tris = extract_face_triangles(&mesh, &sphere_face_id);
+    let adj_tris = extract_face_triangles(&mesh, &adj_face_id);
+
+    assert!(!sphere_tris.is_empty(), "Sphere face should have triangles");
+    assert!(!adj_tris.is_empty(), "Adjacent face should have triangles");
+
+    // 4. boundary edge (1 triangle にしか含まれない edge) を mesh から直接抽出
+    let tol = LENGTH_TOLERANCE;
+    let sphere_boundary = extract_boundary_edges(&mesh, &sphere_tris, tol);
+    let adj_boundary = extract_boundary_edges(&mesh, &adj_tris, tol);
+
+    assert!(
+        !sphere_boundary.is_empty(),
+        "Sphere face should have boundary edges"
+    );
+    assert!(
+        !adj_boundary.is_empty(),
+        "Adjacent face should have boundary edges"
+    );
+
+    // 5. 両面 mesh boundary の順序付き polyline ring を独立に構築し直接比較
+    //    (Codex F01: 各 face 自身の tri 集合から polyline を再構成して直接比較。
+    //     B-rep の result.edges / result.vertices / mesh.positions 全体走査は使わない)
+
+    // 5-1. sphere face の boundary edges (Step 4 で抽出済み) は inner_loop に対応
+    //      (sphere face の outer_loop は seam edge で Edge 共有 `count==2` のため
+    //       boundary 集合 (`count==1`) に出現しない)
+    // 5-2. adj face の boundary edges のうち sphere との共有部分のみ抽出
+    //      (adj face は box 上面で、box 側面との境界 (outer_loop) も持つため subset を取る)
+    let adj_inner_boundary_mesh: std::collections::HashSet<([i64; 3], [i64; 3])> = adj_boundary
+        .intersection(&sphere_boundary)
+        .cloned()
+        .collect();
+
+    // 5-3. 両 face の共有境界 edge 集合の完全一致 (位相一致)
+    assert_eq!(
+        sphere_boundary,
+        adj_inner_boundary_mesh,
+        "sphere face と adj face の共有 boundary edge 集合が一致しません: \
+         sphere only={:?}, adj only={:?}",
+        sphere_boundary
+            .difference(&adj_inner_boundary_mesh)
+            .collect::<Vec<_>>(),
+        adj_inner_boundary_mesh
+            .difference(&sphere_boundary)
+            .collect::<Vec<_>>(),
+    );
+
+    // 5-4. 順序付き ring を両 face 独立に構築
+    let sphere_ring_keys = try_build_ordered_ring_mesh(&sphere_boundary)
+        .expect("sphere face boundary should form a closed ring");
+    let adj_ring_keys = try_build_ordered_ring_mesh(&adj_inner_boundary_mesh)
+        .expect("adj face boundary should form a closed ring");
+
+    assert_eq!(
+        sphere_ring_keys.len(),
+        adj_ring_keys.len(),
+        "ring vertex count mismatch: sphere={}, adj={}",
+        sphere_ring_keys.len(),
+        adj_ring_keys.len(),
+    );
+
+    // 5-5. 各 face triangle 集合から「量子化キー → その face 自身の mesh position」逆引きを準備
+    let quantize_local = |p: &[f64; 3]| -> [i64; 3] {
+        [
+            (p[0] / tol).round() as i64,
+            (p[1] / tol).round() as i64,
+            (p[2] / tol).round() as i64,
+        ]
+    };
+    let pos_for_key = |tri_indices: &[usize], key: &[i64; 3]| -> Option<[f64; 3]> {
+        for &tri in tri_indices {
+            for k in 0..3 {
+                let idx = mesh.indices[tri * 3 + k] as usize;
+                let p = mesh.positions[idx];
+                if quantize_local(&p) == *key {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    let sphere_positions: Vec<[f64; 3]> = sphere_ring_keys
+        .iter()
+        .map(|k| pos_for_key(&sphere_tris, k).expect("sphere ring key not found in sphere tris"))
+        .collect();
+    let adj_positions: Vec<[f64; 3]> = adj_ring_keys
+        .iter()
+        .map(|k| pos_for_key(&adj_tris, k).expect("adj ring key not found in adj tris"))
+        .collect();
+
+    // 5-6. rotation / reverse を考慮した各 index 直接距離比較 (各 face 自身の mesh 頂点列のみ)
+    let n = sphere_positions.len();
+    let mut matched_forward = false;
+    let mut matched_reverse = false;
+    for shift in 0..n {
+        let mut all_match = true;
+        for i in 0..n {
+            let sp = &sphere_positions[i];
+            let ap = &adj_positions[(i + shift) % n];
+            if point_diff_3d(sp, ap) > LENGTH_TOLERANCE {
+                all_match = false;
+                break;
+            }
+        }
+        if all_match {
+            matched_forward = true;
+            break;
+        }
+    }
+    if !matched_forward {
+        let adj_rev: Vec<_> = adj_positions.iter().rev().cloned().collect();
+        for shift in 0..n {
+            let mut all_match = true;
+            for i in 0..n {
+                let sp = &sphere_positions[i];
+                let ap = &adj_rev[(i + shift) % n];
+                if point_diff_3d(sp, ap) > LENGTH_TOLERANCE {
+                    all_match = false;
+                    break;
+                }
+            }
+            if all_match {
+                matched_reverse = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        matched_forward || matched_reverse,
+        "sphere face boundary polyline と adj face boundary polyline が一致しません \
+         (rotation/reverse 込みでも tol={} を超える距離差が残ります)",
+        LENGTH_TOLERANCE,
     );
 }
 
@@ -780,5 +1095,370 @@ fn t_degen_subtolerance_circ_normal_returns_error() {
     assert!(
         matches!(result, Err(TessellationError::InvalidTrimCircle { .. })),
         "subtolerance circ_normal should return InvalidTrimCircle"
+    );
+}
+
+// #147: 退化入力テスト（STEP 6 GLM 実装）
+
+/// T_degen_offset_axis_circ_center_rejected: circ_center を axis 直交方向に
+/// ずらした入力で InvalidTrimCircle を返すことを検証。
+///
+/// circ_center が axis（circ_normal）から直交方向にずれていると、
+/// 円は球面上の正しい緯線として再合成されず、隣接面との境界が破綻する。
+#[test]
+fn t_degen_offset_axis_circ_center_rejected() {
+    use mycad_kernel::brep::topology::Solid;
+
+    let radius = 5.0;
+    let center = Point::origin();
+    let mut gen = IdGenerator::new(0);
+    let mut solid = Solid::new(gen.next());
+
+    // 球の外殻
+    let v_south = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, -radius), None);
+    let v_north = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, radius), None);
+
+    let e_seam = solid.add_edge(
+        gen.next(),
+        [v_south, v_north],
+        Curve::Circle {
+            center,
+            normal: -Vec3::y(),
+            radius,
+        },
+        [PI, 2.0 * PI],
+        None,
+    );
+
+    let he_up = solid.add_half_edge(gen.next(), v_south, e_seam, true);
+    let he_down = solid.add_half_edge(gen.next(), v_north, e_seam, false);
+    let outer_loop = solid.add_loop(gen.next(), vec![he_up, he_down]);
+
+    // circ_normal = +Z、signed_offset = 0 (circ_center は球中心にあるべき)
+    let circ_normal = Vec3::new(0.0, 0.0, 1.0);
+    let circ_center = center + Vec3::new(0.01, 0.0, 0.0); // axis 直交方向に 0.01mm ずらす
+    let circ_radius = 4.0;
+
+    // inner_loop を 1 edge full-sweep に構築 (周期エッジ)
+    let loop_vertex = solid.add_vertex(gen.next(), circ_center + circ_radius * Vec3::y(), None);
+
+    let loop_edge = solid.add_edge(
+        gen.next(),
+        [loop_vertex, loop_vertex],
+        Curve::Circle {
+            center: circ_center,
+            normal: circ_normal,
+            radius: circ_radius,
+        },
+        [0.0, 2.0 * PI],
+        None,
+    );
+    let loop_he = solid.add_half_edge(gen.next(), loop_vertex, loop_edge, true);
+    let inner_loop = solid.add_loop(gen.next(), vec![loop_he]);
+
+    let face = solid.add_face(
+        gen.next(),
+        Surface::Sphere { center, radius },
+        outer_loop,
+        vec![inner_loop],
+        true,
+        None,
+    );
+
+    solid.add_shell(gen.next(), vec![face], true);
+
+    let mut mesh = TriangleMesh::new();
+    let opts = mycad_kernel::tessellation::TessellationOptions {
+        angular_segments: 16,
+        ..Default::default()
+    };
+
+    let result = mycad_kernel::tessellation::tessellate_sphere_face_trimmed(
+        &solid,
+        &solid.faces[face],
+        face,
+        &opts,
+        &mut mesh,
+        "",
+    );
+
+    assert!(
+        matches!(result, Err(TessellationError::InvalidTrimCircle { .. })),
+        "circ_center offset from axis should return InvalidTrimCircle: {:?}",
+        result
+    );
+}
+
+/// T_degen_mismatched_circ_radius_rejected: circ_radius を期待値
+/// sqrt(R^2 - signed_offset^2) からずらした入力で InvalidTrimCircle を返すことを検証。
+///
+/// circ_radius が球面上の正しい緯線半径と一致しない場合、
+/// 隣接面側の境界半径と接続できない。
+#[test]
+fn t_degen_mismatched_circ_radius_rejected() {
+    use mycad_kernel::brep::topology::Solid;
+
+    let radius = 5.0_f64;
+    let center = Point::origin();
+    let signed_offset = 3.0_f64; // 期待 circ_radius = sqrt(25 - 9) = 4.0
+    let expected_circ_radius = (radius * radius - signed_offset * signed_offset).sqrt();
+
+    let mut gen = IdGenerator::new(0);
+    let mut solid = Solid::new(gen.next());
+
+    // 球の外殻
+    let v_south = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, -radius), None);
+    let v_north = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, radius), None);
+
+    let e_seam = solid.add_edge(
+        gen.next(),
+        [v_south, v_north],
+        Curve::Circle {
+            center,
+            normal: -Vec3::y(),
+            radius,
+        },
+        [PI, 2.0 * PI],
+        None,
+    );
+
+    let he_up = solid.add_half_edge(gen.next(), v_south, e_seam, true);
+    let he_down = solid.add_half_edge(gen.next(), v_north, e_seam, false);
+    let outer_loop = solid.add_loop(gen.next(), vec![he_up, he_down]);
+
+    // circ_normal = +Z、signed_offset = 3.0、circ_center = (0, 0, 3.0)
+    let circ_normal = Vec3::new(0.0, 0.0, 1.0);
+    let circ_center = center + signed_offset * circ_normal;
+    let circ_radius = expected_circ_radius + 0.01; // 期待値から 0.01mm ずらす
+
+    // inner_loop を 1 edge full-sweep に構築 (周期エッジ)
+    let loop_vertex = solid.add_vertex(gen.next(), circ_center + circ_radius * Vec3::y(), None);
+
+    let loop_edge = solid.add_edge(
+        gen.next(),
+        [loop_vertex, loop_vertex],
+        Curve::Circle {
+            center: circ_center,
+            normal: circ_normal,
+            radius: circ_radius,
+        },
+        [0.0, 2.0 * PI],
+        None,
+    );
+    let loop_he = solid.add_half_edge(gen.next(), loop_vertex, loop_edge, true);
+    let inner_loop = solid.add_loop(gen.next(), vec![loop_he]);
+
+    let face = solid.add_face(
+        gen.next(),
+        Surface::Sphere { center, radius },
+        outer_loop,
+        vec![inner_loop],
+        true,
+        None,
+    );
+
+    solid.add_shell(gen.next(), vec![face], true);
+
+    let mut mesh = TriangleMesh::new();
+    let opts = mycad_kernel::tessellation::TessellationOptions {
+        angular_segments: 16,
+        ..Default::default()
+    };
+
+    let result = mycad_kernel::tessellation::tessellate_sphere_face_trimmed(
+        &solid,
+        &solid.faces[face],
+        face,
+        &opts,
+        &mut mesh,
+        "",
+    );
+
+    assert!(
+        matches!(result, Err(TessellationError::InvalidTrimCircle { .. })),
+        "mismatched circ_radius should return InvalidTrimCircle: {:?}",
+        result
+    );
+}
+
+/// F02: circ_radius = NaN で InvalidTrimCircle を返す。
+#[test]
+fn t_degen_nan_circ_radius_rejected() {
+    use mycad_kernel::brep::topology::Solid;
+
+    let radius = 5.0_f64;
+    let center = Point::origin();
+    let signed_offset = 3.0_f64;
+    let expected_circ_radius = (radius * radius - signed_offset * signed_offset).sqrt();
+
+    let mut gen = IdGenerator::new(0);
+    let mut solid = Solid::new(gen.next());
+
+    // 球の外殻
+    let v_south = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, -radius), None);
+    let v_north = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, radius), None);
+
+    let e_seam = solid.add_edge(
+        gen.next(),
+        [v_south, v_north],
+        Curve::Circle {
+            center,
+            normal: -Vec3::y(),
+            radius,
+        },
+        [PI, 2.0 * PI],
+        None,
+    );
+
+    let he_up = solid.add_half_edge(gen.next(), v_south, e_seam, true);
+    let he_down = solid.add_half_edge(gen.next(), v_north, e_seam, false);
+    let outer_loop = solid.add_loop(gen.next(), vec![he_up, he_down]);
+
+    // circ_normal = +Z、signed_offset = 3.0、circ_center = (0, 0, 3.0)
+    let circ_normal = Vec3::new(0.0, 0.0, 1.0);
+    let circ_center = center + signed_offset * circ_normal;
+    let circ_radius = f64::NAN; // NaN を設定
+
+    // inner_loop を 1 edge full-sweep に構築 (周期エッジ)
+    let loop_vertex = solid.add_vertex(
+        gen.next(),
+        circ_center + expected_circ_radius * Vec3::y(),
+        None,
+    );
+
+    let loop_edge = solid.add_edge(
+        gen.next(),
+        [loop_vertex, loop_vertex],
+        Curve::Circle {
+            center: circ_center,
+            normal: circ_normal,
+            radius: circ_radius,
+        },
+        [0.0, 2.0 * PI],
+        None,
+    );
+    let loop_he = solid.add_half_edge(gen.next(), loop_vertex, loop_edge, true);
+    let inner_loop = solid.add_loop(gen.next(), vec![loop_he]);
+
+    let face = solid.add_face(
+        gen.next(),
+        Surface::Sphere { center, radius },
+        outer_loop,
+        vec![inner_loop],
+        true,
+        None,
+    );
+
+    solid.add_shell(gen.next(), vec![face], true);
+
+    let mut mesh = TriangleMesh::new();
+    let opts = mycad_kernel::tessellation::TessellationOptions {
+        angular_segments: 16,
+        ..Default::default()
+    };
+
+    let result = mycad_kernel::tessellation::tessellate_sphere_face_trimmed(
+        &solid,
+        &solid.faces[face],
+        face,
+        &opts,
+        &mut mesh,
+        "",
+    );
+
+    assert!(
+        matches!(result, Err(TessellationError::InvalidTrimCircle { .. })),
+        "NaN circ_radius should return InvalidTrimCircle: {:?}",
+        result
+    );
+}
+
+/// F02: circ_center に NaN 成分が含まれる場合 InvalidTrimCircle を返す。
+#[test]
+fn t_degen_nan_circ_center_rejected() {
+    use mycad_kernel::brep::topology::Solid;
+
+    let radius = 5.0_f64;
+    let center = Point::origin();
+    let signed_offset = 3.0_f64;
+    let expected_circ_radius = (radius * radius - signed_offset * signed_offset).sqrt();
+
+    let mut gen = IdGenerator::new(0);
+    let mut solid = Solid::new(gen.next());
+
+    // 球の外殻
+    let v_south = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, -radius), None);
+    let v_north = solid.add_vertex(gen.next(), center + Vec3::new(0.0, 0.0, radius), None);
+
+    let e_seam = solid.add_edge(
+        gen.next(),
+        [v_south, v_north],
+        Curve::Circle {
+            center,
+            normal: -Vec3::y(),
+            radius,
+        },
+        [PI, 2.0 * PI],
+        None,
+    );
+
+    let he_up = solid.add_half_edge(gen.next(), v_south, e_seam, true);
+    let he_down = solid.add_half_edge(gen.next(), v_north, e_seam, false);
+    let outer_loop = solid.add_loop(gen.next(), vec![he_up, he_down]);
+
+    // circ_normal = +Z、signed_offset = 3.0、circ_center に NaN 成分を含める
+    let circ_normal = Vec3::new(0.0, 0.0, 1.0);
+    let circ_center = Point::new(f64::NAN, 0.0, 3.0); // x 成分が NaN
+    let circ_radius = expected_circ_radius;
+
+    // inner_loop を 1 edge full-sweep に構築 (周期エッジ)
+    // NaN center の場合でも curve 定義自体は可能なので、ここでは構築のみ行う
+    let loop_vertex =
+        solid.add_vertex(gen.next(), Point::new(0.0, expected_circ_radius, 3.0), None);
+
+    let loop_edge = solid.add_edge(
+        gen.next(),
+        [loop_vertex, loop_vertex],
+        Curve::Circle {
+            center: circ_center,
+            normal: circ_normal,
+            radius: circ_radius,
+        },
+        [0.0, 2.0 * PI],
+        None,
+    );
+    let loop_he = solid.add_half_edge(gen.next(), loop_vertex, loop_edge, true);
+    let inner_loop = solid.add_loop(gen.next(), vec![loop_he]);
+
+    let face = solid.add_face(
+        gen.next(),
+        Surface::Sphere { center, radius },
+        outer_loop,
+        vec![inner_loop],
+        true,
+        None,
+    );
+
+    solid.add_shell(gen.next(), vec![face], true);
+
+    let mut mesh = TriangleMesh::new();
+    let opts = mycad_kernel::tessellation::TessellationOptions {
+        angular_segments: 16,
+        ..Default::default()
+    };
+
+    let result = mycad_kernel::tessellation::tessellate_sphere_face_trimmed(
+        &solid,
+        &solid.faces[face],
+        face,
+        &opts,
+        &mut mesh,
+        "",
+    );
+
+    assert!(
+        matches!(result, Err(TessellationError::InvalidTrimCircle { .. })),
+        "NaN circ_center should return InvalidTrimCircle: {:?}",
+        result
     );
 }

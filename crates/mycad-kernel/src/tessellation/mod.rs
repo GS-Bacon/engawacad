@@ -1000,6 +1000,20 @@ pub fn tessellate_sphere_face_trimmed(
 
     // 球ローカル軸 = circ_normal 方向。球は回転対称なので circ_normal を
     // 「極軸」として扱い、v_lat = この軸方向の緯度として再解釈する。
+    // F02: circ_radius と circ_center の非有限チェック
+    if !circ_radius.is_finite() {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset: f64::NAN,
+            sphere_radius: radius,
+        });
+    }
+    if !circ_center.x.is_finite() || !circ_center.y.is_finite() || !circ_center.z.is_finite() {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset: f64::NAN,
+            sphere_radius: radius,
+        });
+    }
+
     // F01: normalize 前に circ_normal.norm() をチェックし、極小ベクトルも検出する
     let circ_normal_norm = circ_normal.norm();
     if !circ_normal_norm.is_finite() || circ_normal_norm <= LENGTH_TOLERANCE {
@@ -1014,9 +1028,47 @@ pub fn tessellate_sphere_face_trimmed(
     // |signed_offset| = sph_radius * sin(v_lat)
     let signed_offset = (circ_center - center).dot(&axis);
 
+    // F02: signed_offset の非有限チェック
+    if !signed_offset.is_finite() {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset,
+            sphere_radius: radius,
+        });
+    }
+
     // 球外円は退化吸収せず InvalidTrimCircle としてエラー化する。
     // 接円 (|signed_offset| ≈ sph_radius) は許容、それを超える場合は逸脱。
     if signed_offset.abs() > radius + LENGTH_TOLERANCE {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset,
+            sphere_radius: radius,
+        });
+    }
+
+    // circ_center の axis 直交ずれを拒否: |perp| が許容外なら円は B-rep edge と別の
+    // 緯線として球面上に再合成され、隣接面との共有境界が破綻する。
+    let perp = (circ_center - center) - signed_offset * axis;
+    if perp.norm() > LENGTH_TOLERANCE {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset,
+            sphere_radius: radius,
+        });
+    }
+
+    // circ_radius が期待半径 sqrt(R^2 - signed_offset^2) と一致することを確認:
+    // 不一致だと隣接面側の境界半径と接続できない。
+    let expected_radius_sq = radius * radius - signed_offset * signed_offset;
+
+    // F02: expected_radius_sq の非有限チェック
+    if !expected_radius_sq.is_finite() {
+        return Err(TessellationError::InvalidTrimCircle {
+            signed_offset,
+            sphere_radius: radius,
+        });
+    }
+
+    let expected_radius = expected_radius_sq.max(0.0).sqrt();
+    if (*circ_radius - expected_radius).abs() > LENGTH_TOLERANCE {
         return Err(TessellationError::InvalidTrimCircle {
             signed_offset,
             sphere_radius: radius,
