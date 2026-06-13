@@ -1,0 +1,17 @@
+[package]
+name = "engawa-build"
+description = "Feature dispatcher: converts .mycad Feature history into kernel geometry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+engawa-format = { workspace = true }
+engawa-kernel = { workspace = true }
+
+[dev-dependencies]
+engawa-format = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tempfile = { workspace = true }

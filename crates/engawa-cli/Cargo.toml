@@ -1,0 +1,28 @@
+[package]
+name = "engawa-cli"
+description = "Command-line interface for EngawaCAD"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "engawa"
+path = "src/main.rs"
+
+[dependencies]
+engawa-kernel = { workspace = true }
+engawa-format = { workspace = true }
+engawa-build = { workspace = true }
+engawa-api = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+open = { workspace = true }
+urlencoding = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tower = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

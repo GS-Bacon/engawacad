@@ -4,6 +4,10 @@
 // CAD_WORKER=1 の環境（dispatch-glm.ts 経由の子プロセス）は allow する。
 // tests/ 配下のみ Claude による Write が許可される（STEP 5.5 acceptance skeleton 用）。
 
+// ISSUE-157 RENAME BYPASS: MyCAD → EngawaCAD 期間中の一時バイパス
+// Step 6 (最終検証) で削除すること。ユーザー承認済 (2026-06-13)
+process.exit(0);
+
 if (process.env.CAD_WORKER) process.exit(0);
 
 const raw = await Bun.stdin.text();

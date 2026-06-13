@@ -298,6 +298,97 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 
 [[package]]
+name = "engawa-api"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "engawa-build",
+ "engawa-format",
+ "engawa-kernel",
+ "mime_guess",
+ "rand",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tower",
+ "ts-rs",
+ "urlencoding",
+]
+
+[[package]]
+name = "engawa-build"
+version = "0.1.0"
+dependencies = [
+ "engawa-format",
+ "engawa-kernel",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+]
+
+[[package]]
+name = "engawa-cli"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "engawa-api",
+ "engawa-build",
+ "engawa-format",
+ "engawa-kernel",
+ "open",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "urlencoding",
+]
+
+[[package]]
+name = "engawa-format"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "indexmap",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "ts-rs",
+]
+
+[[package]]
+name = "engawa-kernel"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "earcutr",
+ "engawa-format",
+ "indexmap",
+ "nalgebra",
+ "proptest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "ts-rs",
+]
+
+[[package]]
+name = "engawa-viewer"
+version = "0.1.0"
+dependencies = [
+ "engawa-format",
+ "engawa-kernel",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -689,97 +780,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys",
-]
-
-[[package]]
-name = "mycad-api"
-version = "0.1.0"
-dependencies = [
- "axum",
- "mime_guess",
- "mycad-build",
- "mycad-format",
- "mycad-kernel",
- "rand",
- "rust-embed",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror",
- "tokio",
- "tower",
- "ts-rs",
- "urlencoding",
-]
-
-[[package]]
-name = "mycad-build"
-version = "0.1.0"
-dependencies = [
- "mycad-format",
- "mycad-kernel",
- "serde_json",
- "serde_yaml",
- "tempfile",
-]
-
-[[package]]
-name = "mycad-cli"
-version = "0.1.0"
-dependencies = [
- "axum",
- "clap",
- "mycad-api",
- "mycad-build",
- "mycad-format",
- "mycad-kernel",
- "open",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "urlencoding",
-]
-
-[[package]]
-name = "mycad-format"
-version = "0.1.0"
-dependencies = [
- "approx",
- "indexmap",
- "schemars",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
- "ts-rs",
-]
-
-[[package]]
-name = "mycad-kernel"
-version = "0.1.0"
-dependencies = [
- "approx",
- "earcutr",
- "indexmap",
- "mycad-format",
- "nalgebra",
- "proptest",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
- "ts-rs",
-]
-
-[[package]]
-name = "mycad-viewer"
-version = "0.1.0"
-dependencies = [
- "mycad-format",
- "mycad-kernel",
 ]
 
 [[package]]
@@ -1815,9 +1815,9 @@ dependencies = [
 name = "xtask"
 version = "0.0.0"
 dependencies = [
- "mycad-api",
- "mycad-format",
- "mycad-kernel",
+ "engawa-api",
+ "engawa-format",
+ "engawa-kernel",
  "serde",
  "serde_json",
  "tempfile",

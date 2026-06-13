@@ -1,0 +1,32 @@
+[package]
+name = "engawa-api"
+description = "HTTP API server for EngawaCAD"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+engawa-format = { workspace = true }
+engawa-kernel = { workspace = true }
+engawa-build = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+engawa-kernel = { workspace = true }
+tempfile = { workspace = true }
+urlencoding = { workspace = true }
+rand = { workspace = true }
+serial_test = { workspace = true }
+
+[[bin]]
+name = "engawa-api"
+path = "src/main.rs"

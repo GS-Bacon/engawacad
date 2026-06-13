@@ -1,0 +1,19 @@
+[package]
+name = "engawa-format"
+description = "YAML schema definition and parser for EngawaCAD feature files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+schemars = { workspace = true }
+thiserror = { workspace = true }
+indexmap = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+serde_json = { workspace = true }

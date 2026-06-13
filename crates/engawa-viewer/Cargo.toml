@@ -1,0 +1,11 @@
+[package]
+name = "engawa-viewer"
+description = "Minimal 3D viewer for EngawaCAD"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+engawa-kernel = { path = "../engawa-kernel" }
+engawa-format = { path = "../engawa-format" }

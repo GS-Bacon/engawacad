@@ -78,11 +78,11 @@ fn gen_ts() -> ExitCode {
 }
 
 pub(crate) fn gen_ts_to(out_dir: &std::path::Path) -> ExitCode {
-    use mycad_api::transport::BodyMesh;
-    use mycad_api::ErrorResponse;
-    use mycad_format::feature::EntityRef;
-    use mycad_format::Document;
-    use mycad_kernel::tessellation::TriangleMesh;
+    use engawa_api::transport::BodyMesh;
+    use engawa_api::ErrorResponse;
+    use engawa_format::feature::EntityRef;
+    use engawa_format::Document;
+    use engawa_kernel::tessellation::TriangleMesh;
     use ts_rs::TS;
 
     if out_dir.exists() {
@@ -945,11 +945,11 @@ mod tests {
     fn export_to_temp_dir() -> PathBuf {
         let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
 
-        use mycad_api::transport::BodyMesh;
-        use mycad_api::ErrorResponse;
-        use mycad_format::feature::EntityRef;
-        use mycad_format::Document;
-        use mycad_kernel::tessellation::TriangleMesh;
+        use engawa_api::transport::BodyMesh;
+        use engawa_api::ErrorResponse;
+        use engawa_format::feature::EntityRef;
+        use engawa_format::Document;
+        use engawa_kernel::tessellation::TriangleMesh;
         use ts_rs::TS;
 
         let dir = tempfile::tempdir().unwrap().keep();
