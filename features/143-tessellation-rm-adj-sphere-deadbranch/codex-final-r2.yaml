@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/cyl_lateral_deadbranch_acceptance.rs"
+    line_hint: 145
+    finding: "T03/T04 は `count_naked_edges(...) == 0` だけを見ており、空メッシュでも通ってしまいます。既存 suite でも `count_naked_edges(empty) == 0` を明示しているため、今回の回帰テストは tessellation が 0 triangle を返す壊れ方を検出できません。"
+    suggestion: "T03/T04 の前に `mesh.triangle_count() > 0` を必ず検証し、必要なら既存の welded watertight helper と同様に非空・有限値も併せて確認する。"
+  - id: F02
+    severity: medium
+    file: "crates/mycad-kernel/tests/cyl_lateral_deadbranch_acceptance.rs"
+    line_hint: 176
+    finding: "T_DEG は `TessellationOptions::new(1, 2)` を使っているため、`angular_segments` は呼び出し前に 3 へ clamp 済みです。これでは今回守りたい `tessellate_face_uv_grid` 側の `opts.angular_segments.max(3)` を実際には検証していません。さらに `positions.len() >= 12` は `n_u=2` でも満たせるので、`n_u>=3` の契約を担保できません。"
+    suggestion: "退化入力は `TessellationOptions { angular_segments: 1, axial_segments: 2 }` で直接渡し、primitive cylinder の頂点数/三角形数を `n_u=3` の期待値で厳密に検証する。"
+
+verdict: fail

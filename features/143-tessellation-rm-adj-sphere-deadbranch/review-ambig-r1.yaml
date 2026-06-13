@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "完了条件"
+    finding: "diff 30 行以内の注釈で「プロダクションコード = tessellation/mod.rs の単体差分を指す解釈」と書かれているが、これは実装者の解釈に委ねられている（git diff のフォーマット、新規ファイルの追加行数除外扱いなど）"
+    suggestion: "「cargo diff --color=never crates/mycad-kernel/src/tessellation/mod.rs | wc -l で計測した行数が 30 以内」等、計測手順を具体化すること"
+
+verdict: pass

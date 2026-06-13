@@ -1,0 +1,195 @@
+# Issue #143 — `tessellation/mod.rs` の `adj_is_sphere` 死に分岐削除
+
+## Context
+
+`crates/mycad-kernel/src/tessellation/mod.rs:657-690` の cylinder lateral `n_u` 決定ロジックに、`adj_is_sphere` を計算した上で if/else 両腕とも `arcs_per_rev` を返す**死に分岐**が残存している。これは #131 (cylinder の n_u arcs_per_rev 化) の試行錯誤跡。
+
+ADR-009 で「曲面 Boolean 交線円は周期エッジで保持し、tessellation 側ヒューリスティクスを撤去する」案 A が決定済み。Phase 2 (本格的なエッジ駆動化) は別 Issue で実施するが、その間の「人間 / GLM が `adj_is_sphere` を意味のあるロジックと誤認する」読解コストを先に消す Phase 3 即時実施分。
+
+## In-Scope / Out-of-Scope
+<!-- ADR-006 §plan.md 必須セクション。GLM SCOPE ペルソナが存在を検証する。 -->
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `tessellation/mod.rs:657-690` 死に分岐 (`adj_is_sphere` 計算 + if/else 両腕同値) の削除 | 共有境界一致の構造的保証 (ADR-009 Phase 2 本体) |
+| `n_u` 計算を `if arcs_per_rev > 1 { arcs_per_rev } else { opts.angular_segments.max(3) }` に単純化 | `n_u` ヒューリスティクス全体の撤去 (ADR-009 Phase 2) |
+| 周辺コメント (629-643, 658-673) を 1〜2 行に圧縮、ADR-009 Phase 2 言及を追加 | `ANGULAR_SEGMENTS_DEFAULT` の意味変更 |
+| `adjacent_face_idx` 関数 (745行) に `#[allow(dead_code)]` 付与 + 用途コメント | `adjacent_face_idx` 関数本体の削除 (ADR-009 Phase 2 で再利用 or 撤去) |
+| acceptance integration test (`cyl_lateral_deadbranch_acceptance.rs`) 追加 (回帰防止、/3ai STEP 5.5 規約) | `partition.rs` 側の変更 |
+| | mixed-cap cylinder (top=Sphere / bottom=Plane) サポート (Boolean サブシステム未対応のため到達不可) |
+
+## Non-Goals
+<!-- 該当なし禁止。dispatch-codex-auto.ts の guard が参照する。 -->
+
+- 共有境界一致の構造的保証 (ADR-009 Phase 2 本体の責務)
+- `n_u` ヒューリスティクス全体の撤去 (ADR-009 Phase 2)
+- `partition.rs` 側の変更
+- `ANGULAR_SEGMENTS_DEFAULT` の意味変更
+- `adjacent_face_idx` 関数本体の削除
+- mixed-cap cylinder (top=Sphere / bottom=Plane) サポート
+- inline テスト `test_adjacent_face_idx_sphere_cap` / `test_adjacent_face_idx_plane_cap` の削除 (これらは `adjacent_face_idx` 関数のキャラクタリゼーションとして温存)
+
+## 実装対象
+
+- **Issue**: #143
+- **影響クレート/ファイル**:
+  - `crates/mycad-kernel/src/tessellation/mod.rs` (死に分岐削除、コメント簡潔化、`#[allow(dead_code)]` 付与)
+  - `crates/mycad-kernel/tests/cyl_lateral_deadbranch_acceptance.rs` (新規、回帰防止 acceptance テスト)
+- **変更する関数のシグネチャ**: 変更なし (内部ロジックの単純化のみ)
+
+### Before / After スニペット
+
+#### (1) 死に分岐部の削除 + n_u 単純化 (`tessellation/mod.rs:629-690`)
+
+**Before** (629-690、抜粋):
+```rust
+// Derive n_u from the circle-arc topology plus the adjacent cap face type.
+//
+// After a boolean operation the cylinder lateral loop has multiple Circle arcs per
+// revolution (arcs_per_rev > 1). The adjacent cap face determines the required n_u:
+//   • Adjacent cap is a Plane  → the cap boundary uses exactly arcs_per_rev sample
+//     points, so set n_u = arcs_per_rev.
+//   • Adjacent cap is a Sphere → the sphere face is tessellated with angular_segments
+//     longitude strips, so set n_u = angular_segments.
+// Primitive cylinders (arcs_per_rev = 1) and unknown adjacency fall back to
+// angular_segments (the pre-boolean default).
+//
+// NOTE: For cylinders with mixed cap types (...), the `any(Sphere)` check picks Sphere.
+// This configuration is currently unreachable by the Boolean subsystem ...
+let circle_arc_count: usize = outer_loop.half_edges.iter()
+    .filter(|&&he_idx| {
+        let he = &solid.half_edges[he_idx];
+        matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+    })
+    .count();
+let arcs_per_rev = if full_rev_count > 0 {
+    circle_arc_count / full_rev_count as usize
+} else {
+    0
+};
+let n_u = if arcs_per_rev > 1 {
+    // Walk the twin of each Circle-arc half-edge to identify the adjacent cap face.
+    //
+    // For BOTH sphere-capped and plane-capped cylinder laterals, the correct n_u is
+    // arcs_per_rev:
+    //   • Plane cap: ...
+    //   • Sphere cap: ...
+    //     Using opts.angular_segments here causes a seam mismatch and naked edges
+    //     (verified: test t03_cyl_sph_intersect_naked_edge fails when angular_segments
+    //     is used instead of arcs_per_rev).
+    //
+    // adj_is_sphere is computed to enable future differentiation when the sphere
+    // tessellation is updated to produce angular_segments-independent boundaries.
+    // NOTE: mixed-cap cylinders ... use Sphere-path via `any(Sphere)`; this configuration
+    // is currently unreachable (Non-Goals).
+    let adj_is_sphere = outer_loop.half_edges.iter().any(|&he_idx| {
+        let he = &solid.half_edges[he_idx];
+        matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+            && adjacent_face_idx(solid, he_idx)
+                .map(|f| matches!(solid.faces[f].surface, Surface::Sphere { .. }))
+                .unwrap_or(false)
+    });
+    if adj_is_sphere {
+        // Sphere cap: boundary arcs == arcs_per_rev (NOT angular_segments).
+        arcs_per_rev
+    } else {
+        // Plane/other cap: boundary vertices == arcs_per_rev.
+        arcs_per_rev
+    }
+} else {
+    opts.angular_segments.max(3)
+};
+```
+
+**After**:
+```rust
+// Derive n_u from the circle-arc topology.
+// After a Boolean op the lateral loop has arcs_per_rev > 1 Circle arcs; matching that
+// count produces seam-aligned tessellation regardless of the adjacent cap face type
+// (Plane / Sphere)。Primitive cylinders (arcs_per_rev = 1) fall back to angular_segments.
+//
+// ADR-009 Phase 2 (boolean intersection curve storage) でこのヒューリスティクス全体が
+// エッジ駆動境界共有に置換予定。それまでの暫定実装。
+let circle_arc_count: usize = outer_loop.half_edges.iter()
+    .filter(|&&he_idx| {
+        let he = &solid.half_edges[he_idx];
+        matches!(solid.edges[he.edge].curve, Curve::Circle { .. })
+    })
+    .count();
+let arcs_per_rev = if full_rev_count > 0 {
+    circle_arc_count / full_rev_count as usize
+} else {
+    0
+};
+let n_u = if arcs_per_rev > 1 {
+    arcs_per_rev
+} else {
+    opts.angular_segments.max(3)
+};
+```
+
+#### (2) `adjacent_face_idx` 関数への `#[allow(dead_code)]` 付与 (`tessellation/mod.rs:745` 起点)
+
+**Before**:
+```rust
+fn adjacent_face_idx(solid: &Solid, he_idx: usize) -> Option<usize> {
+    // ... (関数本体は変更しない)
+}
+```
+
+**After**:
+```rust
+// ADR-009 Phase 2 のエッジ駆動境界共有実装で再利用予定の補助関数。
+// 唯一の本番呼び出し箇所 (cylinder lateral の adj_is_sphere 分岐) は #143 で死に分岐として
+// 削除済みのため、現在は inline テスト 2 本 (test_adjacent_face_idx_sphere_cap / _plane_cap)
+// からのみ参照される。
+#[allow(dead_code)]
+fn adjacent_face_idx(solid: &Solid, he_idx: usize) -> Option<usize> {
+    // ... (関数本体は変更しない)
+}
+```
+
+## 設計方針
+
+- **決定性要件**: 本変更は純粋なロジック単純化 (両腕同値の if/else 削除) + コメント整理 + `#[allow(dead_code)]` 付与のみ。生成メッシュは変更前後で **bit-identical** であるべき。
+- **B-rep トポロジー妥当性**: 本変更はテッセレーション層のみ、B-rep 構造には触れない。Euler-Poincaré V-E+F=2 は不変。
+- **退化幾何の扱い**: 既存ロジック (`arcs_per_rev = 1` 時の `opts.angular_segments.max(3)` fallback、`full_rev_count = 0` 時の `arcs_per_rev = 0` → angular_segments) を維持。
+- **derive 規約**: 既存型に変更なし。
+- **エラーハンドリング**: 変更なし。
+- **workspace.dependencies 規約**: 変更なし。
+- **clippy 警告**: `adjacent_face_idx` が唯一の本番呼び出しを失うため `#[allow(dead_code)]` を付与しないと `cargo clippy --workspace -- -D warnings` で落ちる。inline テスト 2 本からのみ参照される状態を許容する明示的アサーション。
+
+## テスト計画 (ID 付き)
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | cyl∩sphere intersect の tessellation を 2 回実行し、positions/indices/normals が完全一致 | `assert_eq!` 全 pass |
+| T02 | 正常系・回帰 | primitive cylinder (Boolean 無し、`arcs_per_rev = 1`) の tessellation が `opts.angular_segments` の頂点リング数で生成される | `n_u == angular_segments` 経路通過、頂点数が `(angular_segments + 1) * (axial_segments + 1)` |
+| T03 | 正常系・回帰 (sphere cap) | cyl∩sphere intersect で cyl lateral の `n_u == arcs_per_rev` が成立し、共有境界に naked edge が無い | watertight 検証 (naked edge 0) |
+| T04 | 正常系・回帰 (plane cap) | cyl∩cuboid intersect で cyl lateral の `n_u == arcs_per_rev` が成立し、共有境界に naked edge が無い | watertight 検証 (naked edge 0) |
+| T_DEG_boundary_primitive_cyl | 退化/境界 | `arcs_per_rev = 1` (primitive、Boolean 無し) で fallback 経路 (`opts.angular_segments.max(3)`) が動く境界ケース | `n_u >= 3` が保証される |
+
+**既存テストの回帰確認** (本 Issue で変更しないが要動作確認):
+- `tessellation/mod.rs::tests::test_adjacent_face_idx_sphere_cap` / `test_adjacent_face_idx_plane_cap` — `#[allow(dead_code)]` 付与後も pass し続けること
+- `bool_naked_edge_acceptance::t03_cyl_sph_intersect_naked_edge` — 死に分岐削除前後で naked edge 0
+- `trim_sphere_circ_normal_acceptance::t04_shared_boundary_with_cyl_lateral` — 共有境界一致
+- `boundary_align_acceptance` — 既存 boundary alignment テスト
+- `cross_face_nu_acceptance` (T01〜T05_degen) — `adjacent_face_idx` 経由のクロス面 n_u 検証
+
+## 幾何的不変条件チェックリスト
+
+<!-- 本 Issue は tessellation のクリーンアップであり、partition / assemble は触らない。全 N/A -->
+
+- [x] partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか — **N/A** (partition.rs 変更なし)
+- [x] 各プリミティブの face ごとの outer_loop 2D 向き (CW/CCW) が文書化されているか — **N/A** (primitive 変更なし)
+- [x] flip_normals / same_sense の意味論が明確か — **N/A** (本変更は normal 計算に触れない)
+- [x] pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか — **N/A** (pslg 変更なし)
+
+## 完了条件
+
+- `cargo xtask ci` green
+- 上記既存テスト全 pass (回帰なし)
+- 新規 acceptance テスト T01〜T_DEG 全 pass
+- **diff 30 行以内** (純粋クリーンアップ、Issue 完了条件)
+  - **計測手順**: `git diff --color=never main..HEAD -- crates/mycad-kernel/src/tessellation/mod.rs | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | wc -l` で計測する行数が 30 以内
+  - 注: 新規 acceptance テストファイル (`cyl_lateral_deadbranch_acceptance.rs`) は計測対象外 (新規ファイル追加であり、Issue 完了条件「diff 30 行以内」はプロダクションコード = `tessellation/mod.rs` の単体差分を指す解釈)。acceptance テスト追加自体は /3ai スキル STEP 5.5 規約による追加要件。

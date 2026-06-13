@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "Issue 整合"
+    finding: "Plan の In-Scope に acceptance integration test (cyl_lateral_deadbranch_acceptance.rs) 追加が含まれているが、Issue Context の In-Scope には記載がない"
+    suggestion: " acceptance テスト追加を Issue In-Scope に追記するか、Plan 側を Out-of-Scope に移動すること"
+
+verdict: pass

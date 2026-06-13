@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/mycad-kernel/src/tessellation/mod.rs"
+    line_hint: 647
+    finding: "Issue #143 で合意した acceptance テスト (T01/T02/T03/T04/T_DEG) を追加する差分が含まれておらず、今回の `n_u` 単純化を決定性・退化境界・sphere/plane cap 回帰で検証できていません。`stdin` の TEST SUMMARY でも `coverage_hints.total_added=0`, `determinism=0`, `degenerate=0` のままです。"
+    suggestion: "`crates/mycad-kernel/tests/cyl_lateral_deadbranch_acceptance.rs` を change set に含め、少なくとも cyl∩sphere の決定性、primitive fallback (`arcs_per_rev=1`)、cyl∩sphere / cyl∩cuboid の watertight、`angular_segments=1 -> max(3)` の境界ケースを追加してください。"
+
+verdict: fail
