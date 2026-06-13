@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/shared_boundary_acceptance.rs"
+    line_hint: 189
+    finding: "Circle edge に紐づく half-edge 数が 2 でない場合を `continue` で握りつぶしており、twin 欠落や non-manifold edge が出ても acceptance が通ってしまいます。sphere seam でも canonical 形は half-edge 2 本なので、`len()!=2` は正常な skip 条件ではなく B-rep 不変条件違反です。"
+    suggestion: "`he_indices.len() != 2` は skip せず `assert_eq!(he_indices.len(), 2, ...)` で即失敗させ、edge index を含む診断を出してください。"
+  - id: F02
+    severity: high
+    file: "crates/mycad-kernel/tests/shared_boundary_acceptance.rs"
+    line_hint: 315
+    finding: "`t02_cut_box_sphere_shared_boundary` は `box(10^3)-sphere(r=3, origin)` に対して `count == 0` を期待しており、Cut 側で共有円境界比較を 1 件も実行しません。結果として T02 は vacuous pass になっており、計画上 T02-T04 で担保するはずだった Cut の shared-boundary 回帰を検出できません。"
+    suggestion: "T02 は既存の Cut fixture のうち実際に面間の円境界を持つもの（例: box-cut-cylinder や sphere dimple）に差し替え、`count > 0` のガードを維持してください。void-shell ケースを残すなら boundary/degen テストとして別枠に分けるべきです."
+verdict: fail

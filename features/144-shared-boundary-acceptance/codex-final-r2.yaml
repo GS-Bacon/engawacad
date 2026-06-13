@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/mycad-kernel/tests/shared_boundary_acceptance.rs"
+    line_hint: 205
+    finding: "`assert_shared_boundary` が Circle edge を「検査済み」と数える条件が緩すぎます。`he_to_face` で片側 face を引けない場合を `_ => skip` で握りつぶし、さらに `vertices_on_circle_sorted` が両側とも 0 件でも `sorted_a.len() == sorted_b.len()` を満たして `circle_edges_checked += 1` されます。これだと `face_ids` 逆引きや円上フィルタが壊れて実サンプルを 1 点も比較していないのに、T02/T03/T04 が `count > 0` で green になり得ます。"
+    suggestion: "`Some(&fa), Some(&fb) if fa == fb` だけを seam skip に限定し、face 未解決は `assert!` で即失敗させてください。加えて `sorted_a` / `sorted_b` が両方とも非空であることを `assert!` し、実サンプル比較を完了した edge だけ `circle_edges_checked` に加算してください。"
+
+verdict: fail
