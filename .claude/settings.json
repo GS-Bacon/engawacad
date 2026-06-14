@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/guard-crates.ts"
+            "command": "bun /home/bacon/engawacad/.claude/skills/3ai/scripts/guard-crates.ts"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun /home/bacon/mycad/.claude/skills/3ai/scripts/guard-crates.ts"
+            "command": "bun /home/bacon/engawacad/.claude/skills/3ai/scripts/guard-crates.ts"
           }
         ]
       }
