@@ -8,6 +8,9 @@
 //   state.ts assert-critical-zero <state.json> <verdict.json>
 //   state.ts judge  <state.json> <round> <adopted> <rejected>
 //   state.ts check-full-adoption-warning <state.json>
+//   state.ts inc-failure   <state.json> --issue N   # failure_streak[N] += 1, stdout に新値
+//   state.ts reset-failure <state.json> --issue N   # failure_streak[N] を削除
+//   state.ts get-failure   <state.json> --issue N   # stdout に現在値 (未設定なら 0)
 
 import { readFileSync, writeFileSync } from "fs";
 import type { StateData } from "./types.ts";
@@ -96,6 +99,29 @@ export function checkEarlyStop(path: string): boolean {
   return j.slice(-2).every((x) => x.adopted === 0 && x.rejected > 0);
 }
 
+export function incFailureStreak(path: string, issue: number): number {
+  const data = readState(path);
+  if (!data.failure_streak) data.failure_streak = {};
+  const key = String(issue);
+  const n = (data.failure_streak[key] ?? 0) + 1;
+  data.failure_streak[key] = n;
+  writeState(path, data);
+  return n;
+}
+
+export function resetFailureStreak(path: string, issue: number): void {
+  const data = readState(path);
+  if (data.failure_streak) {
+    delete data.failure_streak[String(issue)];
+    writeState(path, data);
+  }
+}
+
+export function getFailureStreak(path: string, issue: number): number {
+  const data = readState(path);
+  return data.failure_streak?.[String(issue)] ?? 0;
+}
+
 export function assertCriticalZero(statePath: string, verdictPath: string): boolean {
   try {
     const v = JSON.parse(readFileSync(verdictPath, "utf-8"));
@@ -166,6 +192,25 @@ if (import.meta.main) {
     case "check-early-stop":
       process.exit(checkEarlyStop(file) ? 1 : 0);
       break;
+    case "inc-failure":
+    case "reset-failure":
+    case "get-failure": {
+      const issueIdx = rest.indexOf("--issue");
+      const issueArg = issueIdx >= 0 ? parseInt(rest[issueIdx + 1] ?? "") : NaN;
+      if (!issueArg || isNaN(issueArg)) {
+        console.error(`Usage: state.ts ${cmd} <state.json> --issue <N>`);
+        process.exit(1);
+      }
+      if (cmd === "inc-failure") {
+        console.log(incFailureStreak(file, issueArg));
+      } else if (cmd === "reset-failure") {
+        resetFailureStreak(file, issueArg);
+        console.log("0");
+      } else {
+        console.log(getFailureStreak(file, issueArg));
+      }
+      break;
+    }
     default:
       console.error(`unknown cmd: ${cmd}`);
       process.exit(1);

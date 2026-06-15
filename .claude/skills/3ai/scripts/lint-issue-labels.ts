@@ -29,6 +29,37 @@ const FEATURE_LABELS = new Set(["type:feature", "type: feature"]);
 
 const BATCH_PREFIX = "batch:";
 
+// 既知ラベルセット — 誤字検出 (未知ラベルは error 扱い)
+// type/batch 軸ラベル + 3ailoop 新ラベル + 既存慣習ラベル + GitHub default を含む
+const KNOWN_LABELS = new Set([
+  // type 軸
+  "type:feature", "type: feature",
+  "type:refactor", "type: refactor",
+  "type:foundation", "type: foundation",
+  "bug",
+  "docs",
+  // 3ailoop 新ラベル (gate:* と parent-blocked-by-split:* は KNOWN_PREFIXES で扱う)
+  "needs-triage", "needs-phase", "needs-human", "needs-intent-review",
+  "blocked-by-split",
+  // 既存慣習
+  "needs-review",
+  "enhancement",
+  "cli", "format", "kernel", "viewer", "documentation",
+  // GitHub default
+  "duplicate", "good first issue", "help wanted", "invalid", "question", "wontfix",
+]);
+
+const KNOWN_PREFIXES = [
+  "batch:",
+  "gate:",
+  "parent-blocked-by-split:",
+];
+
+function isKnownLabel(label: string): boolean {
+  if (KNOWN_LABELS.has(label)) return true;
+  return KNOWN_PREFIXES.some(p => label.startsWith(p));
+}
+
 interface LintResult {
   ok: boolean;
   errors: string[];
@@ -70,6 +101,15 @@ export function lintLabels(labels: string[]): LintResult {
     warnings.push(
       `enhancement は ADR-002 type 軸の正規ラベルではありません。` +
       `機能拡張系は type: foundation を使うことを推奨します`,
+    );
+  }
+
+  // Rule 4: 未知ラベル検出 (誤字検出、または新ラベル登録漏れ)
+  const unknown = [...set].filter(l => !isKnownLabel(l));
+  if (unknown.length > 0) {
+    errors.push(
+      `未知ラベルが含まれています: [${unknown.join(", ")}]。` +
+      `誤字の可能性、または新規ラベルなら lint-issue-labels.ts の KNOWN_LABELS / KNOWN_PREFIXES への追加が必要です`,
     );
   }
 
