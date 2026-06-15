@@ -54,13 +54,15 @@ const KNOWN_LABELS = new Set([
   "duplicate", "good first issue", "help wanted", "invalid", "question", "wontfix",
 ]);
 
-const KNOWN_PREFIXES = [
-  "parent-blocked-by-split:", // Issue 番号 free-form
+// regex 限定: parent-blocked-by-split:<数値> のみ既知扱い
+// (Issue #169: prefix 一致だけだと "parent-blocked-by-split:" や ":abc" が通る typo 検出漏れ)
+const KNOWN_REGEX_PATTERNS = [
+  /^parent-blocked-by-split:\d+$/,
 ];
 
 function isKnownLabel(label: string): boolean {
   if (KNOWN_LABELS.has(label)) return true;
-  return KNOWN_PREFIXES.some(p => label.startsWith(p));
+  return KNOWN_REGEX_PATTERNS.some(r => r.test(label));
 }
 
 interface LintResult {

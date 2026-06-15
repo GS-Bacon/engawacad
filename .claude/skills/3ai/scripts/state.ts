@@ -8,34 +8,80 @@
 //   state.ts assert-critical-zero <state.json> <verdict.json>
 //   state.ts judge  <state.json> <round> <adopted> <rejected>
 //   state.ts check-full-adoption-warning <state.json>
-//   state.ts inc-failure   <state.json> --issue N   # failure_streak[N] += 1, stdout に新値
-//   state.ts reset-failure <state.json> --issue N   # failure_streak[N] を削除
-//   state.ts get-failure   <state.json> --issue N   # stdout に現在値 (未設定なら 0)
+//
+// 3ailoop 用 failure_streak API (Issue #167-169):
+//   state.ts inc-failure   --issue N         # features/.loop/failure-streak/<N>.json を +1、stdout に新値
+//   state.ts reset-failure --issue N         # 該当ファイルを削除
+//   state.ts get-failure   --issue N         # stdout に現在値 (未設定なら 0、破損なら exit 1)
+//
+// failure_streak は state.json から分離して issue ごとの個別ファイル管理。state.json への
+// 並行書込競合を回避し、破損時は fail-closed (throw + exit 1) で全カウンタ消失を防ぐ。
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import type { StateData } from "./types.ts";
 
-// failure_streak は state.json から分離して専用ファイル管理
-// (Issue #168: state.json の concurrent write 危険性を回避するため decouple)
-const FAILURE_STREAK_PATH = "features/.loop/failure-streak.json";
+// === failure_streak (個別ファイル管理) ===
 
-function readFailureStreakFile(): Record<string, number> {
-  if (!existsSync(FAILURE_STREAK_PATH)) return {};
+const FAILURE_STREAK_DIR = "features/.loop/failure-streak";
+
+interface FailureCountFile {
+  count: number;
+}
+
+function failureFilePath(issue: number): string {
+  return join(FAILURE_STREAK_DIR, `${issue}.json`);
+}
+
+/** issue 別ファイル読み出し。破損時は throw (fail-closed)、未存在は 0 を返す。 */
+function readFailureFile(issue: number): number {
+  const path = failureFilePath(issue);
+  if (!existsSync(path)) return 0;
+  let text: string;
   try {
-    const obj = JSON.parse(readFileSync(FAILURE_STREAK_PATH, "utf-8"));
-    return typeof obj === "object" && obj !== null ? (obj as Record<string, number>) : {};
-  } catch {
-    return {};
+    text = readFileSync(path, "utf-8");
+  } catch (e) {
+    throw new Error(`failed to read ${path}: ${(e as Error).message}`);
+  }
+  let obj: Partial<FailureCountFile>;
+  try {
+    obj = JSON.parse(text) as Partial<FailureCountFile>;
+  } catch (e) {
+    throw new Error(`corrupt failure file ${path}: parse error ${(e as Error).message}`);
+  }
+  if (typeof obj.count !== "number" || !Number.isFinite(obj.count) || obj.count < 0) {
+    throw new Error(`corrupt failure file ${path}: invalid count field`);
+  }
+  return obj.count;
+}
+
+function atomicWriteFailureFile(issue: number, count: number): void {
+  const path = failureFilePath(issue);
+  mkdirSync(dirname(path), { recursive: true });
+  const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
+  writeFileSync(tmpPath, JSON.stringify({ count }, null, 2), "utf-8");
+  renameSync(tmpPath, path);
+}
+
+export function incFailureStreak(issue: number): number {
+  const cur = readFailureFile(issue);
+  const n = cur + 1;
+  atomicWriteFailureFile(issue, n);
+  return n;
+}
+
+export function resetFailureStreak(issue: number): void {
+  const path = failureFilePath(issue);
+  if (existsSync(path)) {
+    rmSync(path);
   }
 }
 
-function atomicWriteFailureStreak(data: Record<string, number>): void {
-  mkdirSync(dirname(FAILURE_STREAK_PATH), { recursive: true });
-  const tmpPath = `${FAILURE_STREAK_PATH}.tmp.${process.pid}.${Date.now()}`;
-  writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
-  renameSync(tmpPath, FAILURE_STREAK_PATH);
+export function getFailureStreak(issue: number): number {
+  return readFailureFile(issue);
 }
+
+// === state.json (既存 /3ai 用) ===
 
 function readState(path: string): StateData {
   return JSON.parse(readFileSync(path, "utf-8")) as StateData;
@@ -121,32 +167,7 @@ export function checkEarlyStop(path: string): boolean {
   return j.slice(-2).every((x) => x.adopted === 0 && x.rejected > 0);
 }
 
-// failure_streak は features/.loop/failure-streak.json に分離保存
-// (state.json には書かない。CLI の path 引数は backward compat のため受けるが無視)
-export function incFailureStreak(_path: string, issue: number): number {
-  const data = readFailureStreakFile();
-  const key = String(issue);
-  const n = (data[key] ?? 0) + 1;
-  data[key] = n;
-  atomicWriteFailureStreak(data);
-  return n;
-}
-
-export function resetFailureStreak(_path: string, issue: number): void {
-  const data = readFailureStreakFile();
-  const key = String(issue);
-  if (key in data) {
-    delete data[key];
-    atomicWriteFailureStreak(data);
-  }
-}
-
-export function getFailureStreak(_path: string, issue: number): number {
-  const data = readFailureStreakFile();
-  return data[String(issue)] ?? 0;
-}
-
-export function assertCriticalZero(statePath: string, verdictPath: string): boolean {
+export function assertCriticalZero(_statePath: string, verdictPath: string): boolean {
   try {
     const v = JSON.parse(readFileSync(verdictPath, "utf-8"));
     return (v?.severity_counts?.critical ?? 0) === 0;
@@ -155,10 +176,56 @@ export function assertCriticalZero(statePath: string, verdictPath: string): bool
   }
 }
 
+// === CLI ===
+
 if (import.meta.main) {
-  const [, , cmd, file, ...rest] = process.argv;
-  if (!cmd || !file) {
-    console.error("Usage: state.ts <command> <state.json> [args...]");
+  const [, , cmd, ...args] = process.argv;
+  if (!cmd) {
+    console.error("Usage: state.ts <command> [args...]");
+    process.exit(1);
+  }
+
+  // failure 系: positional state.json を取らず --issue だけ受ける (Issue #169 で CLI 整理)
+  if (cmd === "inc-failure" || cmd === "reset-failure" || cmd === "get-failure") {
+    const issueIdx = args.indexOf("--issue");
+    const issueArg = issueIdx >= 0 ? parseInt(args[issueIdx + 1] ?? "") : NaN;
+    if (!issueArg || isNaN(issueArg)) {
+      console.error(`Usage: state.ts ${cmd} --issue <N>`);
+      process.exit(2);
+    }
+    // positional 余剰引数の検出 (旧形式 `state.ts inc-failure <state.json> --issue N` を拒否)
+    const positional = args.filter((a, i) => {
+      if (a === "--issue") return false;
+      if (i > 0 && args[i - 1] === "--issue") return false;
+      return !a.startsWith("--");
+    });
+    if (positional.length > 0) {
+      console.error(
+        `Usage: state.ts ${cmd} --issue <N>  (positional argument '${positional[0]}' not allowed; failure_streak uses dedicated per-issue files)`,
+      );
+      process.exit(2);
+    }
+    try {
+      if (cmd === "inc-failure") {
+        console.log(incFailureStreak(issueArg));
+      } else if (cmd === "reset-failure") {
+        resetFailureStreak(issueArg);
+        console.log("0");
+      } else {
+        console.log(getFailureStreak(issueArg));
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(`ERROR: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  }
+
+  // 既存系: positional <state.json> を要求
+  const file = args[0];
+  const rest = args.slice(1);
+  if (!file) {
+    console.error(`Usage: state.ts ${cmd} <state.json> [args...]`);
     process.exit(1);
   }
 
@@ -177,7 +244,6 @@ if (import.meta.main) {
       break;
     case "inc": {
       const incKey = rest[0];
-      // parse optional flags: [--raise-at N] [--feature-dir dir] [--step text]
       let raiseAt: number | undefined;
       let incFeatureDir = "";
       let incStep = "";
@@ -216,25 +282,6 @@ if (import.meta.main) {
     case "check-early-stop":
       process.exit(checkEarlyStop(file) ? 1 : 0);
       break;
-    case "inc-failure":
-    case "reset-failure":
-    case "get-failure": {
-      const issueIdx = rest.indexOf("--issue");
-      const issueArg = issueIdx >= 0 ? parseInt(rest[issueIdx + 1] ?? "") : NaN;
-      if (!issueArg || isNaN(issueArg)) {
-        console.error(`Usage: state.ts ${cmd} <state.json> --issue <N>`);
-        process.exit(1);
-      }
-      if (cmd === "inc-failure") {
-        console.log(incFailureStreak(file, issueArg));
-      } else if (cmd === "reset-failure") {
-        resetFailureStreak(file, issueArg);
-        console.log("0");
-      } else {
-        console.log(getFailureStreak(file, issueArg));
-      }
-      break;
-    }
     default:
       console.error(`unknown cmd: ${cmd}`);
       process.exit(1);
