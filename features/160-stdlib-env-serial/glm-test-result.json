@@ -1,0 +1,7 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "CI green",
+  "glm_exit": 0,
+  "debug_spec_used": false
+}

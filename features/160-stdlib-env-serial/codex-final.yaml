@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/stdlib_env_race_acceptance.rs"
+    line_hint: 16
+    finding: "新規メタテストは `ENGAWA_STDLIB_PATH` を変更して `build_assembly` を順に呼ぶだけで、別 integration test binary との同時実行や lock 待ちを強制していない。`#[file_serial(engawa_stdlib_path)]` の cross-binary 効力が壊れても、スケジューラ次第ではそのまま緑で通るため、Issue #160 の回帰保護網として決定的ではない。"
+    suggestion: "別 binary 間で開始タイミングを同期するハンドシェイク（sentinel file・child process・待機用ポート等）を入れ、一方が lock を保持している間は他方が進めないことを明示的に assert する"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/stdlib_env_race_acceptance.rs"
+    line_hint: 68
+    finding: "t04 の Phase 1/3 は `is_err()` しか見ておらず、計画で要求している `stdlib` 解決失敗 (`KernelError::ReferenceResolution` / not-found 系) を検証していない。`build_assembly` が別理由で失敗してもテストが通るため、ENV の remove→set→remove 境界回帰を見逃す。"
+    suggestion: "既存の `assembly_acceptance::t08` と同様にエラー型と reason を match し、`stdlib` / `not found` 系であることまで assert する"
+
+verdict: fail
