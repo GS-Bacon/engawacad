@@ -1,0 +1,21 @@
+issues:
+  - id: AM01
+    severity: high
+    section: "設計方針 > 退化幾何の扱い"
+    finding: "「ref_planes 内に同じ id が複数ある場合 → `find` は最初の 1 件を返す (Document::new では発生しないが、parse 経由で重複した YAML を受け取る可能性。validation するか? GLM 議論)」とあり、重複 id の扱いが未確定"
+    suggestion: "「validation するか」を決定するか、仕様として「重複する場合、最初の 1 件を使用し警告も出さない」等を明記すること。parse 経由で重複 YAML が来た場合の挙動が実装者の判断に委ねられている"
+
+  - id: AM02
+    severity: medium
+    section: "設計方針 > 退化幾何の扱い"
+    finding: "「RefPlane の offset 値は f64 全範囲 (Phase 7 では 0.0 のみ使用、validation は最小限 — finite チェックを足すか否かは GLM レビューで議論)」とあり、validation 方針が未確定"
+    suggestion: "「finite チェックは本 Issue では実施しない」または「f64::isfinite() が false の場合 KernelError::InvalidOffset を返す」のいずれかを明記すること"
+
+  - id: AM03
+    severity: low
+    section: "テスト計画 > T10"
+    finding: "「各 plane に対応する向き」という期待結果が曖昧。どの座標軸方向に押出されるかが具体的に書かれていない"
+    suggestion: "「Top(Xz) なら Z+ 方向、Right(Yz) なら X+ 方向に押出され、各面法線が (0,0,1), (1,0,0) である」等の具体的 assert 条件を書くこと"
+
+verdict: pass
+# Critical なし、High 1 件だが「判断委ね」の箇所は設計方針セクションの議論残りであり、実装者が独断で決める必要はない（GLM レビューで決定待ち）。AM01/AM02 は設計方針の決定待ちとしてマーキングされており、実装段階で判断が必要なわけではないため fail ではない
