@@ -9,8 +9,12 @@ fn smoke(yaml: &str) {
         return;
     }
     let mut gen = IdGenerator::new(0);
-    build_bodies_from_features(&doc.root_component.features, &mut gen)
-        .expect("build_bodies_from_features failed");
+    build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut gen,
+    )
+    .expect("build_bodies_from_features failed");
 }
 
 #[test]
@@ -97,8 +101,12 @@ fn boolean_cut_sphere_dimple_tessellate() {
     let yaml = include_str!("../../../examples/boolean_cut_sphere_dimple.engawa");
     let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
     let mut gen = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut gen).expect("build failed");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut gen,
+    )
+    .expect("build failed");
     for body in bodies.live() {
         tessellate_solid(&body.solid).expect("tessellate failed for boolean_cut_sphere_dimple");
     }
@@ -128,4 +136,9 @@ fn boolean_intersect_cyl_sphere() {
 #[test]
 fn assembly_children_only_skipped() {
     smoke(include_str!("../../../examples/assembly.engawa"));
+}
+
+#[test]
+fn sketch_via_refplane() {
+    smoke(include_str!("../../../examples/sketch_via_refplane.engawa"));
 }

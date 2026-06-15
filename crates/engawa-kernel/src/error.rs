@@ -85,4 +85,10 @@ pub enum KernelError {
 
     #[error("failed to resolve reference '{path}': {reason}")]
     ReferenceResolution { path: String, reason: String },
+
+    #[error("unknown ref_plane id: {id}")]
+    UnknownRefPlane { id: String },
+
+    #[error("RefPlane '{id}' has non-finite offset (NaN or Inf)")]
+    InvalidRefPlaneOffset { id: String },
 }

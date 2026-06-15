@@ -91,8 +91,18 @@ fn t01_determinism_two_bodies() {
 
     let mut g1 = IdGenerator::new(0);
     let mut g2 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&doc.root_component.features, &mut g1).expect("build 1");
-    let b2 = build_bodies_from_features(&doc.root_component.features, &mut g2).expect("build 2");
+    let b1 = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g1,
+    )
+    .expect("build 1");
+    let b2 = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g2,
+    )
+    .expect("build 2");
 
     assert_eq!(b1.len(), b2.len(), "body count");
     for (body_a, body_b) in b1.all().iter().zip(b2.all().iter()) {
@@ -121,7 +131,7 @@ fn t02_multi_create_box_cylinder() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut g).expect("build");
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut g).expect("build");
 
     assert_eq!(bodies.len(), 2);
     assert!(bodies.get("box1").is_some());
@@ -154,8 +164,12 @@ fn t03_simple_box_regression() {
 
     let doc = Document::from_path(&path).expect("load .engawa");
     let mut g = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut g).expect("build solid");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g,
+    )
+    .expect("build solid");
 
     assert_eq!(bodies.len(), 1);
     let solid = &bodies.all()[0].solid;
@@ -175,8 +189,12 @@ fn t03_sphere_regression() {
 
     let doc = Document::from_path(&path).expect("load sphere.engawa");
     let mut g = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut g).expect("build sphere");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g,
+    )
+    .expect("build sphere");
 
     assert_eq!(bodies.len(), 1);
     let solid = &bodies.all()[0].solid;
@@ -196,8 +214,12 @@ fn t03_extruded_rect_regression() {
 
     let doc = Document::from_path(&path).expect("load extruded_rect.engawa");
     let mut g = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut g).expect("build extrude");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g,
+    )
+    .expect("build extrude");
 
     assert_eq!(bodies.len(), 1);
     let solid = &bodies.all()[0].solid;
@@ -217,8 +239,12 @@ fn t03_cylinder_regression() {
 
     let doc = Document::from_path(&path).expect("load cylinder.engawa");
     let mut g = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut g).expect("build cylinder");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g,
+    )
+    .expect("build cylinder");
 
     assert_eq!(bodies.len(), 1);
     assert_eq!(bodies.all()[0].solid.shells.len(), 1);
@@ -243,7 +269,7 @@ fn t04_cut_missing_target() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(matches!(
         result,
         Err(engawa_kernel::error::KernelError::BodyNotFound { id }) if id == "missing"
@@ -267,7 +293,7 @@ fn t04_cut_missing_tool() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(matches!(
         result,
         Err(engawa_kernel::error::KernelError::BodyNotFound { id }) if id == "nonexistent"
@@ -299,7 +325,7 @@ fn t05_cut_now_supported() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     // box1 (1x1x1) is fully inside box2 (2x2x2), so Cut produces empty result
     assert!(
         matches!(
@@ -320,6 +346,7 @@ fn t05_fuse_disjoint_boxes() {
             id: "sketch1".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s1".to_string(),
@@ -353,6 +380,7 @@ fn t05_fuse_disjoint_boxes() {
             id: "sketch2".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s5".to_string(),
@@ -389,7 +417,7 @@ fn t05_fuse_disjoint_boxes() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(
         matches!(
             result,
@@ -409,6 +437,7 @@ fn t05_intersect_disjoint_boxes() {
             id: "sketch1".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s1".to_string(),
@@ -442,6 +471,7 @@ fn t05_intersect_disjoint_boxes() {
             id: "sketch2".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s5".to_string(),
@@ -478,7 +508,7 @@ fn t05_intersect_disjoint_boxes() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(
         matches!(
             result,
@@ -508,7 +538,7 @@ fn t06_forward_reference_cut() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(matches!(
         result,
         Err(engawa_kernel::error::KernelError::BodyNotFound { id }) if id == "later_body"
@@ -525,6 +555,7 @@ fn t07_duplicate_feature_id() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -542,6 +573,7 @@ fn t07_duplicate_feature_id() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "seg_c".to_string(),
@@ -557,7 +589,7 @@ fn t07_duplicate_feature_id() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -575,6 +607,7 @@ fn t11_zero_bodies() {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        plane_ref: None,
         profile: vec![
             SketchSegment {
                 id: "seg_a".to_string(),
@@ -589,7 +622,7 @@ fn t11_zero_bodies() {
         ],
     }];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(matches!(
         result,
         Err(engawa_kernel::error::KernelError::EmptyFeatureList)
@@ -608,7 +641,7 @@ fn sketch_not_found() {
         fuse_target: None,
     }];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -633,6 +666,7 @@ fn forward_reference_prohibited() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -653,7 +687,7 @@ fn forward_reference_prohibited() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -671,6 +705,7 @@ fn duplicate_segment_id() {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        plane_ref: None,
         profile: vec![
             SketchSegment {
                 id: "seg_a".to_string(),
@@ -690,7 +725,7 @@ fn duplicate_segment_id() {
         ],
     }];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -712,12 +747,21 @@ fn t01_determinism_100_runs() {
     let doc = Document::from_path(&path).expect("load two_bodies.engawa");
 
     let mut g0 = IdGenerator::new(0);
-    let first = build_bodies_from_features(&doc.root_component.features, &mut g0).expect("build 0");
+    let first = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g0,
+    )
+    .expect("build 0");
 
     for i in 1..100 {
         let mut g = IdGenerator::new(0);
-        let bodies = build_bodies_from_features(&doc.root_component.features, &mut g)
-            .unwrap_or_else(|_| panic!("build {i}"));
+        let bodies = build_bodies_from_features(
+            &doc.root_component.features,
+            &doc.root_component.ref_planes,
+            &mut g,
+        )
+        .unwrap_or_else(|_| panic!("build {i}"));
         assert_eq!(bodies.len(), first.len(), "run {i}: body count");
         for (j, (ba, bb)) in bodies.all().iter().zip(first.all().iter()).enumerate() {
             assert_eq!(ba.feature_id, bb.feature_id, "run {i} body {j}: feature_id");
@@ -737,7 +781,7 @@ fn build_features(
     features: Vec<engawa_format::Feature>,
 ) -> Result<engawa_build::BuiltBodies, engawa_kernel::error::KernelError> {
     let mut g = IdGenerator::new(0);
-    build_bodies_from_features(&features, &mut g)
+    build_bodies_from_features(&features, &Vec::new(), &mut g)
 }
 
 // --- T02: Fuse touching boxes (one shared face) → single shell, Euler OK ---
@@ -752,6 +796,7 @@ fn t02_fuse_touching_boxes() {
             id: "sk1".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s1".into(),
@@ -785,6 +830,7 @@ fn t02_fuse_touching_boxes() {
             id: "sk2".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s5".into(),
@@ -943,6 +989,7 @@ fn t06_cut_partial_l_shape() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1036,6 +1083,7 @@ fn t09_intersect_contact_only() {
             id: "sk1".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s1".into(),
@@ -1069,6 +1117,7 @@ fn t09_intersect_contact_only() {
             id: "sk2".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s5".into(),
@@ -1139,6 +1188,7 @@ fn t12_boolean_determinism() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1199,6 +1249,7 @@ fn t17_boolean_stl_export() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1261,6 +1312,7 @@ fn t20_build_live_bodies() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1360,6 +1412,7 @@ fn t24_disjoint_fuse_boxes() {
             id: "sk1".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s1".into(),
@@ -1393,6 +1446,7 @@ fn t24_disjoint_fuse_boxes() {
             id: "sk2".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s5".into(),
@@ -1455,6 +1509,7 @@ fn t18_intersection_edge_names() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1534,6 +1589,7 @@ fn t19_boolean_determinism_with_names() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1572,8 +1628,8 @@ fn t19_boolean_determinism_with_names() {
 
     let mut gen1 = IdGenerator::new(0);
     let mut gen2 = IdGenerator::new(0);
-    let result1 = build_bodies_from_features(&features, &mut gen1);
-    let result2 = build_bodies_from_features(&features, &mut gen2);
+    let result1 = build_bodies_from_features(&features, &Vec::new(), &mut gen1);
+    let result2 = build_bodies_from_features(&features, &Vec::new(), &mut gen2);
 
     assert!(result1.is_ok());
     assert!(result2.is_ok());
@@ -1602,6 +1658,7 @@ fn t20_intersection_edge_name_golden() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "ts1".into(),
@@ -1639,7 +1696,7 @@ fn t20_intersection_edge_name_golden() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut gen);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut gen);
     assert!(result.is_ok());
     let bodies = result.unwrap();
     let solid = &bodies.get("cut1").expect("cut1 body").solid;
@@ -1661,7 +1718,7 @@ fn t20_intersection_edge_name_golden() {
 
     // Verify determinism: rebuild and check
     let mut gen2 = IdGenerator::new(0);
-    let result2 = build_bodies_from_features(&features, &mut gen2);
+    let result2 = build_bodies_from_features(&features, &Vec::new(), &mut gen2);
     let binding2 = result2.unwrap();
     let solid2 = &binding2.get("cut1").expect("cut1 body").solid;
     let mut edge_names2: Vec<String> = solid2
@@ -1936,13 +1993,14 @@ fn a1_solid_invariant_across_angular_segments() {
     use engawa_kernel::tessellation::{tessellate_solid_with, TessellationOptions};
 
     let mut g1 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&build_a1_input(), &mut g1).expect("build @8");
+    let b1 = build_bodies_from_features(&build_a1_input(), &Vec::new(), &mut g1).expect("build @8");
     let solid1 = b1.get("cut1").unwrap().solid.clone();
     let _mesh_low =
         tessellate_solid_with(&solid1, &TessellationOptions::new(8, 1)).expect("tess @8");
 
     let mut g2 = IdGenerator::new(0);
-    let b2 = build_bodies_from_features(&build_a1_input(), &mut g2).expect("build @64");
+    let b2 =
+        build_bodies_from_features(&build_a1_input(), &Vec::new(), &mut g2).expect("build @64");
     let solid2 = b2.get("cut1").unwrap().solid.clone();
     let _mesh_high =
         tessellate_solid_with(&solid2, &TessellationOptions::new(64, 1)).expect("tess @64");
@@ -2055,6 +2113,7 @@ fn u01_extrude_cut_determinism() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2087,9 +2146,9 @@ fn u01_extrude_cut_determinism() {
     ];
 
     let mut g1 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&features, &mut g1).expect("build 1");
+    let b1 = build_bodies_from_features(&features, &Vec::new(), &mut g1).expect("build 1");
     let mut g2 = IdGenerator::new(0);
-    let b2 = build_bodies_from_features(&features, &mut g2).expect("build 2");
+    let b2 = build_bodies_from_features(&features, &Vec::new(), &mut g2).expect("build 2");
 
     let s1 = &b1.get("cut1").expect("cut1 in b1").solid;
     let s2 = &b2.get("cut1").expect("cut1 in b2").solid;
@@ -2115,6 +2174,7 @@ fn u02_extrude_cut_void_shell() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2176,6 +2236,7 @@ fn u05_extrude_cut_degen_depth() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2226,6 +2287,7 @@ fn u05_extrude_cut_degen_depth() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2281,6 +2343,7 @@ fn u06a_extrude_cut_missing_target() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2345,6 +2408,7 @@ fn u06b_extrude_cut_nonintersecting() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -2455,6 +2519,7 @@ fn u03_extrude_cut_partial_l() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "ts1".into(),
@@ -2529,6 +2594,7 @@ fn t01_positive_extrude_centroid() {
             id: "sk_pos".into(),
             plane: SketchPlane::Yz,
             offset: 5.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s0".into(),
@@ -2597,6 +2663,7 @@ fn t02_reg_negative_extrude_centroid() {
             id: "sk_neg".into(),
             plane: SketchPlane::Yz,
             offset: -5.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s0".into(),
@@ -2671,6 +2738,7 @@ fn t04_negative_extrude_fuse_integration() {
             id: "sk_neg".into(),
             plane: SketchPlane::Yz,
             offset: -3.0,
+            plane_ref: None,
             profile: vec![
                 SketchSegment {
                     id: "s0".into(),

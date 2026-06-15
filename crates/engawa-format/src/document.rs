@@ -1,5 +1,6 @@
 use crate::component::Component;
 use crate::error::FormatError;
+use crate::ref_plane::RefPlane;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -34,11 +35,14 @@ struct RawDocument {
 
 impl Document {
     /// Create a new document with a single empty root component.
+    /// The root component will have the canonical three reference planes (Front, Top, Right).
     pub fn new(name: &str) -> Self {
+        let mut root = Component::new(name);
+        root.ref_planes = RefPlane::default_canonical_three();
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
             version: env!("CARGO_PKG_VERSION").to_string(),
-            root_component: Component::new(name),
+            root_component: root,
         }
     }
 
@@ -56,11 +60,15 @@ impl Document {
     /// Deserialize from YAML string with typed validation errors.
     pub fn from_yaml(yaml: &str) -> Result<Self, FormatError> {
         let raw: RawDocument = serde_yaml::from_str(yaml)?;
-        let doc = Document {
+        let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
             root_component: raw.root_component,
         };
+        // Populate default ref_planes if empty
+        if doc.root_component.ref_planes.is_empty() {
+            doc.root_component.ref_planes = RefPlane::default_canonical_three();
+        }
         doc.validate()?;
         Ok(doc)
     }
@@ -79,11 +87,15 @@ impl Document {
 impl<'de> Deserialize<'de> for Document {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawDocument::deserialize(deserializer)?;
-        let doc = Document {
+        let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
             root_component: raw.root_component,
         };
+        // Populate default ref_planes if empty
+        if doc.root_component.ref_planes.is_empty() {
+            doc.root_component.ref_planes = RefPlane::default_canonical_three();
+        }
         doc.validate().map_err(serde::de::Error::custom)?;
         Ok(doc)
     }
@@ -140,6 +152,23 @@ fn validate_component(component: &Component, component_name: &str) -> Result<(),
                 });
             }
             _ => {}
+        }
+    }
+
+    // Validate RefPlane id uniqueness and offset finiteness
+    let mut seen_ref_planes = std::collections::HashSet::new();
+    for ref_plane in &component.ref_planes {
+        validate_identifier(&ref_plane.id, "ref_plane_id")?;
+        if !seen_ref_planes.insert(&ref_plane.id) {
+            return Err(FormatError::DuplicateRefPlaneId {
+                id: ref_plane.id.clone(),
+                component: component_name.to_string(),
+            });
+        }
+        if !ref_plane.offset.is_finite() {
+            return Err(FormatError::InvalidRefPlaneOffset {
+                id: ref_plane.id.clone(),
+            });
         }
     }
 
@@ -373,6 +402,7 @@ mod tests {
                     to: [0.0, 0.0],
                 },
             ],
+            plane_ref: None,
         });
         doc2.root_component.features.push(Feature::Extrude {
             id: "extrude_1".to_string(),

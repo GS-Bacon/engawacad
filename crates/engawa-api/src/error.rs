@@ -31,6 +31,8 @@ impl From<FormatError> for ApiError {
             FormatError::InvalidReference { .. } => ApiError::Unprocessable(err.to_string()),
             FormatError::InvalidName { .. }
             | FormatError::DuplicateFeatureId { .. }
+            | FormatError::DuplicateRefPlaneId { .. }
+            | FormatError::InvalidRefPlaneOffset { .. }
             | FormatError::EmptyProvenance { .. }
             | FormatError::InvalidPosition { .. } => ApiError::Unprocessable(err.to_string()),
         }

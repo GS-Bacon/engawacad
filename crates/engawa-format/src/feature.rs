@@ -242,7 +242,7 @@ impl<'de> Deserialize<'de> for EntityRef {
 }
 
 /// The plane on which a sketch is drawn.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SketchPlane {
     Xy,
@@ -298,6 +298,8 @@ pub enum Feature {
         #[serde(default, skip_serializing_if = "is_zero")]
         offset: f64,
         profile: Vec<SketchSegment>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plane_ref: Option<String>,
     },
 
     /// Extrude a sketch profile.
@@ -451,6 +453,7 @@ mod tests {
                     to: [0.0, 0.0],
                 },
             ],
+            plane_ref: None,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
         assert_eq!(

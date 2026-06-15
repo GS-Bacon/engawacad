@@ -1,0 +1,18 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Extruded Rect via RefPlane"
+  features:
+    - type: create_sketch
+      id: sketch_1
+      plane: xy
+      plane_ref: Front
+      profile:
+        - { id: seg_a, from: [0.0, 0.0], to: [10.0, 0.0] }
+        - { id: seg_b, from: [10.0, 0.0], to: [10.0, 5.0] }
+        - { id: seg_c, from: [10.0, 5.0], to: [0.0, 5.0] }
+        - { id: seg_d, from: [0.0, 5.0], to: [0.0, 0.0] }
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_1
+      depth: 8.0

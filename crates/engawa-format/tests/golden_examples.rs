@@ -170,6 +170,23 @@ fn golden_boolean_intersect_cyl_sphere() {
 }
 
 #[test]
+fn golden_extruded_rect() {
+    // #158 Codex F02 r4: legacy example の wire-format 不変を exact golden で直接検証する。
+    assert_golden(
+        "extruded_rect.engawa",
+        concat!(
+            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
+            "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
+            "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
+            "    - id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
+            "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
+        ),
+    );
+}
+
+#[test]
 fn golden_two_bodies() {
     assert_golden(
         "two_bodies.engawa",
@@ -202,6 +219,24 @@ fn golden_assembly() {
             "  - name: Pillar\n    transform:\n      position:\n      - 0.0\n      - 25.0\n      - 0.0\n      rotation:\n      - 0.0\n      - 0.0\n      - 0.0\n    features:\n",
             "    - type: create_box\n      id: pillar_1\n      width: 10.0\n      height: 50.0\n      depth: 10.0\n",
             "  - name: Bolt\n    transform:\n      position:\n      - 20.0\n      - 5.0\n      - 20.0\n      rotation:\n      - 0.0\n      - 0.0\n      - 0.0\n    ref: stdlib://fasteners/jis_b1176/M5x20\n",
+        ),
+    );
+}
+
+#[test]
+fn golden_sketch_via_refplane() {
+    assert_golden(
+        "sketch_via_refplane.engawa",
+        concat!(
+            "schema_version: 1\nversion: 0.1.0\nroot_component:\n",
+            "  name: Extruded Rect via RefPlane\n  features:\n",
+            "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
+            "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
+            "    - id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
+            "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "    plane_ref: Front\n",
+            "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
         ),
     );
 }

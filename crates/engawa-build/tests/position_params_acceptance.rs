@@ -147,7 +147,7 @@ fn examples_dir() -> PathBuf {
 
 fn build_one(features: &[Feature]) -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(features, &mut gen).unwrap();
+    let bodies = build_bodies_from_features(features, &Vec::new(), &mut gen).unwrap();
     bodies.all()[0].solid.clone()
 }
 
@@ -159,8 +159,18 @@ fn t01_determinism() {
     let doc = Document::from_path(&path).unwrap();
     let mut g1 = IdGenerator::new(0);
     let mut g2 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&doc.root_component.features, &mut g1).unwrap();
-    let b2 = build_bodies_from_features(&doc.root_component.features, &mut g2).unwrap();
+    let b1 = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g1,
+    )
+    .unwrap();
+    let b2 = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut g2,
+    )
+    .unwrap();
     assert_solids_equal_with_names(&b1.all()[0].solid, &b2.all()[0].solid);
 }
 
@@ -175,7 +185,7 @@ fn t02_origin_reflected_in_cylinder() {
         origin: [0.0, 0.0, -10.0],
     }];
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
     let solid = &bodies.all()[0].solid;
 
     // Verify Surface::Cylinder.origin == Point::new(0, 0, -10)
@@ -259,7 +269,7 @@ fn t04_center_reflected_in_sphere() {
         center: [2.0, 0.0, 0.0],
     }];
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
     let solid = &bodies.all()[0].solid;
 
     // Verify Surface::Sphere.center == Point::new(2, 0, 0)
@@ -374,7 +384,7 @@ fn ec01_large_finite_origin_cylinder() {
         origin: [1e15, -1e15, 0.0],
     }];
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
     let solid = &bodies.all()[0].solid;
 
     // Surface::Cylinder.origin should reflect the large coordinates
@@ -399,7 +409,7 @@ fn ec02_large_finite_center_sphere() {
         center: [-1e15, 1e15, 0.0],
     }];
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
     let solid = &bodies.all()[0].solid;
 
     let sphere_face = solid
@@ -426,7 +436,7 @@ fn ec03_negative_origin_cylinder() {
         origin: [-100.0, -50.0, -200.0],
     }];
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
     let solid = &bodies.all()[0].solid;
 
     let cyl_face = solid
@@ -498,7 +508,7 @@ fn ec05_determinism_100_runs_cylinder_offset() {
     let mut first: Option<engawa_kernel::brep::topology::Solid> = None;
     for _run in 0..100 {
         let mut gen = IdGenerator::new(0);
-        let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+        let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
         let solid = bodies.all()[0].solid.clone();
         match &first {
             None => first = Some(solid),
@@ -520,7 +530,7 @@ fn ec06_determinism_100_runs_sphere_offset() {
     let mut first: Option<engawa_kernel::brep::topology::Solid> = None;
     for _run in 0..100 {
         let mut gen = IdGenerator::new(0);
-        let bodies = build_bodies_from_features(&features, &mut gen).unwrap();
+        let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
         let solid = bodies.all()[0].solid.clone();
         match &first {
             None => first = Some(solid),

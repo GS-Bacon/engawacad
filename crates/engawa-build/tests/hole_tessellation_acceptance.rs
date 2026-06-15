@@ -13,8 +13,12 @@ fn build_and_tessellate_hole() -> (Vec<[f64; 3]>, Vec<u32>) {
     let yaml = include_str!("../../../examples/boolean_cut_cylinder_hole.engawa");
     let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
     let mut gen = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut gen).expect("build failed");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut gen,
+    )
+    .expect("build failed");
     let live: Vec<_> = bodies.live().collect();
     assert!(!live.is_empty(), "no live bodies produced");
     let mesh = tessellate_solid(&live[0].solid).expect("tessellation failed");
@@ -124,8 +128,12 @@ fn t07_yaml_roundtrip() {
     let yaml = include_str!("../../../examples/boolean_cut_cylinder_hole.engawa");
     let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
     let mut gen = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(&doc.root_component.features, &mut gen).expect("build failed");
+    let bodies = build_bodies_from_features(
+        &doc.root_component.features,
+        &doc.root_component.ref_planes,
+        &mut gen,
+    )
+    .expect("build failed");
     let live: Vec<_> = bodies.live().collect();
     let solid1 = &live[0].solid;
 

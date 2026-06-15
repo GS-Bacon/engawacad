@@ -32,8 +32,8 @@ fn fuse_box_cyl_features() -> Vec<Feature> {
 fn build_fuse_result(seed: u64) -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(seed);
     let features = fuse_box_cyl_features();
-    let bodies =
-        build_bodies_from_features(&features, &mut gen).expect("build_bodies_from_features failed");
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen)
+        .expect("build_bodies_from_features failed");
     bodies
         .get("result")
         .expect("result body missing")
@@ -44,8 +44,8 @@ fn build_fuse_result(seed: u64) -> engawa_kernel::brep::topology::Solid {
 /// Build a fuse from raw features (for T06/T07/T08 where we need custom geometry).
 fn build_fuse_from_features(features: &[Feature]) -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let bodies =
-        build_bodies_from_features(features, &mut gen).expect("build_bodies_from_features failed");
+    let bodies = build_bodies_from_features(features, &Vec::new(), &mut gen)
+        .expect("build_bodies_from_features failed");
     bodies
         .get("result")
         .expect("result body missing")
@@ -163,8 +163,12 @@ fn t05_regression_existing_boolean() {
         serde_yaml::from_str(include_str!("../../../examples/boolean_box_fuse.engawa"))
             .expect("parse boolean_box_fuse");
     let mut gen = IdGenerator::new(0);
-    let fuse_bodies = build_bodies_from_features(&fuse_doc.root_component.features, &mut gen)
-        .expect("boolean_box_fuse build failed");
+    let fuse_bodies = build_bodies_from_features(
+        &fuse_doc.root_component.features,
+        &fuse_doc.root_component.ref_planes,
+        &mut gen,
+    )
+    .expect("boolean_box_fuse build failed");
     let fuse_result = fuse_bodies.get("fuse1").expect("fuse1 body missing");
     fuse_result
         .solid
@@ -177,8 +181,12 @@ fn t05_regression_existing_boolean() {
     ))
     .expect("parse boolean_intersect_box_cyl");
     let mut gen2 = IdGenerator::new(0);
-    let isect_bodies = build_bodies_from_features(&isect_doc.root_component.features, &mut gen2)
-        .expect("boolean_intersect_box_cyl build failed");
+    let isect_bodies = build_bodies_from_features(
+        &isect_doc.root_component.features,
+        &isect_doc.root_component.ref_planes,
+        &mut gen2,
+    )
+    .expect("boolean_intersect_box_cyl build failed");
     let isect_result = isect_bodies.get("result").expect("result body missing");
     isect_result
         .solid

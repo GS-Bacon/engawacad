@@ -43,14 +43,14 @@ fn box_cyl_features(op: &str) -> Vec<Feature> {
 
 fn build_fuse() -> engawa_kernel::brep::topology::Solid {
     let mut g = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&box_cyl_features("fuse"), &mut g)
+    let bodies = build_bodies_from_features(&box_cyl_features("fuse"), &Vec::new(), &mut g)
         .expect("fuse build should succeed");
     bodies.get("result").unwrap().solid.clone()
 }
 
 fn build_intersect() -> engawa_kernel::brep::topology::Solid {
     let mut g = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&box_cyl_features("intersect"), &mut g)
+    let bodies = build_bodies_from_features(&box_cyl_features("intersect"), &Vec::new(), &mut g)
         .expect("intersect build should succeed");
     bodies.get("result").unwrap().solid.clone()
 }
@@ -89,11 +89,11 @@ fn check_euler(solid: &engawa_kernel::brep::topology::Solid) -> i64 {
 #[test]
 fn t01_determinism() {
     let mut g1 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&box_cyl_features("fuse"), &mut g1).unwrap();
+    let b1 = build_bodies_from_features(&box_cyl_features("fuse"), &Vec::new(), &mut g1).unwrap();
     let s1 = &b1.get("result").unwrap().solid;
 
     let mut g2 = IdGenerator::new(0);
-    let b2 = build_bodies_from_features(&box_cyl_features("fuse"), &mut g2).unwrap();
+    let b2 = build_bodies_from_features(&box_cyl_features("fuse"), &Vec::new(), &mut g2).unwrap();
     let s2 = &b2.get("result").unwrap().solid;
 
     assert_eq!(s1.id, s2.id, "solid id mismatch");
@@ -222,7 +222,7 @@ fn t08_disjoint_fuse_returns_disjoint_error() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     // cylinder (r=2, h=7, z=0..7) overlaps box [-5,5]^3 in z=0..5; fuse succeeds
     assert!(result.is_ok(), "overlapping fuse should succeed");
 }
@@ -255,7 +255,7 @@ fn t09_disjoint_intersect_returns_empty_error() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     // cylinder (r=2, h=7, z=0..7) overlaps box [-5,5]^3; intersect succeeds
     assert!(result.is_ok(), "overlapping intersect should succeed");
 }
@@ -294,7 +294,7 @@ fn t10_multi_plane_fuse_returns_unsupported() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_ok(), "single-plane fuse should succeed");
 }
 
@@ -327,7 +327,7 @@ fn t11_non_z_plane_intersect_returns_unsupported() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_ok(), "normal intersect should succeed");
 }
 
@@ -404,7 +404,7 @@ fn t15_sphere_cut_signed_volume_positive() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     if let Ok(bodies) = result {
         if let Some(body) = bodies.get("result") {
             let mesh = match tessellate_solid(&body.solid) {
@@ -437,13 +437,13 @@ fn t15_sphere_cut_signed_volume_positive() {
 fn t16_fuse_100_run_determinism() {
     let first = {
         let mut g = IdGenerator::new(0);
-        let b = build_bodies_from_features(&box_cyl_features("fuse"), &mut g).unwrap();
+        let b = build_bodies_from_features(&box_cyl_features("fuse"), &Vec::new(), &mut g).unwrap();
         let s = &b.get("result").unwrap().solid;
         (s.vertices.len(), s.edges.len(), s.faces.len(), s.id)
     };
     for i in 1..100 {
         let mut g = IdGenerator::new(0);
-        let b = build_bodies_from_features(&box_cyl_features("fuse"), &mut g).unwrap();
+        let b = build_bodies_from_features(&box_cyl_features("fuse"), &Vec::new(), &mut g).unwrap();
         let s = &b.get("result").unwrap().solid;
         assert_eq!(first.0, s.vertices.len(), "run {i}: vertex count");
         assert_eq!(first.1, s.edges.len(), "run {i}: edge count");
@@ -457,13 +457,15 @@ fn t16_fuse_100_run_determinism() {
 fn t17_intersect_100_run_determinism() {
     let first = {
         let mut g = IdGenerator::new(0);
-        let b = build_bodies_from_features(&box_cyl_features("intersect"), &mut g).unwrap();
+        let b = build_bodies_from_features(&box_cyl_features("intersect"), &Vec::new(), &mut g)
+            .unwrap();
         let s = &b.get("result").unwrap().solid;
         (s.vertices.len(), s.edges.len(), s.faces.len(), s.id)
     };
     for i in 1..100 {
         let mut g = IdGenerator::new(0);
-        let b = build_bodies_from_features(&box_cyl_features("intersect"), &mut g).unwrap();
+        let b = build_bodies_from_features(&box_cyl_features("intersect"), &Vec::new(), &mut g)
+            .unwrap();
         let s = &b.get("result").unwrap().solid;
         assert_eq!(first.0, s.vertices.len(), "run {i}: vertex count");
         assert_eq!(first.1, s.edges.len(), "run {i}: edge count");

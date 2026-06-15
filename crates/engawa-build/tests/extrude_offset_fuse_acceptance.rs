@@ -43,6 +43,7 @@ fn t05_offset_zero_no_translate() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: rect_profile(),
         },
         Feature::Extrude {
@@ -54,7 +55,8 @@ fn t05_offset_zero_no_translate() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).expect("build should succeed");
+    let bodies =
+        build_bodies_from_features(&features, &Vec::new(), &mut gen).expect("build should succeed");
     let body = bodies
         .get("extrude_0")
         .expect("extrude_0 body should exist");
@@ -97,6 +99,7 @@ fn t06_fuse_target_none_independent_body() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: rect_profile(),
         },
         Feature::Extrude {
@@ -108,7 +111,8 @@ fn t06_fuse_target_none_independent_body() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).expect("build should succeed");
+    let bodies =
+        build_bodies_from_features(&features, &Vec::new(), &mut gen).expect("build should succeed");
 
     // Both bodies should be live
     assert!(bodies.get("box_1").is_some(), "box_1 should still exist");
@@ -128,6 +132,7 @@ fn t07_fuse_target_not_found_returns_error() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            plane_ref: None,
             profile: rect_profile(),
         },
         Feature::Extrude {
@@ -139,7 +144,7 @@ fn t07_fuse_target_not_found_returns_error() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut gen);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut gen);
     assert!(result.is_err(), "should fail with BodyNotFound");
     match result.unwrap_err() {
         KernelError::BodyNotFound { id } => {
@@ -160,6 +165,7 @@ fn t04a_extrusion_is_manifold() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: -7.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s0".into(),
@@ -192,7 +198,8 @@ fn t04a_extrusion_is_manifold() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen).expect("build should succeed");
+    let bodies =
+        build_bodies_from_features(&features, &Vec::new(), &mut gen).expect("build should succeed");
     let body = bodies.get("extrude_0").expect("extrude_0 should exist");
     body.solid
         .validate_manifold()
@@ -216,6 +223,7 @@ fn t04b_box_extrude_fuse_via_feature() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: -7.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s0".into(),
@@ -253,7 +261,7 @@ fn t04b_box_extrude_fuse_via_feature() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut gen);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut gen);
     let bodies = result.expect("Feature::Fuse of box + extrusion should succeed");
     assert!(bodies.get("fuse_0").is_some(), "fuse_0 should exist");
 }
@@ -276,6 +284,7 @@ fn t04_fuse_target_overlapping_box() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: -7.0,
+            plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
                     id: "s0".into(),
@@ -308,7 +317,7 @@ fn t04_fuse_target_overlapping_box() {
     ];
 
     let mut gen = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&features, &mut gen)
+    let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen)
         .expect("fuse_target should succeed with fully-piercing extrusion");
     assert!(
         bodies.get("box_1").is_none(),

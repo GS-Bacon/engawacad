@@ -116,7 +116,7 @@ fn cyl_sph_features() -> Vec<Feature> {
 
 fn build_intersect() -> engawa_kernel::brep::topology::Solid {
     let mut g = IdGenerator::new(0);
-    let bodies = build_bodies_from_features(&cyl_sph_features(), &mut g)
+    let bodies = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g)
         .expect("cyl×sph intersect build should succeed");
     bodies.get("result").unwrap().solid.clone()
 }
@@ -139,11 +139,11 @@ fn check_euler(solid: &engawa_kernel::brep::topology::Solid) -> i64 {
 #[test]
 fn t01_determinism() {
     let mut g1 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&cyl_sph_features(), &mut g1).unwrap();
+    let b1 = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g1).unwrap();
     let s1 = &b1.get("result").unwrap().solid;
 
     let mut g2 = IdGenerator::new(0);
-    let b2 = build_bodies_from_features(&cyl_sph_features(), &mut g2).unwrap();
+    let b2 = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g2).unwrap();
     let s2 = &b2.get("result").unwrap().solid;
 
     assert_eq!(s1.id, s2.id, "solid id mismatch");
@@ -243,7 +243,7 @@ fn t06_non_coaxial_errors() {
         },
     ];
     let mut g = IdGenerator::new(0);
-    let result = build_bodies_from_features(&features, &mut g);
+    let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(
         result.is_err(),
         "non-coaxial cyl×sph Intersect should return an error"
@@ -273,7 +273,7 @@ fn t07_tangent_no_panic() {
     ];
     let mut g = IdGenerator::new(0);
     // Ok or Err is fine — just must not panic
-    let _ = build_bodies_from_features(&features, &mut g);
+    let _ = build_bodies_from_features(&features, &Vec::new(), &mut g);
 }
 
 /// T18: tessellate_solid on the A2 intersect result produces Ok with triangle_count > 0.
@@ -293,11 +293,11 @@ fn t18_tessellate_triangle_count() {
 #[test]
 fn t22b_determinism_across_tessellation_resolution() {
     let mut g1 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&cyl_sph_features(), &mut g1).unwrap();
+    let b1 = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g1).unwrap();
     let s1 = &b1.get("result").unwrap().solid;
 
     let mut g2 = IdGenerator::new(0);
-    let b2 = build_bodies_from_features(&cyl_sph_features(), &mut g2).unwrap();
+    let b2 = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g2).unwrap();
     let s2 = &b2.get("result").unwrap().solid;
 
     // Solid topology is resolution-independent
@@ -357,12 +357,12 @@ fn t23_yaml_round_trip_example() {
 #[test]
 fn ec01_100x_determinism() {
     let mut g0 = IdGenerator::new(0);
-    let b0 = build_bodies_from_features(&cyl_sph_features(), &mut g0).unwrap();
+    let b0 = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g0).unwrap();
     let first = &b0.get("result").unwrap().solid;
 
     for i in 1..=99 {
         let mut g = IdGenerator::new(0);
-        let b = build_bodies_from_features(&cyl_sph_features(), &mut g)
+        let b = build_bodies_from_features(&cyl_sph_features(), &Vec::new(), &mut g)
             .unwrap_or_else(|e| panic!("build {i} failed: {e}"));
         let cur = &b.get("result").unwrap().solid;
 
@@ -410,10 +410,14 @@ fn ec02_build_yaml_rebuild_roundtrip() {
 
     // Build original
     let mut g1 = IdGenerator::new(0);
-    let b1 = build_bodies_from_features(&features, &mut g1).unwrap();
+    let b1 = build_bodies_from_features(&features, &Vec::new(), &mut g1).unwrap();
     let s1 = &b1.get("result").unwrap().solid;
 
-    // Construct Document from the same features
+    // Construct Document from the same features.
+    // #158: ref_planes はデフォルト 3 件 (Front/Top/Right) で初期化する。
+    // 空のままだと初回 serialize で `ref_planes: []` が出力され、parse 時に 3 件補填、
+    // 2 回目 serialize で skip され idempotency が崩れる。Document::from_yaml() で
+    // parse された Document と同じ状態 (= default 3 件) で構築するのが正しい。
     let doc = Document {
         schema_version: 1,
         version: "0.1.0".into(),
@@ -423,6 +427,7 @@ fn ec02_build_yaml_rebuild_roundtrip() {
             reference: None,
             features: features.clone(),
             children: vec![],
+            ref_planes: engawa_format::RefPlane::default_canonical_three(),
         },
     };
 
@@ -432,8 +437,12 @@ fn ec02_build_yaml_rebuild_roundtrip() {
 
     // Rebuild from round-tripped features
     let mut g2 = IdGenerator::new(0);
-    let b2 = build_bodies_from_features(&doc2.root_component.features, &mut g2)
-        .expect("rebuild should succeed");
+    let b2 = build_bodies_from_features(
+        &doc2.root_component.features,
+        &doc2.root_component.ref_planes,
+        &mut g2,
+    )
+    .expect("rebuild should succeed");
     let s2 = &b2.get("result").unwrap().solid;
 
     // Compare solids with names

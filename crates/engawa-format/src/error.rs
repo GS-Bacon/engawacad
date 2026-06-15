@@ -25,4 +25,10 @@ pub enum FormatError {
 
     #[error("non-finite position in feature {id:?}: {reason}")]
     InvalidPosition { id: String, reason: &'static str },
+
+    #[error("duplicate ref_plane id {id:?} in component {component:?}")]
+    DuplicateRefPlaneId { id: String, component: String },
+
+    #[error("RefPlane '{id}' has non-finite offset (NaN or Inf)")]
+    InvalidRefPlaneOffset { id: String },
 }

@@ -1,4 +1,4 @@
-use engawa_format::Feature;
+use engawa_format::{Feature, RefPlane, SketchPlane};
 use engawa_kernel::booleans::boolean;
 use engawa_kernel::brep::topology::{IdGenerator, Solid};
 use engawa_kernel::error::KernelError;
@@ -88,22 +88,58 @@ impl BuiltBodies {
 
 pub fn build_bodies_from_features(
     features: &[Feature],
+    ref_planes: &[RefPlane],
     gen: &mut IdGenerator,
 ) -> Result<BuiltBodies, KernelError> {
     if features.is_empty() {
         return Err(KernelError::EmptyFeatureList);
     }
 
-    let mut sketches: HashMap<
-        &str,
-        (
-            &engawa_format::SketchPlane,
-            &[engawa_format::SketchSegment],
-            f64,
-        ),
-    > = HashMap::new();
+    /// Sketch entry with optional ref_plane reference.
+    struct SketchEntry<'a> {
+        plane_ref: Option<String>,
+        plane: SketchPlane,
+        offset: f64,
+        profile: &'a [engawa_format::SketchSegment],
+    }
+
+    let mut sketches: HashMap<&str, SketchEntry> = HashMap::new();
     let mut built = BuiltBodies::default();
     let mut seen_ids: HashMap<&str, ()> = HashMap::new();
+
+    /// Resolve a Plane from a SketchEntry, using plane_ref if present.
+    fn resolve_plane(entry: &SketchEntry, ref_planes: &[RefPlane]) -> Result<Plane, KernelError> {
+        if let Some(ref_id) = &entry.plane_ref {
+            let rp = ref_planes
+                .iter()
+                .find(|p| &p.id == ref_id)
+                .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
+            if !rp.offset.is_finite() {
+                return Err(KernelError::InvalidRefPlaneOffset { id: rp.id.clone() });
+            }
+            let base = sketch_plane_to_plane(rp.plane);
+            Ok(if rp.offset != 0.0 {
+                base.translate(base.normal * rp.offset)
+            } else {
+                base
+            })
+        } else {
+            let base = sketch_plane_to_plane(entry.plane);
+            Ok(if entry.offset != 0.0 {
+                base.translate(base.normal * entry.offset)
+            } else {
+                base
+            })
+        }
+    }
+
+    fn sketch_plane_to_plane(sp: SketchPlane) -> Plane {
+        match sp {
+            SketchPlane::Xy => Plane::xy(),
+            SketchPlane::Xz => Plane::xz(),
+            SketchPlane::Yz => Plane::yz(),
+        }
+    }
 
     for feature in features {
         let id = feature.id();
@@ -120,11 +156,20 @@ pub fn build_bodies_from_features(
                 plane,
                 offset,
                 profile,
+                plane_ref,
             } => {
                 validate_sketch_segment_ids(profile)?;
                 validate_profile_closed(profile)?;
                 if sketches
-                    .insert(id, (plane, profile.as_slice(), *offset))
+                    .insert(
+                        id,
+                        SketchEntry {
+                            plane_ref: plane_ref.clone(),
+                            plane: *plane,
+                            offset: *offset,
+                            profile: profile.as_slice(),
+                        },
+                    )
                     .is_some()
                 {
                     return Err(KernelError::DuplicateFeatureId { id: id.to_string() });
@@ -136,26 +181,20 @@ pub fn build_bodies_from_features(
                 depth,
                 fuse_target,
             } => {
-                let (sketch_plane, segments, offset) =
+                let entry =
                     sketches
                         .get(sketch.as_str())
                         .ok_or_else(|| KernelError::SketchNotFound {
                             sketch: sketch.clone(),
                         })?;
 
-                let base_plane = match sketch_plane {
-                    engawa_format::SketchPlane::Xy => Plane::xy(),
-                    engawa_format::SketchPlane::Xz => Plane::xz(),
-                    engawa_format::SketchPlane::Yz => Plane::yz(),
-                };
-                let plane = if *offset != 0.0 {
-                    base_plane.translate(base_plane.normal * *offset)
-                } else {
-                    base_plane
-                };
+                let plane = resolve_plane(entry, ref_planes)?;
 
-                let profile_uv: Vec<(f64, f64)> =
-                    segments.iter().map(|s| (s.from[0], s.from[1])).collect();
+                let profile_uv: Vec<(f64, f64)> = entry
+                    .profile
+                    .iter()
+                    .map(|s| (s.from[0], s.from[1]))
+                    .collect();
                 let extruded = make_extrusion(&plane, &profile_uv, *depth, gen)?;
 
                 if let Some(target_id) = fuse_target {
@@ -182,21 +221,41 @@ pub fn build_bodies_from_features(
                     return Err(KernelError::InvalidParameter { kind: "depth" });
                 }
 
-                let (sketch_plane, segments, _offset) =
+                let entry =
                     sketches
                         .get(sketch.as_str())
                         .ok_or_else(|| KernelError::SketchNotFound {
                             sketch: sketch.clone(),
                         })?;
 
-                let plane = match sketch_plane {
-                    engawa_format::SketchPlane::Xy => Plane::xy(),
-                    engawa_format::SketchPlane::Xz => Plane::xz(),
-                    engawa_format::SketchPlane::Yz => Plane::yz(),
+                // ExtrudeCut は元来 CreateSketch.offset を無視する仕様バグがあった (#161 で別途修正予定)。
+                // 本 Issue (#158) のスコープを守るため、plane_ref が無い経路では従来挙動を温存する。
+                // plane_ref が Some なら新経路 (resolve_plane 経由) を通り、ref_planes から正しく解決する。
+                let plane = if let Some(ref_id) = &entry.plane_ref {
+                    // 新経路: plane_ref を ref_planes から解決
+                    let rp = ref_planes
+                        .iter()
+                        .find(|p| &p.id == ref_id)
+                        .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
+                    if !rp.offset.is_finite() {
+                        return Err(KernelError::InvalidRefPlaneOffset { id: rp.id.clone() });
+                    }
+                    let base = sketch_plane_to_plane(rp.plane);
+                    if rp.offset != 0.0 {
+                        base.translate(base.normal * rp.offset)
+                    } else {
+                        base
+                    }
+                } else {
+                    // 旧経路: plane だけ使い、offset は **無視** (元仕様バグの温存、#161 で対応)
+                    sketch_plane_to_plane(entry.plane)
                 };
 
-                let profile_uv: Vec<(f64, f64)> =
-                    segments.iter().map(|s| (s.from[0], s.from[1])).collect();
+                let profile_uv: Vec<(f64, f64)> = entry
+                    .profile
+                    .iter()
+                    .map(|s| (s.from[0], s.from[1]))
+                    .collect();
                 let tool = make_extrusion(&plane, &profile_uv, *depth, gen)?;
 
                 let t_solid = built
@@ -379,6 +438,7 @@ pub fn build_assembly(
 ) -> Result<Vec<Body>, KernelError> {
     let mut bodies: Vec<Body> = Vec::new();
     let mut visiting: Vec<PathBuf> = Vec::new();
+    let ref_planes = doc.root_component.ref_planes.as_slice();
     build_component_tree(
         &doc.root_component,
         base_dir,
@@ -388,6 +448,7 @@ pub fn build_assembly(
         IDENTITY3,
         gen,
         &mut bodies,
+        ref_planes,
     )?;
     Ok(bodies)
 }
@@ -402,6 +463,7 @@ fn build_component_tree(
     accumulated_rotation: [[f64; 3]; 3],
     gen: &mut IdGenerator,
     out: &mut Vec<Body>,
+    _ref_planes: &[RefPlane], // Kept for signature compatibility; unused per F01 r2 fix
 ) -> Result<(), KernelError> {
     // --- position ---
     let p = &component.transform.position;
@@ -430,9 +492,20 @@ fn build_component_tree(
     let total_offset = accumulated_offset + rotated_local_offset;
     let total_rotation = matrix_mul3(accumulated_rotation, local_rotation);
 
-    // 1. Build this component's own features and apply total transform
+    // 1. Build this component's own features and apply total transform.
+    //
+    // child Component が自前の ref_planes を持つ場合はそれを優先 (= child ローカル plane_ref id が
+    // 解決される)。空の Component は親を継承せず、ローカルでデフォルト 3 件を独立に解決する。
+    // 親が custom-only ref_planes を持つ場合に child の plane_ref: "Front" が解決失敗するのを防ぐため。
+    let canonical = RefPlane::default_canonical_three();
+    let effective_ref_planes: &[RefPlane] = if !component.ref_planes.is_empty() {
+        component.ref_planes.as_slice()
+    } else {
+        canonical.as_slice()
+    };
+
     if !component.features.is_empty() {
-        let built = build_bodies_from_features(&component.features, gen)?;
+        let built = build_bodies_from_features(&component.features, effective_ref_planes, gen)?;
         for mut body in built.live().cloned() {
             // 順序: rotate (around origin) → translate
             if total_rotation != IDENTITY3 {
@@ -476,11 +549,13 @@ fn build_component_tree(
             total_rotation,
             gen,
             out,
+            &ref_doc.root_component.ref_planes,
         )?;
         visiting.pop();
     }
 
-    // 3. Recurse into children, propagating total_offset and total_rotation
+    // 3. Recurse into children, propagating total_offset and total_rotation.
+    // 再帰側で各 child.ref_planes が空なら親 (= 今 effective_ref_planes) を継承する。
     for child in &component.children {
         build_component_tree(
             child,
@@ -491,6 +566,7 @@ fn build_component_tree(
             total_rotation,
             gen,
             out,
+            effective_ref_planes,
         )?;
     }
     Ok(())

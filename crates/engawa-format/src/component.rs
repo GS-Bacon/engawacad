@@ -1,5 +1,6 @@
 use crate::error::FormatError;
 use crate::feature::Feature;
+use crate::ref_plane::{is_default_canonical_three, RefPlane};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
@@ -136,6 +137,11 @@ pub struct Component {
     /// Child components.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Component>,
+
+    /// Reference planes for sketch creation.
+    /// If omitted during serialization, defaults to the canonical three (Front, Top, Right).
+    #[serde(default, skip_serializing_if = "is_default_canonical_three")]
+    pub ref_planes: Vec<RefPlane>,
 }
 
 fn is_default_transform(t: &Transform) -> bool {
@@ -151,6 +157,7 @@ impl Component {
             reference: None,
             features: Vec::new(),
             children: Vec::new(),
+            ref_planes: Vec::new(),
         }
     }
 
@@ -162,6 +169,7 @@ impl Component {
             reference: Some(reference.parse()?),
             features: Vec::new(),
             children: Vec::new(),
+            ref_planes: Vec::new(),
         })
     }
 }
