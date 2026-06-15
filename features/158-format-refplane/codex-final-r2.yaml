@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 475
+    finding: "child `ref_planes` が空のとき canonical three ではなく親の `ref_planes` をそのまま継承している。親が custom `ref_planes` だけを持つ assembly では、子の `plane_ref: Front` が `UnknownRefPlane` になったり、親定義で誤解決される。`Component.ref_planes` の公開契約とも不整合。"
+    suggestion: "空の child に親 slice を渡さず、各 Component ごとに canonical three を初期化するか、child の明示 `ref_planes` を canonical three にマージしてから解決する。custom parent + empty child + `plane_ref: Front` の回帰テストも追加する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 160
+    finding: "`RefPlane.offset` の有限値チェックが無く、`.nan` / `.inf` を含む YAML が `Document::from_yaml()` を通過する。build 側ではその値をそのまま plane 平行移動に使うため、NaN/Inf 座標を kernel に流し込める。"
+    suggestion: "`validate_component()` で `ref_plane.offset.is_finite()` を検証して format error にし、special-float の退化テストを追加する。"
+
+verdict: fail

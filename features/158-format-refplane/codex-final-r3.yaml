@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 228
+    finding: "ExtrudeCut が `resolve_plane()` を通るようになり、別 Issue 扱いのはずだった `CreateSketch.offset` の既存無視挙動まで変えている。これにより既存 cut 入力の結果が変わり、実際に `s04b_extrudecut_depth_just_inside_boundary` を `#[ignore]` にして回避している。"
+    suggestion: "ExtrudeCut は `plane_ref` 解決だけ導入しつつ、`plane_ref` が無い場合は従来どおり `CreateSketch.offset` を読まない経路に戻し、ignored にした受け入れテストを再有効化する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 111
+    finding: "`build_bodies_from_features()` に直接渡される `RefPlane.offset` を build 層で検証していないため、`NaN`/`Inf` がそのまま `Plane::translate()` と `make_extrusion()` に流れ、非有限座標の幾何を生成し得る。`Document::from_yaml()` の検証だけではこの公開 API の退化入力を防げない。"
+    suggestion: "`resolve_plane()` の前段で `RefPlane.offset.is_finite()` を検証して typed error を返し、raw build API 向けに `NaN`/`Inf` の退化テストを追加する。"
+
+verdict: fail

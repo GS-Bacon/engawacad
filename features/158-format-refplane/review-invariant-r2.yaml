@@ -1,0 +1,13 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "`RefPlane::default_canonical_three()` が返す Vec 順序が「常に固定」であることを実装側で保証する必要がある（Rust の Vec は順序保証があるため問題ないが、コメント等で明示していない）"
+    suggestion: "関数 doc-comment に「戻り値は [Front, Top, Right] の固定順序である」ことを明記すること"
+  - id: IN02
+    severity: low
+    section: "テスト計画"
+    finding: "T01 決定性テストが parse→build→tessellate を 2 回実行としているが、IdGenerator の決定性を直接検証するテストが含まれていない"
+    suggestion: "T01 で EntityId 一致のアサーションを含めることが記載されているため、実装時に忘れず assert_eq!(mesh1, mesh2) ではなく ID 列比較を含めること"
+
+verdict: pass

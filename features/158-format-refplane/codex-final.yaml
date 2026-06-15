@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 473
+    finding: "inline child Component の feature は常に呼び出し元から渡された `ref_planes` で build されるため、その child 自身の `ref_planes` を一切使えません。`plane_ref` が child ローカル id を指す場合は `UnknownRefPlane` になり、`Front` など同名 plane を child 側でオフセットしていても親の plane で押し出されて誤形状になります。"
+    suggestion: "`build_component_tree` 内で `component.ref_planes` からその Component 用の有効な plane 集合を決めて `build_bodies_from_features` に渡し、子再帰でも親の slice ではなく各 `child` 自身の `ref_planes` を使うようにする。空の場合の扱いも Component 単位で統一する。"
+
+verdict: fail

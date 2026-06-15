@@ -1,0 +1,118 @@
+{
+  "totals": {
+    "passed": 993,
+    "failed": 0,
+    "ignored": 12
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_determinism",
+      "kind": "determinism"
+    },
+    {
+      "name": "t05_new_format_e2e",
+      "kind": "other"
+    },
+    {
+      "name": "t06_plane_ref_priority_over_plane",
+      "kind": "other"
+    },
+    {
+      "name": "t07_legacy_plane_offset_still_works",
+      "kind": "other"
+    },
+    {
+      "name": "t10_degen_unknown_plane_ref",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t11_boundary_empty_plane_ref_string",
+      "kind": "degenerate"
+    },
+    {
+      "name": "test_default_canonical_three_order",
+      "kind": "other"
+    },
+    {
+      "name": "test_default_canonical_three_deterministic",
+      "kind": "determinism"
+    },
+    {
+      "name": "test_is_default_canonical_three_true",
+      "kind": "other"
+    },
+    {
+      "name": "test_is_default_canonical_three_false_wrong_order",
+      "kind": "other"
+    },
+    {
+      "name": "test_is_default_canonical_three_false_custom_offset",
+      "kind": "other"
+    },
+    {
+      "name": "test_is_default_canonical_three_false_extra_plane",
+      "kind": "other"
+    },
+    {
+      "name": "test_is_default_canonical_three_false_missing_plane",
+      "kind": "other"
+    },
+    {
+      "name": "test_front_top_right_constructors",
+      "kind": "other"
+    },
+    {
+      "name": "test_ref_plane_serialization",
+      "kind": "other"
+    },
+    {
+      "name": "test_ref_plane_zero_offset_skipped",
+      "kind": "degenerate"
+    },
+    {
+      "name": "test_ref_plane_nonzero_offset_included",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t02_document_new_seeds_three_refplanes",
+      "kind": "other"
+    },
+    {
+      "name": "t03_from_yaml_seeds_three_refplanes",
+      "kind": "golden"
+    },
+    {
+      "name": "t04_legacy_examples_roundtrip",
+      "kind": "golden"
+    },
+    {
+      "name": "t08_yaml_golden_new_format",
+      "kind": "golden"
+    },
+    {
+      "name": "t09_yaml_golden_document_with_explicit_refplanes",
+      "kind": "golden"
+    },
+    {
+      "name": "t12_degen_duplicate_refplane_id",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t13_default_three_skips_serialize",
+      "kind": "golden"
+    },
+    {
+      "name": "t14_explicit_three_with_custom_offset_serializes",
+      "kind": "golden"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 25,
+    "determinism": 2,
+    "degenerate": 5,
+    "boundary": 0,
+    "golden": 6,
+    "edge_case": 0
+  }
+}

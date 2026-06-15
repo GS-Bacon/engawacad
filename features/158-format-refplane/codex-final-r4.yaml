@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 500
+    finding: "assembly 再帰で `_ref_planes` を使わず、`component.ref_planes` が空の child を常に canonical three にフォールバックしている。これにより nested component の `plane_ref` は root_component 側で宣言した custom / offset 付き RefPlane を参照できず、`UnknownRefPlane` で失敗するか誤った平面に解決される。plan で定義した `root_component.ref_planes` モデルと食い違う。"
+    suggestion: "child の `ref_planes` が空のときは canonical ではなく親から渡された `_ref_planes` を継承して `build_bodies_from_features()` に渡す。local override が必要な場合だけ `component.ref_planes` を優先する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/tests/refplane_acceptance.rs"
+    line_hint: 36
+    finding: "T04_legacy_examples_roundtrip が byte-identical round-trip を検証せず、再 parse 後の件数比較に弱められている。`extruded_rect.engawa` には別の exact golden が無いため、legacy example の YAML 文字列表現が崩れてもこの差分の新規テストでは検出できない。"
+    suggestion: "test-spec どおり `assert_eq!(original, reserialized)` に戻すか、少なくとも `extruded_rect.engawa` に exact golden を追加して wire-format 不変を直接検証する。"
+
+verdict: fail

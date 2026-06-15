@@ -1,0 +1,284 @@
+# Issue #158 — format-refplane プラン
+
+<!-- ADR-006 §plan.md 必須セクション。GLM SCOPE ペルソナが存在を検証する。 -->
+
+## Context
+
+Phase 7「スケッチ描画 (正準平面)」の最初の Issue。ブラウザで「どの平面に描くか」をユーザーに選ばせる UI を作る前提として、Rust 側のデータモデルに `RefPlane` 概念を導入する。Front (xy) / Top (xz) / Right (yz) の 3 枚を Document 初期化時に自動で持たせ、`CreateSketch` Feature が `plane_ref: "Front"` のような参照で平面を指定できるようにする。本 Issue は format 層 (型定義 / 初期化) + build 層 (`plane_ref` → 内部 `Plane` 解決) の **Rust サイド全部** をスコープにする。UI は別 Issue #159 `viewer-refplane-pick`。
+
+前提 ADR: `docs/decisions/010-sketch-input-model.md` §Decision 2。
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `engawa-format` に `RefPlane { id, plane: SketchPlane, offset }` 型を追加 | UI (RefPlane の 3D 描画 / raycaster 選択) — #159 `viewer-refplane-pick` |
+| `Component` に `ref_planes: Vec<RefPlane>` フィールドを追加 | kernel 変更 (RefPlane は format/build 層に閉じる) |
+| `Document::new()` で root_component.ref_planes に Front/Top/Right を補填 | 旧 `plane` / `offset` フィールドの将来削除 (別 Phase で検討) |
+| `Document::from_yaml()` で ref_planes 空なら parse 直後に 3 件補填 | `plane_ref` と `plane`/`offset` 両立時の警告ログ (本 Issue では plane_ref 優先で黙って捨てる) |
+| 「デフォルト 3 件と完全一致」を判定する skip_serializing_if 関数を実装 | Phase 8 用の任意平面追加 UI / `RefPlane` の動的追加 API |
+| `Feature::CreateSketch` に `plane_ref: Option<String>` を追加 | スケッチセグメントの構造変更 (`SketchSegment` 等) |
+| `engawa-build` の CreateSketch ディスパッチで `plane_ref` 解決 (Some → ref_planes から id 引き Plane、None → 従来通り plane+offset) | RefPlane の動的追加 / 削除 / 編集 API |
+| RefPlane id 重複検証 (`FormatError::DuplicateRefPlaneId`) | 既存 examples/*.engawa の変更 (byte-identical 維持) |
+| 既存 `.engawa` (Phase 6 までの全 examples) の parse・round-trip・smoke 互換維持 | ts-rs 生成された TypeScript 側での RefPlane 利用 (生成のみ、消費は #159) |
+| 新形式サンプル `examples/sketch_via_refplane.engawa` の新規追加 + smoke 登録 | `Document` 型側に ref_planes を持たせる案 (Component 側に統一) |
+| YAML golden test 追加 (新形式 + 明示 ref_planes 例) | RefPlane offset を UI に露出 (Phase 8 で対応) |
+| `BuildError::UnknownRefPlane { id }` 新設 | `ExtrudeCut` の offset 無視バグ修正 (別 Issue #163 等で対応) |
+
+## Non-Goals
+
+- UI 側 (Three.js 半透明描画 / raycaster クリック検出) は本 Issue では扱わない (#159 で対応)
+- 既存 `examples/*.engawa` のフォーマット変更は行わない (round-trip byte-identical を維持)
+- `plane_ref` と `plane`/`offset` の両立時に警告ログを出す処理は本 Issue では未対応
+- `RefPlane` をユーザーが追加 / 削除する API (Phase 8 で対応)
+- `RefPlane.offset` の UI 露出は Phase 7 では行わない (Phase 8 で対応)
+- `ExtrudeCut` の `_offset` を捨てているバグの修正は別 Issue
+- kernel 層の変更は一切行わない
+
+## 設計判断 (壁打ち結果サマリ)
+
+1. **3 枚の自動補填タイミング = やり方 B**: `Document::new()` と `Document::from_yaml()` 両経路で `root_component.ref_planes` が空なら 3 件補填する。serialize 時はカスタム `skip_serializing_if` 関数で「デフォルト 3 件と完全一致なら省く」とし、既存 examples の byte-identical round-trip を維持する。
+2. **既存 examples (`examples/*.engawa`) は変更しない**。golden YAML テストも byte-identical のまま。
+3. **`plane_ref` と `plane`/`offset` 両立時**: `plane_ref` が `Some` なら優先、古い `plane`/`offset` は黙って捨てる (Issue Out-of-Scope 指定通り)。警告ログは別 Issue。
+4. **配置先 = `Component`**: Document トップではなく root_component 直下の `ref_planes: Vec<RefPlane>`。
+5. **コレクション型 = `Vec<RefPlane>`**: 既存 `features: Vec<Feature>` / `children: Vec<Component>` と統一。id 重複は `validate_component` で検証。
+
+## 実装対象
+
+<!-- Issue: #158 -->
+<!-- 影響クレート: engawa-format / engawa-build -->
+
+### 新規ファイル
+
+- `crates/engawa-format/src/ref_plane.rs`:
+  - `pub struct RefPlane { pub id: String, pub plane: SketchPlane, #[serde(default, skip_serializing_if = "is_zero")] pub offset: f64 }`
+  - `derive: Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, ts_rs::TS`
+  - `impl RefPlane { pub fn default_canonical_three() -> Vec<RefPlane>; pub fn front() -> RefPlane; pub fn top() -> RefPlane; pub fn right() -> RefPlane; }`
+  - `pub fn is_default_canonical_three(rp: &Vec<RefPlane>) -> bool` (skip_serializing_if 用)
+- `examples/sketch_via_refplane.engawa`: `plane_ref: Front` を使う新形式サンプル (内容は `extruded_rect.engawa` の `plane: xy` を `plane_ref: Front` に置換した、同等形状を出すもの)
+
+### 変更ファイル
+
+- `crates/engawa-format/src/lib.rs`: `pub mod ref_plane; pub use ref_plane::RefPlane;`
+- `crates/engawa-format/src/component.rs:120-167`:
+  - `Component` 構造体に `#[serde(default, skip_serializing_if = "ref_plane::is_default_canonical_three")] pub ref_planes: Vec<RefPlane>` を追加
+  - `Component::new()` (行147-155) と `Component::from_ref()` (行158-166) の struct literal に `ref_planes: Vec::new()` を追加
+- `crates/engawa-format/src/document.rs`:
+  - `Document::new()` (行37-43): root_component を作った直後に `root.ref_planes = RefPlane::default_canonical_three();` を入れる
+  - `impl<'de> Deserialize<'de> for Document` (行79-90): RawDocument → Document 変換時に `root_component.ref_planes.is_empty()` なら `default_canonical_three()` で補填
+  - `validate_component()` (行121-170): RefPlane id 重複検証ループを追加 (HashSet で id を追跡し重複なら `FormatError::DuplicateRefPlaneId { id }`)
+- `crates/engawa-format/src/feature.rs:294-301`:
+  - `CreateSketch` バリアントに `#[serde(default, skip_serializing_if = "Option::is_none")] plane_ref: Option<String>` フィールドを追加
+  - `Feature::id()` (行357-369) の `CreateSketch { id, .. }` match arm はフィールド追加に影響なし (`..` で吸収)
+- `crates/engawa-format/src/error.rs`: `FormatError::DuplicateRefPlaneId { id: String }` バリアント追加 (`thiserror` 既存パターン踏襲)
+- `crates/engawa-build/src/lib.rs:97-156`:
+  - sketches storage を `HashMap<String, SketchEntry>` (構造体: `plane_ref: Option<String>`, `plane: SketchPlane`, `offset: f64`, `profile: Vec<SketchSegment>`) に変更
+  - `Feature::CreateSketch { id, plane, offset, profile, plane_ref }` を match で受け取り、SketchEntry に格納
+  - Extrude / ExtrudeCut の plane 解決を以下に変更:
+    - `plane_ref: Some(id)` → `root_component.ref_planes` を走査して id 一致する RefPlane を取得 → 内部 Plane に変換 → 必要なら translate
+    - `plane_ref: None` → 従来通り `plane` + `offset` から Plane 生成
+    - id 解決失敗 → `BuildError::UnknownRefPlane { id }`
+  - 注: 既存 ExtrudeCut が `_offset` を捨てている挙動は本 Issue では保持する (別 Issue で修正)
+- `crates/engawa-build/src/error.rs` (or 該当ファイル): `BuildError::UnknownRefPlane { id: String }` バリアント追加
+- `crates/engawa-build/tests/examples_smoke.rs`: `smoke(include_str!("../../../examples/sketch_via_refplane.engawa"))` を呼ぶ新規テスト関数を追加
+- `crates/engawa-format/tests/golden_examples.rs`:
+  - 新例 `sketch_via_refplane.engawa` の byte-identical golden 文字列を追加
+  - ref_planes をユーザーが明示した Document の golden (例: Front offset=5.0 を明示) を追加
+
+### 既存 examples (変更しないが検証対象)
+
+- `examples/extruded_rect.engawa` — そのまま parse・round-trip・smoke 通過を T04 で確認
+- `examples/two_bodies.engawa` — 同上
+
+## 設計方針
+
+- **決定性要件**: `RefPlane::default_canonical_three()` は呼び出すたび同一の Vec を返す純関数 (id・plane・offset 完全固定)。**戻り値は常に `[Front (Xy, 0.0), Top (Xz, 0.0), Right (Yz, 0.0)]` の固定順序で返ること** (実装側 doc-comment にも明記する。GLM レビュー IN01 採用)。parse 経路で補填されたコレクションも順序が常に `[Front, Top, Right]` で安定する。これにより Issue が build 経路に流れた時の IdGenerator 進行が決定的になる。
+- **B-rep トポロジー妥当性**: 本 Issue は format/build 層のみで kernel 層 (B-rep) には触れない。Euler-Poincaré 不変条件は既存 `make_extrusion` が保証する。新形式 `.engawa` の出力 Solid が既存形式と同等 (T05) であることをテストで担保する。
+- **退化幾何の扱い**: `plane_ref` が解決できない (`UnknownRefPlane`)、空文字列、重複 id (`DuplicateRefPlaneId`) を退化扱いとし、build/parse 時にエラーで返す。これらの退化条件は T10/T11/T12 でカバー。
+- **derive 規約**: `RefPlane` には `Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, ts_rs::TS` を全て付ける (既存 `Feature` / `Component` と同じ規約)。
+- **エラーハンドリング**: `thiserror` 既存パターン踏襲 (`FormatError` / `BuildError` のバリアント追加)。エラーメッセージは「RefPlane id '...' が ref_planes に見つかりません」等の日本語で 1 行にまとめる (既存メッセージスタイルに合わせる)。
+- **workspace.dependencies**: 本 Issue で新規依存追加なし (`schemars`, `serde`, `ts-rs`, `thiserror` は全て既に workspace に存在)。
+
+### 数値モデル
+
+本 Issue は形式変更のみで数値判断 (ε, tolerance) を持たない。Out of scope。RefPlane.offset は f64 のまま既存 `SketchPlane.offset` の挙動を踏襲し、新規 ε は導入しない。
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01_determinism | 決定性 | 新例 `examples/sketch_via_refplane.engawa` の parse→build→tessellate を 2 回実行、**全 EntityId 列 + 頂点座標が完全一致** (mesh struct 全体の `assert_eq!` に加え、Solid の Face/Edge/Vertex の EntityId 列も列挙比較。GLM レビュー IN02 採用) | `assert_eq!(mesh1, mesh2)` かつ Face/Edge/Vertex の EntityId 列の `assert_eq!` |
+| T02_document_new_seeds_three_refplanes | 正常系 | `Document::new("x")` 直後に `root_component.ref_planes` が `[Front, Top, Right]` (id・plane・offset=0 完全一致) | `assert_eq!` 各フィールド |
+| T03_from_yaml_seeds_three_refplanes | 正常系 | `Document::from_yaml("schema_version: 1\nversion: '0.1'\nroot_component:\n  name: x\n")` で parse 後 ref_planes に 3 件補填 | `assert_eq!(doc.root_component.ref_planes.len(), 3)` |
+| T04_legacy_examples_roundtrip | 互換 | `examples/extruded_rect.engawa` / `examples/two_bodies.engawa` を parse → serialize し、元と byte-identical | `assert_eq!(original_str, reserialized_str)` |
+| T05_new_format_e2e | 正常系 | `examples/sketch_via_refplane.engawa` (plane_ref:Front) を parse → build → kernel が `extruded_rect.engawa` と同等の Solid 出力 | `assert_eq!(solid_via_plane_ref.face_count(), solid_via_plane.face_count())` 等 |
+| T06_plane_ref_priority_over_plane | 仕様 | CreateSketch に `plane_ref: Front` と `plane: yz` 両方ある時、build 層が plane_ref を優先 (= xy 平面で extrude) | 出力 Solid の bounding box が `Front (xy)` 平面 extrude 結果と一致 |
+| T07_legacy_plane_offset_still_works | 互換 | `plane_ref` なし `plane: xy, offset: 5.0` の CreateSketch が従来通り高さ 5 で extrude | 出力 Solid の z 軸 bounding box が `[5.0, 5.0+depth]` |
+| T08_yaml_golden_new_format | golden | `sketch_via_refplane.engawa` を parse→serialize した文字列が事前定義 golden と byte-identical | `assert_eq!` |
+| T09_yaml_golden_document_with_explicit_refplanes | golden | ref_planes に Front (offset=5) のような非デフォルト値を明示書きした Document の serialize 出力が golden と一致 | `assert_eq!` |
+| T10_degen_unknown_plane_ref | 退化 | `plane_ref: "Nonexistent"` の CreateSketch を build → `BuildError::UnknownRefPlane { id: "Nonexistent" }` | `assert!(matches!(err, BuildError::UnknownRefPlane { .. }))` |
+| T11_boundary_empty_plane_ref_string | 境界 | `plane_ref: ""` の CreateSketch を build → `BuildError::UnknownRefPlane { id: "" }` | 同上 (空文字列は通常 id にマッチしない) |
+| T12_degen_duplicate_refplane_id | 退化 | ref_planes に Front を 2 件持つ `.engawa` を parse → `FormatError::DuplicateRefPlaneId { id: "Front" }` | `assert!(matches!(err, FormatError::DuplicateRefPlaneId { .. }))` |
+| T13_default_three_skips_serialize | 互換補助 | `Document::new("x")` を serialize した YAML に `ref_planes:` キーが含まれない | `assert!(!yaml.contains("ref_planes"))` |
+| T14_explicit_three_with_custom_offset_serializes | 互換補助 | Front の offset を 5.0 にした Document を serialize → `ref_planes:` キーと offset 値が出力される | `assert!(yaml.contains("ref_planes"))` and `assert!(yaml.contains("offset: 5"))` |
+
+退化/境界ケース ID: T10/T11/T12 を計上 (`_degen_` / `_boundary_` 規約準拠)。
+
+## 期待値メモ (重要 assertion 値)
+
+- T02/T03 の Front/Top/Right の plane マッピング: `Front -> SketchPlane::Xy`, `Top -> SketchPlane::Xz`, `Right -> SketchPlane::Yz`、すべて `offset = 0.0`
+- T05 expected: 新例 (plane_ref:Front) の出力 Solid は `extruded_rect.engawa` (plane:xy) と face/edge/vertex 数が一致し、bounding box が同一
+- T06 expected: 出力 Solid の bounding box が `Front (xy)` 平面 extrude 結果と一致 (`plane: yz` は無視されている)
+- T07 expected: 既存 Phase 6 の `plane+offset` テスト同等の挙動を保つ
+- T10/T11 expected error: `BuildError::UnknownRefPlane { id: 該当文字列 }`
+- T12 expected error: `FormatError::DuplicateRefPlaneId { id: "Front" }`
+- T13: serialize 出力に `ref_planes:` 文字列が含まれないことを `assert!(!yaml.contains("ref_planes"))` で確認
+
+## 実装順序
+
+1. `engawa-format::ref_plane` モジュール追加 (型 + `default_canonical_three()` + `is_default_canonical_three()`)
+2. `Component.ref_planes` フィールド追加 + `Component::new()` / `from_ref()` の struct literal 更新 + テスト直接初期化 5 か所 (`document.rs` 行713, 724, 726, 809, 886) 更新
+3. `Document::new()` / `Deserialize` impl で 3 件補填ロジック
+4. `validate_component` に RefPlane id 重複検証 + `FormatError::DuplicateRefPlaneId`
+5. `Feature::CreateSketch.plane_ref: Option<String>` 追加 + `Feature::id()` match arm は `..` で吸収 (変更不要だが確認)
+6. `engawa-build` の sketches storage を `SketchEntry` 構造体に拡張、CreateSketch dispatch 更新
+7. Extrude / ExtrudeCut の plane 解決 (plane_ref 優先 / fallback / `BuildError::UnknownRefPlane` エラー)
+8. `examples/sketch_via_refplane.engawa` 作成
+9. `examples_smoke.rs` / `golden_examples.rs` 更新
+10. acceptance test スケルトン (`crates/engawa-format/tests/refplane_acceptance.rs` および `crates/engawa-build/tests/refplane_build_acceptance.rs`) を STEP 5.5 で Claude が先置き
+
+## 既存関数の変更 (before / after)
+
+### `crates/engawa-format/src/component.rs:147-155` `Component::new`
+
+before:
+```rust
+pub fn new(name: &str) -> Self {
+    Self {
+        name: name.to_string(),
+        transform: Transform::default(),
+        reference: None,
+        features: Vec::new(),
+        children: Vec::new(),
+    }
+}
+```
+
+after:
+```rust
+pub fn new(name: &str) -> Self {
+    Self {
+        name: name.to_string(),
+        transform: Transform::default(),
+        reference: None,
+        features: Vec::new(),
+        children: Vec::new(),
+        ref_planes: Vec::new(),
+    }
+}
+```
+
+### `crates/engawa-format/src/document.rs:37-43` `Document::new`
+
+before:
+```rust
+pub fn new(name: &str) -> Self {
+    Self {
+        schema_version: SCHEMA_VERSION,
+        version: VERSION.to_string(),
+        root_component: Component::new(name),
+    }
+}
+```
+
+after:
+```rust
+pub fn new(name: &str) -> Self {
+    let mut root = Component::new(name);
+    root.ref_planes = crate::ref_plane::RefPlane::default_canonical_three();
+    Self {
+        schema_version: SCHEMA_VERSION,
+        version: VERSION.to_string(),
+        root_component: root,
+    }
+}
+```
+
+### `crates/engawa-format/src/document.rs:79-90` `impl Deserialize for Document`
+
+before (要旨): RawDocument → Document へ変換、`validate_component` 呼び出し。
+
+after (要旨): RawDocument → Document 変換後、`validate_component` 直前に
+```rust
+if doc.root_component.ref_planes.is_empty() {
+    doc.root_component.ref_planes = RefPlane::default_canonical_three();
+}
+```
+を挟む。
+
+### `crates/engawa-build/src/lib.rs:97-156` sketches storage と Extrude plane 解決
+
+before の構造 (要旨):
+```rust
+let mut sketches: HashMap<String, (SketchPlane, &[SketchSegment], f64)> = HashMap::new();
+// ...
+Feature::CreateSketch { id, plane, offset, profile } => {
+    sketches.insert(id.clone(), (*plane, profile.as_slice(), *offset));
+}
+// Extrude 経路
+let base_plane = match sketch_plane {
+    SketchPlane::Xy => Plane::xy(),
+    SketchPlane::Xz => Plane::xz(),
+    SketchPlane::Yz => Plane::yz(),
+};
+let plane = if *offset != 0.0 { base_plane.translate(base_plane.normal * *offset) } else { base_plane };
+```
+
+after の構造 (要旨):
+```rust
+struct SketchEntry<'a> {
+    plane_ref: Option<String>,
+    plane: SketchPlane,
+    offset: f64,
+    profile: &'a [SketchSegment],
+}
+let mut sketches: HashMap<String, SketchEntry> = HashMap::new();
+// ...
+Feature::CreateSketch { id, plane, offset, profile, plane_ref } => {
+    sketches.insert(id.clone(), SketchEntry {
+        plane_ref: plane_ref.clone(),
+        plane: *plane,
+        offset: *offset,
+        profile: profile.as_slice(),
+    });
+}
+// Extrude 経路
+fn resolve_plane(entry: &SketchEntry, root: &Component) -> Result<Plane, BuildError> {
+    if let Some(ref_id) = &entry.plane_ref {
+        let rp = root.ref_planes.iter().find(|p| &p.id == ref_id)
+            .ok_or_else(|| BuildError::UnknownRefPlane { id: ref_id.clone() })?;
+        let base = sketch_plane_to_plane(rp.plane);
+        Ok(if rp.offset != 0.0 { base.translate(base.normal * rp.offset) } else { base })
+    } else {
+        let base = sketch_plane_to_plane(entry.plane);
+        Ok(if entry.offset != 0.0 { base.translate(base.normal * entry.offset) } else { base })
+    }
+}
+```
+
+## 幾何的不変条件チェックリスト
+
+本 Issue は kernel 層 (B-rep トポロジー生成) に触れない。新形式の CreateSketch は既存 `make_extrusion` を通り、不変条件 (Euler-Poincaré, face orientation) は既存実装が保証する。
+
+- [ ] partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか — **N/A** (kernel 不変、本 Issue で触れない)
+- [ ] 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか — **N/A** (kernel 不変)
+- [ ] flip_normals / same_sense の意味論が明確か — **N/A** (kernel 不変)
+- [ ] pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか — **N/A** (kernel 不変)
+
+代わりに format/build 層の不変条件:
+
+- [ ] `RefPlane::default_canonical_three()` は常に `[Front (Xy, 0.0), Top (Xz, 0.0), Right (Yz, 0.0)]` を返す (T02/T03 でカバー)
+- [ ] `plane_ref` が ref_planes に解決できないとき `BuildError::UnknownRefPlane` を返す (T10/T11 でカバー)
+- [ ] `plane_ref` 優先順位は `Some` > `plane`/`offset` (T06 でカバー)
+- [ ] ref_planes の id 重複は parse 時に `FormatError::DuplicateRefPlaneId` で拒否 (T12 でカバー)
+- [ ] デフォルト 3 件のみの ref_planes は serialize 出力されない (T13/T14 でカバー)
