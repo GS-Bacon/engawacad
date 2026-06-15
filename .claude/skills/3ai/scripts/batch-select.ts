@@ -24,11 +24,35 @@ const GROUP_ORDER: Record<string, number> = {
 
 const AMBIGUITY_MARKERS = /要検討|TBD|どちらか/;
 
+/** 3ailoop モードで selected から除外するラベル群 (gate:* prefix は別判定) */
+const LOOP_EXCLUDE_LABELS = new Set([
+  "gate:human-feel",
+  "gate:adr-review",
+  "needs-triage",
+  "needs-phase",
+  "needs-human",
+  "needs-intent-review",
+  "blocked-by-split",
+]);
+
+function isLoopExcludedLabels(labels: string[]): boolean {
+  for (const l of labels) {
+    if (l.startsWith("gate:")) return true;
+    if (LOOP_EXCLUDE_LABELS.has(l)) return true;
+  }
+  return false;
+}
+
+function isParentBlockedBySplitChild(labels: string[]): boolean {
+  return labels.some(l => /^parent-blocked-by-split:\d+$/.test(l));
+}
+
 // --- 引数解析 ---
 
 type BatchArg = "fixes" | "phase" | "foundation";
 let batchArg: BatchArg | null = null;
 let dryRun = false;
+let loopMode = false;
 let roadmapFile = "ROADMAP.md";
 
 {
@@ -45,6 +69,7 @@ let roadmapFile = "ROADMAP.md";
         break;
       }
       case "--dry-run": dryRun = true; break;
+      case "--loop": loopMode = true; break;
       case "--roadmap": roadmapFile = args[++i]; break;
       default:
         console.error(`Unknown arg: ${args[i]}`);
@@ -204,7 +229,21 @@ async function main() {
   let selected: GhIssue[] = [];
   let tier: BatchPlan["tier"] = "bug-batch";
 
-  if (batchArg === "fixes") {
+  // 3ailoop モード: split-batch tier を最優先 (parent-blocked-by-split:<N> 子 Issue)
+  if (loopMode && batchArg === null) {
+    const splitChildren = allIssues.filter(i => {
+      const labels = labelNames(i);
+      return isParentBlockedBySplitChild(labels) && !isLoopExcludedLabels(labels);
+    });
+    if (splitChildren.length > 0) {
+      selected = splitChildren;
+      tier = "split-batch";
+    }
+  }
+
+  if (selected.length > 0) {
+    // split-batch で確定、ladder スキップ
+  } else if (batchArg === "fixes") {
     // --batch fixes: bug + batch:* のみ
     selected = allIssues.filter(i => labelNames(i).includes("bug") && hasBatchLabel(i));
     tier = "bug-batch";
@@ -255,6 +294,16 @@ async function main() {
           tier = "phase-feature";
         }
       }
+    }
+  }
+
+  // 3ailoop モード: 共通 exclude フィルタを適用 (gate:* / needs-* / blocked-by-split)
+  if (loopMode) {
+    const beforeCount = selected.length;
+    selected = selected.filter(i => !isLoopExcludedLabels(labelNames(i)));
+    const filtered = beforeCount - selected.length;
+    if (filtered > 0) {
+      warnings.push(`loop モード: gate/needs-* で ${filtered} 件除外 (残 ${selected.length} 件)`);
     }
   }
 
