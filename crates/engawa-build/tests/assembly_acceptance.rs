@@ -5,6 +5,7 @@ use engawa_format::document::Document;
 use engawa_format::feature::Feature;
 use engawa_kernel::brep::topology::IdGenerator;
 use engawa_kernel::error::KernelError;
+use serial_test::file_serial;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -114,6 +115,7 @@ fn t01_determinism() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[file_serial(engawa_stdlib_path)]
 fn t02_stdlib_reference_resolved() {
     let dir = tempfile::tempdir().unwrap();
     let stdlib_dir = dir.path().join("stdlib");
@@ -295,6 +297,7 @@ fn t07_boundary_depth_16_vs_17() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[file_serial(engawa_stdlib_path)]
 fn t08_stdlib_root_not_set_error() {
     let old = std::env::var("ENGAWA_STDLIB_PATH").ok();
     std::env::remove_var("ENGAWA_STDLIB_PATH");
