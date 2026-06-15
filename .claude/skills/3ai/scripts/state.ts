@@ -12,8 +12,30 @@
 //   state.ts reset-failure <state.json> --issue N   # failure_streak[N] を削除
 //   state.ts get-failure   <state.json> --issue N   # stdout に現在値 (未設定なら 0)
 
-import { readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import type { StateData } from "./types.ts";
+
+// failure_streak は state.json から分離して専用ファイル管理
+// (Issue #168: state.json の concurrent write 危険性を回避するため decouple)
+const FAILURE_STREAK_PATH = "features/.loop/failure-streak.json";
+
+function readFailureStreakFile(): Record<string, number> {
+  if (!existsSync(FAILURE_STREAK_PATH)) return {};
+  try {
+    const obj = JSON.parse(readFileSync(FAILURE_STREAK_PATH, "utf-8"));
+    return typeof obj === "object" && obj !== null ? (obj as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function atomicWriteFailureStreak(data: Record<string, number>): void {
+  mkdirSync(dirname(FAILURE_STREAK_PATH), { recursive: true });
+  const tmpPath = `${FAILURE_STREAK_PATH}.tmp.${process.pid}.${Date.now()}`;
+  writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  renameSync(tmpPath, FAILURE_STREAK_PATH);
+}
 
 function readState(path: string): StateData {
   return JSON.parse(readFileSync(path, "utf-8")) as StateData;
@@ -99,27 +121,29 @@ export function checkEarlyStop(path: string): boolean {
   return j.slice(-2).every((x) => x.adopted === 0 && x.rejected > 0);
 }
 
-export function incFailureStreak(path: string, issue: number): number {
-  const data = readState(path);
-  if (!data.failure_streak) data.failure_streak = {};
+// failure_streak は features/.loop/failure-streak.json に分離保存
+// (state.json には書かない。CLI の path 引数は backward compat のため受けるが無視)
+export function incFailureStreak(_path: string, issue: number): number {
+  const data = readFailureStreakFile();
   const key = String(issue);
-  const n = (data.failure_streak[key] ?? 0) + 1;
-  data.failure_streak[key] = n;
-  writeState(path, data);
+  const n = (data[key] ?? 0) + 1;
+  data[key] = n;
+  atomicWriteFailureStreak(data);
   return n;
 }
 
-export function resetFailureStreak(path: string, issue: number): void {
-  const data = readState(path);
-  if (data.failure_streak) {
-    delete data.failure_streak[String(issue)];
-    writeState(path, data);
+export function resetFailureStreak(_path: string, issue: number): void {
+  const data = readFailureStreakFile();
+  const key = String(issue);
+  if (key in data) {
+    delete data[key];
+    atomicWriteFailureStreak(data);
   }
 }
 
-export function getFailureStreak(path: string, issue: number): number {
-  const data = readState(path);
-  return data.failure_streak?.[String(issue)] ?? 0;
+export function getFailureStreak(_path: string, issue: number): number {
+  const data = readFailureStreakFile();
+  return data[String(issue)] ?? 0;
 }
 
 export function assertCriticalZero(statePath: string, verdictPath: string): boolean {

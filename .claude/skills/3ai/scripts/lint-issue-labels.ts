@@ -30,7 +30,8 @@ const FEATURE_LABELS = new Set(["type:feature", "type: feature"]);
 const BATCH_PREFIX = "batch:";
 
 // 既知ラベルセット — 誤字検出 (未知ラベルは error 扱い)
-// type/batch 軸ラベル + 3ailoop 新ラベル + 既存慣習ラベル + GitHub default を含む
+// batch:* / gate:* は prefix 一括許可せず明示列挙 (Issue #168: typo `batch:kerenl` を
+// 既知扱いにしないため)。prefix 許可は parent-blocked-by-split:* (Issue 番号 free-form) のみ。
 const KNOWN_LABELS = new Set([
   // type 軸
   "type:feature", "type: feature",
@@ -38,7 +39,11 @@ const KNOWN_LABELS = new Set([
   "type:foundation", "type: foundation",
   "bug",
   "docs",
-  // 3ailoop 新ラベル (gate:* と parent-blocked-by-split:* は KNOWN_PREFIXES で扱う)
+  // batch 軸 (明示列挙)
+  "batch:kernel", "batch:data", "batch:viewer", "batch:skill",
+  // 3ailoop gate ラベル (明示列挙)
+  "gate:human-feel", "gate:adr-review",
+  // 3ailoop needs/blocked ラベル
   "needs-triage", "needs-phase", "needs-human", "needs-intent-review",
   "blocked-by-split",
   // 既存慣習
@@ -50,9 +55,7 @@ const KNOWN_LABELS = new Set([
 ]);
 
 const KNOWN_PREFIXES = [
-  "batch:",
-  "gate:",
-  "parent-blocked-by-split:",
+  "parent-blocked-by-split:", // Issue 番号 free-form
 ];
 
 function isKnownLabel(label: string): boolean {

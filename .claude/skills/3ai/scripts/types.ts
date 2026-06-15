@@ -30,8 +30,6 @@ export interface StateData {
   };
   /** このフィーチャーで自動起票された GitHub Issue のリスト */
   raised_issues?: RaisedIssue[];
-  /** Issue 単位の連続失敗カウント (loop-failure-tracker.ts 用、N 回で needs-human 退避) */
-  failure_streak?: Record<string, number>;
 }
 
 export interface VerdictData {
