@@ -20,6 +20,7 @@ import {
   insetRect,
   CUT_INSET_RATIO,
   faceSignFromFaceId,
+  nextId,
 } from "./extrude";
 import { postFeature } from "./api";
 import type { Feature } from "./generated/Feature";
@@ -1065,5 +1066,41 @@ describe("#110 faceSignFromFaceId", () => {
 
   it("feature_id contains f_z_pos but face is f_z_neg → sign -1 (Codex F01 regression)", () => {
     expect(faceSignFromFaceId("N(f_z_pos_box;face:f_z_neg)")).toBe(-1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T08_unit_id_determinism: nextId 関数の決定性
+// ---------------------------------------------------------------------------
+describe("T08_unit_id_determinism: nextId function determinism", () => {
+  it("empty existing set always returns prefix0", () => {
+    const existing = new Set<string>();
+    expect(nextId("sketch_", existing)).toBe("sketch_0");
+    expect(nextId("sketch_", existing)).toBe("sketch_0");
+    expect(nextId("extrude_", existing)).toBe("extrude_0");
+  });
+
+  it("existing {sketch_0} returns sketch_1, deterministically", () => {
+    const existing = new Set(["sketch_0"]);
+    expect(nextId("sketch_", existing)).toBe("sketch_1");
+    // Call again — same result
+    expect(nextId("sketch_", existing)).toBe("sketch_1");
+  });
+
+  it("existing {sketch_0, sketch_1} returns sketch_2, deterministically", () => {
+    const existing = new Set(["sketch_0", "sketch_1"]);
+    expect(nextId("sketch_", existing)).toBe("sketch_2");
+    expect(nextId("sketch_", existing)).toBe("sketch_2");
+  });
+
+  it("gap in sequence: {sketch_0, sketch_2} returns sketch_1 (smallest non-colliding)", () => {
+    const existing = new Set(["sketch_0", "sketch_2"]);
+    expect(nextId("sketch_", existing)).toBe("sketch_1");
+  });
+
+  it("non-colliding prefix is independent: {sketch_5} doesn't affect extrude_", () => {
+    const existing = new Set(["sketch_5"]);
+    expect(nextId("extrude_", existing)).toBe("extrude_0");
+    expect(nextId("sketch_", existing)).toBe("sketch_0");
   });
 });

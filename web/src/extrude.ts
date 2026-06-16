@@ -246,7 +246,7 @@ export function buildExtrudeFeatures(
   return { sketch, extrude };
 }
 
-function nextId(prefix: string, existing: Set<string>): string {
+export function nextId(prefix: string, existing: Set<string>): string {
   let n = 0;
   while (existing.has(`${prefix}${n}`)) n++;
   return `${prefix}${n}`;

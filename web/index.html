@@ -84,6 +84,23 @@
       #extrude-panel label { margin-right: 0.5rem; }
       #extrude-panel input { width: 5em; }
       #extrude-panel button { margin-left: 0.5rem; cursor: pointer; }
+      #sketch-extrude-panel {
+        display: none;
+        position: absolute;
+        top: 4rem;
+        right: 1rem;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 0.75rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        z-index: 10;
+        pointer-events: auto;
+      }
+      #sketch-extrude-panel label { margin-right: 0.5rem; display: block; margin-bottom: 0.5rem; }
+      #sketch-extrude-panel input { width: 5em; }
+      #sketch-extrude-panel button { margin-left: 0.5rem; cursor: pointer; }
       #view-buttons {
         position: absolute;
         bottom: 1rem;
@@ -137,6 +154,11 @@
         <label>深さ <input type="number" data-testid="extrude-depth" min="0.1" step="0.1" value="5" /></label>
         <button data-testid="btn-extrude">押出</button>
         <button data-testid="btn-extrude-cut">押出カット</button>
+      </div>
+      <div id="sketch-extrude-panel" data-testid="sketch-extrude-panel">
+        <label>深さ <input type="number" data-testid="sketch-depth" min="0.1" step="0.1" value="5" /></label>
+        <button data-testid="btn-sketch-extrude" disabled>スケッチ押出</button>
+        <button data-testid="btn-sketch-extrude-cut" disabled>スケッチ押出カット</button>
       </div>
       <div id="view-buttons">
         <button data-testid="btn-view-front">Front</button>

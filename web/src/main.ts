@@ -1,7 +1,8 @@
 import { fetchAllFeatureIds, fetchBodies, postFeature } from "./api";
 import { initViewer, type RefPlaneId, type SketchPoint3D } from "./viewer";
-import { planeForFaceId, planeForFaceNormal, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
-import { createSketchSession, type Sketch, type SketchSession as SketchSessionType } from "./sketch";
+import { planeForFaceId, planeForFaceNormal, buildExtrudeFeatures, buildExtrudeCutFeatures, nextId } from "./extrude";
+import { createSketchSession, buildCreateSketchFromSketch, type Sketch, type SketchSession as SketchSessionType } from "./sketch";
+import type { Feature } from "./generated/Feature";
 import { log, clearLog, getEntries, formatLog } from "./logger";
 
 const app = document.getElementById("app")!;
@@ -71,6 +72,8 @@ async function main(): Promise<void> {
           if (sketch) {
             log("sketch_finalized_auto", { planeRefId: sketch.planeRefId, segments: sketch.segments.length });
             console.log("[sketch] finalized:", sketch);
+            lastFinalizedSketch = sketch;
+            refreshSketchButtonState();
           }
           currentSession = null;
           handle.setSketchMode(false);
@@ -87,6 +90,24 @@ async function main(): Promise<void> {
       selectedRefPlaneEl.textContent = id ?? "";
       selectedRefPlaneEl.style.display = id ? "block" : "none";
     };
+
+    // Sketch → Extrude UI (#165)
+    let lastFinalizedSketch: Sketch | null = null;
+    const sketchExtrudePanel = document.querySelector<HTMLElement>('[data-testid="sketch-extrude-panel"]')!;
+    const sketchDepthInput = document.querySelector<HTMLInputElement>('[data-testid="sketch-depth"]')!;
+    const btnSketchExtrude = document.querySelector<HTMLButtonElement>('[data-testid="btn-sketch-extrude"]')!;
+    const btnSketchExtrudeCut = document.querySelector<HTMLButtonElement>('[data-testid="btn-sketch-extrude-cut"]')!;
+
+    function refreshSketchButtonState(): void {
+      const depth = Number(sketchDepthInput.value);
+      const validDepth = Number.isFinite(depth) && depth > 0;
+      const canExtrude = lastFinalizedSketch !== null && validDepth;
+      const canCut = canExtrude && currentBodies.length > 0;
+
+      btnSketchExtrude.disabled = !canExtrude;
+      btnSketchExtrudeCut.disabled = !canCut;
+      sketchExtrudePanel.style.display = (lastFinalizedSketch !== null) ? "block" : "none";
+    }
 
     // Sketch (#164)
     let currentSession: SketchSessionType | null = null;
@@ -124,11 +145,15 @@ async function main(): Promise<void> {
     const btnStartSketch = document.querySelector<HTMLButtonElement>('[data-testid="btn-start-sketch"]')!;
     btnStartSketch.addEventListener("click", () => {
       if (!selectedRefPlaneId) return;
-      // 新規セッション開始前に既存 overlay を破棄 (Codex F01 指摘: 古い線分が残る)
+      // 新規セッション開始前に既存 overlay と直前の確定済みスケッチを破棄
+      // (Codex #164 F01: 古い線分が残る / Codex #165 F01: lastFinalizedSketch が
+      // 残ると新規スケッチ中に古い profile が POST されうる)。
       handle.clearSketchOverlay();
+      lastFinalizedSketch = null;
       handle.setSketchMode(true);
       currentSession = createSketchSession(selectedRefPlaneId);
       updateSketchCanvasState();
+      refreshSketchButtonState();
     });
 
     const viewFront = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-front"]')!;
@@ -200,6 +225,89 @@ async function main(): Promise<void> {
       }
     });
 
+    // Sketch → Extrude UI (#165)
+    sketchDepthInput.addEventListener("input", () => {
+      refreshSketchButtonState();
+    });
+
+    btnSketchExtrude.addEventListener("click", async () => {
+      if (!lastFinalizedSketch) return;
+      const depth = Number(sketchDepthInput.value);
+      if (!Number.isFinite(depth) || depth <= 0) return;
+
+      const sketchId = nextId("sketch_", usedFeatureIds);
+      const extrudeId = nextId("extrude_", usedFeatureIds);
+
+      const createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId);
+      const extrudeFeature: Feature = {
+        type: "extrude",
+        id: extrudeId,
+        sketch: sketchId,
+        depth,
+        fuse_target: null,
+      };
+
+      usedFeatureIds.add(sketchId);
+      usedFeatureIds.add(extrudeId);
+
+      log("extrude_submit", { source: "sketch", sketchId, extrudeId, depth });
+      try {
+        await postFeature(createSketchFeature);
+        const updated = await postFeature(extrudeFeature);
+        currentBodies = updated;
+        handle.updateBodies(updated);
+        log("extrude_ok", { source: "sketch", bodies: updated.length });
+        // Reset state
+        lastFinalizedSketch = null;
+        handle.clearSketchOverlay();
+        refreshSketchButtonState();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log("extrude_error", { source: "sketch", error: msg });
+        showError(msg);
+      }
+    });
+
+    btnSketchExtrudeCut.addEventListener("click", async () => {
+      if (!lastFinalizedSketch) return;
+      if (currentBodies.length === 0) return;
+      const depth = Number(sketchDepthInput.value);
+      if (!Number.isFinite(depth) || depth <= 0) return;
+
+      const sketchId = nextId("sketch_", usedFeatureIds);
+      const extrudeCutId = nextId("extrude_cut_", usedFeatureIds);
+      const target = currentBodies[0].feature_id;
+
+      const createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId);
+      const extrudeCutFeature: Feature = {
+        type: "extrude_cut",
+        id: extrudeCutId,
+        sketch: sketchId,
+        depth,
+        target,
+      };
+
+      usedFeatureIds.add(sketchId);
+      usedFeatureIds.add(extrudeCutId);
+
+      log("extrude_cut_submit", { source: "sketch", sketchId, extrudeCutId, depth, target });
+      try {
+        await postFeature(createSketchFeature);
+        const updated = await postFeature(extrudeCutFeature);
+        currentBodies = updated;
+        handle.updateBodies(updated);
+        log("extrude_cut_ok", { source: "sketch", bodies: updated.length });
+        // Reset state
+        lastFinalizedSketch = null;
+        handle.clearSketchOverlay();
+        refreshSketchButtonState();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log("extrude_cut_error", { source: "sketch", error: msg });
+        showError(msg);
+      }
+    });
+
     // Sketch mouse move handler (#164)
     const canvasEl = document.querySelector("canvas")!;
     canvasEl.addEventListener("pointermove", (e) => {
@@ -249,19 +357,27 @@ async function main(): Promise<void> {
       }
     });
 
-    // Sketch key handlers (#164)
+    // Sketch key handlers (#164, #165)
     document.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && currentSession) {
         const finalized = currentSession.finalize();
         if (finalized) {
           console.log("[sketch] finalized:", finalized);
+          lastFinalizedSketch = finalized;
+          refreshSketchButtonState();
+          currentSession = null;
+          handle.setSketchMode(false);
+          updateSketchCanvasState();
         }
+        // finalized=null (= open ループ) のときはセッション維持で続行 (T05_boundary 仕様)
       }
       if (e.key === "Escape" && currentSession) {
         currentSession.reset();
         handle.clearSketchOverlay();
         handle.setSketchMode(false);
         currentSession = null;
+        lastFinalizedSketch = null;
+        refreshSketchButtonState();
         updateSketchCanvasState();
       }
     });

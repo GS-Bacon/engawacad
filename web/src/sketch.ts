@@ -1,3 +1,6 @@
+import type { Feature } from "./generated/Feature";
+import type { SketchPlane } from "./generated/SketchPlane";
+
 export type RefPlaneId = "Front" | "Top" | "Right";
 
 export interface SketchSegment {
@@ -8,6 +11,30 @@ export interface SketchSegment {
 export interface Sketch {
   planeRefId: RefPlaneId;
   segments: SketchSegment[];
+}
+
+const REFPLANE_TO_SKETCHPLANE: Record<RefPlaneId, SketchPlane> = {
+  Front: "xy",
+  Top: "xz",
+  Right: "yz",
+};
+
+/**
+ * Build a create_sketch Feature from a finalized Sketch.
+ * Used in #165 to POST a sketch created via the 2D canvas.
+ */
+export function buildCreateSketchFromSketch(sketch: Sketch, sketchId: string): Feature {
+  return {
+    type: "create_sketch",
+    id: sketchId,
+    plane: REFPLANE_TO_SKETCHPLANE[sketch.planeRefId],
+    profile: sketch.segments.map((seg, i) => ({
+      id: `${sketchId}_seg_${i}`,
+      from: [seg.from.x, seg.from.y],
+      to: [seg.to.x, seg.to.y],
+    })),
+    plane_ref: sketch.planeRefId,
+  };
 }
 
 export interface SketchSession {
