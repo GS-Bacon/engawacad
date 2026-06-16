@@ -301,9 +301,9 @@ test("D01_engawa_record_order Front extrude posts create_sketch then extrude wit
           body: JSON.stringify([{
             feature_id: body.id,
             mesh: {
-              positions: [0,0,0, 1,0,0, 0,1,0],
-              normals: [0,0,1, 0,0,1, 0,0,1],
-              indices: [0,1,2],
+              positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+              normals: [[0, 0, 1], [0, 0, 1], [0, 0, 1]],
+              indices: [0, 1, 2],
               face_ids: ["f0"],
             },
           }]),

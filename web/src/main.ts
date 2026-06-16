@@ -148,8 +148,11 @@ async function main(): Promise<void> {
       // 新規セッション開始前に既存 overlay と直前の確定済みスケッチを破棄
       // (Codex #164 F01: 古い線分が残る / Codex #165 F01: lastFinalizedSketch が
       // 残ると新規スケッチ中に古い profile が POST されうる)。
+      // Codex B-6 r3 F01: pendingPostedSketchId も明示的にクリア (古いサーバ side sketch を
+      // 新しい finalize に対して使い続ける誤動作を防ぐ)。
       handle.clearSketchOverlay();
       lastFinalizedSketch = null;
+      pendingPostedSketchId = null;
       handle.setSketchMode(true);
       currentSession = createSketchSession(selectedRefPlaneId);
       updateSketchCanvasState();
@@ -392,6 +395,7 @@ async function main(): Promise<void> {
         handle.setSketchMode(false);
         currentSession = null;
         lastFinalizedSketch = null;
+        pendingPostedSketchId = null;
         refreshSketchButtonState();
         updateSketchCanvasState();
       }
