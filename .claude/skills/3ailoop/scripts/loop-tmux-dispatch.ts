@@ -16,7 +16,12 @@
 
 import path from "path";
 import { fileURLToPath } from "url";
-import { isWatcherAlive, readPaneInfo, readWatcherPidFile } from "./loop-tmux-watcher.ts";
+import {
+  isWatcherAlive,
+  readPaneInfo,
+  readWatcherPidFile,
+  WORKER_PANE_TITLE,
+} from "./loop-tmux-watcher.ts";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts dir から 4 階層上 = repo root
@@ -24,8 +29,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..", "..", "..");
 const PID_PATH = path.join(REPO_ROOT, "features/.loop/tmux/watcher.pid");
 const PANE_PATH = path.join(REPO_ROOT, "features/.loop/tmux/worker.pane");
 
-/** #185 R5-F01: 現 pane の 3 つ組を tmux から取得 (display-message)。
- *  pane_id 単体ではなく session_id+window_id+pane_id の組み合わせで識別する。 */
+/** #185 R5-F01: 現 pane の 3 つ組を tmux から取得 (display-message)。 */
 async function getCurrentPaneTriple(): Promise<string | null> {
   if (!process.env.TMUX_PANE) return null;
   try {
@@ -43,6 +47,24 @@ async function getCurrentPaneTriple(): Promise<string | null> {
   }
 }
 
+/** #185 R7-F01: metadata 破損/欠落時の fallback。
+ *  現 pane の pane_title が WORKER_PANE_TITLE なら自分が worker と判定する。 */
+async function isCurrentPaneWorkerByTitle(): Promise<boolean> {
+  if (!process.env.TMUX_PANE) return false;
+  try {
+    const proc = Bun.spawn(
+      ["tmux", "display-message", "-p", "-t", process.env.TMUX_PANE, "#{pane_title}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    if (proc.exitCode !== 0) return false;
+    return out.trim() === WORKER_PANE_TITLE;
+  } catch {
+    return false;
+  }
+}
+
 async function decide(): Promise<"start" | "continue" | "already-running"> {
   if (!process.env.TMUX) return "continue";
 
@@ -50,8 +72,7 @@ async function decide(): Promise<"start" | "continue" | "already-running"> {
   const watcherInfo = readWatcherPidFile(PID_PATH);
   const watcherAlive = !!(watcherInfo && isWatcherAlive(watcherInfo));
 
-  // #185 R5-F01: worker 判定は 3 つ組完全一致で行う。pane_id 単体一致だと
-  // stale metadata で別 pane を誤認するリスクがある (R4-F02 と同根)。
+  // #185 R5-F01: worker 判定は 3 つ組完全一致で行う。
   if (paneInfo) {
     const currentTriple = await getCurrentPaneTriple();
     const expectedTriple = `${paneInfo.session_id}|${paneInfo.window_id}|${paneInfo.pane_id}`;
@@ -59,6 +80,11 @@ async function decide(): Promise<"start" | "continue" | "already-running"> {
       return "continue";
     }
   }
+
+  // #185 R7-F01: metadata 欠落/破損 fallback。pane_title で自分が worker か判定する。
+  // これがないと watcher から /clear → /3ailoop で再投入された worker pane が
+  // metadata 破損時に already-running に落ち、自走ループがそこで停止してしまう。
+  if (await isCurrentPaneWorkerByTitle()) return "continue";
 
   // #185 R4-F01: watcher が走っているのに worker 以外の pane から /3ailoop が打たれた場合は
   // lock 競合・多重実行を防ぐため何もしない (already-running)。
