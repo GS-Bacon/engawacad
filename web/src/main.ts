@@ -230,8 +230,11 @@ async function main(): Promise<void> {
       refreshSketchButtonState();
     });
 
-    // Codex B-6 F01: 連打による重複 POST を防ぐ in-flight ガード (1 finalized sketch につき 1 submit)。
+    // Codex B-6 F01 (in-flight ガード): 連打による重複 POST を防ぐ
     let sketchSubmitting = false;
+    // Codex r2 F01 (中間成功保存): create_sketch が成功して extrude/extrude_cut が失敗した場合、
+    // 次回のリトライで同じ sketchId を再利用することで orphan sketch の蓄積を防ぐ。
+    let pendingPostedSketchId: string | null = null;
 
     btnSketchExtrude.addEventListener("click", async () => {
       if (sketchSubmitting) return;
@@ -243,29 +246,28 @@ async function main(): Promise<void> {
       btnSketchExtrude.disabled = true;
       btnSketchExtrudeCut.disabled = true;
 
-      const sketchId = nextId("sketch_", usedFeatureIds);
+      const sketchId = pendingPostedSketchId ?? nextId("sketch_", usedFeatureIds);
       const extrudeId = nextId("extrude_", usedFeatureIds);
 
-      const createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId);
-      const extrudeFeature: Feature = {
-        type: "extrude",
-        id: extrudeId,
-        sketch: sketchId,
-        depth,
-        fuse_target: null,
-      };
-
-      usedFeatureIds.add(sketchId);
-      usedFeatureIds.add(extrudeId);
-
-      log("extrude_submit", { source: "sketch", sketchId, extrudeId, depth });
+      log("extrude_submit", { source: "sketch", sketchId, extrudeId, depth, retrying: pendingPostedSketchId !== null });
       try {
-        await postFeature(createSketchFeature);
+        if (pendingPostedSketchId === null) {
+          // 初回: create_sketch を送信して成功したら pendingPostedSketchId に記録
+          const createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId);
+          await postFeature(createSketchFeature);
+          usedFeatureIds.add(sketchId);
+          pendingPostedSketchId = sketchId;
+        }
+        const extrudeFeature: Feature = {
+          type: "extrude", id: extrudeId, sketch: sketchId, depth, fuse_target: null,
+        };
+        usedFeatureIds.add(extrudeId);
         const updated = await postFeature(extrudeFeature);
         currentBodies = updated;
         handle.updateBodies(updated);
         log("extrude_ok", { source: "sketch", bodies: updated.length });
         lastFinalizedSketch = null;
+        pendingPostedSketchId = null;
         handle.clearSketchOverlay();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -288,30 +290,28 @@ async function main(): Promise<void> {
       btnSketchExtrude.disabled = true;
       btnSketchExtrudeCut.disabled = true;
 
-      const sketchId = nextId("sketch_", usedFeatureIds);
+      const sketchId = pendingPostedSketchId ?? nextId("sketch_", usedFeatureIds);
       const extrudeCutId = nextId("extrude_cut_", usedFeatureIds);
       const target = currentBodies[0].feature_id;
 
-      const createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId);
-      const extrudeCutFeature: Feature = {
-        type: "extrude_cut",
-        id: extrudeCutId,
-        sketch: sketchId,
-        depth,
-        target,
-      };
-
-      usedFeatureIds.add(sketchId);
-      usedFeatureIds.add(extrudeCutId);
-
-      log("extrude_cut_submit", { source: "sketch", sketchId, extrudeCutId, depth, target });
+      log("extrude_cut_submit", { source: "sketch", sketchId, extrudeCutId, depth, target, retrying: pendingPostedSketchId !== null });
       try {
-        await postFeature(createSketchFeature);
+        if (pendingPostedSketchId === null) {
+          const createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId);
+          await postFeature(createSketchFeature);
+          usedFeatureIds.add(sketchId);
+          pendingPostedSketchId = sketchId;
+        }
+        const extrudeCutFeature: Feature = {
+          type: "extrude_cut", id: extrudeCutId, sketch: sketchId, depth, target,
+        };
+        usedFeatureIds.add(extrudeCutId);
         const updated = await postFeature(extrudeCutFeature);
         currentBodies = updated;
         handle.updateBodies(updated);
         log("extrude_cut_ok", { source: "sketch", bodies: updated.length });
         lastFinalizedSketch = null;
+        pendingPostedSketchId = null;
         handle.clearSketchOverlay();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
