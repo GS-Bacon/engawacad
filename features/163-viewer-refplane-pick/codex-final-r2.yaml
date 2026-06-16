@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "web/tests/viewer.spec.ts"
+    line_hint: 125
+    finding: "この差分で landed する RefPlane 向けテストは既存 T04 の置換だけで、plan で合意した `web/tests/refplane_pick.spec.ts` の T01/T02/T03/T04_boundary_no_intersect/T06 が `git diff` に含まれていない。stdin の `coverage_hints.total_added=0` と合わせると、RefPlane 選択・背景クリック・shape 優先の回帰を検出できないまま機能をマージすることになる。"
+    suggestion: "新規 `web/tests/refplane_pick.spec.ts` を差分に含め、少なくとも plan の T01/T02/T03/T04_boundary_no_intersect/T06 を固定 fixture ベースで追加する。"
+  - id: F02
+    severity: high
+    file: "web/tests/refplane_pick.spec.ts"
+    line_hint: 143
+    finding: "`T06_degen shape face has priority over refplane` は `/api/v0/features` しか mock しておらず、`/api/v0/mesh` は実サーバ状態に依存している。空ドキュメントや別 fixture が返る環境では中央クリックで body face が存在せず、テスト結果が document state によって変わるため、決定性要件を満たさない。"
+    suggestion: "`page.goto()` 前に `/api/v0/mesh` も `simple_box_faces.json` などの固定 overlap fixture へ route し、同一入力で常に body face と RefPlane が同時 intersect する条件を作る。"
+  - id: F03
+    severity: high
+    file: "web/tests/refplane_pick.spec.ts"
+    line_hint: 129
+    finding: "plan で合意した `T04_boundary_no_intersect` が未実装で、現在の T04 は `Front -> Right` の切替を再度確認しているだけになっている。これでは `viewer.ts` の `refHits.length === 0` 分岐と `selectRefPlane(null)` による解除経路が一度も通らず、背景クリック時の stale selection 回帰を検出できない。"
+    suggestion: "現 T04 を far-background click のケースに置き換えるか、別 test を追加して、事前に 1 枚選択した後で 3 平面すべての外側をクリックし `selected-refplane === \"\"` を検証する。"
+
+verdict: fail

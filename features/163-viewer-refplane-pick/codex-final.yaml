@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "web/src/main.ts"
+    line_hint: 41
+    finding: "`fetchBodies()` が実API契約どおり空配列 `[]` を返す空ドキュメントで `No bodies found in document` を出して early return しており、`initViewer()` が呼ばれない。#163 の要件である「body なしでも RefPlane 3 枚を表示して選択できる」が本番経路で成立しない。"
+    suggestion: "空配列はエラー扱いせず `initViewer(app, [], ...)` を起動し、empty-state の見せ方は viewer 側で処理する。"
+  - id: F02
+    severity: high
+    file: "web/tests/refplane_pick.spec.ts"
+    line_hint: 81
+    finding: "TEST SUMMARY は `total_added=0` で、追加された refplane spec も `/api/v0/mesh` を実契約の `BodyMesh[]` ではなく `{ bodies: [] }` と mock している。これでは empty-document テストが本番経路を通らず、`currentBodies.length === 0` の実分岐にある F01 の回帰を検出できない。"
+    suggestion: "spec を差分に含めたうえで、empty-document の mock は `JSON.stringify([])` に修正し、同じ API 形で RefPlane 表示・background click・shape 優先を固定 fixture で検証する。"
+
+verdict: fail

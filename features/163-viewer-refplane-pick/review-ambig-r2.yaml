@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "実装対象 > raycaster 拡張"
+    finding: "「intersect 結果を距離順で取得し」とあるが、Three.js の raycaster は既定で距離順にソート済み。実装者が独自ソートを実装すると誤解する可能性がある"
+    suggestion: "「intersectObjects の戻り値（距離順）から先頭要素を取り出し」等の記述に変更し、独自ソート不要を明確にする。または Three.js 仕様に依存しない実装指示に書き換える"
+
+verdict: pass

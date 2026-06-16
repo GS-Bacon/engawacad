@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "web/tests/refplane_pick.spec.ts"
+    line_hint: 197
+    finding: "`T07_bodies_update_preserves_refplanes` が `handle.updateBodies()` を一度も呼んでおらず、初期表示された RefPlane 3 枚を再確認しているだけになっている。コメントで狙っている `buildScene()` 後の保持経路が未カバーのため、`updateBodies()` が RefPlane を落とす回帰をこのテストでは検出できない。"
+    suggestion: "`__viewer` 経由で `updateBodies()` を呼べるようにするか、POST 後の実経路で body 更新を発生させたうえで RefPlane 3 枚が残ることを検証する。"
+
+verdict: pass

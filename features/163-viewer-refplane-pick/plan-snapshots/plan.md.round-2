@@ -1,0 +1,93 @@
+## 自律判断ログ (自律バッチモード)
+
+- Issue body が機械検証可能な完了条件・固定値 (色 / opacity / 形状サイズ / API シグネチャ) まで明記しているため、追加判断なしで採用。
+- ambiguous 指摘ゼロ、intent-check は `aligned: yes`。
+- 担当ファイルは `web/` 配下のみ (viewer.ts / index.html / main.ts / 新規 spec)。kernel 触らず。
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `web/src/viewer.ts` に 3 枚の RefPlane (Front/Top/Right) Mesh を追加し scene に格納 | スケッチ描画 UI 本体 (#164) |
+| RefPlane mesh に `userData.refPlaneId` を付与し raycaster 対象に組み込む | Extrude / ExtrudeCut への接続 (#165) |
+| 形状面ピックを RefPlane より優先する intersect 結果ロジック | 任意平面 (モデル面 / ユーザー定義 RefPlane) UI (Phase 8 以降) |
+| 選択状態 1 件保持 + opacity 0.2 → 0.45 切替 | `SketchPlane.offset` の UI 露出 (ADR-010 §Decision 3: Phase 7 では offset=0 固定) |
+| 公開 API `ViewerHandle.onRefPlaneSelected = (id \| null) => void` | RefPlane ラベル (Front/Top/Right) を 3D 空間にテキスト描画 |
+| `web/index.html` に `data-testid="selected-refplane"` 要素追加 | RefPlane 表示/非表示トグル UI |
+| `web/src/main.ts` で onRefPlaneSelected を購読して DOM 反映 | Rust 側 (kernel / format / build) は無変更 |
+| Playwright `web/tests/refplane_pick.spec.ts` (3 ケース) | RefPlane の色・サイズの設定可能化 |
+
+## Non-Goals
+
+- スケッチ線分入力 UI: #164 で実装
+- Extrude/ExtrudeCut UI: #165 で実装
+- 任意平面 RefPlane: Phase 8
+- offset UI: ADR-010 で Phase 7 では UI 露出しない
+- 3D テキストラベル / 表示トグル UI: 必要なら follow-up issue で
+
+## 実装対象
+
+Issue: #163
+影響ファイル:
+- `web/src/viewer.ts` (改修)
+- `web/index.html` (追記)
+- `web/src/main.ts` (改修)
+- `web/tests/refplane_pick.spec.ts` (新規)
+
+新規・変更シグネチャ:
+
+```typescript
+// web/src/viewer.ts
+export type RefPlaneId = "Front" | "Top" | "Right";
+
+export interface ViewerHandle {
+  // 既存フィールドは保持
+  onRefPlaneSelected: (id: RefPlaneId | null) => void;  // 新規。setter として上書き可能なフック
+  // (内部) addRefPlanes(scene) で 3 枚を seed
+}
+
+export function initViewer(canvas: HTMLCanvasElement, ...): ViewerHandle;
+```
+
+主要ロジック:
+
+1. **RefPlane seed**: `initViewer` 末尾で `addRefPlanes(scene)` を呼ぶ。3 枚の `Mesh(PlaneGeometry(20, 20), MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide }))` を生成し、それぞれを Front=XY 平面 (法線 +Z, 赤 `#ff4040`)、Top=XZ 平面 (法線 +Y, 緑 `#40ff40`)、Right=YZ 平面 (法線 +X, 青 `#4040ff`) に回転して置く。`mesh.userData.refPlaneId = "Front" | "Top" | "Right"`。
+
+2. **raycaster 拡張**: 既存 click handler に変更を加える。`raycaster.intersectObjects(scene.children, true)` の結果から:
+   - 形状 face mesh (既存; `userData.faceId` を持つ等) が含まれていればそちらを採用 (Phase 6 互換)
+   - 形状面がなく RefPlane mesh があれば RefPlane を選択状態にし `onRefPlaneSelected(id)` を呼ぶ
+   - どちらもなければ selectedRefPlaneId=null にして `onRefPlaneSelected(null)`
+
+3. **選択状態 1 件保持 + opacity 切替**: viewer モジュール内 closure に `selectedRefPlaneId: RefPlaneId | null`。`selectRefPlane(id)` 内で 3 枚の material.opacity を一括更新 (selected=0.45, others=0.2)。同一 mesh の同時選択は最大 1 件。
+
+4. **main.ts での購読**: `const handle = initViewer(...)` の直後で `handle.onRefPlaneSelected = (id) => { document.querySelector('[data-testid="selected-refplane"]')!.textContent = id ?? ""; }`。
+
+### 数値モデル
+
+本 Issue は UI ロジックのみで kernel 数値判断に触れない。Out of scope (N/A)。
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 構造検証 | 起動時、`scene.children` を再帰探索して `userData.refPlaneId` を持つ mesh が 3 件、id 集合が `{"Front","Top","Right"}` と一致 | `expect(ids).toEqual(new Set(["Front","Top","Right"]))` |
+| T02 | クリック選択 (Front) | `data-testid="refplane-front"` の中央付近をクリックし `data-testid="selected-refplane"` の textContent が `"Front"` | Playwright assert |
+| T03 | 選択切替 (Front→Top) | T02 後に Top をクリック → textContent が `"Top"`、Front の opacity は 0.2 に戻る | Playwright assert + page.evaluate で material.opacity 検証 |
+| T04_boundary_no_intersect | 退化/境界 | 何もない座標 (3D 空間の遠方) をクリック → `selected-refplane` textContent が `""` で `onRefPlaneSelected(null)` 呼ばれる | textContent assert |
+| T05 | Phase 6 互換 | 既存 `face_picking.spec.ts` が全て green (regression なし) | `npx playwright test face_picking` 通る |
+| T06_degen_overlap | 退化/境界 | 形状 mesh と RefPlane mesh が同一方向に重なって両方 intersect する場合、形状面ピックを優先 | mock した Solid を加えて raycaster の選択を assert |
+
+## 影響範囲
+
+- `web/src/viewer.ts`: RefPlane 描画 + raycaster 拡張 + `ViewerHandle.onRefPlaneSelected` 追加
+- `web/index.html`: `data-testid="selected-refplane"` 要素を追加 (空 `<span>`)
+- `web/src/main.ts`: `onRefPlaneSelected` 購読 → DOM 反映
+- `web/tests/refplane_pick.spec.ts` (新規): T01〜T04, T06
+- バックエンド: 無変更
+
+## 幾何的不変条件チェックリスト
+
+- [ ] N/A — partition/assemble 系ではない (UI のみ)
+- [ ] N/A
+- [ ] N/A
+- [ ] N/A
