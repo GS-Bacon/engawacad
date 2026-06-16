@@ -87,7 +87,7 @@ export interface DecideInput {
   prevEndedAt: string | null;
   currEndedAt: string | null;
   shouldStopRc: number | null; // 差分検知時のみ評価。null = まだ呼んでいない
-  minutesSinceLastUpdate: number; // currEndedAt の age (分)
+  minutesSinceLastUpdate: number; // baseline 確立 / 最後の cycle 完了からの経過 (分)
   stuckThresholdMin: number;
   workerPaneAlive: boolean;
 }
@@ -349,11 +349,6 @@ function removePidFile(): void {
   }
 }
 
-function minutesAgo(iso: string): number {
-  const ms = Date.now() - new Date(iso).getTime();
-  return ms / 60000;
-}
-
 async function sleepMs(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -439,6 +434,10 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
   let parseFailures = 0;
   let tmuxQueryFailures = 0;
   const TMUX_QUERY_FAIL_LIMIT = 3;
+  // stuck タイマー基準: 起動時刻で初期化し、baseline 確立 / cycle 完了で都度リセットする。
+  // state.json の currEndedAt の age を使うと、起動直後の baseline 確立瞬間に
+  // 既存 ended_at が古い場合 (= サーバ長時間停止後の再開) に即 stuck と誤判定される。
+  let lastActivityAt = Date.now();
 
   // メインループ
   while (true) {
@@ -481,7 +480,7 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
 
       const currEndedAt = extractLastEndedAt(state);
       const prevEndedAt = readLastObserved();
-      const minutesIdle = currEndedAt ? minutesAgo(currEndedAt) : 0;
+      const minutesIdle = (Date.now() - lastActivityAt) / 60000;
 
       let shouldStopRc: number | null = null;
       if (detectCycleCompleted(prevEndedAt, currEndedAt)) {
@@ -503,11 +502,13 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
           break;
         case "init-baseline":
           writeLastObserved(action.baseline);
+          lastActivityAt = Date.now();
           log(`baseline initialized: ${action.baseline} (起動直後の既存 ended_at を採用)`);
           break;
         case "send-clear-and-restart":
           await performRestart(targetPaneId, dryRun);
           if (currEndedAt) writeLastObserved(currEndedAt);
+          lastActivityAt = Date.now();
           if (dryRun) {
             cleanup("dry-run exit after one restart");
             return;
