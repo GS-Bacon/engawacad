@@ -46,12 +46,14 @@ async function main() {
   const args = process.argv.slice(2);
   let intentFile = "";
   let gateJson = "";
+  let phaseArg = "";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--intent") intentFile = args[++i] ?? "";
     else if (args[i] === "--gate") gateJson = args[++i] ?? "";
+    else if (args[i] === "--phase") phaseArg = args[++i] ?? "";
   }
   if (!intentFile || !existsSync(intentFile)) {
-    console.error("Usage: intake-label-suggest.ts --intent <file> [--gate <json>]");
+    console.error("Usage: intake-label-suggest.ts --intent <file> [--gate <json>] [--phase <N|needs-phase>]");
     process.exit(2);
   }
   const text = readFileSync(intentFile, "utf-8");
@@ -77,6 +79,10 @@ async function main() {
   else if (typeLabel !== "type: feature") labels.push("batch:skill"); // fallback
 
   if (gateHumanFeel) labels.push("gate:human-feel");
+
+  // ROADMAP 外要望は needs-phase ラベルを付与 (#177 指摘 5)
+  // 通常 phase 数字の場合は --milestone で別途付与されるためラベルは追加しない
+  if (phaseArg === "needs-phase") labels.push("needs-phase");
 
   const csv = labels.join(",");
 

@@ -45,21 +45,28 @@ bun .claude/skills/3ailoop-intake/scripts/intake-dedup.ts --query "<要望文>" 
 
 ### I-3: 意図確認
 
-Claude が要望を 3 行で再要約 → ユーザーに「この理解で OK?」と確認。NG なら聞き直して I-3 を繰り返す。OK なら確定した意図を `/tmp/intake-intent-<timestamp>.md` に保存して I-4 へ。
+Claude が要望を 3 行で再要約 → ユーザーに「この理解で OK?」と確認。NG なら聞き直して I-3 を繰り返す。OK なら確定した意図を `INTENT_FILE` に保存して I-4 へ。
+
+```bash
+# #177 指摘 3: glob を使わずパスを変数化して全 STEP で共有
+INTENT_FILE="/tmp/intake-intent-$$-$(date +%s).md"
+# Claude が要望を再要約して $INTENT_FILE に保存
+```
 
 ### I-4: Phase 推定
 
 ```bash
-bun .claude/skills/3ailoop-intake/scripts/intake-phase-estimate.ts --intent /tmp/intake-intent-*.md
+PHASE_RESULT=$(bun .claude/skills/3ailoop-intake/scripts/intake-phase-estimate.ts --intent "$INTENT_FILE")
+PHASE=$(echo "$PHASE_RESULT" | jq -r .phase)
 ```
 
-- 結果 `phase: N` → 該当 Phase milestone に紐づける予定として記録
-- 結果 `phase: "needs-phase"` → I-7 で `needs-phase` ラベルを付与する方針
+- 結果 `phase: N` → I-9 で `--milestone "Phase $PHASE"` を付与
+- 結果 `phase: "needs-phase"` → I-7 で `--phase needs-phase` を渡して `needs-phase` ラベル付与
 
 ### I-5: 粒度判定
 
 ```bash
-bun .claude/skills/3ailoop-intake/scripts/intake-granularity.ts --intent /tmp/intake-intent-*.md
+bun .claude/skills/3ailoop-intake/scripts/intake-granularity.ts --intent "$INTENT_FILE"
 ```
 
 - `ok: true` → I-6 へ
@@ -68,7 +75,7 @@ bun .claude/skills/3ailoop-intake/scripts/intake-granularity.ts --intent /tmp/in
 ### I-6: gate 判定
 
 ```bash
-GATE=$(bun .claude/skills/3ailoop-intake/scripts/intake-gate-detector.ts --intent /tmp/intake-intent-*.md)
+GATE=$(bun .claude/skills/3ailoop-intake/scripts/intake-gate-detector.ts --intent "$INTENT_FILE")
 ```
 
 - `gate_human_feel: true` → gate:human-feel をラベルに含める予定。ユーザーに mock 画像/markdown 添付を促す
@@ -76,8 +83,9 @@ GATE=$(bun .claude/skills/3ailoop-intake/scripts/intake-gate-detector.ts --inten
 ### I-7: ラベル提案 + lint pass
 
 ```bash
+# #177 指摘 5: phase 結果も渡して needs-phase の場合のみラベル付与させる
 LABELS=$(bun .claude/skills/3ailoop-intake/scripts/intake-label-suggest.ts \
-  --intent /tmp/intake-intent-*.md --gate "$GATE")
+  --intent "$INTENT_FILE" --gate "$GATE" --phase "$PHASE")
 ```
 
 - スクリプト内部で lint-issue-labels.ts を必ず通す (exit 0 強制)
@@ -92,10 +100,13 @@ memory `project_3ailoop_implementation_style.md` 準拠: skill トラックは R
 ExitPlanMode を呼びユーザー承認を取る。承認後:
 
 ```bash
-gh issue create \
-  --title "<要約タイトル>" \
-  --body-file /tmp/intake-intent-*.md \
-  --label "$LABELS"
+# #177 指摘 4: phase が数字なら --milestone を付与、needs-phase ならスキップ
+if [ "$PHASE" = "needs-phase" ]; then
+  NEW_ISSUE_URL=$(gh issue create --title "<要約タイトル>" --body-file "$INTENT_FILE" --label "$LABELS")
+else
+  NEW_ISSUE_URL=$(gh issue create --title "<要約タイトル>" --body-file "$INTENT_FILE" --label "$LABELS" --milestone "Phase $PHASE")
+fi
+NEW_ISSUE_NUM=$(echo "$NEW_ISSUE_URL" | awk -F/ '{print $NF}')
 ```
 
 起票直後に lint 確認:
@@ -110,9 +121,12 @@ bun .claude/skills/3ai/scripts/lint-issue-labels.ts --issue $NEW_ISSUE_NUM
 
 ```bash
 bun .claude/skills/3ailoop-intake/scripts/intake-record.ts append \
-  --issue $NEW_ISSUE_NUM --stage created --data '{"labels":"...","phase":N}'
+  --issue $NEW_ISSUE_NUM --stage created --data "{\"labels\":\"$LABELS\",\"phase\":\"$PHASE\"}"
 
 bun .claude/skills/3ailoop/scripts/loop-lock.ts release --token "$TOKEN"
+
+# temp file クリーンアップ
+rm -f "$INTENT_FILE"
 ```
 
 `features/.intake/issue-<N>.yaml` に I-2〜I-9 各 stage の結果を時系列で保存。

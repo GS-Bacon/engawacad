@@ -39,11 +39,13 @@ function parseRoadmap(path: string): PhaseSection[] {
     const m = line.match(/^##\s+(✅\s+)?Phase\s+(\d+)\s*:?\s*(.*)$/);
     if (m) {
       if (current) phases.push(current);
+      // ✅ は prefix (## ✅ Phase N) と suffix (## Phase N: ... ✅) の両形式があるので
+      // line 全体に ✅ が含まれていれば完了扱い (#177 指摘 6)
       current = {
         number: parseInt(m[2]),
-        title: m[3].trim(),
+        title: m[3].trim().replace(/\s*✅\s*$/, ""),
         text: line + "\n",
-        completed: !!m[1],
+        completed: line.includes("✅"),
       };
     } else if (current) {
       if (/^##\s/.test(line)) {

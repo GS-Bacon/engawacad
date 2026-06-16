@@ -171,12 +171,41 @@ if (import.meta.main) {
     process.exit(0);
   }
 
-  if (!dryRun) await addParentLabel(parent);
+  // #177 指摘 8 対応: 子作成前に全 entry のラベルを pre-check、子作成成功してから親に label
+  // フェーズ 1: 全子の labels を lint
+  for (const e of entries) {
+    const labels = [...(e.labels ?? []), `parent-blocked-by-split:${parent}`];
+    const lintProc = Bun.spawnSync(
+      ["bun", ".claude/skills/3ai/scripts/lint-issue-labels.ts", "--labels", labels.join(",")],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    if (lintProc.exitCode !== 0) {
+      console.error(`pre-check FAIL: child "${e.title}" has invalid labels [${labels.join(", ")}]`);
+      console.error(new TextDecoder().decode(lintProc.stderr));
+      console.log(JSON.stringify({ parent, dry_run: dryRun, ok: false, reason: "label pre-check failed", children: [] }, null, 2));
+      process.exit(1);
+    }
+  }
 
+  // フェーズ 2: 全子作成を試行 (途中失敗で親 label せず終了)
   const created: { title: string; child: number | null }[] = [];
   for (const e of entries) {
     const child = await createChild(e, parent, dryRun);
+    if (!dryRun && child === null) {
+      console.error(`child creation FAILED for "${e.title}"; parent #${parent} left untouched`);
+      console.log(JSON.stringify({
+        parent, dry_run: dryRun, ok: false,
+        reason: `child "${e.title}" creation failed; parent NOT marked blocked-by-split`,
+        children: created,
+        failed_at: e.title,
+      }, null, 2));
+      process.exit(1);
+    }
     created.push({ title: e.title, child });
   }
-  console.log(JSON.stringify({ parent, dry_run: dryRun, children: created }, null, 2));
+
+  // フェーズ 3: 全成功で親 label
+  if (!dryRun) await addParentLabel(parent);
+
+  console.log(JSON.stringify({ parent, dry_run: dryRun, ok: true, children: created }, null, 2));
 }

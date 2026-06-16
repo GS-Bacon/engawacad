@@ -11,7 +11,10 @@
 //
 // 関連 plan: dashboard の Decision Log に「ADR-NNN draft 起票」として追加される想定
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { dirname } from "path";
+
+const DEFAULT_MARKER_PATH = "features/.loop/last-adr-scan-sha";
 
 async function runGit(args: string[]): Promise<string> {
   const proc = Bun.spawn(["git", ...args], { stdout: "pipe", stderr: "pipe" });
@@ -41,16 +44,37 @@ async function existingGateIssueFor(adrPath: string): Promise<number | null> {
   } catch { return null; }
 }
 
-async function findNewAdrs(depth: number): Promise<string[]> {
+async function findNewAdrs(depth: number, sinceSha?: string): Promise<string[]> {
   // pathspec を渡すと「ADR を含む最新 N commit」になり古い ADR まで拾われるため、
-  // pathspec なしで「最新 N commit」を取り、後で ADR pattern で filter する。
-  const out = await runGit([
-    "log", `-${depth}`, "--diff-filter=A", "--name-only",
-    "--pretty=format:",
-  ]);
+  // pathspec なしで commit を選び、後で ADR pattern で filter する。
+  // #177 指摘 7 対応: --since-sha があればその範囲、なければ depth で fallback
+  let out: string;
+  if (sinceSha) {
+    out = await runGit([
+      "log", `${sinceSha}..HEAD`, "--diff-filter=A", "--name-only",
+      "--pretty=format:",
+    ]);
+  } else {
+    out = await runGit([
+      "log", `-${depth}`, "--diff-filter=A", "--name-only",
+      "--pretty=format:",
+    ]);
+  }
   const lines = out.split("\n").map(l => l.trim()).filter(l => l.length > 0);
   const adrs = lines.filter(l => /^docs\/decisions\/.+\.md$/.test(l));
   return [...new Set(adrs)];
+}
+
+function readMarker(path: string): string | null {
+  if (!existsSync(path)) return null;
+  try { return readFileSync(path, "utf-8").trim() || null; } catch { return null; }
+}
+
+function writeMarker(path: string, sha: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
+  writeFileSync(tmp, sha, "utf-8");
+  renameSync(tmp, path);
 }
 
 function adrTitle(path: string): string {
@@ -125,14 +149,25 @@ if (import.meta.main) {
   function flag(name: string): boolean { return rest.includes(name); }
 
   if (cmd !== "scan") {
-    console.error("Usage: loop-adr-pause-detector.ts scan [--depth N] [--dry-run]");
+    console.error("Usage: loop-adr-pause-detector.ts scan [--depth N] [--since-sha SHA] [--cycle-marker PATH] [--dry-run]");
     process.exit(2);
   }
   const depth = parseInt(arg("--depth") ?? "5");
+  const sinceShaArg = arg("--since-sha");
+  const markerPath = arg("--cycle-marker") ?? DEFAULT_MARKER_PATH;
   const dryRun = flag("--dry-run");
-  const adrs = await findNewAdrs(depth);
+  // sinceSha は引数 → marker → depth fallback の順 (#177 指摘 7)
+  const sinceSha = sinceShaArg ?? readMarker(markerPath) ?? undefined;
+  const adrs = await findNewAdrs(depth, sinceSha);
+
+  // 現 HEAD を marker に保存 (次回の sinceSha 起点)
+  if (!dryRun) {
+    const head = (await runGit(["rev-parse", "HEAD"])).trim();
+    if (head) writeMarker(markerPath, head);
+  }
+
   if (adrs.length === 0) {
-    console.log("no new ADRs in recent commits");
+    console.log(`no new ADRs (since=${sinceSha ?? `depth=${depth}`})`);
     process.exit(0);
   }
   const created: { adr: string; issue: number | null }[] = [];
@@ -140,5 +175,5 @@ if (import.meta.main) {
     const num = await raiseGateIssue(a, dryRun);
     created.push({ adr: a, issue: num });
   }
-  console.log(JSON.stringify({ depth, new_adrs: adrs.length, created }, null, 2));
+  console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: adrs.length, created }, null, 2));
 }

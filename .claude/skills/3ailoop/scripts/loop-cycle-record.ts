@@ -11,10 +11,12 @@
 //   bun loop-cycle-record.ts record [--started-at <ISO8601>] [--pause-reason <reason>]
 //   bun loop-cycle-record.ts show
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
 
 const STATE_PATH = "features/.loop/state.json";
+// #177 指摘 2: append-only journal で state.json 破損耐性確保
+const JOURNAL_PATH = "features/.loop/cycle-journal.log";
 const RECENT_LIMIT = 20;
 
 interface RecentCycle {
@@ -168,6 +170,15 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
   state.cumulative.adr_total += adrDrafts.length;
 
   atomicWriteState(state);
+
+  // Append-only journal (#177 指摘 2): state.json 破損時の復旧用
+  try {
+    mkdirSync(dirname(JOURNAL_PATH), { recursive: true });
+    appendFileSync(JOURNAL_PATH, JSON.stringify(entry) + "\n", "utf-8");
+  } catch (e) {
+    process.stderr.write(`WARN: journal append failed: ${(e as Error).message}\n`);
+  }
+
   console.log(JSON.stringify(entry, null, 2));
 }
 

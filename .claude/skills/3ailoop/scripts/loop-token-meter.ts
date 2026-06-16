@@ -135,6 +135,14 @@ if (import.meta.main) {
     process.exit(0);
   } else if (cmd === "check") {
     const result = collect();
+    // check 内でも state.cumulative.token_* を更新して dashboard が常に最新値を見られるように (#177 指摘 9)
+    const state = readState();
+    if (state) {
+      state.cumulative.token_claude = result.claude;
+      state.cumulative.token_glm = result.glm;
+      state.cumulative.token_codex = result.codex;
+      atomicWriteState(state);
+    }
     const total = result.claude + result.glm + result.codex;
     if (total >= CUM_PAUSE) {
       console.log(`PAUSE: cumulative token ${total} >= ${CUM_PAUSE} threshold`);

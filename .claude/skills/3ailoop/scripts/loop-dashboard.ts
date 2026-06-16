@@ -51,10 +51,13 @@ function safeRead(path: string): string | null {
   try { return readFileSync(path, "utf-8"); } catch { return null; }
 }
 
+/** state.json を読む。未存在は null、破損は throw (#177 指摘 2: fail-closed) */
 function readState(): LoopState | null {
   const raw = safeRead(STATE_PATH);
   if (!raw) return null;
-  try { return JSON.parse(raw) as LoopState; } catch { return null; }
+  try { return JSON.parse(raw) as LoopState; } catch (e) {
+    throw new Error(`state.json parse failed: ${(e as Error).message}`);
+  }
 }
 
 interface IssueSummary { number: number; title: string; labels: string[] }
@@ -194,7 +197,14 @@ function sectionDecisionLog(): string {
 }
 
 async function main() {
-  const state = readState();
+  // #177 指摘 2: state.json 破損なら dashboard.md を触らず exit 1
+  let state: LoopState | null;
+  try {
+    state = readState();
+  } catch (e) {
+    process.stderr.write(`FAIL-CLOSED: ${(e as Error).message}; dashboard.md left untouched\n`);
+    process.exit(1);
+  }
   const openIssues = await fetchOpenIssues();
 
   const sections = [

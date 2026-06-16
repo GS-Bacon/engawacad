@@ -155,28 +155,43 @@ async function recordDecision(message: string): Promise<void> {
   await proc.exited;
 }
 
+async function reopenMilestone(num: number): Promise<boolean> {
+  const r = await runGh([
+    "api", "-X", "PATCH",
+    `repos/{owner}/{repo}/milestones/${num}`,
+    "-F", "state=open",
+  ]);
+  return r.exit === 0;
+}
+
 async function apply(phase: number, dryRun: boolean): Promise<{ ok: boolean; actions: string[]; reason: string }> {
   const c = await check(phase);
   if (!c.ok) return { ok: false, actions: [], reason: c.reason };
 
   const actions: string[] = [];
   if (dryRun) {
-    actions.push(`[dry-run] would rewrite ROADMAP.md: '## Phase ${phase}' → '## ✅ Phase ${phase}'`);
     actions.push(`[dry-run] would close milestone #${c.milestone!.number} (${c.milestone!.title})`);
+    actions.push(`[dry-run] would rewrite ROADMAP.md: '## Phase ${phase}' → '## ✅ Phase ${phase}'`);
     actions.push(`[dry-run] would append decision-log: phase-transition Phase ${phase} 完了`);
     return { ok: true, actions, reason: "dry-run" };
   }
 
+  // #177 指摘 1 対応: milestone close を先行、失敗時は ROADMAP に触らない
+  if (!c.milestone) return { ok: false, actions, reason: "milestone missing in apply phase" };
+  const closed = await closeMilestone(c.milestone.number);
+  if (!closed) {
+    return { ok: false, actions, reason: `failed to close milestone #${c.milestone.number} (ROADMAP untouched, no progression)` };
+  }
+  actions.push(`closed milestone #${c.milestone.number}`);
+
+  // ROADMAP rewrite。失敗時は milestone を reopen して整合性回復
   try {
     atomicRewriteRoadmap(phase);
     actions.push(`rewrote ROADMAP.md`);
   } catch (e) {
+    const reopened = await reopenMilestone(c.milestone.number);
+    actions.push(reopened ? `rolled back: reopened milestone #${c.milestone.number}` : `WARNING: reopen failed for milestone #${c.milestone.number}`);
     return { ok: false, actions, reason: `ROADMAP rewrite failed: ${(e as Error).message}` };
-  }
-
-  if (c.milestone) {
-    const closed = await closeMilestone(c.milestone.number);
-    actions.push(closed ? `closed milestone #${c.milestone.number}` : `failed to close milestone #${c.milestone.number}`);
   }
 
   await recordDecision(`Phase ${phase} 完了 (milestone closed, ROADMAP ✅化)`);
