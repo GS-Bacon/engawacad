@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-16
 **Status**: Accepted
-**Related**: ADR-002 (差し込み作業の扱い), ADR-006 (Issue 粒度), Issue #167-179 (/3ailoop 自走基盤の構築履歴)
+**Related**: ADR-002 (差し込み作業の扱い), ADR-006 (Issue 粒度), Issue #167 (lock 機構), #170 (context bootstrap), #171 (cycle 記録 + dashboard), #175 (/3ailoop-intake), #176 (RUNBOOK), #179 (Discord 通知)
 
 ---
 
@@ -83,7 +83,11 @@ cron 間隔を短くしても解決しない。「サイクル中に次の cron 
 - `/3ailoop-intake` との排他は tmux モードでも必要
 - watcher は loop 自体に対する **外部からのリセット発火源** であり、lock 機構の意味と直交している
 
-ただし `STALE_THRESHOLD_MS = 12h` は cron 撤去後はもっと短くてよい (例 2h)。これは別 Issue として切り出し、本 ADR ではスコープ外。
+### 6. Out-of-scope
+
+以下は本 ADR では扱わない。発生したタイミングで別途判断する:
+
+- `STALE_THRESHOLD_MS = 12h` 短縮: cron 撤去後は短く (例 2h) してよいが、本 ADR ではタイミングとしきい値の判断材料が不足するため意図的に保留する。tmux モードで 2-3 週間の連続稼働後に観測して必要性を再評価する。事前の予防的 Issue 起票はしない (memory `feedback_issue_splitting` に従い反射的な Issue 分割を避ける)。
 
 ### 5. 移行は不可逆
 
@@ -140,6 +144,3 @@ cron モードは撤去する。`/3ailoop` 系の SKILL.md / RUNBOOK から Cron
 
 ADR-006 §1 の粒度ガード (1 Issue = GLM 1 サイクル相当) に沿った直列実行。並列化はしない。
 
-### 関連プラン
-
-- `/home/bacon/.claude/plans/3ailoop-corn-tmux-clear-lazy-pond.md` (本 ADR の決定に至った設計検討メモ)
