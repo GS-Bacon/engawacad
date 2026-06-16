@@ -87,7 +87,7 @@ cron 間隔を短くしても解決しない。「サイクル中に次の cron 
 
 以下は本 ADR では扱わない。発生したタイミングで別途判断する:
 
-- `STALE_THRESHOLD_MS = 12h` 短縮: cron 撤去後は短く (例 2h) してよいが、本 ADR ではタイミングとしきい値の判断材料が不足するため意図的に保留する。tmux モードで 2-3 週間の連続稼働後に観測して必要性を再評価する。事前の予防的 Issue 起票はしない (memory `feedback_issue_splitting` に従い反射的な Issue 分割を避ける)。
+- `STALE_THRESHOLD_MS = 12h` 短縮: cron 撤去後は短く (例 2h) してよいが、本 ADR ではタイミングとしきい値の判断材料が不足するため意図的に保留する。tmux モードで 2-3 週間の連続稼働後に観測して必要性を再評価する。追跡 Issue は **#184** (本 ADR の deferral 専用に起票)。
 
 ### 5. 移行は不可逆
 
@@ -122,7 +122,7 @@ cron モードは撤去する。`/3ailoop` 系の SKILL.md / RUNBOOK から Cron
 | CronCreate / CronDelete / CronList 依存 | 撤去 |
 | `loop-lock.ts` / `loop-context-bootstrap.ts` / `loop-should-stop.ts` / `loop-cycle-record.ts` / 他 `loop-*` | **無改変** |
 | 新規スクリプト | `loop-tmux-start.ts` / `loop-tmux-watcher.ts` / `loop-tmux-stop.ts` (`.claude/skills/3ailoop/scripts/` 配下) |
-| 新規 smoke | `loop-tmux-smoke.sh` (既存 `loop-smoke-test.sh` は無改変) |
+| 新規 smoke | `loop-tmux-smoke.sh` (既存 `loop-smoke-test.sh` は L-8 echo 文言のみ更新、検証ロジックは無改変) |
 | 新規状態ディレクトリ | `features/.loop/tmux/` (`watcher.pid` / `watcher.log` / `worker.window` / `last-cycle-ended-at`) |
 | SKILL.md | description / L-8 / 「動的 sentinel モード」記述差し替え |
 | RUNBOOK (`docs/3ailoop-runbook.md`) | §1 起動手順差し替え、§トラブルシュート追補 |

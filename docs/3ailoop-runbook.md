@@ -214,16 +214,20 @@ bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts
 ADR-012 で前提とした `/clear` のキーストローク送信仕様が壊れた場合の対応:
 
 ```bash
-# watcher.log で「send-keys: /clear」の後に Claude の応答が無いことを確認
-# ワーカー pane に attach して /clear を手動入力して挙動確認
+# 1) watcher.log で「send-keys: /clear」の後に Claude の応答が無いことを確認
+tail -40 features/.loop/tmux/watcher.log
+
+# 2) ワーカー pane に attach して /clear を手動入力して挙動確認
 tmux select-window -t =3ailoop-worker
 
-# 一時的に cron モード相当 (= start.ts を Cron で間欠起動) に戻すなら:
-# loop-tmux-start.ts を /schedule に登録、--no-watcher オプション ... は未実装
-# 暫定: 手動で loop-tmux-stop → 手動 /3ailoop を回す運用に縮退する
+# 3) loop-tmux-stop → 手動で /3ailoop を 1 サイクルずつ回す縮退運用に切り替える
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts
+# その後はワーカー pane で /3ailoop を人手で投入し、1 サイクルごとに /clear を打つ
 ```
 
-### 4-4. /3ailoop と /3ailoop-intake の同時起動衝突
+cron / `/schedule` ベースの fallback は ADR-012 で撤去済みのため使用しない。
+
+### 4-7. /3ailoop と /3ailoop-intake の同時起動衝突
 
 - intake が「lock 取得失敗」で停止する設計
 - 30s 待って retry、それでもダメなら手動 release --force (慎重に)
