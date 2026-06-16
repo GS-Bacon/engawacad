@@ -86,8 +86,8 @@ bun .claude/skills/3ailoop/scripts/loop-token-meter.ts check > /tmp/smoke-tok.ou
 echo "L-7.5 PASS: token-meter check OK"
 
 echo ""
-echo "=== L-8: sentinel emit (skip in smoke) ==="
-echo "L-8 PASS: sentinel skip (would emit <<autonomous-loop>> in dynamic mode)"
+echo "=== L-8: cycle exit (tmux 自走モードでは watcher が再投入) ==="
+echo "L-8 PASS: cycle exit skip (ADR-012 tmux runtime: watcher が /clear → /3ailoop を再投入)"
 
 echo ""
 echo "=== L-9: release lock ==="

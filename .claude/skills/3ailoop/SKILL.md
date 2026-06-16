@@ -1,17 +1,19 @@
 ---
 name: 3ailoop
-description: /3ai を常時自律モードで回し続ける無人ループ。CronCreate 経由で各サイクル新セッション起動、文脈劣化対策で memory/plan/state/ROADMAP を毎回 read。停止条件 = 候補 Issue が gate:* / needs-* のみになったとき。
+description: /3ai を常時自律モードで回し続ける無人ループ。tmux 2 ペイン構成 (オーケストレーター pane に watcher daemon、ワーカー pane で Claude が /3ailoop を実行) で、サイクル完了次第ただちに /clear → /3ailoop を再投入する自走モデル。停止条件 = 候補 Issue が gate:* / needs-* のみになったとき。
 tools: Read, Bash, Glob, Grep, Skill
 ---
 
 # /3ailoop — 自走ループ本体
 
-EngawaCAD の Issue を **無人で連続消化** する Skill。各サイクルが新セッションで起動し、文脈劣化を構造的に防ぐ。
+EngawaCAD の Issue を **無人で連続消化** する Skill。サイクル完了ごとに `/clear` で context をリセットし、文脈劣化を構造的に防ぐ (ADR-012)。
 
 **前提**:
 - 関連 plan: `/home/bacon/.claude/plans/3ai-loop-ui-ux-jaunty-ember.md`
+- 関連 ADR: [ADR-012](../../../docs/decisions/012-3ailoop-tmux-runtime.md) (cron 駆動から tmux 自走への転換)
 - 関連 memory: `project-3ailoop-policy` / `project-3ailoop-implementation-style` / `project-3ailoop-known-races`
 - 既存 `/3ai` Skill を **無改変** で内部利用 (Skill ツール経由で自律モード起動)
+- ランタイム: tmux 2 ペイン構成。起動は `bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts`、停止は `loop-tmux-stop.ts`
 
 ## 実行フロー (L-0〜L-9)
 
@@ -222,10 +224,13 @@ RC=$?
 - `RC=0`: 続行
 - `RC=1` (累積 100M 超): `loop-cycle-record record --pause-reason "token threshold"` で記録 → `bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind token-limit --text "[STOP] token limit reached (累積 100M 超) — paused"` で通知 → release → 終了
 
-### L-8: Sentinel emit
+### L-8: サイクル末尾 (tmux 自走モード)
 
-- **CronCreate モード**: 何も出さず終了 (次 cron が起動)
-- **動的 sentinel モード** (予備): stdout に `<<autonomous-loop>>` を出して終了
+何も出さず終了する。次サイクルは tmux 自走モデルが起動する:
+
+- オーケストレーター pane の watcher daemon (`loop-tmux-watcher.ts`) が `state.json` の `recent_cycles[-1].ended_at` を polling し、L-5 で更新された差分を検知する
+- 停止判定 (`loop-should-stop.ts`) が proceed (RC=0) を返せば、watcher はワーカー pane に `tmux send-keys '/clear'` → 復帰確認 → `tmux send-keys '/3ailoop'` を順に流し込む
+- ADR-012 で決定した通り、cron / sentinel は使用しない
 
 ### L-9: Lock 解放
 
@@ -273,6 +278,9 @@ memory `project-3ailoop-known-races` に詳細。loop-lock の stale takeover ra
 - `loop-intent-guard.ts` (#172) — aligned:no N=3 で needs-intent-review
 - `loop-phase-close-check.ts` (#173) — Phase 完了条件検証 + ROADMAP/milestone 更新
 - `loop-notify.ts` — 各 L ステップから Discord Webhook へ 1 行通知 (env `DISCORD_WEBHOOK_URL` 未設定で silent skip、失敗しても loop は止めない)
+- `loop-tmux-start.ts` (#181) — tmux 環境チェック → ワーカー pane (`3ailoop-worker`) 生成 → Claude 起動 → 初回 `/3ailoop` 投入 → watcher daemon spawn
+- `loop-tmux-watcher.ts` (#181) — `state.json` の `recent_cycles[-1].ended_at` を 10s polling、差分検知で `/clear` → `/3ailoop` を send-keys。worker pane 消失 / 45min フリーズ / tmux 一時障害 3 連続失敗で安全側に停止
+- `loop-tmux-stop.ts` (#181) — watcher PID kill (SIGTERM → 5s → SIGKILL) → worker pane `/exit` → `tmux kill-window` → window が確実に消えた場合のみ lock release
 
 `.claude/skills/3ai/scripts/`:
 - `batch-select.ts --loop` (#170) — loop モード (split-batch tier 最優先 + 共通 exclude)

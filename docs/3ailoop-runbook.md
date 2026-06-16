@@ -5,8 +5,9 @@ EngawaCAD の自走ループ /3ailoop と要望投入受け口 /3ailoop-intake �
 
 関連:
 - 設計プラン: `/home/bacon/.claude/plans/3ai-loop-ui-ux-jaunty-ember.md`
+- ランタイム ADR: [ADR-012](decisions/012-3ailoop-tmux-runtime.md) (cron 駆動から tmux 自走への転換)
 - memory: `project-3ailoop-policy` / `project-3ailoop-intake-policy` / `project-3ailoop-known-races` / `project-3ailoop-implementation-style`
-- 実装 Issue: #167 (基盤) → #168 (hardening v2) → #169 (hardening v3) → #170 (コア) → #171 (観測性) → #172 (safety net) → #173 (Phase 切替) → #174 (SKILL) → #175 (intake) → #176 (運用、本 RUNBOOK)
+- 実装 Issue: #167 (基盤) → #168 (hardening v2) → #169 (hardening v3) → #170 (コア) → #171 (観測性) → #172 (safety net) → #173 (Phase 切替) → #174 (SKILL) → #175 (intake) → #176 (運用、本 RUNBOOK) → #179 (Discord 通知) → #180 (ADR-012) → #181 (tmux ランタイム)
 
 ---
 
@@ -32,35 +33,46 @@ cat features/.dashboard.md
 
 Current Status / Loop-actionable open issues / Pending Gates / Needs-Human Backlog を確認。
 
-### 1-3. CronCreate 設定 (初回 5 cycle、1 時間間隔)
+### 1-3. tmux session 準備 + 自走起動 (ADR-012)
 
-```text
-# Claude Code で /schedule を起動して以下のように設定:
-スケジュール: 1 時間ごと (cron: 0 */1 * * *)
-起動内容: /3ailoop
-期間: 最初の 5 cycle (= 5 時間)
+ADR-012 により ランタイムは **tmux 2 ペイン構成の自走モデル**。cron は使わない。
+
+```bash
+# 1) tmux session を起動 (既存があれば attach、なければ新規)
+tmux new-session -A -s engawa
+
+# 2) session 内で start.ts を実行 (オーケストレーター pane で)
+bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts
 ```
 
-詳細は `/schedule` Skill のドキュメント参照。
-CronCreate は **人間が起動** する (cron job の所有者明示のため)。
+`loop-tmux-start.ts` は以下を行う:
+1. TMUX 環境変数を検査 (session 外なら exit 2)
+2. 既存 worker pane (`3ailoop-worker` window) の重複を検査 (R4-F03 対策)
+3. `tmux new-window -d -n 3ailoop-worker` でワーカー pane 生成
+4. ワーカー pane で `claude` を起動 → capture-pane で起動完了を待機 (デフォルト 60s タイムアウト、`LOOP_TMUX_BOOT_TIMEOUT_SEC` で上書き可)
+5. ワーカー pane に `/3ailoop` を送信し初回サイクル開始
+6. `loop-tmux-watcher.ts` を detached プロセスとして spawn、PID を `features/.loop/tmux/watcher.pid` に記録
+
+成功すると stdout に `{ ok: true, window: "3ailoop-worker", watcher_pid: <PID> }` が出る。
+
+watcher daemon は 10 秒間隔で `features/.loop/state.json` を polling し、サイクル完了を検知したら `loop-should-stop.ts` を呼び:
+- RC=0 (proceed) → ワーカー pane に `/clear` 送信 → 復帰確認 (capture-pane) → `/3ailoop` 再送
+- RC=1 (stop) → Discord 通知 + watcher 自身も終了
 
 ### 1-4. 5 cycle 立会い
 
-各 cycle 完了後に dashboard を目視:
+各 cycle 完了後に dashboard と watcher.log を目視:
 - 想定外の pause がないか
 - token 使用量が予想範囲か
 - 起票された子 Issue (split-batch) が妥当か
 - ADR draft が立った場合 gate:adr-review に正しく入っているか
+- watcher の挙動: `tail -f features/.loop/tmux/watcher.log` で baseline 確立 → 差分検知 → send-keys の流れが見える
 
-異常があれば:
-```bash
-# CronDelete で停止
-# 該当 cycle の features/.loop/state.json と features/.dashboard.md を確認
-```
+異常があれば §4-3 の停止手順を参照。
 
 ### 1-5. 定常運用へ移行
 
-5 cycle 異常なし → CronCreate を **2 時間間隔** (cron: 0 */2 * * *) に更新。memory に「初回 5 cycle 監視済み」を記録。
+5 cycle 異常なし → そのまま自走を継続。memory に「初回 5 cycle 監視済み」を記録。tmux 自走モデルではアイドル時間ゼロ・lock 弾きゼロで動き続けるため、cron のように間隔を調整する必要はない。
 
 ---
 
@@ -149,14 +161,67 @@ mv features/.loop/state.json features/.loop/state.json.broken
 
 cumulative は失われるが、recent_cycles は再構築可能。
 
-### 4-3. CronDelete で停止
+### 4-3. tmux 自走の停止 / 再起動
 
 ```bash
-# /schedule で該当 cron を削除、または:
-# CronList で確認 → 該当 ID を CronDelete
+# 通常停止 (watcher 停止 → worker pane kill → lock release)
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts
+
+# debug: window を残したまま watcher だけ止める
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts --keep-window
+
+# dry-run で動作確認
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts --dry-run
 ```
 
-異常時 (3 cycle 連続 pause など)、loop-cycle-record が自動 CronDelete することはない (= 設計上 cron 停止は人間判断のみ。安全側)。
+異常時 (3 cycle 連続 pause など)、loop-cycle-record / watcher が自動で worker を kill することはない (= 設計上停止は人間判断のみ。安全側)。停止後は `loop-tmux-start.ts` を再実行すれば自走再開。
+
+### 4-4. worker pane が異常終了している
+
+```bash
+# tmux list-windows で確認
+tmux list-windows
+
+# 3ailoop-worker が無くなっていたら watcher は loop-tmux-worker-gone を通知して既に
+# 自分も終了している。features/.loop/tmux/watcher.log で確認:
+tail -20 features/.loop/tmux/watcher.log
+
+# 復旧: PID file が残っていたら掃除して再起動
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts  # PID 掃除のため
+bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts
+```
+
+### 4-5. watcher daemon が固まった / state.json が更新されない
+
+`features/.loop/state.json` の `recent_cycles[-1].ended_at` が `LOOP_TMUX_STUCK_MIN` (デフォルト 45 分) 以上更新されないと、watcher は `loop-tmux-stuck` 通知を出して自滅する。
+
+復旧:
+```bash
+# 1) watcher.log で原因確認
+tail -40 features/.loop/tmux/watcher.log
+
+# 2) ワーカー pane に attach して Claude の状態を確認 (フリーズ / 許可プロンプト待ち等)
+tmux select-window -t =3ailoop-worker
+
+# 3) 必要なら手動で介入 → /3ailoop を再投入
+# 4) 介入できなければ stop → start で再起動
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts
+bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts
+```
+
+### 4-6. /clear の送信が効かない (Claude Code 仕様変更)
+
+ADR-012 で前提とした `/clear` のキーストローク送信仕様が壊れた場合の対応:
+
+```bash
+# watcher.log で「send-keys: /clear」の後に Claude の応答が無いことを確認
+# ワーカー pane に attach して /clear を手動入力して挙動確認
+tmux select-window -t =3ailoop-worker
+
+# 一時的に cron モード相当 (= start.ts を Cron で間欠起動) に戻すなら:
+# loop-tmux-start.ts を /schedule に登録、--no-watcher オプション ... は未実装
+# 暫定: 手動で loop-tmux-stop → 手動 /3ailoop を回す運用に縮退する
+```
 
 ### 4-4. /3ailoop と /3ailoop-intake の同時起動衝突
 
@@ -193,11 +258,15 @@ memory `project-3ailoop-known-races` 参照。lock の stale takeover race (rmSy
 ## 7. ループ終了 / 一時停止
 
 ```bash
-# 一時停止 (cron は残す)
+# 一時停止 (watcher は残して止める)
 # 全 open Issue に手動で needs-human ラベル → loop-should-stop が pause を返す
+# → watcher が loop-stop を通知して自分も終了する
 
-# 完全停止 (cron 削除)
-# /schedule または CronDelete
+# 完全停止 (watcher kill + worker pane kill + lock release)
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts
+
+# debug 用: worker pane を残して watcher だけ止める
+bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts --keep-window
 ```
 
 ---
