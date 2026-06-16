@@ -33,6 +33,10 @@ const LOG_PATH = `${TMUX_DIR}/watcher.log`;
 const LAST_ENDED_PATH = `${TMUX_DIR}/last-cycle-ended-at`;
 const PANE_PATH = `${TMUX_DIR}/worker.pane`;
 
+// #185 R3-F01: metadata 欠落時の fallback として、worker pane に tmux 側で
+// 識別タイトルを付与する。`tmux list-panes -F "#{pane_title}"` で逆引きできる。
+export const WORKER_PANE_TITLE = "3ailoop-worker";
+
 const POLL_SEC = parseInt(process.env.LOOP_TMUX_POLL_SEC ?? "10", 10);
 const STUCK_MIN = parseInt(process.env.LOOP_TMUX_STUCK_MIN ?? "45", 10);
 const CLEAR_WAIT_SEC = parseInt(process.env.LOOP_TMUX_CLEAR_WAIT_SEC ?? "8", 10);
@@ -202,8 +206,12 @@ async function tmuxPaneExists(info: PaneInfo): Promise<boolean | "unknown"> {
     const out = await new Response(proc.stdout).text();
     await proc.exited;
     if (proc.exitCode !== 0) return "unknown";
+    const lines = out.split("\n").map(s => s.trim());
     const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
-    return out.split("\n").map(s => s.trim()).includes(expected);
+    if (lines.includes(expected)) return true;
+    // #185 R3-F02: pane が別 session/window に移動された場合でも pane_id が出てくれば live。
+    if (lines.some(l => l.endsWith(`|${info.pane_id}`))) return true;
+    return false;
   } catch {
     return "unknown";
   }

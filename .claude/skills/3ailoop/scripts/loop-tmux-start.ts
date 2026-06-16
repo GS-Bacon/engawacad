@@ -17,9 +17,9 @@
 //
 // 関連: ADR-012, Issue #181
 
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { isWatcherAlive, readWatcherPidFile } from "./loop-tmux-watcher.ts";
+import { isWatcherAlive, readWatcherPidFile, WORKER_PANE_TITLE } from "./loop-tmux-watcher.ts";
 
 const TMUX_DIR = "features/.loop/tmux";
 const PID_PATH = `${TMUX_DIR}/watcher.pid`;
@@ -51,23 +51,44 @@ function checkExistingWatcher(): void {
 }
 
 /** 既存 worker.pane が tmux 上に生きていれば起動中止 (重複防止)。
- *  #185 R1-F02: 3 つ組 (session_id + window_id + pane_id) で完全一致確認。 */
+ *  #185 R1-F02: 3 つ組 (session_id + window_id + pane_id) で完全一致確認。
+ *  #185 R3-F01: metadata 欠落/破損時の fallback として tmux 側の pane_title で
+ *  孤立 worker を発見し、それも検知できれば exit 1。 */
 async function checkExistingWorkerPane(): Promise<void> {
   const { readPaneInfo } = await import("./loop-tmux-watcher.ts");
   const info = readPaneInfo(PANE_PATH);
-  if (!info) return;
-  const proc = Bun.spawn(
-    ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}"],
+  if (info) {
+    const proc = Bun.spawn(
+      ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    if (proc.exitCode === 0) {
+      const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
+      if (out.split("\n").map(s => s.trim()).includes(expected)) {
+        console.error(`ERROR: 既存 worker pane ${info.pane_id} (session=${info.session_id} window=${info.window_id}) が生存中です`);
+        console.error("  対処: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts で掃除してから再試行してください。");
+        process.exit(1);
+      }
+    }
+  }
+
+  // metadata なし or 不一致 → pane_title fallback で孤立 worker 検出
+  const titleProc = Bun.spawn(
+    ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}|#{pane_title}"],
     { stdout: "pipe", stderr: "pipe" },
   );
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  if (proc.exitCode !== 0) return;
-  const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
-  const found = out.split("\n").map(s => s.trim()).includes(expected);
-  if (found) {
-    console.error(`ERROR: 既存 worker pane ${info.pane_id} (session=${info.session_id} window=${info.window_id}) が生存中です`);
-    console.error("  対処: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts で掃除してから再試行してください。");
+  const titleOut = await new Response(titleProc.stdout).text();
+  await titleProc.exited;
+  if (titleProc.exitCode !== 0) return;
+  const orphans = titleOut.split("\n")
+    .map(s => s.trim())
+    .filter(l => l.endsWith(`|${WORKER_PANE_TITLE}`));
+  if (orphans.length > 0) {
+    console.error(`ERROR: 孤立 worker pane (pane_title=${WORKER_PANE_TITLE}) を ${orphans.length} 個検出 (metadata と不一致)`);
+    for (const o of orphans) console.error(`  ${o}`);
+    console.error("  対処: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts で掃除するか、tmux kill-pane -t <pane_id> で手動削除してから再試行してください。");
     process.exit(1);
   }
 }
@@ -156,6 +177,7 @@ async function waitForClaudeReady(paneId: string): Promise<boolean> {
   return false;
 }
 
+/** #185 R3-F01: atomic write (tmp + rename) で worker.pane の途中破損を防ぐ。 */
 function writePaneInfo(triple: PaneTriple): void {
   mkdirSync(dirname(PANE_PATH), { recursive: true });
   const info = {
@@ -164,7 +186,9 @@ function writePaneInfo(triple: PaneTriple): void {
     window_id: triple.window_id,
     saved_at: new Date().toISOString(),
   };
-  writeFileSync(PANE_PATH, JSON.stringify(info, null, 2), "utf-8");
+  const tmp = `${PANE_PATH}.tmp.${process.pid}.${Date.now()}`;
+  writeFileSync(tmp, JSON.stringify(info, null, 2), "utf-8");
+  renameSync(tmp, PANE_PATH);
 }
 
 function spawnWatcherDaemon(): number {
@@ -219,6 +243,9 @@ async function main(): Promise<void> {
   }
   process.stderr.write(`  session=${triple.session_id} window=${triple.window_id} pane=${triple.pane_id}\n`);
   writePaneInfo(triple);
+
+  // #185 R3-F01: metadata 破損時のリカバリ用に tmux 側にもタイトルを残す
+  await runTmux(["tmux", "select-pane", "-t", triple.pane_id, "-T", WORKER_PANE_TITLE]);
 
   process.stderr.write(`STEP: ワーカー pane で claude を起動: ${claudeCmd}\n`);
   const cmdR = await runTmux(["tmux", "send-keys", "-t", triple.pane_id, claudeCmd, "Enter"]);

@@ -19,6 +19,7 @@ import {
   isWatcherAlive,
   readPaneInfo,
   readWatcherPidFile,
+  WORKER_PANE_TITLE,
   type PaneInfo,
   type WatcherPidInfo,
 } from "./loop-tmux-watcher.ts";
@@ -77,8 +78,13 @@ async function verifyPane(info: PaneInfo): Promise<boolean | "unknown"> {
   const out = await new Response(proc.stdout).text();
   await proc.exited;
   if (proc.exitCode !== 0) return "unknown";
+  const lines = out.split("\n").map(s => s.trim());
   const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
-  return out.split("\n").map(s => s.trim()).includes(expected);
+  if (lines.includes(expected)) return true;
+  // #185 R3-F02: pane が別 session/window に移動された場合でも pane_id (tmux 内で
+  // server-wide にユニーク) が出てくれば live worker として扱う。
+  if (lines.some(l => l.endsWith(`|${info.pane_id}`))) return true;
+  return false;
 }
 
 async function killPane(info: PaneInfo, dryRun: boolean, keep: boolean): Promise<KillPaneResult> {
@@ -178,7 +184,40 @@ async function main(): Promise<void> {
 
   let paneGone = false;
   if (paneInfo === null) {
-    result.pane_kill = "skipped (no pane info saved)";
+    // #185 R3-F01: metadata 欠落時は tmux 側の pane_title で孤立 worker を探す
+    const titleProc = Bun.spawn(
+      ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}|#{pane_title}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const titleOut = await new Response(titleProc.stdout).text();
+    await titleProc.exited;
+    if (titleProc.exitCode !== 0) {
+      result.pane_kill = "skipped (no pane info, tmux list-panes failed)";
+    } else {
+      const orphans = titleOut.split("\n")
+        .map(s => s.trim())
+        .filter(l => l.endsWith(`|${WORKER_PANE_TITLE}`));
+      if (orphans.length === 0) {
+        result.pane_kill = "skipped (no pane info and no orphan worker found by pane_title)";
+      } else {
+        const orphanResults: Array<Record<string, unknown>> = [];
+        for (const o of orphans) {
+          const parts = o.split("|");
+          if (parts.length < 4) continue;
+          const [sid, wid, pid] = parts;
+          const recovered: PaneInfo = {
+            session_id: sid,
+            window_id: wid,
+            pane_id: pid,
+            saved_at: "(recovered by pane_title)",
+          };
+          const r = await killPane(recovered, dryRun, keepPane);
+          orphanResults.push({ pane_id: pid, status: r.status });
+          if (r.paneGone) paneGone = true;
+        }
+        result.pane_kill = { recovered_by_title: orphanResults };
+      }
+    }
   } else {
     const paneResult = await killPane(paneInfo, dryRun, keepPane);
     result.pane_kill = paneResult.status;
