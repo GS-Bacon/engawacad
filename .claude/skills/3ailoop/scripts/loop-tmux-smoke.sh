@@ -107,8 +107,15 @@ if [[ -d "$ORIG_LOOP_DIR/tmux" ]]; then
   mv "$ORIG_LOOP_DIR/tmux" "$BACKUP_DIR"
 fi
 mkdir -p "$ORIG_LOOP_DIR/tmux"
-# worker.pane に mock pane_id を書く (mockAlive=true で実存検査を bypass する)
-echo "%99999" > "$ORIG_LOOP_DIR/tmux/worker.pane"
+# worker.pane に mock PaneInfo を書く (mockAlive=true で実存検査を bypass する)
+cat > "$ORIG_LOOP_DIR/tmux/worker.pane" <<'EOF'
+{
+  "pane_id": "%99999",
+  "session_id": "$99999",
+  "window_id": "@99999",
+  "saved_at": "2026-06-16T00:00:00.000Z"
+}
+EOF
 # 既存 state.json は触らないが、ended_at が現値とは違う値を last-cycle-ended-at に書いて
 # 差分検知を強制する
 CURR_ENDED="$(bun -e 'try { const s=JSON.parse(require("fs").readFileSync("features/.loop/state.json","utf-8")); const c=s.recent_cycles?.at(-1)?.ended_at; if(c) console.log(c); } catch {}')"

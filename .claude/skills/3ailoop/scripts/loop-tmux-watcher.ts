@@ -163,31 +163,47 @@ function writeLastObserved(v: string): void {
   renameSync(tmp, LAST_ENDED_PATH);
 }
 
-function readPaneId(): string | null {
-  if (!existsSync(PANE_PATH)) return null;
+/** #185 R1-F02: pane_id 単体は tmux server 再起動後に別 pane に再割当てされうるため、
+ *  session_id + window_id + pane_id の 3 つ組で worker pane を識別する。 */
+export interface PaneInfo {
+  pane_id: string; // 例: "%42"
+  session_id: string; // 例: "$0"
+  window_id: string; // 例: "@1"
+  saved_at: string;
+}
+
+export function readPaneInfo(path: string = PANE_PATH): PaneInfo | null {
+  if (!existsSync(path)) return null;
   try {
-    const v = readFileSync(PANE_PATH, "utf-8").trim();
-    return /^%\d+$/.test(v) ? v : null;
+    const txt = readFileSync(path, "utf-8").trim();
+    if (!txt.startsWith("{")) return null;
+    const obj = JSON.parse(txt) as Partial<PaneInfo>;
+    if (typeof obj.pane_id !== "string" || !/^%\d+$/.test(obj.pane_id)) return null;
+    if (typeof obj.session_id !== "string" || !/^\$\d+$/.test(obj.session_id)) return null;
+    if (typeof obj.window_id !== "string" || !/^@\d+$/.test(obj.window_id)) return null;
+    if (typeof obj.saved_at !== "string") return null;
+    return obj as PaneInfo;
   } catch {
     return null;
   }
 }
 
-/** #181 R4-F01 / #185: tmux 呼び出し失敗は pane-gone と区別する。pane_id ベース。
- *  - true     : pane 存在を確認
+/** #181 R4-F01 / #185 R1-F02: 3 つ組で完全一致確認。pane_id 単体ではない。
+ *  - true     : pane 存在を確認 (session_id + window_id + pane_id 完全一致)
  *  - false    : tmux 呼び出し成功 + 対象が見つからなかった
  *  - "unknown": tmux 呼び出し自体が失敗 (socket 一時障害など)
  */
-async function tmuxPaneExists(paneId: string): Promise<boolean | "unknown"> {
+async function tmuxPaneExists(info: PaneInfo): Promise<boolean | "unknown"> {
   try {
-    const proc = Bun.spawn(["tmux", "list-panes", "-a", "-F", "#{pane_id}"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
     const out = await new Response(proc.stdout).text();
     await proc.exited;
     if (proc.exitCode !== 0) return "unknown";
-    return out.split("\n").map(s => s.trim()).includes(paneId);
+    const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
+    return out.split("\n").map(s => s.trim()).includes(expected);
   } catch {
     return "unknown";
   }
@@ -406,14 +422,14 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
     process.exit(0);
   });
 
-  const paneId = readPaneId();
-  if (!paneId && !mockAlive) {
+  const paneInfo = readPaneInfo();
+  if (!paneInfo && !mockAlive) {
     log(`ERROR: worker.pane not found or invalid format. Run loop-tmux-start.ts first.`);
-    cleanup("pane_id missing");
+    cleanup("pane info missing");
     process.exit(2);
   }
-  const targetPane = paneId ?? "%MOCK";
-  log(`target pane=${targetPane}`);
+  const targetPaneId = paneInfo?.pane_id ?? "%MOCK";
+  log(`target pane=${targetPaneId} session=${paneInfo?.session_id ?? "(mock)"} window=${paneInfo?.window_id ?? "(mock)"}`);
   let parseFailures = 0;
   let tmuxQueryFailures = 0;
   const TMUX_QUERY_FAIL_LIMIT = 3;
@@ -425,7 +441,7 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
       if (mockAlive) {
         workerAlive = true;
       } else {
-        const q = await tmuxPaneExists(targetPane);
+        const q = await tmuxPaneExists(paneInfo!);
         if (q === "unknown") {
           // #181 R4-F01: tmux 一時障害は worker-gone と区別。連続失敗で異常検知。
           tmuxQueryFailures++;
@@ -484,7 +500,7 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
           log(`baseline initialized: ${action.baseline} (起動直後の既存 ended_at を採用)`);
           break;
         case "send-clear-and-restart":
-          await performRestart(targetPane, dryRun);
+          await performRestart(targetPaneId, dryRun);
           if (currEndedAt) writeLastObserved(currEndedAt);
           if (dryRun) {
             cleanup("dry-run exit after one restart");
@@ -503,7 +519,13 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
           cleanup(`stuck ${action.minutesIdle.toFixed(0)}min`);
           return;
         case "worker-gone":
-          await notify("loop-tmux-worker-gone", `[STOP] watcher: worker pane '${targetPane}' が tmux から消失`);
+          // #185 R1-F01 整合: pane が確実に消えたので worker.pane も unlink
+          try {
+            if (existsSync(PANE_PATH)) unlinkSync(PANE_PATH);
+          } catch {
+            // best effort
+          }
+          await notify("loop-tmux-worker-gone", `[STOP] watcher: worker pane '${targetPaneId}' が tmux から消失`);
           cleanup("worker-gone");
           return;
         case "should-stop-error":
