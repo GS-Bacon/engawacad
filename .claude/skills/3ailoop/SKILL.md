@@ -43,7 +43,7 @@ RC=$?
 ```
 
 - `RC=0` (proceed): 続行 → L-2.5 へ
-- `RC=1` (stop): pause 理由を `loop-cycle-record record --pause-reason "<reason>"` で記録し、`loop-lock release --token $TOKEN` してから終了 (sentinel emit せず)
+- `RC=1` (stop): pause 理由を `loop-cycle-record record --pause-reason "<reason>"` で記録し、`bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind loop-stop --text "[STOP] loop paused — <reason>"` で通知してから、`loop-lock release --token $TOKEN` してから終了 (sentinel emit せず)
 
 ### L-2.5: Phase 完了処理
 
@@ -63,6 +63,14 @@ bun .claude/skills/3ai/scripts/batch-select.ts --loop
 
 - `features/.batch/plan.json` に loop 用プラン生成
 - split-batch tier 最優先、gate/needs-* / blocked-by-split は除外
+- 次に着手する Issue を plan.json から取り出して通知:
+  ```bash
+  ISSUE_N=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync("features/.batch/plan.json","utf-8")).issues?.[0]?.number ?? "")')
+  ISSUE_TITLE=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync("features/.batch/plan.json","utf-8")).issues?.[0]?.title ?? "")')
+  if [ -n "$ISSUE_N" ]; then
+    bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-start --text "[START] #${ISSUE_N} 着手: ${ISSUE_TITLE}"
+  fi
+  ```
 
 ### L-4: /3ai 自律モード起動
 
@@ -73,10 +81,22 @@ Skill ツールで `/3ai` を **引数なし** で起動 (自律モードで動�
 ### L-5: サイクル記録
 
 ```bash
-bun .claude/skills/3ailoop/scripts/loop-cycle-record.ts record
+RECORD_JSON=$(bun .claude/skills/3ailoop/scripts/loop-cycle-record.ts record)
+echo "$RECORD_JSON"
 ```
 
-state.json に追記、recent_cycles[] と cumulative 更新。
+state.json に追記、recent_cycles[] と cumulative 更新。stdout の JSON から closed Issue を取り、各 1 通通知:
+
+```bash
+echo "$RECORD_JSON" | bun -e '
+  const e = JSON.parse(require("fs").readFileSync(0, "utf-8"));
+  for (const n of (e.closed ?? [])) {
+    console.log(`#${n}\t${e.cycle}\t${e.merged_commits}`);
+  }
+' | while IFS=$'\t' read -r N C M; do
+  bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-done --text "[DONE] ${N} closed (cycle ${C}, ${M} commits)"
+done
+```
 
 ### L-5.5: Decision log 追記 (条件付き)
 
@@ -91,10 +111,25 @@ bun .claude/skills/3ailoop/scripts/loop-decision-log.ts append --kind <kind> --m
 このサイクル中に /3ai が新規 ADR を作成していれば gate:adr-review Issue を起票:
 
 ```bash
-bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan
+ADR_JSON=$(bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan)
+echo "$ADR_JSON"
 ```
 
 (`features/.loop/last-adr-scan-sha` の marker を使って前回 scan 以降のみ検出)
+
+新規に起票した gate Issue を通知 (JSON 出力以外の "no new ADRs" 行は skip):
+
+```bash
+echo "$ADR_JSON" | bun -e '
+  let raw = require("fs").readFileSync(0, "utf-8").trim();
+  let obj; try { obj = JSON.parse(raw); } catch { process.exit(0); }
+  for (const c of (obj.created ?? [])) {
+    if (c.issue) console.log(`${c.issue}\t${c.adr}`);
+  }
+' | while IFS=$'\t' read -r N ADR; do
+  bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-raised-adr --text "[NEW] #${N} raised: gate:adr-review for ${ADR}"
+done
+```
 
 ### L-5.7: split-detector 実行 (各 feature の review yaml)
 
@@ -105,8 +140,27 @@ bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan
 for review_yaml in features/*/codex-final.yaml; do
   [ -f "$review_yaml" ] || continue
   PARENT=$(basename "$(dirname "$review_yaml")" | awk -F- '{print $1}')
-  bun .claude/skills/3ailoop/scripts/loop-split-detector.ts process \
-    --review-yaml "$review_yaml" --parent-issue "$PARENT" 2>&1 | tail -5 || true
+  SPLIT_OUT=$(bun .claude/skills/3ailoop/scripts/loop-split-detector.ts process \
+    --review-yaml "$review_yaml" --parent-issue "$PARENT" 2>&1 || true)
+  echo "$SPLIT_OUT" | tail -5
+  # JSON 末尾行を抽出して子 Issue ごとに通知
+  echo "$SPLIT_OUT" | bun -e '
+    const lines = require("fs").readFileSync(0,"utf-8").trim().split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const l = lines[i].trim();
+      if (!l.startsWith("{")) continue;
+      try {
+        const o = JSON.parse(l);
+        if (!o.ok || !Array.isArray(o.children)) break;
+        for (const c of o.children) {
+          if (c.child) console.log(`${c.child}\t${o.parent}`);
+        }
+        break;
+      } catch {}
+    }
+  ' | while IFS=$'\t' read -r CHILD PARENT_N; do
+    bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-raised-split --text "[NEW] #${CHILD} raised (split of #${PARENT_N})"
+  done
 done
 ```
 
@@ -121,7 +175,13 @@ for ic in features/*/intent-check.yaml; do
   [ -f "$ic" ] || continue
   if grep -q '^aligned:\s*no' "$ic"; then
     PARENT=$(basename "$(dirname "$ic")" | awk -F- '{print $1}')
-    bun .claude/skills/3ailoop/scripts/loop-intent-guard.ts inc --issue "$PARENT" 2>&1 | tail -2
+    IG_OUT=$(bun .claude/skills/3ailoop/scripts/loop-intent-guard.ts inc --issue "$PARENT" 2>&1)
+    echo "$IG_OUT" | tail -2
+    # threshold 越えで stderr に WARN が出ているなら通知
+    if echo "$IG_OUT" | grep -q "needs-intent-review added"; then
+      CNT=$(echo "$IG_OUT" | grep -oE "reached [0-9]+" | grep -oE "[0-9]+" | head -1)
+      bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind intent-guard --text "[WARN] #${PARENT} needs-intent-review (aligned:no ×${CNT:-3})"
+    fi
   fi
 done
 ```
@@ -139,10 +199,18 @@ bun .claude/skills/3ailoop/scripts/loop-dashboard.ts
 直近サイクルで Issue N が失敗していたら:
 
 ```bash
-bun .claude/skills/3ailoop/scripts/loop-failure-tracker.ts inc --issue N
+FT_OUT=$(bun .claude/skills/3ailoop/scripts/loop-failure-tracker.ts inc --issue N 2>&1)
+echo "$FT_OUT"
 ```
 
-N=3 で `needs-human` 退避 (gh edit 内部)。
+N=3 で `needs-human` 退避 (gh edit 内部)。threshold 越え時は通知:
+
+```bash
+if echo "$FT_OUT" | grep -q "needs-human"; then
+  STREAK=$(echo "$FT_OUT" | grep -oE "[0-9]+" | head -1)
+  bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind needs-human --text "[WARN] #N needs-human (failure streak ${STREAK:-3})"
+fi
+```
 
 ### L-7.5: Token 閾値チェック
 
@@ -152,7 +220,7 @@ RC=$?
 ```
 
 - `RC=0`: 続行
-- `RC=1` (累積 100M 超): `loop-cycle-record record --pause-reason "token threshold"` で記録 → release → 終了
+- `RC=1` (累積 100M 超): `loop-cycle-record record --pause-reason "token threshold"` で記録 → `bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind token-limit --text "[STOP] token limit reached (累積 100M 超) — paused"` で通知 → release → 終了
 
 ### L-8: Sentinel emit
 
@@ -204,6 +272,7 @@ memory `project-3ailoop-known-races` に詳細。loop-lock の stale takeover ra
 - `loop-split-detector.ts` (#172) — split_proposal で親 blocked + 子起票
 - `loop-intent-guard.ts` (#172) — aligned:no N=3 で needs-intent-review
 - `loop-phase-close-check.ts` (#173) — Phase 完了条件検証 + ROADMAP/milestone 更新
+- `loop-notify.ts` — 各 L ステップから Discord Webhook へ 1 行通知 (env `DISCORD_WEBHOOK_URL` 未設定で silent skip、失敗しても loop は止めない)
 
 `.claude/skills/3ai/scripts/`:
 - `batch-select.ts --loop` (#170) — loop モード (split-batch tier 最優先 + 共通 exclude)

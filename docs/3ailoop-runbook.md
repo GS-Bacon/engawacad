@@ -199,3 +199,55 @@ memory `project-3ailoop-known-races` 参照。lock の stale takeover race (rmSy
 # 完全停止 (cron 削除)
 # /schedule または CronDelete
 ```
+
+---
+
+## 8. Discord 通知 (任意)
+
+`/3ailoop` の各 L ステップから 1 行通知を Discord Webhook へ流せる。設定は **env だけ**、未設定なら通知は silent skip され loop の動作には一切影響しない。
+
+### 8-1. セットアップ
+
+1. Discord 側で対象のフォーラムチャンネルに対し Webhook を作成し URL を取得。
+2. 流したい既存スレッド(投稿)の **スレッド ID** を控える (スレッド右クリック → 「リンクをコピー」の末尾の数値、または Discord 開発者モードでコピー)。
+3. URL の末尾に `?thread_id=<スレッドID>` を付けて 1 本の URL に結合する。
+4. `.claude/settings.local.json` (git ignore 済み) の `env` に追加:
+   ```json
+   {
+     "env": {
+       "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/<id>/<token>?thread_id=<thread_id>"
+     }
+   }
+   ```
+   - フォーラムチャンネル全体に投稿したい (= 通知ごとに新スレッドを作る) 場合は別仕様 (本実装は thread_id 集約のみ対応)。
+5. 動作確認:
+   ```bash
+   bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind smoke --text "[TEST] notify wiring OK"
+   ```
+   stderr に何も出ず exit 0、Discord スレッドに 1 行届けば成功。
+
+### 8-2. 通知される主なイベント
+
+| L | kind | 例 |
+|---|---|---|
+| L-2 | `loop-stop` | `[STOP] loop paused — gate-only` |
+| L-3 末尾 | `issue-start` | `[START] #45 着手: <title>` |
+| L-5 | `issue-done` | `[DONE] #45 closed (cycle 13, 4 commits)` |
+| L-5.6 | `issue-raised-adr` | `[NEW] #82 raised: gate:adr-review for docs/decisions/...` |
+| L-5.7 | `issue-raised-split` | `[NEW] #83 raised (split of #45)` |
+| L-5.8 | `intent-guard` | `[WARN] #45 needs-intent-review (aligned:no ×3)` |
+| L-7 | `needs-human` | `[WARN] #N needs-human (failure streak 3)` |
+| L-7.5 | `token-limit` | `[STOP] token limit reached — paused` |
+
+### 8-3. 無効化 / 一時停止
+
+- 完全停止: `.claude/settings.local.json` の `env.DISCORD_WEBHOOK_URL` を削除 (または空文字)。次サイクルから skip。
+- 一時止めだけしたい: シェルで `unset DISCORD_WEBHOOK_URL` してから loop を起動。
+
+### 8-4. 失敗時の挙動
+
+- env 未設定 → stderr に `[notify] DISCORD_WEBHOOK_URL not set, skip`、exit 0。
+- HTTP error / timeout / 401 / 404 → stderr に `[notify] notify-failed (kind=...): ...`、exit 0。loop は止まらない。
+- 429 (rate limit) → `Retry-After` を 1 回だけ尊重して再送、それでも失敗なら諦める。
+
+通知の取りこぼしは設計上許容 (Discord 通知は障害の検知手段であり、唯一の障害源にはしない方針)。確実に追いたいなら `features/.dashboard.md` と `features/.loop/decisions.log.md` を見る。
