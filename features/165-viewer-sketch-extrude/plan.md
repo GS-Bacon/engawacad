@@ -1,0 +1,160 @@
+## 自律判断ログ (自律バッチモード)
+
+- Issue body は完了条件 (data-testid / API シグネチャ / POST 順序 / depth/閉ループガード) まで明記。intent-check `aligned: yes`。
+- `web/src/generated/Feature.ts` を確認: `create_sketch` variant は `{ type, id, plane: SketchPlane, offset?, profile: SketchSegment[], plane_ref?: string | null }`。`SketchPlane` は `"xy" | "xz" | "yz"`、必須。`plane_ref` は optional。
+- Issue body 「`plane` フィールドを設定しない」は ts-rs 型上不可能。**自律判断**: TS 型上は `plane` を必須として埋めつつ (RefPlane → SketchPlane 対応 Front→xy / Top→xz / Right→yz)、`plane_ref` も併設する。Rust 側は #158 で `plane_ref` を優先して `plane` を ignore する経路があると仮定 (ADR-010 §Decision 2)。これにより TS型エラーを避けつつ Issue 意図 (plane_ref を真の plane source とする) を満たす。
+- `SketchSegment` は `id: string` 必須。各セグメントに決定的 ID (`${sketchId}_seg_${idx}`) を割り当てる。
+- 担当ファイルは `web/` のみ (sketch.ts / main.ts / index.html / 新規 spec)。Rust 側は触らない。
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `web/src/sketch.ts` に `buildCreateSketchFromSketch(sketch: Sketch, sketchId: string): Feature` を追加 | Phase 6 面ピック → Extrude 経路 (`btn-extrude` / `btn-extrude-cut`) の改変 |
+| `Sketch.planeRefId` → `SketchPlane` 対応: Front→"xy" / Top→"xz" / Right→"yz"。`plane_ref` も同時設定 | `CreateSketch.offset` の UI 露出 (ADR-010 で Phase 7 では 0 固定) |
+| `web/src/main.ts` にスケッチ確定後 UI: `sketch-depth` 入力 + `btn-sketch-extrude` / `btn-sketch-extrude-cut` | plane_ref 無しの CreateSketch (旧 plane/offset 経路) を UI から作る |
+| ボタン押下時に CreateSketch → Extrude (`fuse_target=null`) / ExtrudeCut (`target=最初の body feature_id`) を順次 POST | 複数 Extrude の一括バッチ送信 (1 ボタン = 1 CreateSketch + 1 Extrude) |
+| 閉ループ + depth>0 のときのみボタン有効 (それ以外 disabled) | モデル面上のスケッチからの Extrude (Phase 8) |
+| `usedFeatureIds` Set を Phase 6 経路と共有して ID 重複防止 | ExtrudeCut の `CreateSketch.offset` 未読バグ (`fix-extrudecut-offset` は Matrix #6 で別 Issue) |
+| 成功時 `handle.updateBodies(updated)` + `log("extrude_ok"/"extrude_cut_ok")` | バックエンド (engawa-format/build/kernel) への変更 |
+| 失敗時 `showError(msg)` + `log("extrude_error"/"extrude_cut_error")` | E2E Phase 7 acceptance (#166) |
+| 成功後セッションリセット (data-state="idle"、RefPlane 選択は維持) | |
+| Playwright `sketch_extrude.spec.ts` (4 ケース) | |
+
+## Non-Goals
+
+- Phase 6 面ピック → Extrude 経路 (`btn-extrude`) の変更 — 併存させるのみ
+- `offset` の UI 入力 — Phase 7 では 0 固定
+- ExtrudeCut の `offset` 未読バグ修正 — 別 Issue
+- 複数 Extrude を一度に POST — 1 ボタン押下 = 1 Sketch + 1 Extrude
+- バックエンド (Rust) への変更
+
+## 実装対象
+
+Issue: #165
+影響ファイル:
+- `web/src/sketch.ts` (関数追加)
+- `web/src/main.ts` (UI 経路追加)
+- `web/index.html` (要素追加 + style)
+- `web/tests/sketch_extrude.spec.ts` (新規)
+
+### 1. `web/src/sketch.ts` 関数追加
+
+```typescript
+import type { Feature } from "./generated/Feature";
+import type { SketchPlane } from "./generated/SketchPlane";
+
+const REFPLANE_TO_SKETCHPLANE: Record<RefPlaneId, SketchPlane> = {
+  Front: "xy",
+  Top: "xz",
+  Right: "yz",
+};
+
+export function buildCreateSketchFromSketch(sketch: Sketch, sketchId: string): Feature {
+  return {
+    type: "create_sketch",
+    id: sketchId,
+    plane: REFPLANE_TO_SKETCHPLANE[sketch.planeRefId],
+    profile: sketch.segments.map((seg, i) => ({
+      id: `${sketchId}_seg_${i}`,
+      from: [seg.from.x, seg.from.y],
+      to: [seg.to.x, seg.to.y],
+    })),
+    plane_ref: sketch.planeRefId,
+  };
+}
+```
+
+注: `offset` は省略 (`offset?: number` のため undefined を送る = Phase 7 では 0 固定)。
+
+### 2. `web/src/main.ts` UI 経路追加
+
+#### 状態保持
+
+- `lastFinalizedSketch: Sketch | null = null` を追加。`onSketchPoint` 内で auto finalize したら sketch を保存する。
+- 既存 `currentSession = null; handle.setSketchMode(false)` の流れは維持。
+
+#### DOM
+
+- `sketch-depth` (`<input type="number">`)
+- `btn-sketch-extrude` (`<button>`)
+- `btn-sketch-extrude-cut` (`<button>`)
+- これらは初期 `disabled`。`lastFinalizedSketch !== null && depth>0` のとき enabled。
+
+#### イベント配線
+
+- `auto finalize` 時に `lastFinalizedSketch = sketch` し、`refreshSketchButtonState()` を呼ぶ。
+- `Enter` で明示 finalize → 同様。
+- `Esc` で `lastFinalizedSketch = null` + ボタン disabled。
+- `sketch-depth` `input` イベントで `refreshSketchButtonState()`。
+- `btn-sketch-extrude` クリック:
+  1. `lastFinalizedSketch === null || !(depth>0)` なら no-op (button disabled でもガード)
+  2. `sketchId = uniqueId()` (uuid または Phase 6 と同じ流儀の counter)、`extrudeId = uniqueId()`
+  3. `createSketchFeature = buildCreateSketchFromSketch(lastFinalizedSketch, sketchId)`
+  4. `extrudeFeature: Feature = { type: "extrude", id: extrudeId, sketch: sketchId, depth, fuse_target: null }`
+  5. `usedFeatureIds.add(sketchId); usedFeatureIds.add(extrudeId)`
+  6. `await postFeature(createSketchFeature)` → `await postFeature(extrudeFeature)`
+  7. 成功時: `currentBodies = updated; handle.updateBodies(updated)`; log; `lastFinalizedSketch = null`; `clearSketchOverlay`; ボタン disabled
+  8. 失敗時: `showError(msg)`、`lastFinalizedSketch` は維持 (リトライ可能)
+- `btn-sketch-extrude-cut` クリック:
+  - Phase 6 と同様だが `target` は `currentBodies[0].feature_id` (最初の body)。
+  - bodies 0 件なら no-op (本来は disabled で防ぐ、念のため二重ガード)。
+  - Extrude variant が `fuse_target` のみで `target` 未対応な点に注意 → `extrude_cut` variant は `target` 必須。
+  - feature 生成: `{ type: "extrude_cut", id: extrudeCutId, sketch: sketchId, depth, target }`
+
+#### uniqueId 戦略 (決定的)
+
+既存 Phase 6 `extrude.ts` の `nextId(prefix, existing)` 方式を踏襲する。  
+`nextId("sketch_", usedFeatureIds)` / `nextId("extrude_", usedFeatureIds)` / `nextId("extrude_cut_", usedFeatureIds)` で「smallest non-colliding `<prefix><n>` (n=0,1,2,…)」を返す。Math.random() は使わない (EngawaCAD の決定性原則 + ADR-006、kernel 側 IdGenerator と整合)。
+
+実装: `extrude.ts` 内の `nextId` を export して再利用するか、`sketch.ts` 内に同じシグネチャの helper を再定義する。重複回避のため **export 再利用** が望ましい。
+
+### 3. `web/index.html` 要素追加
+
+```html
+<!-- スケッチ確定後の Extrude 入口 (#extrude-panel と独立配置) -->
+<div id="sketch-extrude-panel" data-testid="sketch-extrude-panel">
+  <label>深さ <input type="number" data-testid="sketch-depth" min="0.1" step="0.1" value="5" /></label>
+  <button data-testid="btn-sketch-extrude" disabled>スケッチ押出</button>
+  <button data-testid="btn-sketch-extrude-cut" disabled>スケッチ押出カット</button>
+</div>
+```
+
+CSS:
+- `#sketch-extrude-panel` を `#extrude-panel` と同じスタイル (位置は `top: 4rem; right: 1rem;` など別位置に)。
+
+### 数値モデル
+
+- `depth = Number(input.value)`。`Number.isFinite(depth) && depth > 0` で送信判定 (Phase 6 と同じガード)。
+- 閉ループ判定は `Sketch.isClosed()` の結果を使う (= #164 で実装済、CLOSE_EPS=1e-9)。
+- バックエンド `validate_profile_closed` (LENGTH_TOLERANCE=1e-9) と一致。
+- `CreateSketch.offset` は undefined で送る (= 0 扱い、ADR-010 §Decision 3)。
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | UI ガード | スケッチ未確定 (lastFinalizedSketch=null) で `btn-sketch-extrude` を click → POST 発火しない | postFeature 呼ばれない、UI 変化なし |
+| T02 | 矩形 + Extrude | 空 doc → Front 選択 → スケッチ矩形 → depth=2 → `btn-sketch-extrude` click → POST 2 回 (CreateSketch plane_ref=Front, then Extrude fuse_target=null) | リクエスト順序 + payload assert (body 内 type/plane_ref/depth) |
+| T03 | 矩形 + ExtrudeCut | T02 の後 (body=1)、再度スケッチ矩形 → depth=1 → `btn-sketch-extrude-cut` click → POST 2 回 (CreateSketch plane_ref=Front, then ExtrudeCut target=body1) | リクエスト順序 + payload assert |
+| T04_boundary_depth_guard | depth ガード網羅 | depth = 0 / 負値 ("-5") / 非数値 ("abc") / Infinity ("1e309") の 4 パターンで button disabled、POST 発火しない | button.disabled、POST 0 件 |
+| T05_regression_phase6 | Phase 6 経路保護 | 既存 `extrude_panel.spec.ts` の I1 (depth=5 で press) が依然 green | 既存 spec exit 0 |
+| T06_unit_buildCreateSketch | vitest 単体 | `buildCreateSketchFromSketch({planeRefId:"Front", segments:[{from:{x:0,y:0},to:{x:5,y:0}}]}, "sk1")` | 戻値 `{type:"create_sketch", id:"sk1", plane:"xy", profile:[{id:"sk1_seg_0", from:[0,0], to:[5,0]}], plane_ref:"Front"}` |
+| T07_unit_plane_mapping | vitest 単体 | 3 RefPlane → 3 SketchPlane の対応 (Front→xy / Top→xz / Right→yz) | 3 アサート |
+| T08_unit_id_determinism | vitest 単体 | 同一 usedFeatureIds 状態 (空 Set / 既存 [sketch_0] 入り) で 2 回 nextId("sketch_", ...) を呼ぶ → 戻値が同じ | smallest non-colliding ID の決定性 |
+
+## 幾何的不変条件チェックリスト
+
+- [ ] N/A — UI と JSON payload 構築のみ。kernel に触らない
+- [ ] N/A
+- [ ] N/A
+- [ ] N/A
+
+## 影響範囲
+
+- `web/src/sketch.ts`: `buildCreateSketchFromSketch` 追加 (~20 行)
+- `web/src/sketch.test.ts`: T06/T07 単体テスト追加 (~20 行)
+- `web/src/main.ts`: スケッチ→Extrude/Cut UI 経路追加 (~80 行)
+- `web/index.html`: sketch-extrude-panel + style 追加 (~10 行)
+- `web/tests/sketch_extrude.spec.ts` (新規, T01〜T04)
+- バックエンド: 無変更

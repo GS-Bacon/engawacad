@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: medium
+    section: "テスト計画"
+    finding: "depth 入力の数値境界テストが不足。T04 は depth=0 の 1 ケースのみだが、浮動小数点入力はユーザーが \"abc\" や \"1e309\" (Infinity) を入力する可能性がある。Number() 変換後の NaN/Infinity 振る舞いが未検証"
+    suggestion: "T04 を拡張するか別ケースを追加：① \"abc\" 入力 → Number() で NaN → `isFinite` ガードで POST 発火せず ② \"1e309\" 入力 → Infinity → 同様にガード ③ 負値 \"-5\" → depth>0 ガード。これらは `Number.isFinite(depth) && depth > 0` ガードの網羅性検証として必要"
+
+verdict: pass

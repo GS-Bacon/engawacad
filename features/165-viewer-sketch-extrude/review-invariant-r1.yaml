@@ -1,0 +1,14 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "実装対象 > 2. web/src/main.ts > uniqueId 戦略"
+    finding: "ID 生成に Math.random() を使用する設計になっている（'sketch-${Math.random().toString(36).slice(2, 8)}'）。これは EngawaCAD の決定性原則（IdGenerator による決定的 ID 生成）に反する"
+    suggestion: "Web 側でも決定的 ID 生成戦略を採用する必要がある。例えば monotonically increasing counter または UUID v7 (時間ベース・ソート可能) を使用し、同じスケッチ入力からは常に同じ CreateSketch.id / Extrude.id が生成されるようにする"
+
+  - id: IN02
+    severity: high
+    section: "テスト計画"
+    finding: "T01 決定性テスト（同一入力を 2 回 build して全 ID・座標が一致することを assert するテスト）がテスト計画に存在しない"
+    suggestion: "決定性を検証するテストを追加すること。例：同一 RefPlane + 同一スケッチ座標 + 同一 depth で 2 回 Extrude を実行し、生成される Feature ID 列が一致することを assert する（または決定的カウンター戦略なら ID が異なっても順序が一定であることを検証）"
+
+verdict: fail

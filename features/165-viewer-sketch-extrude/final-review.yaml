@@ -1,0 +1,16 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 141-144
+    finding: "Acceptance 条件「Extrude 送信前に `Sketch.isClosed()` および `depth > 0` を確認」のうち、`isClosed()` チェックが実装されていない。`refreshSketchButtonState()` は `lastFinalizedSketch !== null` と `validDepth` のみチェックしており、 finalized スケッチが開ループ（open）の場合でもボタンが有効化される可能性がある。Enter キー時の代入 (main.ts:255-257) は `finalized` が truthy な場合のみ行われるが、`finalize()` は `segments.length === 0` のとき null を返すのみで、開ループ検出は `isClosed()` に依存する (sketch.ts:22-25)"
+    suggestion: "Enter キー押下時の finalised 代入前に `if (finalized && finalized.isClosed())` ガードを追加し、開ループの場合は `lastFinalizedSketch` に代入しない（またはボタン disabled を維持）"
+
+  - id: FN02
+    severity: low
+    file: "web/src/main.ts"
+    line_hint: 190
+    finding: "ログイベント名が Acceptance 条件と不一致。Issue は `extrude_ok` / `extrude_cut_ok` を指定しているが、実装は `sketch_extrude_ok` / `sketch_extrude_cut_ok` を使用している"
+    suggestion: "イベント名を Issue 指定の `extrude_ok` / `extrude_cut_ok` に合わせる（新旧経路の区別が必要な場合は Issue で明示していないため、指定通り統一）"
+
+verdict: fail

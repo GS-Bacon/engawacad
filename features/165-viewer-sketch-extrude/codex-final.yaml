@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "web/tests/sketch_extrude.spec.ts"
+    line_hint: 87
+    finding: "合意済みテスト計画 T01/T04 を満たし切れていない。T01 は未確定スケッチ時の `POST 0件` を検証しておらず、T04 は `\"abc\"` ケースと invalid depth で送信されないことの確認が欠けているため、表示上は disabled のままでも誤送信回帰を取り逃がす。"
+    suggestion: "`/api/v0/features` の POST 回数を数える route mock を入れ、T01 で未確定状態の click 後 `posts.length === 0`、T04 で `0 / -5 / abc / 1e309` の全ケースについて `POST 0件` を明示的に assert する。"
+
+verdict: pass

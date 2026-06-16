@@ -1,0 +1,10 @@
+{
+  "verdict": "fail",
+  "severity_counts": {
+    "critical": 0,
+    "high": 1,
+    "medium": 0,
+    "low": 1
+  },
+  "blocking": 1
+}
