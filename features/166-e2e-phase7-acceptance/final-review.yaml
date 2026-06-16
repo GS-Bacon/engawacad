@@ -1,0 +1,15 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "web/tests/phase7_sketch_acceptance.spec.ts"
+    line_hint: 26
+    finding: "projectRefPlaneCenter で v.set(wx, wy, wz) する前に cam.position.clone() している。cam.position はカメラ位置であってワールド座標の初期値ではない。clone() は不要で、new THREE.Vector3(wx, wy, wz) で直接初期化すべき"
+    suggestion: "const v = new THREE.Vector3(wx, wy, wz); に書き換えること"
+  - id: FN02
+    severity: high
+    file: "web/tests/phase7_sketch_acceptance.spec.ts"
+    line_hint: 360
+    finding: "D01 テストが Issue 完了条件の「GET /api/v0/document で CreateSketch と Extrude がこの順序で含まれることを assert」を満たしていない。実装では POST リクエストの監視のみで、API レスポンス検証が欠落"
+    suggestion: "GET /api/v0/document を叩いてレスポンス JSON に create_sketch → extrude の順序で含まれることを assert すること"
+
+verdict: fail

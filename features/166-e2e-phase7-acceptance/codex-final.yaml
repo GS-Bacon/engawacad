@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/tests/phase7_sketch_acceptance.spec.ts"
+    line_hint: 107
+    finding: "E01-E03/C01-C03/D01 は `/api/v0/mesh` と POST `/api/v0/features` を差し替えており、コメントの『実 API サーバを利用する Phase 7 完了 E2E』になっていません。real server の plane_ref 解決・extrude/extrude_cut・永続状態更新が壊れても、この suite はモック応答だけで通ってしまいます。"
+    suggestion: "logger sidecar 以外の API モックを外し、実サーバの `/api/v0/features` POST/GET と返却 mesh を使って plane ごとの extrude/extrude_cut を検証してください"
+  - id: F02
+    severity: high
+    file: "web/tests/phase7_sketch_acceptance.spec.ts"
+    line_hint: 45
+    finding: "`countBodies()` は `__meshData.length` しか見ておらず、E01-E03 のモック応答も `indices=[]` の空 mesh を 1 body 返しています。そのため実際にはゼロ三角形・退化 mesh でも『bodies 1 -> 2』相当として成功し、B-rep/メッシュ健全性の回帰を捕捉できません。"
+    suggestion: "body 数の比較だけでなく、実レスポンスの body count を厳密に確認し、`assertMeshHealthy(page)` または `positions/indices` 非空アサートを追加してください"
+
+verdict: fail

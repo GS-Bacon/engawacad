@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: low
+    section: "完了条件整合"
+    finding: "Issue 完了条件 T07 は `GET /api/v0/document` でレスポンスを検証する仕様だが、設計書は `page.on(\"request\")` による POST capture に置き換えている"
+    suggestion: "Issue body に「もしくは現行の文書状態取得経路」という柔軟枠があるため救済されている。設計意図（自律判断ログ）に従い、acceptance 条件 T07 は POST 順序検証で代替するとして進めてよい"
+
+verdict: pass

@@ -1,0 +1,14 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "実装 > テスト本体"
+    finding: "テストコードで使用されている `countBodies(page)` と `getInitialFeatureIds(page)` 関数の定義が設計に含まれていない。コメントで「window.__meshData.length を取得」「/api/v0/features の初期取得結果」とあるが、GET リクエストの投げ方・戻り値の型（string[] か {id:string}[] か）が実装者の判断に委ねられている"
+    suggestion: "関数のシグネチャとボディを設計に明記すること。例: async function getInitialFeatureIds(page: Page): Promise<string[]> { const resp = await page.evaluate(() => (window as any).__initialFeatureIds); return resp; }"
+
+  - id: AM02
+    severity: medium
+    section: "実装 > 共通ヘルパ"
+    finding: "`projectRefPlaneCenter` の実装が「#163 spec と同じロジック」とだけ記載されている。実装者が #163 のテストファイルを開いてロジックを探し出す必要があり、かつどのファイルのどの関数を参照すべきかが明示されていない"
+    suggestion: "具体的なファイルパス（例: web/tests/viewer.spec.ts の projectRefPlaneCenter）を指定するか、設計内に関数本体を展開すること"
+
+verdict: pass
