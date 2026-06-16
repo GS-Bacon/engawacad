@@ -14,17 +14,26 @@
 
 import path from "path";
 import { fileURLToPath } from "url";
-import { isWatcherAlive, readWatcherPidFile } from "./loop-tmux-watcher.ts";
+import { isWatcherAlive, readPaneInfo, readWatcherPidFile } from "./loop-tmux-watcher.ts";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts dir から 4 階層上 = repo root
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..", "..", "..");
 const PID_PATH = path.join(REPO_ROOT, "features/.loop/tmux/watcher.pid");
+const PANE_PATH = path.join(REPO_ROOT, "features/.loop/tmux/worker.pane");
 
 function decide(): "start" | "continue" {
   if (!process.env.TMUX) return "continue";
-  const info = readWatcherPidFile(PID_PATH);
-  if (info && isWatcherAlive(info)) return "continue";
+
+  // #185 R2-F01: 自分が worker pane 内なら必ず continue (watcher 起動前のレースを防ぐ)。
+  // $TMUX_PANE は tmux が各 pane プロセスに自動で渡す pane_id。
+  const paneInfo = readPaneInfo(PANE_PATH);
+  if (paneInfo && process.env.TMUX_PANE === paneInfo.pane_id) {
+    return "continue";
+  }
+
+  const watcherInfo = readWatcherPidFile(PID_PATH);
+  if (watcherInfo && isWatcherAlive(watcherInfo)) return "continue";
   return "start";
 }
 

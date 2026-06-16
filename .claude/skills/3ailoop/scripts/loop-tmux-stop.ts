@@ -64,16 +64,19 @@ interface KillPaneResult {
   paneGone: boolean; // pane が確実に消えたと言えるとき true
 }
 
-/** #185 R1-F02: pane_id 単体ではなく 3 つ組で識別。kill 前に session_id+window_id+pane_id
- *  が tmux 上で完全一致するかを確認し、不一致なら誤 kill を避ける。 */
-async function verifyPane(info: PaneInfo): Promise<boolean> {
+/** #185 R1-F02 / R2-F02: pane_id 単体ではなく 3 つ組で識別。kill 前に
+ *  session_id+window_id+pane_id が tmux 上で完全一致するかを確認し、
+ *  不一致なら誤 kill を避ける。tmux 一時障害は "unknown" として返し、呼び元で
+ *  「停止失敗」(paneGone=false) に倒す。
+ */
+async function verifyPane(info: PaneInfo): Promise<boolean | "unknown"> {
   const proc = Bun.spawn(
     ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}"],
     { stdout: "pipe", stderr: "pipe" },
   );
   const out = await new Response(proc.stdout).text();
   await proc.exited;
-  if (proc.exitCode !== 0) return false;
+  if (proc.exitCode !== 0) return "unknown";
   const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
   return out.split("\n").map(s => s.trim()).includes(expected);
 }
@@ -86,14 +89,22 @@ async function killPane(info: PaneInfo, dryRun: boolean, keep: boolean): Promise
       paneGone: true,
     };
   }
-  // F02: 3 つ組で完全一致確認できない pane は触らない (PID/再利用問題回避)
   const verified = await verifyPane(info);
-  if (!verified) {
+  if (verified === "unknown") {
+    // #185 R2-F02: tmux 一時障害は paneGone=false で残し、live worker を誤って
+    // 解放しない。次回 stop で再試行可能。
+    return {
+      status: `tmux query failed (cannot verify pane state); not killing, lock/metadata kept for retry`,
+      paneGone: false,
+    };
+  }
+  if (verified === false) {
     return {
       status: `not found by 3-tuple (session=${info.session_id} window=${info.window_id} pane=${info.pane_id}); already gone or stale`,
       paneGone: true,
     };
   }
+  // verified === true → kill 実行
   await runCmd(["tmux", "send-keys", "-t", info.pane_id, "/exit", "Enter"]);
   await sleepMs(5000);
   const r = await runCmd(["tmux", "kill-pane", "-t", info.pane_id]);
