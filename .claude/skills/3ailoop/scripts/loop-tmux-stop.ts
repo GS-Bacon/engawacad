@@ -133,14 +133,23 @@ async function releaseLock(dryRun: boolean, paneGone: boolean, keepPane: boolean
   return r.ok ? "released" : `release failed: ${r.stderr.trim()}`;
 }
 
-/** #185 R1-F01: paneGone=true を確認できた場合のみ worker.pane を削除する。
- *  --keep-pane / kill-pane 失敗 / pane_id 読み取り不能の経路では metadata を残し、
- *  次回 stop で再試行できるようにする。watcher.pid は無条件削除 (PID は別管理)。 */
-function cleanupFiles(dryRun: boolean, paneGone: boolean, keepPane: boolean): string[] {
+/** #185 R1-F01 / R6-F01: pane が確実に消えた (paneGone=true) 場合のみ
+ *  watcher.pid と worker.pane の両方を削除する。1 つでも live worker が残る
+ *  経路では両 metadata を保持し、次回 stop で再試行可能にする。これがないと
+ *  「pane は live、PID file だけ削除」状態で dispatch.ts が「watcher 未起動」と
+ *  誤判定し、二重起動を許してしまう (#185 R6-F01)。 */
+function cleanupFiles(dryRun: boolean, paneGone: boolean, _keepPane: boolean): string[] {
   const removed: string[] = [];
-  const targets = [PID_PATH];
-  if (paneGone && !keepPane) targets.push(PANE_PATH);
-  for (const p of targets) {
+  if (!paneGone) {
+    if (existsSync(PID_PATH)) {
+      removed.push(`kept ${PID_PATH} (paneGone not confirmed; rerun stop to retry)`);
+    }
+    if (existsSync(PANE_PATH)) {
+      removed.push(`kept ${PANE_PATH} (paneGone not confirmed; rerun stop to retry)`);
+    }
+    return removed;
+  }
+  for (const p of [PID_PATH, PANE_PATH]) {
     if (!existsSync(p)) continue;
     if (dryRun) {
       removed.push(`DRY-RUN: rm ${p}`);
@@ -152,9 +161,6 @@ function cleanupFiles(dryRun: boolean, paneGone: boolean, keepPane: boolean): st
     } catch (e) {
       removed.push(`${p}: ${(e as Error).message}`);
     }
-  }
-  if (!paneGone && !keepPane && existsSync(PANE_PATH)) {
-    removed.push(`kept ${PANE_PATH} (paneGone not confirmed; rerun stop to retry)`);
   }
   return removed;
 }
