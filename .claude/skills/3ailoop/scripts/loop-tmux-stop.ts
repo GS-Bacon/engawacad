@@ -19,16 +19,16 @@ import { isWatcherAlive, readWatcherPidFile, type WatcherPidInfo } from "./loop-
 
 const TMUX_DIR = "features/.loop/tmux";
 const PID_PATH = `${TMUX_DIR}/watcher.pid`;
-const WINDOW_PATH = `${TMUX_DIR}/worker.window`;
-const DEFAULT_WINDOW = "3ailoop-worker";
+const PANE_PATH = `${TMUX_DIR}/worker.pane`;
 const LOCK_PATH = ".claude/skills/3ailoop/scripts/loop-lock.ts";
 
-function readWindow(): string {
-  if (!existsSync(WINDOW_PATH)) return DEFAULT_WINDOW;
+function readPaneId(): string | null {
+  if (!existsSync(PANE_PATH)) return null;
   try {
-    return readFileSync(WINDOW_PATH, "utf-8").trim() || DEFAULT_WINDOW;
+    const v = readFileSync(PANE_PATH, "utf-8").trim();
+    return /^%\d+$/.test(v) ? v : null;
   } catch {
-    return DEFAULT_WINDOW;
+    return null;
   }
 }
 
@@ -63,40 +63,37 @@ async function killWatcher(info: WatcherPidInfo, dryRun: boolean): Promise<{ ok:
   return { ok: !isWatcherAlive(info), method: "SIGKILL" };
 }
 
-interface KillWindowResult {
+interface KillPaneResult {
   status: string;
-  windowGone: boolean; // window が確実に消えたと言えるとき true
+  paneGone: boolean; // pane が確実に消えたと言えるとき true
 }
 
-async function killWindow(window: string, dryRun: boolean, keep: boolean): Promise<KillWindowResult> {
-  if (keep) return { status: "kept (--keep-window)", windowGone: false };
+async function killPane(paneId: string, dryRun: boolean, keep: boolean): Promise<KillPaneResult> {
+  if (keep) return { status: "kept (--keep-pane)", paneGone: false };
   if (dryRun) {
     return {
-      status: `DRY-RUN: tmux send-keys -t =${window} "/exit" Enter; tmux kill-window -t =${window}`,
-      windowGone: true, // dry-run は副作用なしで「成功シミュレーション」扱い
+      status: `DRY-RUN: tmux send-keys -t ${paneId} "/exit" Enter; tmux kill-pane -t ${paneId}`,
+      paneGone: true,
     };
   }
-  await runCmd(["tmux", "send-keys", "-t", `=${window}`, "/exit", "Enter"]);
+  await runCmd(["tmux", "send-keys", "-t", paneId, "/exit", "Enter"]);
   await sleepMs(5000);
-  const r = await runCmd(["tmux", "kill-window", "-t", `=${window}`]);
+  const r = await runCmd(["tmux", "kill-pane", "-t", paneId]);
   if (!r.ok) {
-    // 既に存在しない場合 (`can't find window`) は windowGone=true として安全側に倒す
     const msg = r.stderr.trim();
-    const alreadyGone = /can't find window|window not found|no such window/i.test(msg);
+    const alreadyGone = /can't find pane|pane not found|no such pane/i.test(msg);
     return {
-      status: alreadyGone ? `already gone (${msg})` : `kill-window failed: ${msg}`,
-      windowGone: alreadyGone,
+      status: alreadyGone ? `already gone (${msg})` : `kill-pane failed: ${msg}`,
+      paneGone: alreadyGone,
     };
   }
-  return { status: "killed", windowGone: true };
+  return { status: "killed", paneGone: true };
 }
 
-/** #181 R3-F01: 「window が確実に消えた」場合のみ lock を解放する。
- *  --keep-window 経由や kill-window 失敗時は worker が生きている可能性があるので
- *  lock に触らない (= 別 owner や生存 worker の lock を強制解放しない)。 */
-async function releaseLock(dryRun: boolean, windowGone: boolean, keepWindow: boolean): Promise<string> {
-  if (keepWindow) return "skipped (--keep-window: worker may still hold the lock)";
-  if (!windowGone) return "skipped (window kill not confirmed; worker may still hold the lock)";
+/** #181 R3-F01 / #185: 「pane が確実に消えた」場合のみ lock を解放する。 */
+async function releaseLock(dryRun: boolean, paneGone: boolean, keepPane: boolean): Promise<string> {
+  if (keepPane) return "skipped (--keep-pane: worker may still hold the lock)";
+  if (!paneGone) return "skipped (pane kill not confirmed; worker may still hold the lock)";
   if (dryRun) return `DRY-RUN: bun ${LOCK_PATH} release --force`;
   if (!existsSync(LOCK_PATH)) return "lock script missing";
   const r = await runCmd(["bun", LOCK_PATH, "release", "--force"]);
@@ -105,7 +102,7 @@ async function releaseLock(dryRun: boolean, windowGone: boolean, keepWindow: boo
 
 function cleanupFiles(dryRun: boolean): string[] {
   const removed: string[] = [];
-  for (const p of [PID_PATH]) {
+  for (const p of [PID_PATH, PANE_PATH]) {
     if (!existsSync(p)) continue;
     if (dryRun) {
       removed.push(`DRY-RUN: rm ${p}`);
@@ -124,26 +121,31 @@ function cleanupFiles(dryRun: boolean): string[] {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const keepWindow = args.includes("--keep-window");
+  // --keep-window は #185 で --keep-pane にリネーム。後方互換は不要 (#181 直後のため)。
+  const keepPane = args.includes("--keep-pane") || args.includes("--keep-window");
 
-  const window = readWindow();
+  const paneId = readPaneId();
   const info = readWatcherPidFile(PID_PATH);
 
-  const result: Record<string, unknown> = { window };
+  const result: Record<string, unknown> = { pane_id: paneId ?? "(none)" };
 
   if (info === null) {
     result.watcher = "no PID file (or invalid format)";
   } else if (!isWatcherAlive(info) && !dryRun) {
-    // #181 F03: PID 単体ではなく cmdline_marker 込みで verify した上で stale 判定
     result.watcher = `pid=${info.pid} already dead or reused by unrelated process`;
   } else {
     const k = await killWatcher(info, dryRun);
     result.watcher = { pid: info.pid, ok: k.ok, method: k.method };
   }
 
-  const windowResult = await killWindow(window, dryRun, keepWindow);
-  result.window_kill = windowResult.status;
-  result.lock = await releaseLock(dryRun, windowResult.windowGone, keepWindow);
+  if (paneId === null) {
+    result.pane_kill = "skipped (no pane_id saved)";
+    result.lock = await releaseLock(dryRun, false, keepPane);
+  } else {
+    const paneResult = await killPane(paneId, dryRun, keepPane);
+    result.pane_kill = paneResult.status;
+    result.lock = await releaseLock(dryRun, paneResult.paneGone, keepPane);
+  }
   result.cleaned = cleanupFiles(dryRun);
 
   console.log(JSON.stringify(result, null, 2));

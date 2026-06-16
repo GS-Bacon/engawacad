@@ -15,9 +15,25 @@ EngawaCAD の Issue を **無人で連続消化** する Skill。サイクル完
 - 既存 `/3ai` Skill を **無改変** で内部利用 (Skill ツール経由で自律モード起動)
 - ランタイム: tmux 2 ペイン構成。起動は `bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts`、停止は `loop-tmux-stop.ts`
 
-## 実行フロー (L-0〜L-9)
+## 実行フロー (L-A → L-0〜L-9)
 
 各 STEP は **bun TS スクリプト** を 1 つ呼ぶだけ。Claude は薄い orchestrator として stdout に従う (判定は TS 側)。
+
+### L-A: tmux 自動 dispatch (#185)
+
+`/3ailoop` を tmux session 内で素打ちしたとき、watcher 未起動なら自動で右ペイン自走モードに乗る。worker pane 内で動いている場合や非 tmux 環境ではこのステップは no-op で L-0 へ。
+
+```bash
+MODE=$(bun .claude/skills/3ailoop/scripts/loop-tmux-dispatch.ts)
+if [ "$MODE" = "start" ]; then
+  bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts \
+    --claude-cmd "claude --dangerously-skip-permissions"
+  exit 0
+fi
+```
+
+- `start`    — `$TMUX` set + watcher PID なし。`loop-tmux-start.ts` を呼ぶ ⇒ 右ペインが split で開き、claude 起動 → `/3ailoop` 自動投入 → watcher daemon spawn。**Claude 本体はここで終了** (= ユーザーが打った pane はオーケストレーター pane として解放される)
+- `continue` — `$TMUX` 未設定、または watcher PID 生存中 (= worker pane 内で /clear → /3ailoop で再投入された経路)。L-0 へ進む
 
 ### L-0: lock 取得
 
@@ -278,9 +294,10 @@ memory `project-3ailoop-known-races` に詳細。loop-lock の stale takeover ra
 - `loop-intent-guard.ts` (#172) — aligned:no N=3 で needs-intent-review
 - `loop-phase-close-check.ts` (#173) — Phase 完了条件検証 + ROADMAP/milestone 更新
 - `loop-notify.ts` — 各 L ステップから Discord Webhook へ 1 行通知 (env `DISCORD_WEBHOOK_URL` 未設定で silent skip、失敗しても loop は止めない)
-- `loop-tmux-start.ts` (#181) — tmux 環境チェック → ワーカー pane (`3ailoop-worker`) 生成 → Claude 起動 → 初回 `/3ailoop` 投入 → watcher daemon spawn
-- `loop-tmux-watcher.ts` (#181) — `state.json` の `recent_cycles[-1].ended_at` を 10s polling、差分検知で `/clear` → `/3ailoop` を send-keys。worker pane 消失 / 45min フリーズ / tmux 一時障害 3 連続失敗で安全側に停止
-- `loop-tmux-stop.ts` (#181) — watcher PID kill (SIGTERM → 5s → SIGKILL) → worker pane `/exit` → `tmux kill-window` → window が確実に消えた場合のみ lock release
+- `loop-tmux-dispatch.ts` (#185) — `$TMUX` と watcher PID 状態から `start` / `continue` を判定し L-A で分岐する
+- `loop-tmux-start.ts` (#181, #185) — tmux 環境チェック → ワーカー pane を `tmux split-window -h` で現 window の右に split → pane_id 取得 → Claude 起動 → 初回 `/3ailoop` 投入 → watcher daemon spawn
+- `loop-tmux-watcher.ts` (#181, #185) — `state.json` の `recent_cycles[-1].ended_at` を 10s polling、差分検知で pane_id 経由の `/clear` → `/3ailoop` を send-keys。worker pane 消失 / 45min フリーズ / tmux 一時障害 3 連続失敗で安全側に停止
+- `loop-tmux-stop.ts` (#181, #185) — watcher PID kill (SIGTERM → 5s → SIGKILL) → worker pane `/exit` → `tmux kill-pane` → pane が確実に消えた場合のみ lock release
 
 `.claude/skills/3ai/scripts/`:
 - `batch-select.ts --loop` (#170) — loop モード (split-batch tier 最優先 + 共通 exclude)

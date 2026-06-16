@@ -23,9 +23,9 @@ import { isWatcherAlive, readWatcherPidFile } from "./loop-tmux-watcher.ts";
 
 const TMUX_DIR = "features/.loop/tmux";
 const PID_PATH = `${TMUX_DIR}/watcher.pid`;
-const WINDOW_PATH = `${TMUX_DIR}/worker.window`;
-const DEFAULT_WINDOW = "3ailoop-worker";
+const PANE_PATH = `${TMUX_DIR}/worker.pane`;
 const WATCHER_PATH = ".claude/skills/3ailoop/scripts/loop-tmux-watcher.ts";
+const DEFAULT_SPLIT_PCT = parseInt(process.env.LOOP_TMUX_PANE_PCT ?? "50", 10);
 
 const BOOT_TIMEOUT_SEC = parseInt(process.env.LOOP_TMUX_BOOT_TIMEOUT_SEC ?? "60", 10);
 const BOOT_POLL_MS = 1000;
@@ -50,21 +50,27 @@ function checkExistingWatcher(): void {
   // 引き継いで上書きするので何もしない
 }
 
-/** #181 R2-F03: 既存 3ailoop-worker window があれば new-window で重複を作らず exit。
- *  --keep-window 経由や異常停止で残留した window がある場合は手動で stop すること。 */
-async function checkExistingWorkerWindow(window: string): Promise<void> {
-  const proc = Bun.spawn(["tmux", "list-windows", "-F", "#W"], {
+/** 既存 worker.pane が tmux 上に生きていれば起動中止 (重複防止)。 */
+async function checkExistingWorkerPane(): Promise<void> {
+  if (!existsSync(PANE_PATH)) return;
+  let savedPane = "";
+  try {
+    savedPane = (await Bun.file(PANE_PATH).text()).trim();
+  } catch {
+    return;
+  }
+  if (!savedPane) return;
+  const proc = Bun.spawn(["tmux", "list-panes", "-a", "-F", "#{pane_id}"], {
     stdout: "pipe",
     stderr: "pipe",
   });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
-  if (proc.exitCode !== 0) return; // tmux list-windows 失敗時は best-effort で続行
-  const found = out.split("\n").map(s => s.trim()).includes(window);
+  if (proc.exitCode !== 0) return;
+  const found = out.split("\n").map(s => s.trim()).includes(savedPane);
   if (found) {
-    console.error(`ERROR: tmux window '${window}' が既に存在します。重複を避けるため起動中止。`);
-    console.error("  対処: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts で掃除するか、");
-    console.error("        tmux kill-window -t \"=" + window + "\" で手動削除してから再試行してください。");
+    console.error(`ERROR: 既存 worker pane ${savedPane} が tmux 上で生存中です (${PANE_PATH})`);
+    console.error("  対処: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts で掃除してから再試行してください。");
     process.exit(1);
   }
 }
@@ -74,17 +80,36 @@ interface TmuxCmd {
   desc: string;
 }
 
-function plan(claudeCmd: string, window: string): TmuxCmd[] {
+/** dry-run 表示用のコマンド列。実際は splitPane() / sendKeys() を直接呼ぶ。 */
+function plan(claudeCmd: string): TmuxCmd[] {
   return [
     {
-      args: ["tmux", "new-window", "-d", "-n", window],
-      desc: `ワーカー pane 生成 (window=${window})`,
+      args: ["tmux", "split-window", "-h", "-P", "-F", "#{pane_id}", "-l", `${DEFAULT_SPLIT_PCT}%`],
+      desc: `ワーカー pane を現 window の右に split (幅 ${DEFAULT_SPLIT_PCT}%、pane_id 取得)`,
     },
     {
-      args: ["tmux", "send-keys", "-t", `=${window}`, claudeCmd, "Enter"],
+      args: ["tmux", "send-keys", "-t", "<pane_id>", claudeCmd, "Enter"],
       desc: `ワーカー pane で claude を起動: ${claudeCmd}`,
     },
   ];
+}
+
+async function splitPane(): Promise<string> {
+  const proc = Bun.spawn(
+    ["tmux", "split-window", "-h", "-P", "-F", "#{pane_id}", "-l", `${DEFAULT_SPLIT_PCT}%`],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const out = await new Response(proc.stdout).text();
+  const err = await new Response(proc.stderr).text();
+  await proc.exited;
+  if (proc.exitCode !== 0) {
+    throw new Error(`tmux split-window failed: ${err.trim()}`);
+  }
+  const paneId = out.trim();
+  if (!/^%\d+$/.test(paneId)) {
+    throw new Error(`unexpected pane_id format: '${paneId}'`);
+  }
+  return paneId;
 }
 
 async function runTmux(args: string[]): Promise<{ ok: boolean; stderr: string }> {
@@ -94,8 +119,8 @@ async function runTmux(args: string[]): Promise<{ ok: boolean; stderr: string }>
   return { ok: proc.exitCode === 0, stderr: err };
 }
 
-async function capturePane(window: string): Promise<string> {
-  const proc = Bun.spawn(["tmux", "capture-pane", "-t", `=${window}`, "-p"], {
+async function capturePane(paneId: string): Promise<string> {
+  const proc = Bun.spawn(["tmux", "capture-pane", "-t", paneId, "-p"], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -105,20 +130,20 @@ async function capturePane(window: string): Promise<string> {
 }
 
 /** Claude Code の起動完了を検出。capture-pane に「>」プロンプト、または "Try "/"Welcome" 文言を待つ。 */
-async function waitForClaudeReady(window: string): Promise<boolean> {
+async function waitForClaudeReady(paneId: string): Promise<boolean> {
   const deadline = Date.now() + BOOT_TIMEOUT_SEC * 1000;
   const markers = ["Welcome", "Try ", "/help", "claude.ai/code", "│ >"];
   while (Date.now() < deadline) {
-    const buf = await capturePane(window);
+    const buf = await capturePane(paneId);
     if (markers.some(m => buf.includes(m))) return true;
     await new Promise(r => setTimeout(r, BOOT_POLL_MS));
   }
   return false;
 }
 
-function writeWindow(window: string): void {
-  mkdirSync(dirname(WINDOW_PATH), { recursive: true });
-  writeFileSync(WINDOW_PATH, window, "utf-8");
+function writePaneId(paneId: string): void {
+  mkdirSync(dirname(PANE_PATH), { recursive: true });
+  writeFileSync(PANE_PATH, paneId, "utf-8");
 }
 
 function spawnWatcherDaemon(): number {
@@ -143,13 +168,12 @@ async function main(): Promise<void> {
   let claudeCmd = "claude";
   const ccIdx = args.indexOf("--claude-cmd");
   if (ccIdx >= 0 && args[ccIdx + 1]) claudeCmd = args[ccIdx + 1];
-  const window = DEFAULT_WINDOW;
 
   checkTmuxEnv();
   checkExistingWatcher();
-  if (!dryRun) await checkExistingWorkerWindow(window);
+  if (!dryRun) await checkExistingWorkerPane();
 
-  const steps = plan(claudeCmd, window);
+  const steps = plan(claudeCmd);
 
   if (dryRun) {
     for (const s of steps) {
@@ -157,33 +181,40 @@ async function main(): Promise<void> {
       process.stdout.write(`         ${s.args.map(a => JSON.stringify(a)).join(" ")}\n`);
     }
     process.stdout.write(`DRY-RUN: wait Claude ready (capture-pane, timeout ${BOOT_TIMEOUT_SEC}s)\n`);
-    process.stdout.write(`DRY-RUN: tmux send-keys -t =${window} "/3ailoop" Enter\n`);
+    process.stdout.write(`DRY-RUN: tmux send-keys -t <pane_id> "/3ailoop" Enter\n`);
     process.stdout.write(`DRY-RUN: nohup bun ${WATCHER_PATH} run & (PID は実起動時に記録)\n`);
-    process.stdout.write(`DRY-RUN: writeFile ${WINDOW_PATH} = ${window}\n`);
+    process.stdout.write(`DRY-RUN: writeFile ${PANE_PATH} = <pane_id> (例: %42)\n`);
     return;
   }
 
-  // 実起動
-  for (const s of steps) {
-    process.stderr.write(`STEP: ${s.desc}\n`);
-    const r = await runTmux(s.args);
-    if (!r.ok) {
-      console.error(`FAIL: ${s.desc}: ${r.stderr.trim()}`);
-      process.exit(1);
-    }
+  // 実起動: pane を split で生成し pane_id を取得
+  process.stderr.write(`STEP: ${steps[0].desc}\n`);
+  let paneId: string;
+  try {
+    paneId = await splitPane();
+  } catch (e) {
+    console.error(`FAIL: ${(e as Error).message}`);
+    process.exit(1);
+  }
+  process.stderr.write(`  pane_id=${paneId}\n`);
+  writePaneId(paneId);
+
+  process.stderr.write(`STEP: ワーカー pane で claude を起動: ${claudeCmd}\n`);
+  const cmdR = await runTmux(["tmux", "send-keys", "-t", paneId, claudeCmd, "Enter"]);
+  if (!cmdR.ok) {
+    console.error(`FAIL: send-keys claude: ${cmdR.stderr.trim()}`);
+    process.exit(1);
   }
 
-  writeWindow(window);
-
   process.stderr.write(`STEP: Claude の起動完了を待機 (timeout ${BOOT_TIMEOUT_SEC}s)\n`);
-  const ready = await waitForClaudeReady(window);
+  const ready = await waitForClaudeReady(paneId);
   if (!ready) {
     console.error(`FAIL: Claude が ${BOOT_TIMEOUT_SEC}s 以内に起動しませんでした`);
     process.exit(1);
   }
 
   process.stderr.write(`STEP: 初回 /3ailoop を送信\n`);
-  const sendR = await runTmux(["tmux", "send-keys", "-t", `=${window}`, "/3ailoop", "Enter"]);
+  const sendR = await runTmux(["tmux", "send-keys", "-t", paneId, "/3ailoop", "Enter"]);
   if (!sendR.ok) {
     console.error(`FAIL: send-keys /3ailoop: ${sendR.stderr.trim()}`);
     process.exit(1);
@@ -191,7 +222,7 @@ async function main(): Promise<void> {
 
   const watcherPid = spawnWatcherDaemon();
   process.stderr.write(`STEP: watcher daemon spawned pid=${watcherPid}\n`);
-  console.log(JSON.stringify({ ok: true, window, watcher_pid: watcherPid }, null, 2));
+  console.log(JSON.stringify({ ok: true, pane_id: paneId, watcher_pid: watcherPid }, null, 2));
 }
 
 if (import.meta.main) {

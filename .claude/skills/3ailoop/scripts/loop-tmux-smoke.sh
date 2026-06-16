@@ -21,6 +21,7 @@ WATCHER="$SCRIPT_DIR/loop-tmux-watcher.ts"
 START="$SCRIPT_DIR/loop-tmux-start.ts"
 STOP="$SCRIPT_DIR/loop-tmux-stop.ts"
 TEST="$SCRIPT_DIR/loop-tmux-watcher.test.ts"
+DISPATCH="$SCRIPT_DIR/loop-tmux-dispatch.ts"
 
 TMP_SESSION="smoke-3ailoop-$$"
 TMP_DIR="$(mktemp -d -t 3ailoop-smoke-XXXXXX)"
@@ -56,32 +57,43 @@ green "S-1 OK"
 
 # --- S-2 ---
 echo
-echo "=== S-2: loop-tmux-start.ts --dry-run ==="
+echo "=== S-2: loop-tmux-start.ts --dry-run (split-window + pane_id) ==="
 S2_OUT="$(env -u TMUX TMUX=/tmp/fake-tmux-socket,1,1 bun "$START" --dry-run 2>&1 || true)"
-echo "$S2_OUT" | grep -F 'new-window' >/dev/null || { red "S-2 FAIL: new-window 欠落"; echo "$S2_OUT"; exit 1; }
-echo "$S2_OUT" | grep -F '3ailoop-worker' >/dev/null || { red "S-2 FAIL: window 名欠落"; exit 1; }
+echo "$S2_OUT" | grep -F 'split-window' >/dev/null || { red "S-2 FAIL: split-window 欠落"; echo "$S2_OUT"; exit 1; }
+echo "$S2_OUT" | grep -F '#{pane_id}' >/dev/null || { red "S-2 FAIL: pane_id 取得欠落"; exit 1; }
 echo "$S2_OUT" | grep -F '/3ailoop' >/dev/null || { red "S-2 FAIL: /3ailoop 投入欠落"; exit 1; }
 echo "$S2_OUT" | grep -F 'loop-tmux-watcher.ts' >/dev/null || { red "S-2 FAIL: watcher daemon spawn 欠落"; exit 1; }
+echo "$S2_OUT" | grep -F 'worker.pane' >/dev/null || { red "S-2 FAIL: worker.pane 保存欠落"; exit 1; }
 green "S-2 OK"
 
 # --- S-3 ---
 echo
-echo "=== S-3: loop-tmux-stop.ts --dry-run ==="
+echo "=== S-3: loop-tmux-stop.ts --dry-run (kill-pane) ==="
 S3_OUT="$(bun "$STOP" --dry-run 2>&1)"
-echo "$S3_OUT" | grep -F 'window' >/dev/null || { red "S-3 FAIL"; exit 1; }
-echo "$S3_OUT" | grep -F 'release' >/dev/null || { red "S-3 FAIL: lock release 欠落"; exit 1; }
+echo "$S3_OUT" | grep -F 'pane_id' >/dev/null || { red "S-3 FAIL: pane_id 欠落"; echo "$S3_OUT"; exit 1; }
+echo "$S3_OUT" | grep -F 'lock' >/dev/null || { red "S-3 FAIL: lock 出力欠落"; exit 1; }
 green "S-3 OK"
+
+# --- S-3.5: loop-tmux-dispatch.ts ---
+echo
+echo "=== S-3.5: loop-tmux-dispatch.ts (TMUX 環境変数の分岐) ==="
+# TMUX 未設定 → "continue"
+S35_CONT="$(env -u TMUX bun "$DISPATCH" 2>&1)"
+[ "$S35_CONT" = "continue" ] || { red "S-3.5 FAIL: TMUX 未設定なら continue (got '$S35_CONT')"; exit 1; }
+green "S-3.5 OK"
 
 # --- S-4 ---
 require_tmux
 echo
-echo "=== S-4: 一時 tmux session で send-keys 配線確認 ==="
+echo "=== S-4: 一時 tmux session で split-window + send-keys 配線確認 ==="
 tmux new-session -d -s "$TMP_SESSION" -n init "bash"
-tmux new-window -d -t "$TMP_SESSION" -n 3ailoop-worker "bash"
 sleep 0.5
-tmux send-keys -t "$TMP_SESSION:=3ailoop-worker" 'echo SMOKE_MARKER_42' Enter
+S4_PANE="$(tmux split-window -h -P -F '#{pane_id}' -t "$TMP_SESSION:init" "bash")"
+[[ "$S4_PANE" =~ ^%[0-9]+$ ]] || { red "S-4 FAIL: 不正な pane_id '$S4_PANE'"; exit 1; }
 sleep 0.5
-BUF="$(tmux capture-pane -t "$TMP_SESSION:=3ailoop-worker" -p)"
+tmux send-keys -t "$S4_PANE" 'echo SMOKE_MARKER_42' Enter
+sleep 0.5
+BUF="$(tmux capture-pane -t "$S4_PANE" -p)"
 echo "$BUF" | grep -F 'SMOKE_MARKER_42' >/dev/null || { red "S-4 FAIL: marker が pane に出ない"; echo "$BUF"; exit 1; }
 green "S-4 OK"
 
@@ -95,8 +107,8 @@ if [[ -d "$ORIG_LOOP_DIR/tmux" ]]; then
   mv "$ORIG_LOOP_DIR/tmux" "$BACKUP_DIR"
 fi
 mkdir -p "$ORIG_LOOP_DIR/tmux"
-# worker.window を smoke 用 window 名に固定 → watcher が tmuxWindowExists で alive と判定する
-echo "3ailoop-worker" > "$ORIG_LOOP_DIR/tmux/worker.window"
+# worker.pane に mock pane_id を書く (mockAlive=true で実存検査を bypass する)
+echo "%99999" > "$ORIG_LOOP_DIR/tmux/worker.pane"
 # 既存 state.json は触らないが、ended_at が現値とは違う値を last-cycle-ended-at に書いて
 # 差分検知を強制する
 CURR_ENDED="$(bun -e 'try { const s=JSON.parse(require("fs").readFileSync("features/.loop/state.json","utf-8")); const c=s.recent_cycles?.at(-1)?.ended_at; if(c) console.log(c); } catch {}')"
