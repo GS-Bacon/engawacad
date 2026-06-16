@@ -4,9 +4,12 @@ import {
   AmbientLight,
   AxesHelper,
   Box3,
+  BufferGeometry,
   Color,
   DirectionalLight,
   Group,
+  Line,
+  LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
   MeshPhongMaterial,
@@ -27,18 +30,31 @@ const BODY_COLORS = [0x4a90d9, 0xd94a4a, 0x4ad94a, 0xd9d94a, 0xd94ad9, 0x4ad9d9]
 
 export let selectedFaceId: string | null = null;
 
+export interface SketchPoint3D {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface ViewerHandle {
   updateBodies(bodies: BodyMesh[]): void;
   getSelectedFaceVertices(): { positions: Float32Array; indices: Uint32Array; faceIds: string[]; faceId: string } | null;
   setView(view: "front" | "top" | "iso"): void;
   dispose(): void;
   onRefPlaneSelected: (id: RefPlaneId | null) => void;
+  setSketchMode(active: boolean): void;
+  setSketchPreview(from: SketchPoint3D | null, to: SketchPoint3D | null): void;
+  addSketchSegment(from: SketchPoint3D, to: SketchPoint3D): void;
+  clearSketchOverlay(): void;
 }
 
 export function initViewer(
   container: HTMLElement,
   bodies: BodyMesh[],
-  opts?: { onSelectionChange?: (faceId: string | null) => void },
+  opts?: {
+    onSelectionChange?: (faceId: string | null) => void;
+    onSketchPoint?: (u: number, v: number) => void;
+  },
 ): ViewerHandle {
   const width = container.clientWidth;
   const height = container.clientHeight;
@@ -208,6 +224,47 @@ export function initViewer(
     onRefPlaneSelected(id);
   }
 
+  // --- Sketch overlay (#164) ---
+  let sketchMode = false;
+  const sketchOverlay = new Group();
+  scene.add(sketchOverlay);
+  sketchOverlay.visible = false;
+
+  const sketchSegments: { line: Line; from: SketchPoint3D; to: SketchPoint3D }[] = [];
+  let sketchPreview: Line | null = null;
+
+  function uvToWorld(u: number, v: number, planeId: RefPlaneId): SketchPoint3D {
+    switch (planeId) {
+      case "Front":
+        return { x: u, y: v, z: 0 };
+      case "Top":
+        return { x: u, y: 0, z: v };
+      case "Right":
+        return { x: 0, y: u, z: v };
+    }
+  }
+
+  function worldToUv(p: Vector3, planeId: RefPlaneId): { u: number; v: number } | null {
+    switch (planeId) {
+      case "Front":
+        return { u: p.x, v: p.y };
+      case "Top":
+        return { u: p.x, v: p.z };
+      case "Right":
+        return { u: p.y, v: p.z };
+    }
+  }
+
+  // スケッチ線分は Three.js Line で 2 点を直接結ぶ (Codex F01 指摘: PlaneGeometry+lookAt は法線方向誤り)
+  function createLine(from: SketchPoint3D, to: SketchPoint3D, color: number): Line {
+    const geometry = new BufferGeometry().setFromPoints([
+      new Vector3(from.x, from.y, from.z),
+      new Vector3(to.x, to.y, to.z),
+    ]);
+    const material = new LineBasicMaterial({ color });
+    return new Line(geometry, material);
+  }
+
   addRefPlanes(scene);
 
   controls.update();
@@ -260,6 +317,22 @@ export function initViewer(
     ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
+
+    if (sketchMode && selectedRefPlaneId) {
+      const plane = refPlaneMeshes.find((m) => m.userData.refPlaneId === selectedRefPlaneId);
+      if (plane) {
+        const hits = raycaster.intersectObject(plane, false);
+        if (hits.length > 0) {
+          const p = hits[0].point;
+          const uv = worldToUv(p, selectedRefPlaneId);
+          if (uv) {
+            opts?.onSketchPoint?.(uv.u, uv.v);
+          }
+        }
+      }
+      return;
+    }
+
     const hits = raycaster.intersectObjects(pickMeshes, false);
 
     // Prioritize face picking over RefPlane (#163)
@@ -286,7 +359,8 @@ export function initViewer(
     controls.update();
     renderer.render(scene, camera);
   }
-  (window as any).__viewer = { renderer, camera, controls, scene };
+  // raycaster は #164 main.ts の pointermove preview で必要 (Codex F02 指摘)
+  (window as any).__viewer = { renderer, camera, controls, scene, raycaster };
 
   // ドラッグ/ズーム/パン完了時のみ記録（フレームごとの連続ログは出さない）
   controls.addEventListener("end", () => {
@@ -351,6 +425,43 @@ export function initViewer(
     },
     set onRefPlaneSelected(cb: (id: RefPlaneId | null) => void) {
       onRefPlaneSelected = cb;
+    },
+    setSketchMode(active: boolean): void {
+      sketchMode = active;
+      controls.enabled = !active;
+      // active=true のときは overlay を可視化。active=false のときは visible を変えず、
+      // 確定済みセグメントの可視フィードバックを `clearSketchOverlay()` 呼出まで残す
+      // (Codex r4 F01: auto finalize 後に閉ループが消える問題を避ける)。
+      if (active) sketchOverlay.visible = true;
+    },
+    setSketchPreview(from: SketchPoint3D | null, to: SketchPoint3D | null): void {
+      if (sketchPreview) {
+        sketchOverlay.remove(sketchPreview);
+        sketchPreview.geometry.dispose();
+        (sketchPreview.material as MeshBasicMaterial).dispose();
+        sketchPreview = null;
+      }
+      if (from && to) {
+        sketchPreview = createLine(from, to, 0x808080);
+        sketchOverlay.add(sketchPreview);
+      }
+    },
+    addSketchSegment(from: SketchPoint3D, to: SketchPoint3D): void {
+      const line = createLine(from, to, 0x2080ff);
+      sketchOverlay.add(line);
+      sketchSegments.push({ line, from, to });
+    },
+    clearSketchOverlay(): void {
+      while (sketchOverlay.children.length > 0) {
+        const child = sketchOverlay.children[0] as Line | Mesh;
+        sketchOverlay.remove(child);
+        (child as any).geometry?.dispose?.();
+        const mat = (child as any).material;
+        if (mat?.dispose) mat.dispose();
+      }
+      sketchSegments.length = 0;
+      sketchPreview = null;
+      sketchOverlay.visible = false;
     },
     dispose() {
       cancelAnimationFrame(animFrameId);

@@ -102,6 +102,29 @@
         font-size: 12px;
         cursor: pointer;
       }
+      #btn-start-sketch {
+        position: absolute;
+        top: 1rem;
+        right: 9rem;
+        background: rgba(0,0,0,0.5);
+        color: white;
+        border: none;
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        cursor: pointer;
+        z-index: 10;
+      }
+      #sketch-canvas {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9;
+      }
+      #sketch-canvas[data-state="idle"] { display: none; }
+      #sketch-canvas[data-state="open"], #sketch-canvas[data-state="closed"] { display: block; }
+      #sketch-canvas.sketch-canvas--open { outline: 3px solid #e74c3c; outline-offset: -3px; }
     </style>
   </head>
   <body>
@@ -120,6 +143,8 @@
         <button data-testid="btn-view-top">Top</button>
         <button data-testid="btn-view-iso">Iso</button>
       </div>
+      <button data-testid="btn-start-sketch" id="btn-start-sketch">スケッチ開始</button>
+      <div data-testid="sketch-canvas" id="sketch-canvas" data-state="idle"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
