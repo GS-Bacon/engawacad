@@ -25,15 +25,25 @@ EngawaCAD の Issue を **無人で連続消化** する Skill。サイクル完
 
 ```bash
 MODE=$(bun .claude/skills/3ailoop/scripts/loop-tmux-dispatch.ts)
-if [ "$MODE" = "start" ]; then
-  bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts \
-    --claude-cmd "claude --dangerously-skip-permissions"
-  exit 0
-fi
+case "$MODE" in
+  start)
+    bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts \
+      --claude-cmd "claude --dangerously-skip-permissions"
+    exit 0
+    ;;
+  already-running)
+    echo "/3ailoop はすでに別ペインの worker で走っています。何もせず終了します。"
+    exit 0
+    ;;
+  continue)
+    : # 通常の L-0〜L-9 へ進む
+    ;;
+esac
 ```
 
-- `start`    — `$TMUX` set + watcher PID なし。`loop-tmux-start.ts` を呼ぶ ⇒ 右ペインが split で開き、claude 起動 → `/3ailoop` 自動投入 → watcher daemon spawn。**Claude 本体はここで終了** (= ユーザーが打った pane はオーケストレーター pane として解放される)
-- `continue` — `$TMUX` 未設定、または watcher PID 生存中 (= worker pane 内で /clear → /3ailoop で再投入された経路)。L-0 へ進む
+- `start`           — `$TMUX` set + watcher 未起動。`loop-tmux-start.ts` を呼ぶ ⇒ 右ペインが split で開き、claude 起動 → `/3ailoop` 自動投入 → watcher daemon spawn。**Claude 本体はここで終了** (= ユーザーが打った pane はオーケストレーター pane として解放される)
+- `continue`        — `$TMUX` 未設定、または worker pane 内で /clear → /3ailoop で再投入された経路。L-0 へ進む
+- `already-running` — `$TMUX` あり + watcher 生存 + 自分は worker pane 以外。手動 /3ailoop の二重実行を避けるため何もせず終了 (#185 R4-F01)
 
 ### L-0: lock 取得
 

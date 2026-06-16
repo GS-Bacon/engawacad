@@ -198,6 +198,8 @@ export function readPaneInfo(path: string = PANE_PATH): PaneInfo | null {
  *  - "unknown": tmux 呼び出し自体が失敗 (socket 一時障害など)
  */
 async function tmuxPaneExists(info: PaneInfo): Promise<boolean | "unknown"> {
+  // #185 R4-F02: 3 つ組完全一致のみを live 判定。pane_id 単体フォールバックは
+  // tmux server 再起動後の stale metadata 誤一致リスクのため撤回 (stop.ts と統一)。
   try {
     const proc = Bun.spawn(
       ["tmux", "list-panes", "-a", "-F", "#{session_id}|#{window_id}|#{pane_id}"],
@@ -206,12 +208,8 @@ async function tmuxPaneExists(info: PaneInfo): Promise<boolean | "unknown"> {
     const out = await new Response(proc.stdout).text();
     await proc.exited;
     if (proc.exitCode !== 0) return "unknown";
-    const lines = out.split("\n").map(s => s.trim());
     const expected = `${info.session_id}|${info.window_id}|${info.pane_id}`;
-    if (lines.includes(expected)) return true;
-    // #185 R3-F02: pane が別 session/window に移動された場合でも pane_id が出てくれば live。
-    if (lines.some(l => l.endsWith(`|${info.pane_id}`))) return true;
-    return false;
+    return out.split("\n").map(s => s.trim()).includes(expected);
   } catch {
     return "unknown";
   }
