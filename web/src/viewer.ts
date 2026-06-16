@@ -8,8 +8,10 @@ import {
   DirectionalLight,
   Group,
   Mesh,
+  MeshBasicMaterial,
   MeshPhongMaterial,
   PerspectiveCamera,
+  PlaneGeometry,
   Raycaster,
   Scene,
   Vector2,
@@ -18,6 +20,8 @@ import {
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { meshToGeometry } from "./mesh";
+
+export type RefPlaneId = "Front" | "Top" | "Right";
 
 const BODY_COLORS = [0x4a90d9, 0xd94a4a, 0x4ad94a, 0xd9d94a, 0xd94ad9, 0x4ad9d9];
 
@@ -28,6 +32,7 @@ export interface ViewerHandle {
   getSelectedFaceVertices(): { positions: Float32Array; indices: Uint32Array; faceIds: string[]; faceId: string } | null;
   setView(view: "front" | "top" | "iso"): void;
   dispose(): void;
+  onRefPlaneSelected: (id: RefPlaneId | null) => void;
 }
 
 export function initViewer(
@@ -126,6 +131,13 @@ export function initViewer(
         center.z + distance,
       );
       controls.minDistance = Math.max(camera.near * 2, maxDim * 0.1);
+    } else {
+      // RefPlane (#163) は body がなくても 3 枚表示される (±10 を覆う)。
+      // empty scene でも Iso 視点に置いて raycaster が正しく動くようにする。
+      controls.target.set(0, 0, 0);
+      camera.position.set(15, 15, 30);
+      controls.minDistance = Math.max(camera.near * 2, 2);
+      axisSize = 10;
     }
     // Remove old axis helper if present
     const oldAxis = scene.children.find((c) => c instanceof AxesHelper);
@@ -140,6 +152,63 @@ export function initViewer(
   const dirLight = new DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(5, 10, 7);
   scene.add(dirLight);
+
+  // --- RefPlane (#163) ---
+  const REFSIZE = 20;
+  const refPlaneMeshes: Mesh[] = [];
+  let selectedRefPlaneId: RefPlaneId | null = null;
+  let onRefPlaneSelected: (id: RefPlaneId | null) => void = () => {};
+
+  function addRefPlanes(targetScene: Scene): void {
+    const geo = new PlaneGeometry(REFSIZE, REFSIZE);
+
+    // Front: XY plane (normal +Z), red
+    const front = new Mesh(geo, new MeshBasicMaterial({
+      color: 0xff4040,
+      transparent: true,
+      opacity: 0.2,
+      side: 2, // DoubleSide
+    }));
+    front.userData.refPlaneId = "Front";
+    targetScene.add(front);
+    refPlaneMeshes.push(front);
+
+    // Top: XZ plane (normal +Y), green
+    const top = new Mesh(geo, new MeshBasicMaterial({
+      color: 0x40ff40,
+      transparent: true,
+      opacity: 0.2,
+      side: 2,
+    }));
+    top.rotation.x = -Math.PI / 2;
+    top.userData.refPlaneId = "Top";
+    targetScene.add(top);
+    refPlaneMeshes.push(top);
+
+    // Right: YZ plane (normal +X), blue
+    const right = new Mesh(geo, new MeshBasicMaterial({
+      color: 0x4040ff,
+      transparent: true,
+      opacity: 0.2,
+      side: 2,
+    }));
+    right.rotation.y = Math.PI / 2;
+    right.userData.refPlaneId = "Right";
+    targetScene.add(right);
+    refPlaneMeshes.push(right);
+  }
+
+  function selectRefPlane(id: RefPlaneId | null): void {
+    selectedRefPlaneId = id;
+    for (const m of refPlaneMeshes) {
+      const mat = m.material as MeshBasicMaterial;
+      const meshId = m.userData.refPlaneId as RefPlaneId;
+      mat.opacity = (meshId === id) ? 0.45 : 0.2;
+    }
+    onRefPlaneSelected(id);
+  }
+
+  addRefPlanes(scene);
 
   controls.update();
 
@@ -192,11 +261,22 @@ export function initViewer(
     ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
     const hits = raycaster.intersectObjects(pickMeshes, false);
+
+    // Prioritize face picking over RefPlane (#163)
     if (hits.length > 0 && hits[0].faceIndex != null) {
       const fids: string[] = (hits[0].object as Mesh).geometry.userData.faceIds ?? [];
       setSelection(fids[hits[0].faceIndex] ?? null);
+      selectRefPlane(null); // Clear RefPlane selection when face is picked
     } else {
       setSelection(null);
+      // Check RefPlane intersection
+      const refHits = raycaster.intersectObjects(refPlaneMeshes, false);
+      if (refHits.length > 0) {
+        const id = (refHits[0].object as Mesh).userData.refPlaneId as RefPlaneId;
+        selectRefPlane(id);
+      } else {
+        selectRefPlane(null);
+      }
     }
   });
 
@@ -206,7 +286,7 @@ export function initViewer(
     controls.update();
     renderer.render(scene, camera);
   }
-  (window as any).__viewer = { renderer, camera, controls };
+  (window as any).__viewer = { renderer, camera, controls, scene };
 
   // ドラッグ/ズーム/パン完了時のみ記録（フレームごとの連続ログは出さない）
   controls.addEventListener("end", () => {
@@ -262,8 +342,15 @@ export function initViewer(
         camera.position.set(t.x + d * 0.5 / len, t.y + d * 0.5 / len, t.z + d / len);
       }
       camera.lookAt(controls.target);
+      camera.updateMatrixWorld();
       controls.update();
       log("view_change", { view });
+    },
+    get onRefPlaneSelected() {
+      return onRefPlaneSelected;
+    },
+    set onRefPlaneSelected(cb: (id: RefPlaneId | null) => void) {
+      onRefPlaneSelected = cb;
     },
     dispose() {
       cancelAnimationFrame(animFrameId);

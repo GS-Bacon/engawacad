@@ -1,5 +1,5 @@
 import { fetchAllFeatureIds, fetchBodies, postFeature } from "./api";
-import { initViewer } from "./viewer";
+import { initViewer, type RefPlaneId } from "./viewer";
 import { planeForFaceId, planeForFaceNormal, buildExtrudeFeatures, buildExtrudeCutFeatures } from "./extrude";
 import { log, clearLog, getEntries, formatLog } from "./logger";
 
@@ -37,11 +37,8 @@ document.addEventListener("keydown", (e) => {
 
 async function main(): Promise<void> {
   try {
+    // Empty document (no bodies) is valid: RefPlane (#163) を選択して新規スケッチを開始できる必要がある。
     let currentBodies = await fetchBodies();
-    if (currentBodies.length === 0) {
-      showError("No bodies found in document");
-      return;
-    }
 
     // Tracks ALL feature IDs ever used (bodies + sketches), grows monotonically.
     // Prevents duplicate IDs across consecutive extrude / extrude-cut operations.
@@ -50,6 +47,13 @@ async function main(): Promise<void> {
 
     const handle = initViewer(app, currentBodies, { onSelectionChange: onSelect });
     log("init", { bodies: currentBodies.length });
+
+    // RefPlane selection (#163)
+    const selectedRefPlaneEl = document.querySelector<HTMLElement>('[data-testid="selected-refplane"]')!;
+    handle.onRefPlaneSelected = (id: RefPlaneId | null) => {
+      selectedRefPlaneEl.textContent = id ?? "";
+      selectedRefPlaneEl.style.display = id ? "block" : "none";
+    };
 
     const viewFront = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-front"]')!;
     const viewTop   = document.querySelector<HTMLButtonElement>('[data-testid="btn-view-top"]')!;

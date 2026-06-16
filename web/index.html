@@ -52,6 +52,21 @@
         z-index: 10;
         min-height: 1em;
       }
+      #selected-refplane {
+        display: none;
+        position: absolute;
+        bottom: 2.5rem;
+        left: 1rem;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 10;
+        min-height: 1em;
+      }
       #extrude-panel {
         display: none;
         position: absolute;
@@ -94,6 +109,7 @@
       <div id="error" data-testid="error-msg"></div>
       <div id="info"></div>
       <div id="selected-face" data-testid="selected-face-id"></div>
+      <div id="selected-refplane" data-testid="selected-refplane"></div>
       <div id="extrude-panel" data-testid="extrude-panel">
         <label>深さ <input type="number" data-testid="extrude-depth" min="0.1" step="0.1" value="5" /></label>
         <button data-testid="btn-extrude">押出</button>

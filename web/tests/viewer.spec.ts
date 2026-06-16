@@ -119,8 +119,10 @@ for (const name of LOOPED_EXAMPLES) {
   });
 }
 
-// T04: Boundary - empty response (no crash)
-test("T04 boundary - empty response", async ({ page }) => {
+// T04: Boundary - empty response はクラッシュせず RefPlane (#163) が表示される。
+// Phase 7 で「No bodies found」エラー表示は廃止 (空ドキュメントでも RefPlane を選択して
+// 新規スケッチを開始できる必要がある)。
+test("T04 boundary - empty response shows refplanes without crash", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") {
@@ -135,17 +137,32 @@ test("T04 boundary - empty response", async ({ page }) => {
       body: "[]",
     }),
   );
+  await page.route("/api/v0/features", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "[]",
+    }),
+  );
 
   await page.goto("/");
-  // Wait for the error element to appear instead of an arbitrary fixed delay.
-  await page.waitForSelector("#error", { state: "visible", timeout: 10_000 });
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await page.waitForTimeout(500);
 
-  // "No bodies found" displayed in #error div
-  const errorEl = page.locator("#error");
-  await expect(errorEl).toBeVisible();
-  await expect(errorEl).toContainText("No bodies found");
+  // RefPlane 3 枚が scene に存在することで「空でも crash しない」を担保
+  const refPlaneCount = await page.evaluate(() => {
+    const v = (window as any).__viewer;
+    if (!v?.scene) return -1;
+    let n = 0;
+    v.scene.traverse((obj: any) => { if (typeof obj?.userData?.refPlaneId === "string") n++; });
+    return n;
+  });
+  expect(refPlaneCount).toBe(3);
 
-  // No console errors beyond the expected UI message
+  // #error は表示されない
+  await expect(page.locator("#error")).toBeHidden();
+
+  // No console errors
   expect(consoleErrors.length).toBeLessThanOrEqual(1);
 });
 
