@@ -128,7 +128,7 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 
 ---
 
-## Phase 7: スケッチ描画（正準平面）
+## Phase 7: スケッチ描画（正準平面） ✅
 
 **外から見た成果**: ブラウザで正準平面（xy/xz/yz）上に線分スケッチを描き、押出/押出カットできる
 
@@ -136,6 +136,8 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 - ブラウザ上のスケッチキャンバスで線分を描いてプロファイルを作れる
 - 描いたスケッチから `Extrude` / `ExtrudeCut` を実行できる
 - 作成したスケッチが `.engawa` に `CreateSketch` Feature として記録される
+
+**状態**: 完了 (2026-06-16)
 
 ---
 
