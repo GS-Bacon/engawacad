@@ -180,8 +180,8 @@ async function runExtrudeOn(page: Page, planeRefId: "Front" | "Top" | "Right"): 
           body: JSON.stringify([{
             feature_id: body.id,
             mesh: {
-              positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-              normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
+              positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+              normals: [[0, 0, 1], [0, 0, 1], [0, 0, 1]],
               indices: [0, 1, 2],
               face_ids: ["f0"],
             },
@@ -197,6 +197,7 @@ async function runExtrudeOn(page: Page, planeRefId: "Front" | "Top" | "Right"): 
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
   await page.waitForTimeout(1000);
+  const before = await countBodies(page);
   await drawClosedRect(page, planeRefId);
   await page.fill('[data-testid="sketch-depth"]', "2");
   await page.click('[data-testid="btn-sketch-extrude"]');
@@ -208,6 +209,9 @@ async function runExtrudeOn(page: Page, planeRefId: "Front" | "Top" | "Right"): 
   expect(ex?.sketch).toBe(cs?.id);
   expect(ex?.depth).toBe(2);
   expect(ex?.fuse_target).toBeNull();
+  // Codex B-6 F02: end-state を実際に検査 — bodies が増え、mesh が非退化であること
+  await expect.poll(() => countBodies(page), { timeout: 10_000 }).toBeGreaterThan(before);
+  expect(await allBodiesHealthy(page)).toBe(true);
 }
 
 async function runExtrudeCutOn(page: Page, planeRefId: "Front" | "Top" | "Right"): Promise<{

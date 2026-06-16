@@ -230,10 +230,18 @@ async function main(): Promise<void> {
       refreshSketchButtonState();
     });
 
+    // Codex B-6 F01: 連打による重複 POST を防ぐ in-flight ガード (1 finalized sketch につき 1 submit)。
+    let sketchSubmitting = false;
+
     btnSketchExtrude.addEventListener("click", async () => {
+      if (sketchSubmitting) return;
       if (!lastFinalizedSketch) return;
       const depth = Number(sketchDepthInput.value);
       if (!Number.isFinite(depth) || depth <= 0) return;
+
+      sketchSubmitting = true;
+      btnSketchExtrude.disabled = true;
+      btnSketchExtrudeCut.disabled = true;
 
       const sketchId = nextId("sketch_", usedFeatureIds);
       const extrudeId = nextId("extrude_", usedFeatureIds);
@@ -257,22 +265,28 @@ async function main(): Promise<void> {
         currentBodies = updated;
         handle.updateBodies(updated);
         log("extrude_ok", { source: "sketch", bodies: updated.length });
-        // Reset state
         lastFinalizedSketch = null;
         handle.clearSketchOverlay();
-        refreshSketchButtonState();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         log("extrude_error", { source: "sketch", error: msg });
         showError(msg);
+      } finally {
+        sketchSubmitting = false;
+        refreshSketchButtonState();
       }
     });
 
     btnSketchExtrudeCut.addEventListener("click", async () => {
+      if (sketchSubmitting) return;
       if (!lastFinalizedSketch) return;
       if (currentBodies.length === 0) return;
       const depth = Number(sketchDepthInput.value);
       if (!Number.isFinite(depth) || depth <= 0) return;
+
+      sketchSubmitting = true;
+      btnSketchExtrude.disabled = true;
+      btnSketchExtrudeCut.disabled = true;
 
       const sketchId = nextId("sketch_", usedFeatureIds);
       const extrudeCutId = nextId("extrude_cut_", usedFeatureIds);
@@ -297,14 +311,15 @@ async function main(): Promise<void> {
         currentBodies = updated;
         handle.updateBodies(updated);
         log("extrude_cut_ok", { source: "sketch", bodies: updated.length });
-        // Reset state
         lastFinalizedSketch = null;
         handle.clearSketchOverlay();
-        refreshSketchButtonState();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         log("extrude_cut_error", { source: "sketch", error: msg });
         showError(msg);
+      } finally {
+        sketchSubmitting = false;
+        refreshSketchButtonState();
       }
     });
 
