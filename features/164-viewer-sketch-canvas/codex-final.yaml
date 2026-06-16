@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/src/viewer.ts"
+    line_hint: 255
+    finding: "スケッチ線分の描画が `PlaneGeometry(length, 2)` + `lookAt(to)` になっており、線分方向ではなく面の法線を終点へ向けてしまう。結果として青線/preview はクリックした 2 点を結ぶ `Line` にならず、平面上のスケッチ形状を正しく可視化できない。"
+    suggestion: "確定線分と preview は `Line`/`BufferGeometry` で 2 点を直接結ぶか、少なくとも接線方向に回転した細い box を使って、RefPlane 上で端点同士が一致するように描画する。"
+  - id: F02
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 208
+    finding: "pointermove 側の preview 更新が `window.__viewer.raycaster` に依存しているが、`viewer.ts` で公開している `__viewer` には `raycaster` が入っていない。この分岐は常に early return するため、仕様にある preview 線が一度も表示されない。"
+    suggestion: "RefPlane への投影計算を plan 通り `viewer.ts` に閉じ込めて `main.ts` は preview 座標だけ受け取る形に戻すか、最低限 `raycaster` を `ViewerHandle` か `__viewer` から参照可能にする。"
+  - id: F03
+    severity: medium
+    file: "web/src/sketch.ts"
+    line_hint: 44
+    finding: "SNAP_RADIUS 内に等距離の既存頂点が複数あると、`<=` 比較のため最後に走査した頂点へ snap される。設計で合意した『同距離なら最早の頂点を優先』の tie-break と逆で、`sketch.test.ts` の T08 も等距離ケースを検証していない。"
+    suggestion: "同距離時は既存 `bestIdx` を保持するよう `<` 比較か明示的 tie-break を実装し、真に等距離な入力で最早点優先を確認する unit test を追加する。"
+
+verdict: fail

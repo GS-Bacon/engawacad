@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "web/src/viewer.ts"
+    line_hint: 321
+    finding: "スケッチ click は `raycaster.intersectObject(plane)` で 20x20 の RefPlane メッシュに当たった場合しか受け付けませんが、preview 側は [web/src/main.ts] で無限平面として投影しています。結果として可視メッシュ外では灰色 preview が出るのに click は no-op になり、RefPlane 境界をまたぐ輪郭を描けません。"
+    suggestion: "pointerup でも数式ベースの平面交点から UV を求めるか、preview/click 共通の投影 helper を viewer 側に置いて同じ境界条件で処理する。"
+  - id: F02
+    severity: medium
+    file: "web/tests/sketch_canvas.spec.ts"
+    line_hint: 130
+    finding: "合意済みの SNAP 検証が未充足です。T03 は 5 点目で始点と同じ画面座標を再クリックしているだけで `SNAP_RADIUS` 内の別点からの snap を見ておらず、unit 側 T08 も等距離 tie-break ではなく単なる最近接頂点ケースに置き換わっています。これでは `SNAP_RADIUS` の閾値や `bestIdx === -1 ? d2 <= bestDist2 : d2 < bestDist2` の決定性分岐が壊れても検出できません。"
+    suggestion: "E2E は 5 点目を始点近傍の別座標でクリックして閉ループを確認し、unit は plan どおり等距離ケース（例: `(0,0)` と `(0,0.05)` に対して `(0,0.03)`）で最早の頂点へ snap することを固定する。"
+
+verdict: pass

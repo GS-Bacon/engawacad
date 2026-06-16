@@ -1,0 +1,21 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "設計方針 > 端点スナップ"
+    finding: "端点スナップで SNAP_RADIUS 内に複数の既存頂点が同距離で存在する場合の決定性が未定義。配列走査順（最初に見つかったもの）に依存することになるが、これが設計として明記されていない。"
+    suggestion: "同距離の場合の tie-break ルールを明記するか（例: インデックス最小）、または UI レイヤの決定性保証として 'snap は距離最小の単一頂点を選択し、同距離の場合は最早の頂点を優先' といった規約を追加すること。ただし通常のユースケースでこの状況は稀であり、実装上の実害は低い。"
+
+  - id: IN02
+    severity: medium
+    section: "テスト計画"
+    finding: "T01-T06 は UI 統合テストだが、sketch.ts の純粋ロジック（addPoint, isClosed, finalize, snap）に対する決定性テストが存在しない。設計方針には 'vitest 単体テスト sketch.test.ts も追加' とあるが、テスト計画表に ID 付きで列挙されていない。"
+    suggestion: "テスト計画表に T07_unit_determinism として '同一入力を 2 回 createSketchSession → addPoint して segments と isClosed() が同一であることを assert' を追加すること。"
+
+  - id: IN03
+    severity: low
+    section: "実装対象 > viewer.ts"
+    finding: "2D ↔ 3D 変換で Right plane の座標系が (u, v) → (0, u, v) と定義されているが、右手系か左手系かが明記されていない。"
+    suggestion: "座標系が右手系であることをコメント等で明記すること（ただし描画の整合性には影響しない）。"
+
+verdict: pass
+# Critical/High なし。Medium 2 は「設計通りに実装すると不変条件が壊れる」問題ではなく、ドキュメントの明確化項目。PASS と判断。

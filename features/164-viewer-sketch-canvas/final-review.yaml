@@ -1,0 +1,21 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 213-218
+    finding: "Acceptance tests で要求されている「閉ループ達成時に自動 finalize」が実装されていない。閉ループ状態になっても自動で finalize() が呼ばれず、Enter キーを押す必要がある。Issue 完了条件: '① 閉ループ達成時に自動 finalize、② Enter キーで明示 finalize'"
+    suggestion: "updateSketchCanvasState() 内で currentSession.isClosed() が true になった際に自動 finalize を実行し、ログ出力または通知を行う。または addPoint 呼び出し直後に閉ループ判定を行い finalize を実行する。"
+  - id: FN02
+    severity: medium
+    file: "web/tests/sketch_canvas.spec.ts"
+    line_hint: 270
+    finding: "T06_degen_zero_length ゼロ長セグメント棄却テストがあるが、単体テスト (sketch.test.ts) にも同様のテストケースがない。Vitest 単体テストでの検証が不足。"
+    suggestion: "sketch.test.ts にゼロ長セグメントが棄却されるテストケースを追加する。"
+  - id: FN03
+    severity: medium
+    file: "web/tests/sketch_canvas.spec.ts"
+    line_hint: 1-271
+    finding: "閉ループ達成時の自動 finalize を検証する E2E テストがない。T03 で閉ループ後に自動 finalize されたかを検証するテストが欠けている。"
+    suggestion: "T03 の拡張版として、閉ループ後に console.log 出力 '[sketch] finalized:' を監視するテストケースを追加する。"
+
+verdict: fail

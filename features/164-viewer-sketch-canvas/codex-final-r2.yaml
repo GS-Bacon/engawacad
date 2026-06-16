@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 52
+    finding: "閉ループ到達後も `currentSession` を生かしたまま `onSketchPoint` が `addPoint()` を受け付け続けるため、5 点目で auto finalize した直後に 6 点目をクリックすると finalized 済みの輪郭にさらにセグメントが追加されて `closed -> open` に戻り、単一閉ループでなくなる。加えて `btn-start-sketch` で新セッションを作り直す際にも既存 overlay を消していないので、古い線分が残ったまま `data-state=\"idle\"` に戻る。"
+    suggestion: "auto/manual finalize 後はセッションを終了して以後の click を受け付けないようにする（`currentSession = null`、または closed session への `addPoint()` を no-op 化する）。新規 `createSketchSession(...)` の前にも `handle.clearSketchOverlay()` で既存 overlay を明示的に破棄する。"
+
+verdict: fail

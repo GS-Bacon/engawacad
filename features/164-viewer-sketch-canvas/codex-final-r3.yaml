@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 67
+    finding: "閉ループで `currentSession = null` にした後も viewer の `sketchMode` は解除されません。`viewer.ts` 側は `sketchMode && selectedRefPlaneId` で以後の pointerup をすべて早期 return し、`controls.enabled` も false のままなので、正常に閉じた直後の UI がスケッチモードに閉じ込められます。さらに `Escape` ハンドラも `currentSession` ガードで無効になるため、その場で抜ける手段がありません。"
+    suggestion: "auto finalize 経路でもスケッチモードの終了処理を通すか、closed session を保持して `Escape` で抜けられるようにする。閉じた輪郭を残したいなら overlay の可視性を `sketchMode` と分離する。"
+  - id: F02
+    severity: medium
+    file: "web/tests/sketch_canvas.spec.ts"
+    line_hint: 130
+    finding: "合意済みの T03/T04/T05 が条件を十分に検証していません。T03 は 5 点目を最初と同じピクセルへ再クリックしているだけで `SNAP_RADIUS` 内スナップを統合経路で見ておらず、T04 は `segments=0` と OrbitControls 再有効を確認していません。T05 もコメントどおり `finalize() === null` を assert できておらず、Enter/Escape 経路の退行がこのスイートでは通ってしまいます。"
+    suggestion: "Playwright から参照できる debug hook を追加し、T03 はオフセットクリックで snap close を、T04 は `window.__viewer.controls.enabled` と overlay/session の消去を、T05 は `finalize()` の戻り値 `null` をそれぞれ実際に assert する。"
+
+verdict: fail

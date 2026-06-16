@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "web/src/sketch.ts"
+    line_hint: 66
+    finding: "1 辺しかない状態で始点に snap すると、`segments` には `last -> first` を追加する一方で 68-69 行の early return により `points` の末尾を始点へ更新しません。`isClosed()` は false のままセッション継続になるため、以後の `previewTo()` / `addPoint()` は古い末尾から再開され、`segments[n].from` が直前の `to` と一致しない不連続ポリラインになります。"
+    suggestion: "始点 snap で `points.push(snapped)` を省略するのは実際に closed と確定する場合だけに限定し、それ未満では始点も `points` に積んで末尾を更新するか、premature close 自体を no-op にする。"
+  - id: F02
+    severity: medium
+    file: "web/src/sketch.test.ts"
+    line_hint: 58
+    finding: "合意済み T09 は『三角形未満で始点へ戻っても `isClosed() = false`』経路の検証ですが、現行テストは単に 3 点の open polyline を作って `false` を見ているだけで、始点へ戻る `addPoint()` を一度も実行していません。このため F01 の state corruption をこの suite では検出できません。"
+    suggestion: "T09 を `A -> B -> A` のケースに修正し、`isClosed() === false` に加えて、その後の `previewTo()` / 次の segment が始点 A から継続すること、または premature close が no-op であることを明示的に assert する。"
+
+verdict: fail
