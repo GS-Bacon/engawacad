@@ -266,39 +266,62 @@ async function main() {
     //   2: enh-batch         (enhancement + batch:*) — ADR-002 正規外だが歴史互換
     //   3: foundation-batch  (type:foundation + batch:*)
     //   4: phase-feature     (現 Phase milestone の type:feature)
-    const bugBatch = allIssues.filter(i => labelNames(i).includes("bug") && hasBatchLabel(i));
+    //
+    // #187: loop モードでは各 tier の filter 内で loop exclude も同時適用し、
+    // exclude 後に 0 件なら次 tier に fall-through する。
+    const applyLoopExclude = (xs: GhIssue[]) =>
+      loopMode ? xs.filter(i => !isLoopExcludedLabels(labelNames(i))) : xs;
+
+    let excludedTotal = 0;
+    const tryTier = (raw: GhIssue[]): GhIssue[] => {
+      if (raw.length === 0) return [];
+      const filtered = applyLoopExclude(raw);
+      excludedTotal += raw.length - filtered.length;
+      return filtered;
+    };
+
+    const bugBatch = tryTier(
+      allIssues.filter(i => labelNames(i).includes("bug") && hasBatchLabel(i)),
+    );
     if (bugBatch.length > 0) {
       selected = bugBatch;
       tier = "bug-batch";
     } else {
-      const enhBatch = allIssues.filter(
-        i => labelNames(i).includes("enhancement") && hasBatchLabel(i),
+      const enhBatch = tryTier(
+        allIssues.filter(i => labelNames(i).includes("enhancement") && hasBatchLabel(i)),
       );
       if (enhBatch.length > 0) {
         selected = enhBatch;
         tier = "enh-batch";
       } else {
-        const foundationBatch = allIssues.filter(
-          i => isFoundationTier(labelNames(i)) && hasBatchLabel(i),
+        const foundationBatch = tryTier(
+          allIssues.filter(i => isFoundationTier(labelNames(i)) && hasBatchLabel(i)),
         );
         if (foundationBatch.length > 0) {
           selected = foundationBatch;
           tier = "foundation-batch";
         } else {
-          selected = allIssues.filter(
-            i => i.milestone !== null &&
-                 currentPhase !== null &&
-                 i.milestone.title.startsWith(`Phase ${currentPhase}`) &&
-                 isFeatureTier(labelNames(i)),
+          selected = tryTier(
+            allIssues.filter(
+              i => i.milestone !== null &&
+                   currentPhase !== null &&
+                   i.milestone.title.startsWith(`Phase ${currentPhase}`) &&
+                   isFeatureTier(labelNames(i)),
+            ),
           );
           tier = "phase-feature";
         }
       }
     }
+
+    if (loopMode && excludedTotal > 0) {
+      warnings.push(`loop モード: gate/needs-* で ${excludedTotal} 件除外 (残 ${selected.length} 件)`);
+    }
   }
 
   // 3ailoop モード: 共通 exclude フィルタを適用 (gate:* / needs-* / blocked-by-split)
-  if (loopMode) {
+  // (引数なし起動時は上のラダー内で適用済み。--batch fixes/foundation/phase 経路では後段で適用)
+  if (loopMode && batchArg !== null) {
     const beforeCount = selected.length;
     selected = selected.filter(i => !isLoopExcludedLabels(labelNames(i)));
     const filtered = beforeCount - selected.length;
