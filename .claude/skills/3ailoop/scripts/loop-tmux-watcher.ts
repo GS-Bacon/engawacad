@@ -173,15 +173,24 @@ function readWindowName(): string {
   }
 }
 
-async function tmuxWindowExists(name: string): Promise<boolean> {
-  const proc = Bun.spawn(["tmux", "list-windows", "-F", "#W"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  if (proc.exitCode !== 0) return false;
-  return out.split("\n").map(s => s.trim()).includes(name);
+/** #181 R4-F01: tmux 呼び出し失敗は worker-gone と区別する。
+ *  - true     : window 存在を確認
+ *  - false    : tmux 呼び出し成功 + 対象が見つからなかった
+ *  - "unknown": tmux 呼び出し自体が失敗 (socket 一時障害など)
+ */
+async function tmuxWindowExists(name: string): Promise<boolean | "unknown"> {
+  try {
+    const proc = Bun.spawn(["tmux", "list-windows", "-F", "#W"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    if (proc.exitCode !== 0) return "unknown";
+    return out.split("\n").map(s => s.trim()).includes(name);
+  } catch {
+    return "unknown";
+  }
 }
 
 async function runShouldStop(): Promise<number> {
@@ -327,10 +336,50 @@ async function sleepMs(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function capturePane(window: string): Promise<string> {
+  try {
+    const proc = Bun.spawn(["tmux", "capture-pane", "-t", `=${window}`, "-p"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    return out;
+  } catch {
+    return "";
+  }
+}
+
+/** /clear の処理完了を capture-pane で検出。タイムアウト時は false。
+ *  start.ts の waitForClaudeReady と同じマーカーセット。 */
+async function waitForPaneReady(window: string, timeoutSec: number): Promise<boolean> {
+  const markers = ["│ >", "Welcome", "Try ", "/help", "claude.ai/code"];
+  const deadline = Date.now() + timeoutSec * 1000;
+  while (Date.now() < deadline) {
+    const buf = await capturePane(window);
+    if (markers.some(m => buf.includes(m))) return true;
+    await sleepMs(500);
+  }
+  return false;
+}
+
 async function performRestart(window: string, dryRun: boolean): Promise<void> {
-  log(`send-keys: /clear → wait ${CLEAR_WAIT_SEC}s → /3ailoop`);
+  log(`send-keys: /clear → wait pane ready → /3ailoop`);
   await sendKeysToWorker(window, "/clear", dryRun);
-  await sleepMs(CLEAR_WAIT_SEC * 1000);
+  if (dryRun) {
+    // dry-run は副作用なしでフォールバック秒だけ待機
+    await sleepMs(CLEAR_WAIT_SEC * 1000);
+  } else {
+    // #181 R4-F02: 固定 sleep だと /clear 処理中の pane に /3ailoop を送り込んで
+    // 取りこぼす可能性があるため、capture-pane でプロンプト復帰を待つ。
+    // フォールバックタイムアウトは CLEAR_WAIT_SEC * 4 (最大 32s デフォルト) で
+    // 余裕を持たせる。タイムアウト時は警告ログを残して /3ailoop を送る (worst case
+    // でも次サイクルの差分検知で気付ける)。
+    const ready = await waitForPaneReady(window, CLEAR_WAIT_SEC * 4);
+    if (!ready) {
+      log(`WARN: pane did not show ready marker within ${CLEAR_WAIT_SEC * 4}s after /clear; sending /3ailoop anyway`);
+    }
+  }
   await sendKeysToWorker(window, "/3ailoop", dryRun);
 }
 
@@ -365,11 +414,36 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
 
   const window = readWindowName();
   let parseFailures = 0;
+  let tmuxQueryFailures = 0;
+  const TMUX_QUERY_FAIL_LIMIT = 3;
 
   // メインループ
   while (true) {
     try {
-      const workerAlive = mockAlive ? true : await tmuxWindowExists(window);
+      let workerAlive: boolean;
+      if (mockAlive) {
+        workerAlive = true;
+      } else {
+        const q = await tmuxWindowExists(window);
+        if (q === "unknown") {
+          // #181 R4-F01: tmux 一時障害は worker-gone と区別。連続失敗で異常検知。
+          tmuxQueryFailures++;
+          log(`tmux query failed (${tmuxQueryFailures}/${TMUX_QUERY_FAIL_LIMIT})`);
+          if (tmuxQueryFailures >= TMUX_QUERY_FAIL_LIMIT) {
+            await notify(
+              "loop-tmux-query-failed",
+              `[STOP] watcher: tmux list-windows が ${tmuxQueryFailures} 連続で失敗`,
+            );
+            cleanup(`tmux query failed ${tmuxQueryFailures} times`);
+            return;
+          }
+          // best-effort で続行 (この poll は wait と同等扱い)
+          workerAlive = true;
+        } else {
+          tmuxQueryFailures = 0;
+          workerAlive = q;
+        }
+      }
       const state = readState();
       if (state === null && existsSync(STATE_PATH)) {
         parseFailures++;
