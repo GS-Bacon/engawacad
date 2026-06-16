@@ -17,8 +17,9 @@
 //
 // 関連: ADR-012, Issue #181
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import { isWatcherAlive, readWatcherPidFile } from "./loop-tmux-watcher.ts";
 
 const TMUX_DIR = "features/.loop/tmux";
 const PID_PATH = `${TMUX_DIR}/watcher.pid`;
@@ -37,25 +38,16 @@ function checkTmuxEnv(): void {
   }
 }
 
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function checkExistingWatcher(): void {
-  if (!existsSync(PID_PATH)) return;
-  const raw = readFileSync(PID_PATH, "utf-8").trim();
-  const pid = parseInt(raw, 10);
-  if (Number.isFinite(pid) && isPidAlive(pid)) {
-    console.error(`ERROR: watcher pid=${pid} が既に走っています (${PID_PATH})`);
+  // #181 F03: PID + cmdline_marker による厳格な多重起動判定
+  const info = readWatcherPidFile(PID_PATH);
+  if (info && isWatcherAlive(info)) {
+    console.error(`ERROR: watcher pid=${info.pid} (started_at=${info.started_at}) が既に走っています (${PID_PATH})`);
     console.error("  停止するには: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts");
     process.exit(1);
   }
-  // 死んだ PID ファイルは start.ts が引き継いで上書きするので何もしない
+  // 死んだ / 別プロセスに reuse された / 旧形式 / 不正な PID ファイルは start.ts が
+  // 引き継いで上書きするので何もしない
 }
 
 interface TmuxCmd {

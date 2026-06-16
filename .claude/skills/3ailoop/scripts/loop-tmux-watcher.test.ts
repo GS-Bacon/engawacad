@@ -39,8 +39,8 @@ describe("detectCycleCompleted", () => {
     expect(detectCycleCompleted(null, null)).toBe(false);
     expect(detectCycleCompleted("2026-06-16T00:00:00.000Z", null)).toBe(false);
   });
-  it("returns true on first cycle (prev=null, curr=value)", () => {
-    expect(detectCycleCompleted(null, "2026-06-16T00:00:00.000Z")).toBe(true);
+  it("returns false when prev is null (baseline must be established first; #181 F01)", () => {
+    expect(detectCycleCompleted(null, "2026-06-16T00:00:00.000Z")).toBe(false);
   });
   it("returns true when prev and curr differ", () => {
     expect(
@@ -128,13 +128,46 @@ describe("decideAction", () => {
     expect(action.kind).toBe("stop");
   });
 
-  it("first cycle (prev=null) with shouldStopRc=0 → send-clear-and-restart", () => {
+  it("first poll with prev=null + curr=value → init-baseline (#181 F01)", () => {
     const action = decideAction({
       ...baseInput,
       prevEndedAt: null,
       currEndedAt: "2026-06-16T00:00:00.000Z",
-      shouldStopRc: 0,
+      shouldStopRc: null,
     });
-    expect(action.kind).toBe("send-clear-and-restart");
+    expect(action.kind).toBe("init-baseline");
+    if (action.kind === "init-baseline") expect(action.baseline).toBe("2026-06-16T00:00:00.000Z");
+  });
+
+  it("first poll with prev=null + curr=null → wait (baseline cannot be set yet)", () => {
+    const action = decideAction({
+      ...baseInput,
+      prevEndedAt: null,
+      currEndedAt: null,
+      shouldStopRc: null,
+    });
+    expect(action.kind).toBe("wait");
+  });
+
+  it("returns should-stop-error when shouldStopRc is 2 (#181 F02)", () => {
+    const action = decideAction({
+      ...baseInput,
+      prevEndedAt: "2026-06-16T00:00:00.000Z",
+      currEndedAt: "2026-06-16T01:00:00.000Z",
+      shouldStopRc: 2,
+    });
+    expect(action.kind).toBe("should-stop-error");
+    if (action.kind === "should-stop-error") expect(action.rc).toBe(2);
+  });
+
+  it("returns should-stop-error when shouldStopRc is -1 (script missing; #181 F02)", () => {
+    const action = decideAction({
+      ...baseInput,
+      prevEndedAt: "2026-06-16T00:00:00.000Z",
+      currEndedAt: "2026-06-16T01:00:00.000Z",
+      shouldStopRc: -1,
+    });
+    expect(action.kind).toBe("should-stop-error");
+    if (action.kind === "should-stop-error") expect(action.rc).toBe(-1);
   });
 });

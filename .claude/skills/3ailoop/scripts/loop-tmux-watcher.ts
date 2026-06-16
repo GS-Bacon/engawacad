@@ -55,42 +55,64 @@ export function extractLastEndedAt(state: CycleState | null): string | null {
 }
 
 /** 前回観測値と現在値の差分でサイクル完了を判定。
- * - prev=null, curr=null → 未完了 (state.json まだ書かれていない)
- * - prev=null, curr=値    → 完了 (初サイクル)
- * - prev=値,  curr=null  → 未完了 (state.json が消えた、異常系は別経路で扱う)
- * - prev=A,   curr=B     → 完了 (A !== B)
- * - prev=A,   curr=A     → 未完了 (差分なし)
+ *
+ * #181 F01 (Codex 指摘): prev=null は「ベースライン未確立」を意味し、ここで true を返すと
+ * 既存 state.json の古い ended_at を拾った起動直後に誤って /clear を送ってしまう。
+ * 「ベースラインの確立」は呼び元の責務 (initialBaseline) で、本関数は確立後の差分検知に
+ * 専念する。
+ *
+ * - prev=null,    curr=*     → false (ベースライン未確立。呼び元で baseline を書いてから再 poll)
+ * - prev=値, curr=null      → false (state.json が消えた、異常系)
+ * - prev=A,  curr=B (A!==B) → true  (サイクル完了)
+ * - prev=A,  curr=A         → false (差分なし)
  */
 export function detectCycleCompleted(prev: string | null, curr: string | null): boolean {
-  if (!curr) return false;
+  if (!curr || !prev) return false;
   return prev !== curr;
 }
 
 export type WatcherAction =
   | { kind: "wait" }
+  | { kind: "init-baseline"; baseline: string }
   | { kind: "send-clear-and-restart" }
   | { kind: "stop"; reason: string }
   | { kind: "stuck"; minutesIdle: number }
-  | { kind: "worker-gone" };
+  | { kind: "worker-gone" }
+  | { kind: "should-stop-error"; rc: number };
 
 export interface DecideInput {
   prevEndedAt: string | null;
   currEndedAt: string | null;
-  shouldStopRc: number | null; // 差分検知時のみ評価
+  shouldStopRc: number | null; // 差分検知時のみ評価。null = まだ呼んでいない
   minutesSinceLastUpdate: number; // currEndedAt の age (分)
   stuckThresholdMin: number;
   workerPaneAlive: boolean;
 }
 
-/** 観測値・判定結果から次アクションを決める純粋関数。 */
+/** 観測値・判定結果から次アクションを決める純粋関数。
+ *
+ * #181 F01: prev=null かつ curr=値 なら「ベースライン確立」を返す。watcher は baseline を
+ * last-cycle-ended-at に書いてから次 poll に進む。
+ * #181 F02: shouldStopRc は 0/1 のみ有効値とし、それ以外 (script missing / crash / RC=2 等) は
+ * should-stop-error として安全側 (= watcher 停止) に倒す。
+ */
 export function decideAction(input: DecideInput): WatcherAction {
   if (!input.workerPaneAlive) return { kind: "worker-gone" };
 
+  // F01: ベースライン未確立で curr が判明 → baseline を確立して次へ
+  if (input.prevEndedAt === null && input.currEndedAt) {
+    return { kind: "init-baseline", baseline: input.currEndedAt };
+  }
+
   if (detectCycleCompleted(input.prevEndedAt, input.currEndedAt)) {
+    // F02: shouldStopRc は厳密検証
     if (input.shouldStopRc === 1) {
       return { kind: "stop", reason: "loop-should-stop returned RC=1" };
     }
-    return { kind: "send-clear-and-restart" };
+    if (input.shouldStopRc === 0) {
+      return { kind: "send-clear-and-restart" };
+    }
+    return { kind: "should-stop-error", rc: input.shouldStopRc ?? -1 };
   }
 
   // 差分なし: stuck 判定 (currEndedAt が存在し、stuckThreshold 分以上更新なし)
@@ -163,9 +185,24 @@ async function tmuxWindowExists(name: string): Promise<boolean> {
 }
 
 async function runShouldStop(): Promise<number> {
-  const proc = Bun.spawn(["bun", SHOULD_STOP_PATH], { stdout: "pipe", stderr: "pipe" });
-  await proc.exited;
-  return proc.exitCode ?? 2;
+  // #181 F02: script missing は安全側 (= 0/1 以外の RC) として上に伝える
+  if (!existsSync(SHOULD_STOP_PATH)) {
+    log(`runShouldStop: script not found at ${SHOULD_STOP_PATH}`);
+    return -1;
+  }
+  try {
+    const proc = Bun.spawn(["bun", SHOULD_STOP_PATH], { stdout: "pipe", stderr: "pipe" });
+    const err = await new Response(proc.stderr).text();
+    await proc.exited;
+    const rc = proc.exitCode ?? -1;
+    if (rc !== 0 && rc !== 1) {
+      log(`runShouldStop: RC=${rc} stderr=${err.trim().slice(0, 200)}`);
+    }
+    return rc;
+  } catch (e) {
+    log(`runShouldStop: spawn error: ${(e as Error).message}`);
+    return -1;
+  }
 }
 
 async function notify(kind: string, text: string): Promise<void> {
@@ -193,9 +230,60 @@ async function sendKeysToWorker(window: string, keys: string, dryRun: boolean): 
   }
 }
 
+// --- PID file 管理 (PID reuse 対策: cmdline_marker で同一プロセスを検証) ---
+//
+// #181 F03: 単純な PID 再利用攻撃を防ぐため、PID file に cmdline 一致のマーカーを含める。
+// Linux なら /proc/<pid>/cmdline を読んで marker 文字列の包含を確認、それ以外の OS では
+// `process.kill(pid, 0)` の生存確認 + 「marker フィールドが PID file に存在する」だけで
+// best-effort 判定する。
+
+export const WATCHER_CMDLINE_MARKER = "loop-tmux-watcher.ts";
+
+export interface WatcherPidInfo {
+  pid: number;
+  started_at: string;
+  cmdline_marker: string;
+}
+
+export function readWatcherPidFile(path: string = PID_PATH): WatcherPidInfo | null {
+  if (!existsSync(path)) return null;
+  try {
+    const txt = readFileSync(path, "utf-8").trim();
+    if (!txt.startsWith("{")) return null; // 旧形式 (raw PID) は無効扱い
+    const obj = JSON.parse(txt) as Partial<WatcherPidInfo>;
+    if (typeof obj.pid !== "number" || !Number.isFinite(obj.pid)) return null;
+    if (typeof obj.cmdline_marker !== "string") return null;
+    if (typeof obj.started_at !== "string") return null;
+    return obj as WatcherPidInfo;
+  } catch {
+    return null;
+  }
+}
+
+export function isWatcherAlive(info: WatcherPidInfo): boolean {
+  try {
+    process.kill(info.pid, 0);
+  } catch {
+    return false;
+  }
+  const cmdlinePath = `/proc/${info.pid}/cmdline`;
+  if (!existsSync(cmdlinePath)) return true; // 非 Linux: best-effort で alive 扱い
+  try {
+    const cmdline = readFileSync(cmdlinePath, "utf-8");
+    return cmdline.includes(info.cmdline_marker);
+  } catch {
+    return false;
+  }
+}
+
 function writePidFile(): void {
   mkdirSync(dirname(PID_PATH), { recursive: true });
-  writeFileSync(PID_PATH, String(process.pid), "utf-8");
+  const info: WatcherPidInfo = {
+    pid: process.pid,
+    started_at: new Date().toISOString(),
+    cmdline_marker: WATCHER_CMDLINE_MARKER,
+  };
+  writeFileSync(PID_PATH, JSON.stringify(info, null, 2), "utf-8");
 }
 
 function removePidFile(): void {
@@ -282,6 +370,10 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean): Promise<void> {
       switch (action.kind) {
         case "wait":
           break;
+        case "init-baseline":
+          writeLastObserved(action.baseline);
+          log(`baseline initialized: ${action.baseline} (起動直後の既存 ended_at を採用)`);
+          break;
         case "send-clear-and-restart":
           await performRestart(window, dryRun);
           if (currEndedAt) writeLastObserved(currEndedAt);
@@ -304,6 +396,13 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean): Promise<void> {
         case "worker-gone":
           await notify("loop-tmux-worker-gone", `[STOP] watcher: worker pane '${window}' が tmux から消失`);
           cleanup("worker-gone");
+          return;
+        case "should-stop-error":
+          await notify(
+            "loop-tmux-should-stop-error",
+            `[STOP] watcher: loop-should-stop が想定外 RC=${action.rc} を返した (0/1 以外は安全側で停止)`,
+          );
+          cleanup(`should-stop RC=${action.rc}`);
           return;
       }
     } catch (e) {
