@@ -199,6 +199,7 @@ async function main(): Promise<void> {
         result.pane_kill = "skipped (no pane info and no orphan worker found by pane_title)";
       } else {
         const orphanResults: Array<Record<string, unknown>> = [];
+        let allGone = true;
         for (const o of orphans) {
           const parts = o.split("|");
           if (parts.length < 4) continue;
@@ -210,10 +211,13 @@ async function main(): Promise<void> {
             saved_at: "(recovered by pane_title)",
           };
           const r = await killPane(recovered, dryRun, keepPane);
-          orphanResults.push({ pane_id: pid, status: r.status });
-          if (r.paneGone) paneGone = true;
+          orphanResults.push({ pane_id: pid, status: r.status, gone: r.paneGone });
+          if (!r.paneGone) allGone = false;
         }
-        result.pane_kill = { recovered_by_title: orphanResults };
+        // #185 R5-F02: 全 orphan が確実に消えた場合だけ paneGone=true (AND 集約)。
+        // 1 件でも残れば lock/metadata 解放しない (live worker 残置防止)。
+        paneGone = allGone;
+        result.pane_kill = { recovered_by_title: orphanResults, all_gone: allGone };
       }
     }
   } else {

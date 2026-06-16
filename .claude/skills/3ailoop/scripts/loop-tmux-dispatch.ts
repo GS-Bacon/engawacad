@@ -24,17 +24,40 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..", "..", "..");
 const PID_PATH = path.join(REPO_ROOT, "features/.loop/tmux/watcher.pid");
 const PANE_PATH = path.join(REPO_ROOT, "features/.loop/tmux/worker.pane");
 
-function decide(): "start" | "continue" | "already-running" {
+/** #185 R5-F01: 現 pane の 3 つ組を tmux から取得 (display-message)。
+ *  pane_id 単体ではなく session_id+window_id+pane_id の組み合わせで識別する。 */
+async function getCurrentPaneTriple(): Promise<string | null> {
+  if (!process.env.TMUX_PANE) return null;
+  try {
+    const proc = Bun.spawn(
+      ["tmux", "display-message", "-p", "-t", process.env.TMUX_PANE,
+       "#{session_id}|#{window_id}|#{pane_id}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    if (proc.exitCode !== 0) return null;
+    return out.trim();
+  } catch {
+    return null;
+  }
+}
+
+async function decide(): Promise<"start" | "continue" | "already-running"> {
   if (!process.env.TMUX) return "continue";
 
   const paneInfo = readPaneInfo(PANE_PATH);
   const watcherInfo = readWatcherPidFile(PID_PATH);
   const watcherAlive = !!(watcherInfo && isWatcherAlive(watcherInfo));
 
-  // #185 R2-F01: worker pane 内 (= 自分の TMUX_PANE が worker.pane の pane_id と一致) なら
-  // watcher 起動前のレースを避けるため必ず continue。
-  if (paneInfo && process.env.TMUX_PANE === paneInfo.pane_id) {
-    return "continue";
+  // #185 R5-F01: worker 判定は 3 つ組完全一致で行う。pane_id 単体一致だと
+  // stale metadata で別 pane を誤認するリスクがある (R4-F02 と同根)。
+  if (paneInfo) {
+    const currentTriple = await getCurrentPaneTriple();
+    const expectedTriple = `${paneInfo.session_id}|${paneInfo.window_id}|${paneInfo.pane_id}`;
+    if (currentTriple && currentTriple === expectedTriple) {
+      return "continue";
+    }
   }
 
   // #185 R4-F01: watcher が走っているのに worker 以外の pane から /3ailoop が打たれた場合は
@@ -45,7 +68,7 @@ function decide(): "start" | "continue" | "already-running" {
 }
 
 if (import.meta.main) {
-  console.log(decide());
+  console.log(await decide());
 }
 
 export { decide };
