@@ -22,10 +22,16 @@ const FEATURES_DIR = "features";
 const CUM_PAUSE = 100_000_000;
 const WIN24_WARN = 5_000_000;
 
-const TOKEN_PATTERNS = [
-  /total[_ ]?tokens?\s*[:=]\s*(\d+)/gi,
-  /tokens?\s*[:=]\s*(\d+)/gi,
-  /usage[_ ]?total\s*[:=]\s*(\d+)/gi,
+// #178 指摘 3: 実 log の input_tokens / output_tokens / cache 系も拾い、合算する
+// JSON のキー ("input_tokens": 1000) と YAML のキー (input_tokens: 1000) の両方対応のため
+// フィールド名の後ろに任意の quote を許容する
+const TOKEN_FIELDS = [
+  /(?:^|\W)total[_ ]?tokens?["']?\s*[:=]\s*(\d+)/gi,
+  /(?:^|\W)input[_ ]?tokens?["']?\s*[:=]\s*(\d+)/gi,
+  /(?:^|\W)output[_ ]?tokens?["']?\s*[:=]\s*(\d+)/gi,
+  /(?:^|\W)cache[_ ]?read[_ ]?input[_ ]?tokens?["']?\s*[:=]\s*(\d+)/gi,
+  /(?:^|\W)cache[_ ]?creation[_ ]?input[_ ]?tokens?["']?\s*[:=]\s*(\d+)/gi,
+  /(?:^|\W)usage[_ ]?total["']?\s*[:=]\s*(\d+)/gi,
 ];
 
 interface LoopState {
@@ -59,15 +65,19 @@ function atomicWriteState(state: LoopState): void {
 }
 
 function extractTokens(text: string): number {
-  let max = 0;
-  for (const pat of TOKEN_PATTERNS) {
+  // 各フィールドごとに最大値 (重複避け) を取り、フィールド間で合算
+  // (実 log は同じ fields が複数回出る場合があり、最大値を取る方が安全)
+  let total = 0;
+  for (const pat of TOKEN_FIELDS) {
+    let maxForField = 0;
     pat.lastIndex = 0;
     for (const m of text.matchAll(pat)) {
       const n = parseInt(m[1]);
-      if (Number.isFinite(n) && n > max) max = n;
+      if (Number.isFinite(n) && n > maxForField) maxForField = n;
     }
+    total += maxForField;
   }
-  return max;
+  return total;
 }
 
 function walkFeatureLogs(): { path: string; mtime: number }[] {

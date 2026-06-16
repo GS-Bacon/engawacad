@@ -109,12 +109,14 @@ async function check(phase: number): Promise<CheckResult> {
   const marked = isRoadmapMarked(phase);
 
   const reasons: string[] = [];
+  // #178 指摘 1 対応: features_total === 0 (空 milestone) は完了対象外
+  if (features.length === 0) reasons.push("no type:feature issues in milestone (empty Phase)");
   if (featuresOpen.length > 0) reasons.push(`open type:feature: ${featuresOpen.map(n => `#${n}`).join(", ")}`);
   if (gateHF.length > 0) reasons.push(`gate:human-feel x ${gateHF.length}`);
   if (gateADR.length > 0) reasons.push(`gate:adr-review x ${gateADR.length}`);
   if (marked) reasons.push("ROADMAP already marked ✅ (already applied?)");
 
-  const ok = featuresOpen.length === 0 && gateHF.length === 0 && gateADR.length === 0 && !marked;
+  const ok = features.length > 0 && featuresOpen.length === 0 && gateHF.length === 0 && gateADR.length === 0 && !marked;
   return {
     ok, phase,
     reason: ok ? "all complete" : reasons.join("; "),

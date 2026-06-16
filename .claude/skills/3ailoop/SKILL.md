@@ -86,7 +86,45 @@ state.json に追記、recent_cycles[] と cumulative 更新。
 bun .claude/skills/3ailoop/scripts/loop-decision-log.ts append --kind <kind> --message "..."
 ```
 
-通常は `loop-adr-pause-detector` / `loop-split-detector` / `loop-failure-tracker` が内部で呼ぶ。
+### L-5.6: ADR pause detector (#178 指摘 6 配線)
+
+このサイクル中に /3ai が新規 ADR を作成していれば gate:adr-review Issue を起票:
+
+```bash
+bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan
+```
+
+(`features/.loop/last-adr-scan-sha` の marker を使って前回 scan 以降のみ検出)
+
+### L-5.7: split-detector 実行 (各 feature の review yaml)
+
+直近サイクルで /3ai が生成した feature dir があれば、その review yaml に split_proposal が
+含まれているか確認:
+
+```bash
+for review_yaml in features/*/codex-final.yaml; do
+  [ -f "$review_yaml" ] || continue
+  PARENT=$(basename "$(dirname "$review_yaml")" | awk -F- '{print $1}')
+  bun .claude/skills/3ailoop/scripts/loop-split-detector.ts process \
+    --review-yaml "$review_yaml" --parent-issue "$PARENT" 2>&1 | tail -5 || true
+done
+```
+
+(split_proposal なしの review は no-op で終了)
+
+### L-5.8: intent-guard (aligned:no カウント)
+
+/3ai の intent-check 結果 (`features/*/intent-check.yaml`) に `aligned: no` があれば inc:
+
+```bash
+for ic in features/*/intent-check.yaml; do
+  [ -f "$ic" ] || continue
+  if grep -q '^aligned:\s*no' "$ic"; then
+    PARENT=$(basename "$(dirname "$ic")" | awk -F- '{print $1}')
+    bun .claude/skills/3ailoop/scripts/loop-intent-guard.ts inc --issue "$PARENT" 2>&1 | tail -2
+  fi
+done
+```
 
 ### L-6: Dashboard 更新
 

@@ -124,7 +124,8 @@ async function raiseGateIssue(path: string, dryRun: boolean): Promise<number | n
     return null;
   }
   const tmpFile = `/tmp/adr-gate-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.md`;
-  Bun.write(tmpFile, body);
+  // #178 指摘 2: await を追加 (= gh issue create が完成した body を読めるよう保証)
+  await Bun.write(tmpFile, body);
   const r = await runGh([
     "issue", "create",
     "--title", title,
@@ -160,20 +161,33 @@ if (import.meta.main) {
   const sinceSha = sinceShaArg ?? readMarker(markerPath) ?? undefined;
   const adrs = await findNewAdrs(depth, sinceSha);
 
-  // 現 HEAD を marker に保存 (次回の sinceSha 起点)
-  if (!dryRun) {
+  if (adrs.length === 0) {
+    // 検出ゼロでも marker は進める (次回スコープを狭めるため、これは安全)
+    if (!dryRun) {
+      const head = (await runGit(["rev-parse", "HEAD"])).trim();
+      if (head) writeMarker(markerPath, head);
+    }
+    console.log(`no new ADRs (since=${sinceSha ?? `depth=${depth}`})`);
+    process.exit(0);
+  }
+
+  // #178 指摘 2: 全 ADR の起票成功を確認してから marker 更新、1 件でも失敗なら exit 1 + marker 未更新
+  const created: { adr: string; issue: number | null }[] = [];
+  let allOk = true;
+  for (const a of adrs) {
+    const num = await raiseGateIssue(a, dryRun);
+    if (num === null && !dryRun) allOk = false;
+    created.push({ adr: a, issue: num });
+  }
+
+  if (!dryRun && allOk) {
     const head = (await runGit(["rev-parse", "HEAD"])).trim();
     if (head) writeMarker(markerPath, head);
   }
 
-  if (adrs.length === 0) {
-    console.log(`no new ADRs (since=${sinceSha ?? `depth=${depth}`})`);
-    process.exit(0);
+  console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: adrs.length, ok: allOk, created }, null, 2));
+  if (!allOk) {
+    process.stderr.write(`ERROR: some ADR gate issues failed to create; marker NOT updated for retry\n`);
+    process.exit(1);
   }
-  const created: { adr: string; issue: number | null }[] = [];
-  for (const a of adrs) {
-    const num = await raiseGateIssue(a, dryRun);
-    created.push({ adr: a, issue: num });
-  }
-  console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: adrs.length, created }, null, 2));
 }

@@ -23,18 +23,27 @@
 
 import { existsSync, readFileSync } from "fs";
 
+// #178 指摘 4: 慎重化
+// - 弱単独マッチでは判定しない、複合条件を強める
+// - workflow / skill 等の generic 語だけで type:foundation 化しない
+// - batch 未判定なら batch ラベルを付けず人間判断に委ねる (blanket fallback 廃止)
 const TYPE_RULES: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /ドキュメント|手順書|ガイド|\bdocs?\b|README|説明書/i, label: "docs" },
-  { pattern: /直し|治し|破損|壊れ|失敗|エラー|落ちる|crash|\bbug\b|panic/i, label: "bug" },
-  { pattern: /refactor|リファクタ|再構築|読みやす|整理|見通し/i, label: "type: refactor" },
-  { pattern: /基盤|インフラ|skill|ツール|tooling|foundation|workflow|CI/i, label: "type: foundation" },
+  // 強マッチのみ採用
+  { pattern: /(?:^|\b)(?:ドキュメント|手順書|README|説明書)\b|docs:|documentation/i, label: "docs" },
+  { pattern: /panic|crash|\bbug\b|エラー(?:出|発生)|落ちる|破損|壊れる/i, label: "bug" },
+  { pattern: /\brefactor\b|リファクタ|内部設計の見直し|構造の整理/i, label: "type: refactor" },
+  // foundation: skill 系の明示語 + 2 語以上の複合条件
+  {
+    pattern: /(?:loop|3ai|3ailoop|CI 全体|ビルドシステム|tooling)(?:.*(?:整備|改善|刷新|再構築|追加))/i,
+    label: "type: foundation",
+  },
 ];
 
 const BATCH_RULES: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /kernel|B-rep|幾何|トポロジー|Boolean|extrude|sketch.*to.*solid|edge|face|vertex|Cuboid|Sphere|Prism|primitive|プリミティブ|mesh|メッシュ|tessellat|テッセレーション|精度|tolerance|公差|曲面/i, label: "batch:kernel" },
-  { pattern: /format|document|yaml|persistence|storage|シリアライズ|engawa\b|export/i, label: "batch:data" },
-  { pattern: /viewer|GUI|画面|3D|render|ブラウザ|web|UI|drag|hover|表示/i, label: "batch:viewer" },
-  { pattern: /\bskill\b|ツール|loop|3ai|CI|lint|3ailoop|cron|workflow/i, label: "batch:skill" },
+  { pattern: /\b(?:format|engawa-format|YAML.*spec|document)\b|persistence|storage|シリアライズ/i, label: "batch:data" },
+  { pattern: /viewer|3D 表示|ブラウザ.*画面|render|ビューア|GUI|ウィンドウ/i, label: "batch:viewer" },
+  { pattern: /(?:^|\b)(?:3ailoop|cron job|lint .*ラベル|スクリプト.*整備|skill .*追加)/i, label: "batch:skill" },
 ];
 
 function pickFirst<T extends { pattern: RegExp; label: string }>(rules: T[], text: string): string | null {
@@ -75,8 +84,9 @@ async function main() {
   if (gateHumanFeel && !batchLabel) batchLabel = "batch:viewer";
 
   const labels: string[] = [typeLabel];
+  // #178 指摘 4: batch:skill blanket fallback を廃止
+  // batch 軸が推定できなければラベル無しで出力 → ユーザーが I-7 で手動追加
   if (batchLabel) labels.push(batchLabel);
-  else if (typeLabel !== "type: feature") labels.push("batch:skill"); // fallback
 
   if (gateHumanFeel) labels.push("gate:human-feel");
 

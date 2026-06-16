@@ -50,11 +50,29 @@ function safeRead(path: string): string | null {
   }
 }
 
-/** ROADMAP.md から現 Phase セクションを抽出 (✅ なしの最初の Phase ブロック) */
+/** ROADMAP.md から現 Phase セクションを抽出 (suffix/prefix どちらの ✅ もスキップ)
+ *  #178 指摘 7 対応: 行全体に ✅ が含まれる Phase ヘッダは完了扱い
+ */
 function extractCurrentPhase(roadmap: string): string {
-  const m = roadmap.match(/## (?!✅)Phase \d[^#\n]*\n[\s\S]*?(?=\n## (?:✅ )?Phase |\n---\n|$)/);
-  if (!m) return "(現 Phase セクション未検出)";
-  return m[0].slice(0, 2000); // 長すぎる場合は冒頭 2000 字
+  const lines = roadmap.split("\n");
+  let startIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^##\s+(?:✅\s+)?Phase\s+\d/);
+    if (m && !lines[i].includes("✅")) {
+      startIdx = i;
+      break;
+    }
+  }
+  if (startIdx < 0) return "(現 Phase セクション未検出: 全 Phase が完了済みかも)";
+  // 次の ## Phase or --- まで
+  let endIdx = lines.length;
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (/^##\s+(?:✅\s+)?Phase\s+\d/.test(lines[i]) || /^---\s*$/.test(lines[i])) {
+      endIdx = i;
+      break;
+    }
+  }
+  return lines.slice(startIdx, endIdx).join("\n").slice(0, 2000);
 }
 
 interface IssueSummary {
