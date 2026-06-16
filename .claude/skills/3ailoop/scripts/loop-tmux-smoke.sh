@@ -108,7 +108,9 @@ else
   # dry-run watcher を起動: 1 周で send-clear-and-restart を吐いて exit
   # --mock-worker-alive: 現セッションに 3ailoop-worker が無くても worker-gone にしない
   # --keep-baseline:    smoke が仕込んだ FORCE-DIFF を起動時に消されないようにする
-  S5_OUT="$(LOOP_TMUX_POLL_SEC=1 LOOP_TMUX_CLEAR_WAIT_SEC=0 bun "$WATCHER" run --dry-run --mock-worker-alive --keep-baseline 2>&1 || true)"
+  # LOOP_TMUX_FORCE_SHOULD_STOP_RC=0: gh issue list 認証状態に依存せず proceed 経路を強制
+  S5_OUT="$(LOOP_TMUX_POLL_SEC=1 LOOP_TMUX_CLEAR_WAIT_SEC=0 LOOP_TMUX_FORCE_SHOULD_STOP_RC=0 \
+    bun "$WATCHER" run --dry-run --mock-worker-alive --keep-baseline 2>&1 || true)"
   echo "$S5_OUT" | grep -F 'DRY-RUN: tmux send-keys' >/dev/null && \
     echo "$S5_OUT" | grep -F '/clear' >/dev/null && \
     echo "$S5_OUT" | grep -F '/3ailoop' >/dev/null || {

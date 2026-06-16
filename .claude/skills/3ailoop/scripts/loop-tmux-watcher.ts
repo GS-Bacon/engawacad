@@ -185,6 +185,16 @@ async function tmuxWindowExists(name: string): Promise<boolean> {
 }
 
 async function runShouldStop(): Promise<number> {
+  // #181 R3-F02: smoke / オフライン CI 用のテストフック。env で RC を強制上書きできる。
+  // 本番では未設定 (= フォール rough 経路) で gh issue list ベースの判定に乗る。
+  const forced = process.env.LOOP_TMUX_FORCE_SHOULD_STOP_RC;
+  if (forced !== undefined) {
+    const v = parseInt(forced, 10);
+    if (Number.isFinite(v)) {
+      log(`runShouldStop: forced RC=${v} (LOOP_TMUX_FORCE_SHOULD_STOP_RC)`);
+      return v;
+    }
+  }
   // #181 F02: script missing は安全側 (= 0/1 以外の RC) として上に伝える
   if (!existsSync(SHOULD_STOP_PATH)) {
     log(`runShouldStop: script not found at ${SHOULD_STOP_PATH}`);

@@ -63,19 +63,40 @@ async function killWatcher(info: WatcherPidInfo, dryRun: boolean): Promise<{ ok:
   return { ok: !isWatcherAlive(info), method: "SIGKILL" };
 }
 
-async function killWindow(window: string, dryRun: boolean, keep: boolean): Promise<string> {
-  if (keep) return "kept (--keep-window)";
+interface KillWindowResult {
+  status: string;
+  windowGone: boolean; // window が確実に消えたと言えるとき true
+}
+
+async function killWindow(window: string, dryRun: boolean, keep: boolean): Promise<KillWindowResult> {
+  if (keep) return { status: "kept (--keep-window)", windowGone: false };
   if (dryRun) {
-    return `DRY-RUN: tmux send-keys -t =${window} "/exit" Enter; tmux kill-window -t =${window}`;
+    return {
+      status: `DRY-RUN: tmux send-keys -t =${window} "/exit" Enter; tmux kill-window -t =${window}`,
+      windowGone: true, // dry-run は副作用なしで「成功シミュレーション」扱い
+    };
   }
-  // /exit を送って Claude に終了機会を与える
   await runCmd(["tmux", "send-keys", "-t", `=${window}`, "/exit", "Enter"]);
   await sleepMs(5000);
   const r = await runCmd(["tmux", "kill-window", "-t", `=${window}`]);
-  return r.ok ? "killed" : `kill-window failed: ${r.stderr.trim()}`;
+  if (!r.ok) {
+    // 既に存在しない場合 (`can't find window`) は windowGone=true として安全側に倒す
+    const msg = r.stderr.trim();
+    const alreadyGone = /can't find window|window not found|no such window/i.test(msg);
+    return {
+      status: alreadyGone ? `already gone (${msg})` : `kill-window failed: ${msg}`,
+      windowGone: alreadyGone,
+    };
+  }
+  return { status: "killed", windowGone: true };
 }
 
-async function releaseLock(dryRun: boolean): Promise<string> {
+/** #181 R3-F01: 「window が確実に消えた」場合のみ lock を解放する。
+ *  --keep-window 経由や kill-window 失敗時は worker が生きている可能性があるので
+ *  lock に触らない (= 別 owner や生存 worker の lock を強制解放しない)。 */
+async function releaseLock(dryRun: boolean, windowGone: boolean, keepWindow: boolean): Promise<string> {
+  if (keepWindow) return "skipped (--keep-window: worker may still hold the lock)";
+  if (!windowGone) return "skipped (window kill not confirmed; worker may still hold the lock)";
   if (dryRun) return `DRY-RUN: bun ${LOCK_PATH} release --force`;
   if (!existsSync(LOCK_PATH)) return "lock script missing";
   const r = await runCmd(["bun", LOCK_PATH, "release", "--force"]);
@@ -120,8 +141,9 @@ async function main(): Promise<void> {
     result.watcher = { pid: info.pid, ok: k.ok, method: k.method };
   }
 
-  result.window_kill = await killWindow(window, dryRun, keepWindow);
-  result.lock = await releaseLock(dryRun);
+  const windowResult = await killWindow(window, dryRun, keepWindow);
+  result.window_kill = windowResult.status;
+  result.lock = await releaseLock(dryRun, windowResult.windowGone, keepWindow);
   result.cleaned = cleanupFiles(dryRun);
 
   console.log(JSON.stringify(result, null, 2));
