@@ -50,6 +50,25 @@ function checkExistingWatcher(): void {
   // 引き継いで上書きするので何もしない
 }
 
+/** #181 R2-F03: 既存 3ailoop-worker window があれば new-window で重複を作らず exit。
+ *  --keep-window 経由や異常停止で残留した window がある場合は手動で stop すること。 */
+async function checkExistingWorkerWindow(window: string): Promise<void> {
+  const proc = Bun.spawn(["tmux", "list-windows", "-F", "#W"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const out = await new Response(proc.stdout).text();
+  await proc.exited;
+  if (proc.exitCode !== 0) return; // tmux list-windows 失敗時は best-effort で続行
+  const found = out.split("\n").map(s => s.trim()).includes(window);
+  if (found) {
+    console.error(`ERROR: tmux window '${window}' が既に存在します。重複を避けるため起動中止。`);
+    console.error("  対処: bun .claude/skills/3ailoop/scripts/loop-tmux-stop.ts で掃除するか、");
+    console.error("        tmux kill-window -t \"=" + window + "\" で手動削除してから再試行してください。");
+    process.exit(1);
+  }
+}
+
 interface TmuxCmd {
   args: string[];
   desc: string;
@@ -128,6 +147,7 @@ async function main(): Promise<void> {
 
   checkTmuxEnv();
   checkExistingWatcher();
+  if (!dryRun) await checkExistingWorkerWindow(window);
 
   const steps = plan(claudeCmd, window);
 

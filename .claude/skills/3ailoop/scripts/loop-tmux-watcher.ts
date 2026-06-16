@@ -266,11 +266,25 @@ export function isWatcherAlive(info: WatcherPidInfo): boolean {
   } catch {
     return false;
   }
+  // #181 R2-F02: Linux なら /proc/<pid>/cmdline、それ以外は ps -p <pid> -o args= で argv を取得して
+  // marker を検証する。どちらも失敗したら「未確認」= 安全側で alive とみなさない (false)。
   const cmdlinePath = `/proc/${info.pid}/cmdline`;
-  if (!existsSync(cmdlinePath)) return true; // 非 Linux: best-effort で alive 扱い
+  if (existsSync(cmdlinePath)) {
+    try {
+      const cmdline = readFileSync(cmdlinePath, "utf-8");
+      return cmdline.includes(info.cmdline_marker);
+    } catch {
+      return false;
+    }
+  }
   try {
-    const cmdline = readFileSync(cmdlinePath, "utf-8");
-    return cmdline.includes(info.cmdline_marker);
+    const proc = Bun.spawnSync(["ps", "-p", String(info.pid), "-o", "args="], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (proc.exitCode !== 0) return false;
+    const out = new TextDecoder().decode(proc.stdout);
+    return out.includes(info.cmdline_marker);
   } catch {
     return false;
   }
@@ -312,7 +326,17 @@ async function performRestart(window: string, dryRun: boolean): Promise<void> {
 
 // --- main loop ---
 
-async function runDaemon(dryRun: boolean, mockAlive: boolean): Promise<void> {
+async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: boolean): Promise<void> {
+  // #181 R2-F01: 残置 last-cycle-ended-at による誤検知を防ぐため、起動時に必ず破棄。
+  // 最初の poll で init-baseline が走り、現在の state.json から baseline を再確立する。
+  // --keep-baseline は smoke test 専用で、用意した baseline を保持したまま差分検知を試す。
+  if (!keepBaseline) {
+    try {
+      if (existsSync(LAST_ENDED_PATH)) unlinkSync(LAST_ENDED_PATH);
+    } catch {
+      // best effort: 失敗しても続行
+    }
+  }
   writePidFile();
   log(`watcher start pid=${process.pid} poll=${POLL_SEC}s stuck=${STUCK_MIN}min dryRun=${dryRun} mockAlive=${mockAlive}`);
 
@@ -416,12 +440,13 @@ if (import.meta.main) {
   const [, , cmd, ...rest] = process.argv;
   const dryRun = rest.includes("--dry-run");
   const mockAlive = rest.includes("--mock-worker-alive");
+  const keepBaseline = rest.includes("--keep-baseline");
   switch (cmd) {
     case "run":
-      await runDaemon(dryRun, mockAlive);
+      await runDaemon(dryRun, mockAlive, keepBaseline);
       break;
     default:
-      console.error("Usage: loop-tmux-watcher.ts run [--dry-run] [--mock-worker-alive]");
+      console.error("Usage: loop-tmux-watcher.ts run [--dry-run] [--mock-worker-alive] [--keep-baseline]");
       process.exit(2);
   }
 }
