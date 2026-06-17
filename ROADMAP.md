@@ -137,6 +137,8 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 - 描いたスケッチから `Extrude` / `ExtrudeCut` を実行できる
 - 作成したスケッチが `.engawa` に `CreateSketch` Feature として記録される
 
+**サンプル**: [`examples/sketch_via_refplane.engawa`](examples/sketch_via_refplane.engawa) — Front 参照平面上に矩形を描いて押し出す最小例。サンプル一覧は [`examples/README.md`](examples/README.md)。
+
 **状態**: 完了 (2026-06-16)
 
 ---
