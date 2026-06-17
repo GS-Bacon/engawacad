@@ -16,6 +16,21 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import type { StateData } from "./types.ts";
 import { extractCiFailureContext } from "./extract-ci-failure-context.ts";
 
+export function shouldSkipStep(step: string): { skip: boolean; reason: string } {
+  if (/intent[-_ ]?check/i.test(step)) {
+    return {
+      skip: true,
+      reason: "intent-check 系は ADR-006 粒度違反シグナル — bug 起票対象外",
+    };
+  }
+  return { skip: false, reason: "" };
+}
+
+if (import.meta.main) {
+  await main();
+}
+
+async function main() {
 const args = process.argv.slice(2);
 let step = "";
 let featureDir = "";
@@ -34,6 +49,18 @@ for (let i = 0; i < args.length; i++) {
 if (!step || !featureDir || !errorSummary) {
   process.stderr.write("Usage: raise-issue-on-failure.ts --step <step> --feature-dir <dir> --error-summary <text> [--result-file <json>] [--dry-run]\n");
   process.exit(2);
+}
+
+// intent-check 系 (人間判断シグナル) は自動起票対象外 (#211)
+{
+  const skip = shouldSkipStep(step);
+  if (skip.skip) {
+    process.stderr.write(
+      `SKIP: step="${step}" は自動起票対象外 (${skip.reason}). ` +
+        `人間通知には loop-notify.ts / loop-intent-guard.ts を使ってください。\n`,
+    );
+    process.exit(0);
+  }
 }
 
 // featureDir から issue 番号・slug を取得
@@ -186,4 +213,5 @@ if (numMatch && existsSync(stateFile)) {
     // ベストエフォート: 記録失敗しても起票自体は成功扱い
     process.stderr.write(`WARN: state.json への raised_issues 記録に失敗: ${e}\n`);
   }
+}
 }
