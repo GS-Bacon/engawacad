@@ -1,3 +1,9 @@
-issues: []
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 79
+    finding: "`t02_plumbing_manifold_contract` の active assertion は `bodies.len()==1`、`feature_id`、`validate_manifold()`、および profile 4 頂点の存在しか見ておらず、返却 Solid が本当に target 側の Cut 結果かを識別していない。`ExtrudeCut` が `box_1` を consume した後に boolean の結果ではなく tool extrusion 自体を `extrude_cut_1` として返しても、その tool も manifold で同じ 4 頂点を持つため、この差分の active test は通ってしまう。"
+    suggestion: "ignored の `T02_topology` から `z range == [-5, 5]` のような target 側結果を識別できる assertion を active T02 に移し、`euler_poincare()==1` の pin だけを `#220` まで ignored に残す。"
 
-verdict: pass
+verdict: fail

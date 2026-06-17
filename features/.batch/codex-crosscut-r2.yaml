@@ -1,2 +1,15 @@
-issues: []
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_extrude_acceptance.rs"
+    line_hint: 41
+    finding: "T02 は z range と euler_poincare() しか見ておらず validate_manifold() を呼んでいない。Euler 値だけでは half-edge の twin/next/prev や loop/shell 整合の破損を検出できないため、要素数がたまたま合う壊れた B-rep が通る。"
+    suggestion: "同じ正常系 fixture で extrude.solid.validate_manifold() も assert し、half-edge / loop / shell 整合を gate に含める。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_extrude_acceptance.rs"
+    line_hint: 514
+    finding: "t11_two_run_solid_vertex_bytes_match は頂点座標しか比較せず、T01 も STL 文字列までしか見ていない。solid.id や vertex/edge/face ID、half-edge/loop/shell の順序・接続が揺れても幾何が同じなら両テストとも通るため、決定性で重要な B-rep / ID 安定性を pin できていない。"
+    suggestion: "2 run の Solid 全体、または少なくとも solid.id・vertex/edge/face ID・name・half_edge/loop/shell を比較する snapshot テストに広げる。"
+
 verdict: pass

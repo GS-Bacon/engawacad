@@ -176,3 +176,38 @@ verdict: **pass** | critical=0, high=0, medium=1, low=0, blocking=0
 - 内容: 送信成功時に `clearSketchOverlay()` + `lastFinalizedSketch = null` + `refreshSketchButtonState()` までは呼ぶが、`updateSketchCanvasState()` を呼ばないので `sketch-canvas` の `data-state` が `"closed"` のまま残る。「送信成功でリセット」の UI 状態契約と乖離。
 - 判定: medium / blocking=0。本 PR ではコード変更を行わず記録のみ。本指摘は **Phase 8 で sketch UI のリファクタ Issue を起票する際に解消する候補**。動作上の bug ではなく state 整合の品質改善項目。
 
+---
+
+## 2026-06-17 B-6 Phase 8 batch (#216/#217/#218) — codex-crosscut-r2.yaml
+
+verdict: **pass** | critical=0, high=0, medium=2, low=0, blocking=0
+
+**batch_start_sha**: `adc564e`
+
+経緯:
+- r1: high 1 (#218 T02 が tool extrusion 単独でも通る) → 採用、z range [-5, 5] を T02_topology から T02_plumbing へ移動
+- r2: medium 2 (#217 T02 に validate_manifold 不足 / #217 T11 が full snapshot でない) → 採用・修正
+
+### R1 F01 (high, 採用→修正済み): #218 T02_plumbing が boolean Cut 結果 vs tool extrusion を識別不能
+
+- ファイル: `crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs:79`
+- 内容: `bodies.len()==1` + `feature_id` + `validate_manifold` + face basis sanity (4 vertex) では tool extrusion 単独も通る。target cuboid z=[-5, 5] vs tool z=[5, 10] の区別なし
+- 修正: T02_plumbing に `z_min == -5 && z_max == 5` assertion を追加 (T02_topology の冗長 assert は削除)。commit `98c2fe0`
+
+### R2 F01 (medium, 採用→修正済み): #217 T02 が validate_manifold() を呼んでいない
+
+- ファイル: `crates/engawa-build/tests/face_sketch_extrude_acceptance.rs:44`
+- 内容: euler_poincare() のみで half-edge twin/next, loop closure, shell composition の整合は gate されない
+- 修正: `extrude.solid.validate_manifold()` を T02 末尾に追加。commit `1579d85`
+
+### R2 F02 (medium, 採用→修正済み): #217 T11 が頂点座標のみ比較で half_edges/loops/shells/names を見ていない
+
+- ファイル: `crates/engawa-build/tests/face_sketch_extrude_acceptance.rs:551`
+- 内容: 決定性が幾何だけで判定され、B-rep 接続/shell/name 順序の非決定的揺れを見逃す
+- 修正: serde_json snapshot に切り替えて full Solid (vertices/half_edges/edges/loops/faces/shells/names + IDs) を比較。commit `1579d85`
+
+### 関連 follow-up
+
+- **#220**: kernel boolean MultipleOuterShellsResult 制限解消 (#218 の real hole drilling + euler_poincare == 0 化)
+- **#218 T10**: medium F01 (codex-final-r6) で「depth=1e-6 境界が ignored のまま」と指摘済 (#220 完了後に active 化候補)
+
