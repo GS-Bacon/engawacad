@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "テスト計画"
+    finding: "T02 で頂点 z 範囲 `[2.5, 4.5]` を検証するが、Euler-Poincaré 公式 `V - E + F = 2` の検証が含まれていない。既存 make_extrusion が担保するとあるが、新規 example 生成後の Solid が正しい B-rep 構造を持っていることをテストで明示的に保証する方が安全"
+    suggestion: "T02 または別テストで `let s = &assembly.bodies[1]; assert!(s.validate_euler_poincaré());` のような B-rep 構造検証を追加すること（ただし既存 make_extrusion の妥当性を前提とするなら medium 優先度で現行のまま進めても可）"
+
+verdict: pass
