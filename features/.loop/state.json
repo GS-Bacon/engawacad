@@ -1,7 +1,7 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 14,
-  "last_cycle_at": "2026-06-17T12:06:23.027Z",
+  "cycle": 15,
+  "last_cycle_at": "2026-06-17T14:22:09.795Z",
   "recent_cycles": [
     {
       "cycle": 1,
@@ -429,11 +429,28 @@
       "merged_commits": 0,
       "adr_drafts": [],
       "pause_reason": "#206 Phase 8 ROADMAP 改訂後の不整合 — A/B/C 分割案を #206 にコメント、needs-review 再付与でユーザー判断待ち"
+    },
+    {
+      "cycle": 15,
+      "started_at": "2026-06-17T12:06:23.027Z",
+      "ended_at": "2026-06-17T14:22:09.795Z",
+      "closed": [
+        214
+      ],
+      "raised": [
+        218,
+        217,
+        216,
+        215,
+        214
+      ],
+      "merged_commits": 5,
+      "adr_drafts": []
     }
   ],
   "cumulative": {
-    "cycles_total": 14,
-    "issues_closed": 125,
+    "cycles_total": 15,
+    "issues_closed": 126,
     "raised_resolved": 0,
     "adr_total": 14,
     "token_claude": 0,
