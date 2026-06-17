@@ -543,6 +543,37 @@ fn t17_degen_grandchild_canonical_fallback() {
         !bodies.is_empty(),
         "grandchild Extrude with plane_ref=Front must succeed via canonical fallback"
     );
+
+    // 同一 Document を 2 回 build し、Body 順序 + face/edge/vertex EntityId が完全一致することを確認。
+    // (B-6 cross-cut critical: nested + IdGenerator 経路の決定性 regression)
+    let mut gen2 = IdGenerator::new(0);
+    let bodies2 = build_assembly(&doc, std::path::Path::new("."), &mut gen2)
+        .expect("ADR-014: second build must also succeed");
+    assert_eq!(
+        bodies.len(),
+        bodies2.len(),
+        "ADR-014 determinism: Body count must match across runs"
+    );
+    for (b1, b2) in bodies.iter().zip(bodies2.iter()) {
+        let face_ids1: Vec<_> = b1.solid.faces.iter().map(|f| f.id).collect();
+        let face_ids2: Vec<_> = b2.solid.faces.iter().map(|f| f.id).collect();
+        assert_eq!(
+            face_ids1, face_ids2,
+            "ADR-014 determinism: grandchild Face IDs must match"
+        );
+        let edge_ids1: Vec<_> = b1.solid.edges.iter().map(|e| e.id).collect();
+        let edge_ids2: Vec<_> = b2.solid.edges.iter().map(|e| e.id).collect();
+        assert_eq!(
+            edge_ids1, edge_ids2,
+            "ADR-014 determinism: grandchild Edge IDs must match"
+        );
+        let vertex_ids1: Vec<_> = b1.solid.vertices.iter().map(|v| v.id).collect();
+        let vertex_ids2: Vec<_> = b2.solid.vertices.iter().map(|v| v.id).collect();
+        assert_eq!(
+            vertex_ids1, vertex_ids2,
+            "ADR-014 determinism: grandchild Vertex IDs must match"
+        );
+    }
 }
 
 #[test]
