@@ -1,7 +1,7 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 12,
-  "last_cycle_at": "2026-06-17T11:48:40.525Z",
+  "cycle": 14,
+  "last_cycle_at": "2026-06-17T12:06:23.027Z",
   "recent_cycles": [
     {
       "cycle": 1,
@@ -409,10 +409,30 @@
       ],
       "merged_commits": 3,
       "adr_drafts": []
+    },
+    {
+      "cycle": 13,
+      "started_at": "2026-06-17T11:48:40.525Z",
+      "ended_at": "2026-06-17T11:51:27.244Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 1,
+      "adr_drafts": [],
+      "pause_reason": "batch-select returned 0 candidates — Phase 8 起点 #206 needs-review で安全に pause (#213 fix 検証)"
+    },
+    {
+      "cycle": 14,
+      "started_at": "2026-06-17T11:51:27.244Z",
+      "ended_at": "2026-06-17T12:06:23.027Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "#206 Phase 8 ROADMAP 改訂後の不整合 — A/B/C 分割案を #206 にコメント、needs-review 再付与でユーザー判断待ち"
     }
   ],
   "cumulative": {
-    "cycles_total": 12,
+    "cycles_total": 14,
     "issues_closed": 125,
     "raised_resolved": 0,
     "adr_total": 14,
