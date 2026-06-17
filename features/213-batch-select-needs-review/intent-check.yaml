@@ -1,0 +1,4 @@
+aligned: yes
+comment: |
+  Acceptance tests がコマンド出力ベースで計測可能で、修正対象は loop-mode の除外集合に限定されている。
+  non-loop 維持と ADR 非対象が明記されており、3ailoop の品質整合という現 Phase の完了条件への寄与も読み取れる。
