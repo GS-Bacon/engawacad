@@ -1,0 +1,375 @@
+===== TEST SUMMARY =====
+{
+  "totals": {
+    "passed": 1000,
+    "failed": 0,
+    "ignored": 11
+  },
+  "by_crate": {
+    "engawa_api-1afe6788f28359c6": {
+      "passed": 7,
+      "failed": 0
+    },
+    "engawa_api-1809a6ff8b5d9b20": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-5496b20ff104d18b": {
+      "passed": 2,
+      "failed": 0
+    },
+    "api_fallback_edge-06d3b81de1a10b7a": {
+      "passed": 11,
+      "failed": 0
+    },
+    "assembly_acceptance-f1f1721974134dd8": {
+      "passed": 11,
+      "failed": 0
+    },
+    "e2e_api_scenarios-222155f294318d95": {
+      "passed": 16,
+      "failed": 0
+    },
+    "engawa_api_serial_acceptance-299a163cfca2d9be": {
+      "passed": 1,
+      "failed": 0
+    },
+    "extrude_cut_acceptance-c89163f581d164ff": {
+      "passed": 2,
+      "failed": 0
+    },
+    "extrude_fuse_acceptance-b8ade94c8ffc59e8": {
+      "passed": 1,
+      "failed": 0
+    },
+    "extrude_ui_acceptance-10c4a3f628ea4a3c": {
+      "passed": 1,
+      "failed": 0
+    },
+    "features_get_acceptance-c09494b80105bd0a": {
+      "passed": 9,
+      "failed": 0
+    },
+    "fuzz_features-577eab976dab12dd": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mesh_api-dea9cde1645235da": {
+      "passed": 16,
+      "failed": 0
+    },
+    "post_features_acceptance-10f1f2f672a648da": {
+      "passed": 15,
+      "failed": 0
+    },
+    "startup_log_acceptance-99e56ecdcb88e829": {
+      "passed": 4,
+      "failed": 0
+    },
+    "state_invariants-22d47f1fac88708c": {
+      "passed": 1,
+      "failed": 0
+    },
+    "static_assets-c703cdeedc6b9c98": {
+      "passed": 6,
+      "failed": 0
+    },
+    "static_assets_edge-3402a5d4c3a65e72": {
+      "passed": 15,
+      "failed": 0
+    },
+    "engawa_build-b55dc900833f98bb": {
+      "passed": 0,
+      "failed": 0
+    },
+    "a1_1_plane_cyl_fuse_isect_acceptance-450ab930a54c90ef": {
+      "passed": 21,
+      "failed": 0
+    },
+    "assembly_acceptance-cf273a7a67308b7e": {
+      "passed": 16,
+      "failed": 0
+    },
+    "boolean_example_layout_acceptance-7a6468d1f6712792": {
+      "passed": 0,
+      "failed": 0
+    },
+    "cyl_sph_intersect_acceptance-1a192ea80070e8d5": {
+      "passed": 18,
+      "failed": 0
+    },
+    "examples_smoke-a7d1ecc4d0a06b98": {
+      "passed": 20,
+      "failed": 0
+    },
+    "extrude_offset_fuse_acceptance-df8d7535c1d7a2ac": {
+      "passed": 4,
+      "failed": 0
+    },
+    "feature_dispatcher-0ac181ea6e1f0a10": {
+      "passed": 53,
+      "failed": 0
+    },
+    "fuse_box_cyl_acceptance-50a1755bb0ccefe6": {
+      "passed": 8,
+      "failed": 0
+    },
+    "hole_tessellation_acceptance-96933dd61064f3e4": {
+      "passed": 7,
+      "failed": 0
+    },
+    "m5x20_acceptance-976e4feaa37d91dd": {
+      "passed": 3,
+      "failed": 0
+    },
+    "position_params_acceptance-52f5ac3e9aa00091": {
+      "passed": 14,
+      "failed": 0
+    },
+    "refplane_acceptance-626948f81733f490": {
+      "passed": 10,
+      "failed": 0
+    },
+    "regen_viewer_fixtures-0eb4a36cac8de046": {
+      "passed": 0,
+      "failed": 0
+    },
+    "stdlib_env_race_acceptance-788f83d7a21ba9a1": {
+      "passed": 2,
+      "failed": 0
+    },
+    "surface_boolean_a2_acceptance-a0fad3be22a7aa97": {
+      "passed": 13,
+      "failed": 0
+    },
+    "transform_acceptance-1aa7533bac502d1d": {
+      "passed": 21,
+      "failed": 0
+    },
+    "transform_rotation_acceptance-d25424c13e8b4dbe": {
+      "passed": 9,
+      "failed": 0
+    },
+    "engawa-379b1f4523f3838a": {
+      "passed": 12,
+      "failed": 0
+    },
+    "assembly_acceptance-9b77e71ef66e9d44": {
+      "passed": 11,
+      "failed": 0
+    },
+    "close_gate_acceptance-293299d99f7be7a9": {
+      "passed": 4,
+      "failed": 0
+    },
+    "export-26af559f25c546b2": {
+      "passed": 5,
+      "failed": 0
+    },
+    "engawa_format-cfd1c81ed43df506": {
+      "passed": 112,
+      "failed": 0
+    },
+    "golden_examples-b32271be573fd1af": {
+      "passed": 17,
+      "failed": 0
+    },
+    "refplane_acceptance-2276452671c31766": {
+      "passed": 9,
+      "failed": 0
+    },
+    "engawa_kernel-31426c523689df5d": {
+      "passed": 296,
+      "failed": 0
+    },
+    "bool_naked_edge_acceptance-92c62997fd6fab5b": {
+      "passed": 10,
+      "failed": 0
+    },
+    "boolean_proptest-1629eb62e7f08af5": {
+      "passed": 17,
+      "failed": 0
+    },
+    "boundary_align_acceptance-f0f16b94b24913f2": {
+      "passed": 4,
+      "failed": 0
+    },
+    "box_sphere_void_acceptance-42fc4c233b6ea34d": {
+      "passed": 11,
+      "failed": 0
+    },
+    "cross_face_nu_acceptance-120751ed36ddd88e": {
+      "passed": 9,
+      "failed": 0
+    },
+    "cuboid_roundtrip-d318e2ee6f65a6dd": {
+      "passed": 2,
+      "failed": 0
+    },
+    "cyl_lateral_deadbranch_acceptance-01b594598e5b7eff": {
+      "passed": 5,
+      "failed": 0
+    },
+    "cyl_sph_surface_intersect-b22a73e8200b6870": {
+      "passed": 7,
+      "failed": 0
+    },
+    "extrude_cut_degenerate_acceptance-c34039e80b9a6a03": {
+      "passed": 7,
+      "failed": 0
+    },
+    "face_ids_acceptance-89117d724b464eef": {
+      "passed": 6,
+      "failed": 0
+    },
+    "kernel_surface_cut_manifold_acceptance-31b7cc1dcce66367": {
+      "passed": 7,
+      "failed": 0
+    },
+    "rotate_acceptance-30224b31f145b16f": {
+      "passed": 24,
+      "failed": 0
+    },
+    "shared_boundary_acceptance-d548c02e91ec8aa5": {
+      "passed": 7,
+      "failed": 0
+    },
+    "tessellation_cap_acceptance-92f3e30ab685462f": {
+      "passed": 14,
+      "failed": 0
+    },
+    "translate_acceptance-f3b5a548cf30cfdf": {
+      "passed": 7,
+      "failed": 0
+    },
+    "trim_sphere_circ_normal_acceptance-105e0e1b209ab2dd": {
+      "passed": 14,
+      "failed": 0
+    },
+    "trim_surface_tessellation_acceptance-5a3defbba2e56194": {
+      "passed": 6,
+      "failed": 0
+    },
+    "trim_surface_uv_shift_acceptance-353125c9939cdca6": {
+      "passed": 9,
+      "failed": 0
+    },
+    "engawa_viewer-ffc4e18a6624fb09": {
+      "passed": 0,
+      "failed": 0
+    },
+    "xtask-698817fe0a69ed15": {
+      "passed": 28,
+      "failed": 0
+    },
+    "engawa_api-cf6c9eae66dc449a": {
+      "passed": 0,
+      "failed": 0
+    },
+    "engawa_api-d17a8afcfd0db2d3": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback-db61d9cbff32002b": {
+      "passed": 0,
+      "failed": 0
+    },
+    "api_fallback_edge-d42177e0a0f89c61": {
+      "passed": 1,
+      "failed": 0
+    },
+    "assembly_acceptance-146ea5138a68071c": {
+      "passed": 0,
+      "failed": 0
+    },
+    "e2e_api_scenarios-f11a7590ce8938fd": {
+      "passed": 0,
+      "failed": 0
+    },
+    "engawa_api_serial_acceptance-00b5397436fc733b": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_cut_acceptance-b29e3779ac140d15": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_fuse_acceptance-a77087219fceebf1": {
+      "passed": 0,
+      "failed": 0
+    },
+    "extrude_ui_acceptance-7ab6ab01762c272f": {
+      "passed": 0,
+      "failed": 0
+    },
+    "features_get_acceptance-b1ac6542a28ed019": {
+      "passed": 0,
+      "failed": 0
+    },
+    "fuzz_features-6afde1b03b0f64c7": {
+      "passed": 0,
+      "failed": 0
+    },
+    "mesh_api-758fc272a609b895": {
+      "passed": 0,
+      "failed": 0
+    },
+    "post_features_acceptance-1fe769d3be26d555": {
+      "passed": 0,
+      "failed": 0
+    },
+    "startup_log_acceptance-131522b8ec94b471": {
+      "passed": 0,
+      "failed": 0
+    },
+    "state_invariants-c69f08b08e79be79": {
+      "passed": 0,
+      "failed": 0
+    },
+    "static_assets-5695e3835d98954d": {
+      "passed": 2,
+      "failed": 0
+    },
+    "static_assets_edge-86bb802ef983a7f2": {
+      "passed": 0,
+      "failed": 0
+    }
+  },
+  "added_in_round": [],
+  "coverage_hints": {
+    "total_added": 0,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}
+===== END TEST SUMMARY =====
+
+===== NON-GOALS (SCOPE OUT — Codex はこれらを指摘しないこと) =====
+- parent 継承 (Option A) / merge (Option C) は採用しない
+- ref_planes 検証 (offset の `is_finite()` 等) は別 Issue
+- Phase 8 のモデル面選択 (model face selection) 機能の追加
+- examples/ の新規 assembly fixture 追加
+- 既存 T15/T16 のリネーム/書き換え (regression として保持)
+===== END NON-GOALS =====
+
+===== KNOWN IGNORED TESTS (理由付き #[ignore] — watertight 不可等の既知制約) =====
+- t04_boundary_fuse_extrude_returns_single_body: boolean kernel cannot fuse CreateBox + extrusion (DisjointFuseResult); fuse_target code path is correct in engawa-build
+- t01_determinism: fuzz: run with cargo xtask acceptance --fuzz
+- t02_fuzz_no_http_500: fuzz: run with cargo xtask acceptance --fuzz
+- t03_degen_special_float_values: fuzz: run with cargo xtask acceptance --fuzz
+- t04_degen_unknown_type: fuzz: run with cargo xtask acceptance --fuzz
+- t05_degen_null_body: fuzz: run with cargo xtask acceptance --fuzz
+- t04_fuse_target_overlapping_box: boolean kernel cannot fuse cuboid + extrusion (DisjointFuseResult)
+- t04b_box_extrude_fuse_via_feature: boolean kernel cannot fuse cuboid + extrusion (DisjointFuseResult)
+- t04_negative_extrude_fuse_integration: known limitation: boolean engine produces non-manifold result for offset-plane fuse
+- regen_all_fixtures: run manually to regenerate viewer fixtures after tessellation changes
+- t10_blocked_rotation_cut_sphere: blocked: #137 trimmed sphere tessellation
+===== END KNOWN IGNORED TESTS =====
+
+===== NOTE: total_added=0 について =====
+テスト名が t01_/t02_/... 形式（test_ prefix なし）の場合 extract-test-summary の
+集計に乗らないことがある。git diff で実際の追加テストを確認すること。
+===== END NOTE =====
