@@ -103,7 +103,7 @@ function sectionCurrentStatus(state: LoopState | null, openIssues: IssueSummary[
 
   const gateCount = openIssues.filter(i => i.labels.some(l => l.startsWith("gate:"))).length;
   const needsCount = openIssues.filter(i => i.labels.some(l =>
-    ["needs-triage", "needs-phase", "needs-human", "needs-intent-review", "blocked-by-split"].includes(l))).length;
+    ["needs-triage", "needs-phase", "needs-human", "needs-intent-review", "needs-review", "blocked-by-split"].includes(l))).length;
   lines.push(`**Loop-actionable open issues**: ${openIssues.length - gateCount - needsCount} (gate=${gateCount}, needs-*=${needsCount})`);
   return lines.join("\n") + "\n";
 }

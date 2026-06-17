@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: ".claude/skills/3ailoop/scripts/loop-dashboard.ts"
+    line_hint: 105
+    finding: "`batch-select.ts` の loop-mode 除外集合には `needs-review` を追加したが、`loop-dashboard.ts` と `loop-context-bootstrap.ts` の loop-actionable 集計はまだ `needs-review` を除外していない。これにより実行系は pause する一方、ダッシュボード/ブートストラップは同じ Issue を actionable と数えて状態表示が食い違う。"
+    suggestion: "`needs-review` を両スクリプトの除外集合にも追加し、可能なら loop 除外ラベル判定を共通化して重複定義の再発を防ぐ。"
+
+verdict: pass
