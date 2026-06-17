@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: ".claude/skills/3ai/scripts/batch-select.ts"
+    line_hint: 270
+    finding: "`--loop` 時の tier fall-through という分岐変更に対する回帰テストが追加されていない。今回の不具合そのものだった「bug-batch 候補が `gate/needs-*` で全除外され、次 tier に落ちるべきケース」を自動検証できず、今後の条件追加や refactor で再発しても検知できない。"
+    suggestion: "`.claude/skills/3ai/scripts/__tests__/batch-select.test.ts` などを追加し、少なくとも「bug tier 全除外 -> enh/foundation/phase へ fall-through」「全 tier 除外 -> 空プラン」を fixture 付きで検証する。"
+
+verdict: pass

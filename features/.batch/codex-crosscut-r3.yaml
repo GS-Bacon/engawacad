@@ -1,21 +1,15 @@
 issues:
   - id: F01
-    severity: critical
-    file: "web/playwright.config.ts"
-    line_hint: 21
-    finding: "実 API サーバーを source-controlled `examples/simple_box.mycad` に直接向けており、`acceptance_extrude.spec.ts` の POST がそのファイルを更新する。`cargo xtask acceptance` 実行でワークツリー汚染とテスト順序依存が発生する。"
-    suggestion: "サーバー起動前に `simple_box.mycad` を temp dir へコピーし、その temp path を `mycad-api` に渡す。run/test ごとに独立した入力ファイルを使う。"
+    severity: high
+    file: "web/src/main.ts"
+    line_hint: 146
+    finding: "`create_sketch` の POST 成功後に `extrude` / `extrude_cut` が失敗すると `pendingPostedSketchId` が残りますが、`btn-start-sketch` と `Escape` でこの state を消していません。失敗後に別の形状を描き直しても、送信側は `pendingPostedSketchId ?? nextId(...)` を優先して新しい `create_sketch` を再送せず、古いサーバ側スケッチ ID をそのまま押し出します。結果として、画面上で確定した最新スケッチと実際に生成される body が食い違います。"
+    suggestion: "スケッチを破棄・再開始・差し替えする経路 (`btn-start-sketch`, `Escape`, 新しい finalize 採用時) で `pendingPostedSketchId` を必ず `null` に戻し、再利用は同一 `lastFinalizedSketch` をそのまま retry する場合にだけ許可する。"
   - id: F02
-    severity: high
-    file: "crates/mycad-api/tests/fuzz_features.rs"
-    line_hint: 280
-    finding: "`NaN` / `Infinity` を含む生 JSON は構文エラーだが、テストが 422 固定になっている。Axum 側が正しく 400 Bad Request を返しても `cargo xtask acceptance --fuzz` が失敗する。"
-    suggestion: "`StatusCode::BAD_REQUEST || StatusCode::UNPROCESSABLE_ENTITY`、または `status.is_client_error()` を受け入れるようにする。"
-  - id: F03
-    severity: high
-    file: "web/tests/acceptance_extrude.spec.ts"
-    line_hint: 81
-    finding: "T01-T09 の検証が `200` / `\"error\"` なし / 非空 mesh に寄り過ぎており、押出・押出カットで実際に target 形状が変化したことを確認していない。既存 mesh を返す no-op や誤ターゲットでも通過しうる。"
-    suggestion: "各ケースで事前に `/api/v0/mesh` を取得し、頂点数・body 数・face_id などの前後差を比較する。少なくとも T01-T03 と T06 は plan 通りの形状変化アサートを追加する。"
+    severity: medium
+    file: "web/tests/phase7_sketch_acceptance.spec.ts"
+    line_hint: 304
+    finding: "`D01_engawa_record_order` の extrude mock は `TriangleMesh` 契約どおりの `Array<[number, number, number]>` ではなく flat な `number[]` を `positions` / `normals` に返しています。`main.ts` は `handle.updateBodies(updated)` の例外を catch してしまうため、このテストは viewer 再構築が失敗しても POST 順序だけ見て pass でき、成功経路の回帰を検出できません。"
+    suggestion: "mock 応答を有効な `TriangleMesh` 形式に直し、あわせて `#error` が表示されないことや `__meshDataVersion` / body count が更新されることも assert して、POST 後の成功経路まで実際に通す。"
 
 verdict: fail

@@ -156,4 +156,23 @@ verdict: fail | critical=0, high=2, medium=1, blocking=2
 - **判定**: #147 の本 Issue 主目的 (validation + 共有境界の基本検証) はすでに固定済みで、現状の test は `boolean_cut_sphere_dimple` の単一閉境界には十分。Codex 提案の「twin index 相互参照 assert」「ring 全消費 assert」は別 Issue で `tests/` ヘルパとして共通化して適用する候補。
 - **本バッチでは対応せず記録のみ**。自律モードの skill 規定「2 回ループ後も critical = 0 なら Claude 裁量で受け切る」に従い B-6 を pass 扱いとする (critical=0、すべて high で test 厳密性向上の余地)。
 
+---
+
+## 2026-06-16 B-6 Phase 7 viewer-batch (#163/#164/#165/#166) — codex-crosscut-r4.yaml
+
+verdict: **pass** | critical=0, high=0, medium=1, low=0, blocking=0
+
+**batch_start_sha**: `9ccdbbe`
+
+経緯:
+- r1: high 2 (F01 in-flight ガード / F02 end-state 検証不足) → 採用・修正
+- r2: high 1 (F01 sketchId 中間成功 orphan) → 採用、`pendingPostedSketchId` 導入
+- r3: high 1 (F01 pendingPostedSketchId クリア漏れ) + medium 1 (F02 D01 mock 形式) → 採用、btn-start-sketch / Escape で `pendingPostedSketchId = null`、D01 mock `positions/normals` を `Array<[n,n,n]>` 形式に
+- r4: medium 1 (F01) のみ・blocking=0 で pass
+
+### F01 (medium) — extrude/extrude_cut 成功後の sketch-canvas data-state リセット漏れ
+
+- ファイル: `web/src/main.ts` L271 付近
+- 内容: 送信成功時に `clearSketchOverlay()` + `lastFinalizedSketch = null` + `refreshSketchButtonState()` までは呼ぶが、`updateSketchCanvasState()` を呼ばないので `sketch-canvas` の `data-state` が `"closed"` のまま残る。「送信成功でリセット」の UI 状態契約と乖離。
+- 判定: medium / blocking=0。本 PR ではコード変更を行わず記録のみ。本指摘は **Phase 8 で sketch UI のリファクタ Issue を起票する際に解消する候補**。動作上の bug ではなく state 整合の品質改善項目。
 
