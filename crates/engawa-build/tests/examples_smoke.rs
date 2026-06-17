@@ -150,3 +150,11 @@ fn sketch_via_face_entity_ref() {
         "../../../examples/sketch_via_face_entity_ref.engawa"
     ));
 }
+
+/// Issue #216: ModelFace 上のスケッチ描画 e2e (8 角形 polygon profile) の smoke テスト
+#[test]
+fn sketch_circle_on_face() {
+    smoke(include_str!(
+        "../../../examples/sketch_circle_on_face.engawa"
+    ));
+}

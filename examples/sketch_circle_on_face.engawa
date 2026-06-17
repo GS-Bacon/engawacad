@@ -1,0 +1,64 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Sketch Octagon on Top Face (Phase 8 #216)"
+  features:
+    # Base cuboid centered at origin: dx=10, dy=10, dz=5 → top face at z=2.5
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 10.0
+      depth: 5.0
+    # Sketch on top face (f_z_pos) via EntityRef.
+    # Profile: 8-gon centered at plane u-v origin with radius 2 (CCW ordering).
+    # Vertices at angles k * 45° (k=0..7), pre-computed.
+    # x_k = 2*cos(k*PI/4), y_k = 2*sin(k*PI/4)
+    # k=0: (2.0, 0.0)
+    # k=1: (1.4142135623730951, 1.4142135623730951)  // 2*cos(45°), 2*sin(45°) = sqrt(2)
+    # k=2: (0.0, 2.0)
+    # k=3: (-1.4142135623730951, 1.4142135623730951)
+    # k=4: (-2.0, 0.0)
+    # k=5: (-1.4142135623730951, -1.4142135623730951)
+    # k=6: (0.0, -2.0)
+    # k=7: (1.4142135623730951, -1.4142135623730951)
+    - type: create_sketch
+      id: sketch_1
+      plane: xy
+      offset: 0.0
+      profile:
+        - id: seg_0
+          from: [2.0, 0.0]
+          to:   [1.4142135623730951, 1.4142135623730951]
+        - id: seg_1
+          from: [1.4142135623730951, 1.4142135623730951]
+          to:   [0.0, 2.0]
+        - id: seg_2
+          from: [0.0, 2.0]
+          to:   [-1.4142135623730951, 1.4142135623730951]
+        - id: seg_3
+          from: [-1.4142135623730951, 1.4142135623730951]
+          to:   [-2.0, 0.0]
+        - id: seg_4
+          from: [-2.0, 0.0]
+          to:   [-1.4142135623730951, -1.4142135623730951]
+        - id: seg_5
+          from: [-1.4142135623730951, -1.4142135623730951]
+          to:   [0.0, -2.0]
+        - id: seg_6
+          from: [0.0, -2.0]
+          to:   [1.4142135623730951, -1.4142135623730951]
+        - id: seg_7
+          from: [1.4142135623730951, -1.4142135623730951]
+          to:   [2.0, 0.0]
+      plane_ref:
+        ref: named
+        feature_id: box_1
+        kind: face
+        role: f_z_pos
+    # Extrude is included so the build yields a tessellatable solid (STL output observable).
+    # The correctness of extrude geometry itself is verified in #217; here we only assert
+    # build success + STL byte-level determinism (T01) and Phase 7 non-regression (T04).
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_1
+      depth: 1.0
