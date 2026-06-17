@@ -24,6 +24,7 @@ const LOOP_EXCLUDE_LABELS = new Set([
   "needs-phase",
   "needs-human",
   "needs-intent-review",
+  "needs-review",
   "blocked-by-split",
 ]);
 
