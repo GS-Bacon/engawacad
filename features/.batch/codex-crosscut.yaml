@@ -1,15 +1,9 @@
 issues:
   - id: F01
-    severity: high
-    file: "web/src/main.ts"
-    line_hint: 228
-    finding: "`btn-sketch-extrude` / `btn-sketch-extrude-cut` の click handler に in-flight ガードがなく、POST 完了前でも同じ finalized sketch に対して再クリックできます。`usedFeatureIds` は await 前に更新されるため 2 回目以降も別 ID で `create_sketch`→`extrude` / `extrude_cut` が送られ、 accidental double-click だけで重複 feature が文書に積まれます。"
-    suggestion: "送信開始時に pending フラグで両ボタンを disable し、finally で解除する。少なくとも handler 先頭で `if (submitting) return` を入れて 1 finalized sketch につき 1 submit に制限する。"
-  - id: F02
-    severity: high
-    file: "web/tests/phase7_sketch_acceptance.spec.ts"
-    line_hint: 165
-    finding: "`runExtrudeOn()` が E01/E02/E03 の本体なのに、実際に検証しているのは `create_sketch` / `extrude` の POST payload だけです。`countBodies()` / `allBodiesHealthy()` を定義していながら一度も使っておらず、`handle.updateBodies(updated)` を消す・POST 応答を無視する・viewer 側で mesh 更新を落とす回帰が入ってもこの suite は通ります。#166 はテスト追加専用 Issue なので、ここで end-state を見ていないのは主要要件の取りこぼしです。"
-    suggestion: "Extrude/Cut 実行後に `__meshData` を実際に検査し、body 数増加と non-degenerate mesh を assert する。少なくとも E01-E03 は POST 順序だけでなく `countBodies(page)` と `allBodiesHealthy(page)` を必須 assert にする。"
+    severity: critical
+    file: "crates/engawa-build/tests/refplane_acceptance.rs"
+    line_hint: 451
+    finding: "追加された T17 は `build_assembly` の成功可否しか見ておらず、今回変更対象の nested component + `IdGenerator` 経路の決定性を検証していない。`coverage_hints.determinism = 0` のままで、既存 `assembly_acceptance::t01` も Body 数・座標しか比較していないため、深ネスト ref_plane fallback で EntityId 割当順がずれてもこの差分では検出できない。"
+    suggestion: "T17 と同じ親 custom-only → 子 custom-only → 孫 empty の文書を `IdGenerator::new(0)` から 2 回 `build_assembly` し、Body 順序と face/edge/vertex ID を比較する決定性回帰テストを追加する。"
 
 verdict: fail

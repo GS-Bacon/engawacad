@@ -1,21 +1,2 @@
-issues:
-  - id: F01
-    severity: high
-    file: "web/src/main.ts"
-    line_hint: 231
-    finding: "`create_sketch` と `extrude` / `extrude_cut` を別 POST で送る実装が中間成功を保持していない。1本目の `postFeature(createSketchFeature)` が成功した後で 2本目が失敗すると、catch 側は `lastFinalizedSketch` を残して再試行可能にする一方、次回は新しい `sketch_*` ID でもう一度 `create_sketch` を送るため、文書に孤立した sketch feature が蓄積する。"
-    suggestion: "1本目の POST 成功後はその `sketchId` を state に保持し、retry では同じ sketch を再利用するか、失敗時に作成済み sketch をロールバックする。`usedFeatureIds` の更新も commit 単位に寄せる。"
-  - id: F02
-    severity: medium
-    file: "web/src/main.ts"
-    line_hint: 147
-    finding: "`sketchSubmitting` は Extrude ボタンしか塞いでおらず、送信中でも `btn-start-sketch` と Enter/Escape が `currentSession` を変更できる。送信完了時の success path はその可能性を考慮せず `clearSketchOverlay()` だけ実行するため、送信中に始めた新しいドラフトが消えたまま `currentSession` / `sketchMode` だけ残り、controls が無効のままになる。"
-    suggestion: "送信中はスケッチ開始とキーハンドラも無効化するか、submit 完了時に `currentSession` と `sketchMode` を一貫して同期させる。"
-  - id: F03
-    severity: medium
-    file: "web/src/main.ts"
-    line_hint: 70
-    finding: "自動 finalize 後に `handle.setSketchMode(false)` するだけで preview line を消していない。`setSketchMode(false)` は確定済み overlay を残す実装なので、閉ループ直前の灰色 preview が `sketchOverlay` に残り、snap close では確定セグメントと一致しないゴースト線が表示される。"
-    suggestion: "finalize 成功時に `handle.setSketchPreview(null, null)` を呼ぶか、`setSketchMode(false)` 内で preview だけ明示的に破棄して確定線分だけ残す。"
-
-verdict: fail
+issues: []
+verdict: pass
