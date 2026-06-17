@@ -80,6 +80,14 @@ fn t02_build_assembly_e2e_z_range_and_euler() {
     // Euler-Poincaré: V - E + F = 0 for a solid with a cavity (topologically a torus-like shell)
     // For a simple extruded octagon pillar, euler_poincare should be 0
     assert_eq!(extrude.solid.euler_poincare(), 0);
+
+    // B-rep manifold integrity (B-6 r2 F01): half-edge twin/next, loop closure, shell
+    // composition. Euler count alone could pass with a broken topology that happens to
+    // match the same V-E+F-2S sum.
+    extrude
+        .solid
+        .validate_manifold()
+        .expect("extrude_1 must be a valid manifold solid");
 }
 
 /// T03: 押出方向が +Z (Face 法線) — extrude_1 全頂点 z >= 2.5 - 1e-9
@@ -538,7 +546,9 @@ root_component:
     );
 }
 
-/// T11: two_run_solid_vertex_bytes_match — 2 回実行で頂点座標が完全一致
+/// T11: two_run_full_solid_snapshot — 2 回実行で extrude_1 の B-rep snapshot 全体が一致。
+/// B-6 r2 F02 対応: 頂点座標だけでなく solid.id / vertex/edge/face/half_edge/loop/shell の
+/// 順序・接続・name まで含めて決定性を pin する (serde_json snapshot)。
 #[test]
 fn t11_two_run_solid_vertex_bytes_match() {
     let yaml = include_str!("../../../examples/sketch_extrude_pillar.engawa");
@@ -553,12 +563,8 @@ fn t11_two_run_solid_vertex_bytes_match() {
             .find(|b| b.feature_id == "extrude_1")
             .expect("extrude_1 body should be present");
 
-        extrude
-            .solid
-            .vertices
-            .iter()
-            .map(|v| [v.point.x, v.point.y, v.point.z])
-            .collect::<Vec<_>>()
+        serde_json::to_string(&(&extrude.feature_id, &extrude.solid))
+            .expect("Solid must be serializable")
     };
 
     let verts_run1 = run();
@@ -566,6 +572,6 @@ fn t11_two_run_solid_vertex_bytes_match() {
 
     assert_eq!(
         verts_run1, verts_run2,
-        "vertex coordinates should match bit-for-bit across runs"
+        "full Solid snapshot (vertices/half_edges/edges/loops/faces/shells/names + IDs) must match bit-for-bit across runs"
     );
 }
