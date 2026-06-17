@@ -24,14 +24,16 @@
 // 関連: ADR-012, Issue #181
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { dirname, join, resolve } from "path";
 
-const STATE_PATH = "features/.loop/state.json";
-const TMUX_DIR = "features/.loop/tmux";
-const PID_PATH = `${TMUX_DIR}/watcher.pid`;
-const LOG_PATH = `${TMUX_DIR}/watcher.log`;
-const LAST_ENDED_PATH = `${TMUX_DIR}/last-cycle-ended-at`;
-const PANE_PATH = `${TMUX_DIR}/worker.pane`;
+// #183: .claude/skills/3ailoop/scripts/ から 4 階層上が repo root。cwd 非依存にする。
+const REPO_ROOT = resolve(import.meta.dir, "../../../..");
+const STATE_PATH = join(REPO_ROOT, "features/.loop/state.json");
+const TMUX_DIR = join(REPO_ROOT, "features/.loop/tmux");
+const PID_PATH = join(TMUX_DIR, "watcher.pid");
+const LOG_PATH = join(TMUX_DIR, "watcher.log");
+const LAST_ENDED_PATH = join(TMUX_DIR, "last-cycle-ended-at");
+const PANE_PATH = join(TMUX_DIR, "worker.pane");
 
 // #185 R3-F01: metadata 欠落時の fallback として、worker pane に tmux 側で
 // 識別タイトルを付与する。`tmux list-panes -F "#{pane_title}"` で逆引きできる。
@@ -40,8 +42,8 @@ export const WORKER_PANE_TITLE = "3ailoop-worker";
 const POLL_SEC = parseInt(process.env.LOOP_TMUX_POLL_SEC ?? "10", 10);
 const STUCK_MIN = parseInt(process.env.LOOP_TMUX_STUCK_MIN ?? "45", 10);
 const CLEAR_WAIT_SEC = parseInt(process.env.LOOP_TMUX_CLEAR_WAIT_SEC ?? "8", 10);
-const SHOULD_STOP_PATH = ".claude/skills/3ailoop/scripts/loop-should-stop.ts";
-const NOTIFY_PATH = ".claude/skills/3ailoop/scripts/loop-notify.ts";
+const SHOULD_STOP_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-should-stop.ts");
+const NOTIFY_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-notify.ts");
 
 // --- pure logic (bun test 対象) ---
 

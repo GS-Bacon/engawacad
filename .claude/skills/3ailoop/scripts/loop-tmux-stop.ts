@@ -15,6 +15,7 @@
 // 関連: ADR-012, Issue #181
 
 import { existsSync, unlinkSync } from "fs";
+import { join, resolve } from "path";
 import {
   isWatcherAlive,
   readPaneInfo,
@@ -24,10 +25,12 @@ import {
   type WatcherPidInfo,
 } from "./loop-tmux-watcher.ts";
 
-const TMUX_DIR = "features/.loop/tmux";
-const PID_PATH = `${TMUX_DIR}/watcher.pid`;
-const PANE_PATH = `${TMUX_DIR}/worker.pane`;
-const LOCK_PATH = ".claude/skills/3ailoop/scripts/loop-lock.ts";
+// #183: .claude/skills/3ailoop/scripts/ から 4 階層上が repo root。cwd 非依存にする。
+const REPO_ROOT = resolve(import.meta.dir, "../../../..");
+const TMUX_DIR = join(REPO_ROOT, "features/.loop/tmux");
+const PID_PATH = join(TMUX_DIR, "watcher.pid");
+const PANE_PATH = join(TMUX_DIR, "worker.pane");
+const LOCK_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-lock.ts");
 
 async function sleepMs(ms: number): Promise<void> {
   await new Promise(r => setTimeout(r, ms));

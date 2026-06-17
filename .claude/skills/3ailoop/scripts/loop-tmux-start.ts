@@ -18,13 +18,15 @@
 // 関連: ADR-012, Issue #181
 
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { dirname, join, resolve } from "path";
 import { isWatcherAlive, readWatcherPidFile, WORKER_PANE_TITLE } from "./loop-tmux-watcher.ts";
 
-const TMUX_DIR = "features/.loop/tmux";
-const PID_PATH = `${TMUX_DIR}/watcher.pid`;
-const PANE_PATH = `${TMUX_DIR}/worker.pane`;
-const WATCHER_PATH = ".claude/skills/3ailoop/scripts/loop-tmux-watcher.ts";
+// #183: .claude/skills/3ailoop/scripts/ から 4 階層上が repo root。cwd 非依存にする。
+const REPO_ROOT = resolve(import.meta.dir, "../../../..");
+const TMUX_DIR = join(REPO_ROOT, "features/.loop/tmux");
+const PID_PATH = join(TMUX_DIR, "watcher.pid");
+const PANE_PATH = join(TMUX_DIR, "worker.pane");
+const WATCHER_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-tmux-watcher.ts");
 const DEFAULT_SPLIT_PCT = parseInt(process.env.LOOP_TMUX_PANE_PCT ?? "50", 10);
 
 const BOOT_TIMEOUT_SEC = parseInt(process.env.LOOP_TMUX_BOOT_TIMEOUT_SEC ?? "60", 10);
@@ -193,7 +195,7 @@ function writePaneInfo(triple: PaneTriple): void {
 
 function spawnWatcherDaemon(): number {
   // nohup 相当: detached child を起動し PID を返す
-  const logPath = `${TMUX_DIR}/watcher.log`;
+  const logPath = join(TMUX_DIR, "watcher.log");
   mkdirSync(dirname(logPath), { recursive: true });
   const out = Bun.file(logPath);
   const proc = Bun.spawn(["bun", WATCHER_PATH, "run"], {
