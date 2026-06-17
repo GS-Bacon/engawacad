@@ -7,5 +7,5 @@ pub mod ref_plane;
 pub use component::Component;
 pub use document::Document;
 pub use error::FormatError;
-pub use feature::{EntityKind, EntityRef, Feature, SketchPlane, SketchSegment};
+pub use feature::{EntityKind, EntityRef, Feature, PlaneRef, SketchPlane, SketchSegment};
 pub use ref_plane::RefPlane;

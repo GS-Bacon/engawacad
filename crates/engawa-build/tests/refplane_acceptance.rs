@@ -2,7 +2,7 @@
 //! STEP 6.6 実装完了
 
 use engawa_build::build_bodies_from_features;
-use engawa_format::{Document, RefPlane, SketchPlane, SketchSegment};
+use engawa_format::{Document, PlaneRef, RefPlane, SketchPlane, SketchSegment};
 use engawa_kernel::brep::topology::IdGenerator;
 
 #[test]
@@ -116,7 +116,7 @@ fn t06_plane_ref_priority_over_plane() {
                     to: [0.0, 0.0],
                 },
             ],
-            plane_ref: Some("Front".to_string()), // plane_ref takes priority
+            plane_ref: Some(PlaneRef::RefPlane("Front".to_string())), // plane_ref takes priority
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
@@ -225,7 +225,7 @@ fn t10_degen_unknown_plane_ref() {
                     to: [0.0, 0.0],
                 },
             ],
-            plane_ref: Some("Nonexistent".to_string()),
+            plane_ref: Some(PlaneRef::RefPlane("Nonexistent".to_string())),
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
@@ -277,7 +277,7 @@ fn t11_boundary_empty_plane_ref_string() {
                     to: [0.0, 0.0],
                 },
             ],
-            plane_ref: Some("".to_string()),
+            plane_ref: Some(PlaneRef::RefPlane("".to_string())),
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
@@ -314,7 +314,7 @@ fn t15_child_component_uses_own_ref_planes() {
             id: "sk".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
-            plane_ref: Some("Custom".into()),
+            plane_ref: Some(PlaneRef::RefPlane("Custom".into())),
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),
@@ -389,7 +389,7 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
                 id: "sk".into(),
                 plane: SketchPlane::Xy,
                 offset: 0.0,
-                plane_ref: Some("Front".into()),
+                plane_ref: Some(PlaneRef::RefPlane("Front".into())),
                 profile: vec![
                     SketchSegment {
                         id: "s1".into(),
@@ -476,7 +476,7 @@ fn t17_degen_grandchild_canonical_fallback() {
                 id: "sk".into(),
                 plane: SketchPlane::Xy,
                 offset: 0.0,
-                plane_ref: Some("Front".into()),
+                plane_ref: Some(PlaneRef::RefPlane("Front".into())),
                 profile: vec![
                     SketchSegment {
                         id: "s1".into(),
@@ -590,7 +590,7 @@ fn t18_degen_build_layer_refplane_offset_not_finite() {
             id: "sk".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
-            plane_ref: Some("BadOffset".into()),
+            plane_ref: Some(PlaneRef::RefPlane("BadOffset".into())),
             profile: vec![
                 SketchSegment {
                     id: "s1".into(),

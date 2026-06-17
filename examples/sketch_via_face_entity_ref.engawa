@@ -1,0 +1,58 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Face EntityRef Example"
+  features:
+    # Base cuboid
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 10.0
+      depth: 10.0
+    # Sketch on top face of cuboid using EntityRef
+    - type: create_sketch
+      id: sketch_1
+      plane: xy
+      offset: 0.0
+      profile:
+        - id: seg_a
+          from:
+          - 0.0
+          - 0.0
+          to:
+          - 5.0
+          - 0.0
+        - id: seg_b
+          from:
+          - 5.0
+          - 0.0
+          to:
+          - 5.0
+          - 5.0
+        - id: seg_c
+          from:
+          - 5.0
+          - 5.0
+          to:
+          - 0.0
+          - 5.0
+        - id: seg_d
+          from:
+          - 0.0
+          - 5.0
+          to:
+          - 0.0
+          - 0.0
+      # NOTE: 現状 make_cuboid は内部で fid="cuboid" を固定で使うため (#219 参照)、
+      # CreateBox の id (box_1) ではなく "cuboid" を指定する必要がある。
+      # #219 で kernel に Feature 起点の feature_id を伝える対応をすれば box_1 が使える。
+      plane_ref:
+        ref: named
+        feature_id: cuboid
+        kind: face
+        role: f_z_pos
+    # Extrude the sketch
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_1
+      depth: 5.0

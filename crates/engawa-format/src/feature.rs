@@ -250,6 +250,17 @@ pub enum SketchPlane {
     Yz,
 }
 
+/// Plane reference for a sketch. Either a named RefPlane (legacy) or an EntityRef pointing
+/// to an existing Face. Serialized untagged so YAML keeps the simple string form for legacy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(untagged)]
+pub enum PlaneRef {
+    /// Reference to a `RefPlane.id` (legacy string form, e.g. "Front").
+    RefPlane(String),
+    /// Reference to a Face via topological naming (ADR-005 EntityRef::Named).
+    Entity(EntityRef),
+}
+
 /// A line segment in a 2D sketch profile.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 pub struct SketchSegment {
@@ -299,7 +310,7 @@ pub enum Feature {
         offset: f64,
         profile: Vec<SketchSegment>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        plane_ref: Option<String>,
+        plane_ref: Option<PlaneRef>,
     },
 
     /// Extrude a sketch profile.
@@ -462,6 +473,51 @@ mod tests {
             "CreateSketch YAML golden mismatch — field order or rename drifted"
         );
         let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.id(), "sketch_1");
+    }
+
+    #[test]
+    fn test_create_sketch_yaml_golden_with_plane_ref_refplane() {
+        let f = Feature::CreateSketch {
+            id: "sketch_1".to_string(),
+            plane: SketchPlane::Xy,
+            offset: 0.0,
+            profile: vec![],
+            plane_ref: Some(PlaneRef::RefPlane("Front".to_string())),
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        // legacy string 形式: plane_ref: Front
+        assert!(yaml.contains("plane_ref: Front"), "got:\n{}", yaml);
+        // roundtrip 同一 (Feature に PartialEq がないため文字列比較)
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        let yaml2 = serde_yaml::to_string(&back).unwrap();
+        assert_eq!(yaml, yaml2, "roundtrip 同一");
+        assert_eq!(back.id(), "sketch_1");
+    }
+
+    #[test]
+    fn test_create_sketch_yaml_golden_with_plane_ref_entity() {
+        let f = Feature::CreateSketch {
+            id: "sketch_1".to_string(),
+            plane: SketchPlane::Xy,
+            offset: 0.0,
+            profile: vec![],
+            plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+                feature_id: "cuboid".to_string(),
+                kind: EntityKind::Face,
+                role: "f_z_pos".to_string(),
+            })),
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        // Entity 形式: map で ref: named, feature_id, kind, role
+        assert!(yaml.contains("ref: named"), "got:\n{}", yaml);
+        assert!(yaml.contains("feature_id: cuboid"), "got:\n{}", yaml);
+        assert!(yaml.contains("kind: face"), "got:\n{}", yaml);
+        assert!(yaml.contains("role: f_z_pos"), "got:\n{}", yaml);
+        // legacy string 形式と衝突しない (untagged enum で variant が区別される)
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        let yaml2 = serde_yaml::to_string(&back).unwrap();
+        assert_eq!(yaml, yaml2, "roundtrip 同一");
         assert_eq!(back.id(), "sketch_1");
     }
 

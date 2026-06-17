@@ -142,3 +142,11 @@ fn assembly_children_only_skipped() {
 fn sketch_via_refplane() {
     smoke(include_str!("../../../examples/sketch_via_refplane.engawa"));
 }
+
+/// Issue #215: Face EntityRef 経路の smoke テスト
+#[test]
+fn sketch_via_face_entity_ref() {
+    smoke(include_str!(
+        "../../../examples/sketch_via_face_entity_ref.engawa"
+    ));
+}

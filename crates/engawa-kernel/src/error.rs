@@ -91,4 +91,10 @@ pub enum KernelError {
 
     #[error("RefPlane '{id}' has non-finite offset (NaN or Inf)")]
     InvalidRefPlaneOffset { id: String },
+
+    #[error("face EntityRef not found in built bodies: {canonical_name}")]
+    FaceEntityRefNotFound { canonical_name: String },
+
+    #[error("face is not planar (only Surface::Plane supported): {canonical_name}")]
+    FaceNotPlanar { canonical_name: String },
 }

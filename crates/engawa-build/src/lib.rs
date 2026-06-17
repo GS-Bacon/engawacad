@@ -1,7 +1,8 @@
-use engawa_format::{Feature, RefPlane, SketchPlane};
+use engawa_format::{Feature, PlaneRef, RefPlane, SketchPlane};
 use engawa_kernel::booleans::boolean;
 use engawa_kernel::brep::topology::{IdGenerator, Solid};
 use engawa_kernel::error::KernelError;
+use engawa_kernel::geometry::surface::Surface;
 use engawa_kernel::geometry::transform::{euler_to_matrix, rotate_vec};
 use engawa_kernel::geometry::Plane;
 use engawa_kernel::geometry::Point;
@@ -97,7 +98,7 @@ pub fn build_bodies_from_features(
 
     /// Sketch entry with optional ref_plane reference.
     struct SketchEntry<'a> {
-        plane_ref: Option<String>,
+        plane_ref: Option<PlaneRef>,
         plane: SketchPlane,
         offset: f64,
         profile: &'a [engawa_format::SketchSegment],
@@ -108,28 +109,53 @@ pub fn build_bodies_from_features(
     let mut seen_ids: HashMap<&str, ()> = HashMap::new();
 
     /// Resolve a Plane from a SketchEntry, using plane_ref if present.
-    fn resolve_plane(entry: &SketchEntry, ref_planes: &[RefPlane]) -> Result<Plane, KernelError> {
-        if let Some(ref_id) = &entry.plane_ref {
-            let rp = ref_planes
-                .iter()
-                .find(|p| &p.id == ref_id)
-                .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
-            if !rp.offset.is_finite() {
-                return Err(KernelError::InvalidRefPlaneOffset { id: rp.id.clone() });
+    fn resolve_plane(
+        entry: &SketchEntry,
+        ref_planes: &[RefPlane],
+        built: &BuiltBodies,
+    ) -> Result<Plane, KernelError> {
+        match &entry.plane_ref {
+            Some(PlaneRef::RefPlane(ref_id)) => {
+                // Legacy ref_plane path (unchanged behavior)
+                let rp = ref_planes
+                    .iter()
+                    .find(|p| &p.id == ref_id)
+                    .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
+                if !rp.offset.is_finite() {
+                    return Err(KernelError::InvalidRefPlaneOffset { id: rp.id.clone() });
+                }
+                let base = sketch_plane_to_plane(rp.plane);
+                Ok(if rp.offset != 0.0 {
+                    base.translate(base.normal * rp.offset)
+                } else {
+                    base
+                })
             }
-            let base = sketch_plane_to_plane(rp.plane);
-            Ok(if rp.offset != 0.0 {
-                base.translate(base.normal * rp.offset)
-            } else {
-                base
-            })
-        } else {
-            let base = sketch_plane_to_plane(entry.plane);
-            Ok(if entry.offset != 0.0 {
-                base.translate(base.normal * entry.offset)
-            } else {
-                base
-            })
+            Some(PlaneRef::Entity(entity_ref)) => {
+                // New Face EntityRef path
+                for body in built.live() {
+                    if let Some(face_idx) = body.solid.find_face_by_entity_ref(entity_ref) {
+                        let face = &body.solid.faces[face_idx];
+                        return surface_to_plane(&face.surface).ok_or_else(|| {
+                            KernelError::FaceNotPlanar {
+                                canonical_name: entity_ref.canonical_name(),
+                            }
+                        });
+                    }
+                }
+                Err(KernelError::FaceEntityRefNotFound {
+                    canonical_name: entity_ref.canonical_name(),
+                })
+            }
+            None => {
+                // Default plane/offset path (unchanged behavior)
+                let base = sketch_plane_to_plane(entry.plane);
+                Ok(if entry.offset != 0.0 {
+                    base.translate(base.normal * entry.offset)
+                } else {
+                    base
+                })
+            }
         }
     }
 
@@ -138,6 +164,24 @@ pub fn build_bodies_from_features(
             SketchPlane::Xy => Plane::xy(),
             SketchPlane::Xz => Plane::xz(),
             SketchPlane::Yz => Plane::yz(),
+        }
+    }
+
+    /// Extract a Plane from a Surface if it is planar.
+    fn surface_to_plane(surface: &Surface) -> Option<Plane> {
+        match surface {
+            Surface::Plane {
+                origin,
+                normal,
+                u_axis,
+                v_axis,
+            } => Some(Plane {
+                origin: *origin,
+                normal: *normal,
+                u_axis: *u_axis,
+                v_axis: *v_axis,
+            }),
+            _ => None,
         }
     }
 
@@ -188,7 +232,7 @@ pub fn build_bodies_from_features(
                             sketch: sketch.clone(),
                         })?;
 
-                let plane = resolve_plane(entry, ref_planes)?;
+                let plane = resolve_plane(entry, ref_planes, &built)?;
 
                 let profile_uv: Vec<(f64, f64)> = entry
                     .profile
@@ -229,26 +273,56 @@ pub fn build_bodies_from_features(
                         })?;
 
                 // ExtrudeCut は元来 CreateSketch.offset を無視する仕様バグがあった (#161 で別途修正予定)。
-                // 本 Issue (#158) のスコープを守るため、plane_ref が無い経路では従来挙動を温存する。
-                // plane_ref が Some なら新経路 (resolve_plane 経由) を通り、ref_planes から正しく解決する。
-                let plane = if let Some(ref_id) = &entry.plane_ref {
-                    // 新経路: plane_ref を ref_planes から解決
-                    let rp = ref_planes
-                        .iter()
-                        .find(|p| &p.id == ref_id)
-                        .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
-                    if !rp.offset.is_finite() {
-                        return Err(KernelError::InvalidRefPlaneOffset { id: rp.id.clone() });
+                // 本 Issue のスコープを守るため、plane_ref が None の経路では従来挙動を温存する。
+                // plane_ref が Some なら ref_planes または Face EntityRef から解決する。
+                let plane = match &entry.plane_ref {
+                    Some(PlaneRef::RefPlane(ref_id)) => {
+                        // RefPlane 経路
+                        let rp = ref_planes
+                            .iter()
+                            .find(|p| &p.id == ref_id)
+                            .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
+                        if !rp.offset.is_finite() {
+                            return Err(KernelError::InvalidRefPlaneOffset { id: rp.id.clone() });
+                        }
+                        let base = sketch_plane_to_plane(rp.plane);
+                        if rp.offset != 0.0 {
+                            base.translate(base.normal * rp.offset)
+                        } else {
+                            base
+                        }
                     }
-                    let base = sketch_plane_to_plane(rp.plane);
-                    if rp.offset != 0.0 {
-                        base.translate(base.normal * rp.offset)
-                    } else {
-                        base
+                    Some(PlaneRef::Entity(entity_ref)) => {
+                        // Face EntityRef 経路。find_face_by_entity_ref が見つけた Face で
+                        // surface_to_plane が None なら非平面 → FaceNotPlanar とし、
+                        // どの Solid からも Face が見つからなかった場合のみ FaceEntityRefNotFound。
+                        // (Codex F01 #215: 非平面 face を未検出扱いにせず分類する)
+                        let mut face_found = false;
+                        let mut found_plane = None;
+                        for body in built.live() {
+                            if let Some(face_idx) = body.solid.find_face_by_entity_ref(entity_ref) {
+                                let face = &body.solid.faces[face_idx];
+                                face_found = true;
+                                found_plane = surface_to_plane(&face.surface);
+                                break;
+                            }
+                        }
+                        if let Some(p) = found_plane {
+                            p
+                        } else if face_found {
+                            return Err(KernelError::FaceNotPlanar {
+                                canonical_name: entity_ref.canonical_name(),
+                            });
+                        } else {
+                            return Err(KernelError::FaceEntityRefNotFound {
+                                canonical_name: entity_ref.canonical_name(),
+                            });
+                        }
                     }
-                } else {
-                    // 旧経路: plane だけ使い、offset は **無視** (元仕様バグの温存、#161 で対応)
-                    sketch_plane_to_plane(entry.plane)
+                    None => {
+                        // 旧経路: plane だけ使い、offset は **無視** (元仕様バグの温存、#161 で対応)
+                        sketch_plane_to_plane(entry.plane)
+                    }
                 };
 
                 let profile_uv: Vec<(f64, f64)> = entry
