@@ -1,7 +1,7 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 6,
-  "last_cycle_at": "2026-06-17T06:41:32.561Z",
+  "cycle": 11,
+  "last_cycle_at": "2026-06-17T11:37:05.568Z",
   "recent_cycles": [
     {
       "cycle": 1,
@@ -332,11 +332,75 @@
         "docs/decisions/014-component-refplane-isolation.md",
         "docs/decisions/013-adr-auto-accept-flow.md"
       ]
+    },
+    {
+      "cycle": 7,
+      "started_at": "2026-06-17T06:41:32.561Z",
+      "ended_at": "2026-06-17T11:01:30.112Z",
+      "closed": [
+        210,
+        209
+      ],
+      "raised": [
+        210,
+        209,
+        208,
+        207
+      ],
+      "merged_commits": 4,
+      "adr_drafts": []
+    },
+    {
+      "cycle": 8,
+      "started_at": "2026-06-17T11:01:30.112Z",
+      "ended_at": "2026-06-17T11:06:11.082Z",
+      "closed": [],
+      "raised": [
+        211
+      ],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "intent-check aligned:no for #206 (Phase 8 起点 — 親 Issue は要分割)"
+    },
+    {
+      "cycle": 9,
+      "started_at": "2026-06-17T11:06:11.082Z",
+      "ended_at": "2026-06-17T11:28:59.296Z",
+      "closed": [
+        211
+      ],
+      "raised": [],
+      "merged_commits": 3,
+      "adr_drafts": []
+    },
+    {
+      "cycle": 10,
+      "started_at": "2026-06-17T11:28:59.296Z",
+      "ended_at": "2026-06-17T11:31:15.919Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "batch candidate #206 is gated (needs-review) — Phase 8 分割人間判断 intake 待ち"
+    },
+    {
+      "cycle": 11,
+      "started_at": "2026-06-17T11:31:15.919Z",
+      "ended_at": "2026-06-17T11:37:05.568Z",
+      "closed": [
+        212
+      ],
+      "raised": [
+        212
+      ],
+      "merged_commits": 1,
+      "adr_drafts": [],
+      "pause_reason": "Phase 8 起点 #206 needs-review (人間判断待ち); 副次 fix として #212 (should-stop の needs-review 抜け) を Claude 直接修正"
     }
   ],
   "cumulative": {
-    "cycles_total": 6,
-    "issues_closed": 120,
+    "cycles_total": 11,
+    "issues_closed": 124,
     "raised_resolved": 0,
     "adr_total": 14,
     "token_claude": 0,
