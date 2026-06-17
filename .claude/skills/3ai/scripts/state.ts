@@ -110,11 +110,11 @@ export function setState(path: string, step: string, value: string): void {
 }
 
 export function getState(path: string, step: string): string {
-  return readState(path).steps[step] ?? "none";
+  return readState(path).steps?.[step] ?? "none";
 }
 
 export function assertState(path: string, step: string): boolean {
-  return readState(path).steps[step] === "passed";
+  return readState(path).steps?.[step] === "passed";
 }
 
 export function incState(path: string, key: string): number {

@@ -109,7 +109,7 @@ function collectOrphanedDirs(): string[] {
     // 形式: "?? features/47-foo/bar.md" or " M features/47-foo/bar.md"
     const parts = line.trimStart().split(/\s+/);
     const filePath = parts[parts.length - 1];
-    const match = filePath.match(/^(features\/[^/]+)\//);
+    const match = filePath.match(/^(features\/[^/.][^/]*)\//);
     if (match) dirSet.add(match[1]);
   }
 
