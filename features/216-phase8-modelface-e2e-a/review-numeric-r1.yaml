@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: medium
+    section: "設計方針 > 数値モデル"
+    finding: "ε_snap の定義が「f64::EPSILON 程度」と曖昧。本文では `< 1e-9` を採用とあるが、f64::EPSILON (≈2.2e-16) と 1e-9 は 7 桁異なる。どちらを tolerance として採用するか明記が必要。"
+    suggestion: "「ε_snap = 1e-9 (Plane origin/normal 比較用)」と数値を一意に定めること。f64::EPSILON は Machine Epsilon (1.0 + ε ≠ 1.0 となる最小値) であり、幾何比較の tolerance として通常使われない。"
+
+verdict: pass

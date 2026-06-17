@@ -1,0 +1,8 @@
+issues:
+  - id: IN03
+    severity: medium
+    section: "テスト計画 > T03"
+    finding: "T03 で `IdGenerator::new(0)` を使用した明示がないが、決定性検証のためには全テストで固定 seed が必要"
+    suggestion: "T03 実装コードに `let mut gen = IdGenerator::new(0);` を明記し、unit test 内でも決定的 ID 生成を担保すること"
+
+verdict: pass

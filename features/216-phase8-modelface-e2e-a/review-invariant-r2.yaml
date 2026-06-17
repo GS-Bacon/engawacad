@@ -1,0 +1,13 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "テスト計画 > T01"
+    finding: "T01 の説明が 'CLI export' とあるが、acceptance test ファイル (`face_sketch_placement_acceptance.rs`) 内でどのように 3 回実行を実装するか不明。CLI テストは `std::process::Command` でバイナリを spawn する必要があるが、実装レベルの記述がない。"
+    suggestion: "T01 実装レベルで 'engawa export' を 3 回 spawn して STL byte 列を比較することを明記するか、あるいは 'export -o /tmp/a.stl; cp /tmp/a.stl /tmp/b.stl; export -o /tmp/c.stl; diff' 相当の実装を acceptance test に記述すること。"
+  - id: IN02
+    severity: low
+    section: "設計方針 > 決定性"
+    finding: "STL byte 列決定性は tessellation が決定的であることを前提としているが、tessellation 実装内に非決定的要因（HashMap イテレーション順など）が含まれていないことの言及がない。"
+    suggestion: "既存 tessellation 実装が index-based で決定的であることを既知の前提として良いが、念のため 'tessellation は index-based 処理であり決定的' という補足を入れるとより明確。"
+
+verdict: pass

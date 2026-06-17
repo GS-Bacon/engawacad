@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > T05_degen_zero_radius"
+    finding: "期待結果に `Err(KernelError::ProfileNotClosed { .. })` **または** `Err(KernelError::DegenerateSegment { .. })` と列挙されているが、どちらが実際に発生するかが未定義。実装時に実際の挙動を確認して固定すればよいが、plan 時点では応答が ambiguous"
+    suggestion: "本件は実装時に確認して固定する運用で medium 留保とする。既存 `validate_profile_closed` の実際の挙動に依存するため、plan 時点での確定が困難。実装時にどちらかを確認し、テストコードで片方のみに固定すること"
+
+verdict: pass

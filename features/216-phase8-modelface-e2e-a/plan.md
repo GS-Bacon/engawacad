@@ -1,0 +1,119 @@
+## 自律判断ログ (B-3 intent-check aligned:no への対応)
+
+**判断 (2026-06-17, Cycle #18 batch)**: Codex intent-check が #216 を `aligned: no` と判定した。理由は「完了条件が曖昧で CI で合否を一意に判定できない」(STL/中間データが期待通り、回転・原点が期待通り、等)。Phase 8 スコープ自体には整合しているため、自律モード方針 (推奨スコープ調整 → 続行) に従い、以下のとおりスコープを「**Face EntityRef → SketchPlane 解決の幾何整合と決定性を、計測可能 assertion で固定する**」に絞り込む。
+
+採用した調整:
+1. **acceptance test ID 表** (T01〜T05_) を計測可能 assertion 付きで本 plan に明記する (この plan の「テスト計画」セクション)
+2. STL 出力は **extrude 必須** だが extrude 自体の正しさは **#217 のスコープ** とし、本 Issue は (a) **STL byte 列の 3-run 一致** (決定性) と (b) **build 成功 + 既存 Phase 7 example の non-regression** に絞る
+3. プレーン解決 (Plane.origin / Plane.normal) の正しさは Face EntityRef → Plane 変換に対する **kernel レベル unit test** で固定し、e2e (engawa-build) では決定性 + 成功 + 既存テスト non-regression に絞る
+
+棄却根拠: #216 In-Scope 文言「上面に円スケッチ」は Phase 10 で導入される真の Circle/Arc primitive を要求しているわけではなく、**N 角形 (closed segment loop) による近似** を意図していると ROADMAP §Phase 10 から判定 (実 Circle/Arc は Phase 10)。本 Issue では 8 角形相当の closed polygon profile を採用する。
+
+---
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| 新規 example `examples/sketch_circle_on_face.engawa` — cuboid + 上面 Face EntityRef → CreateSketch (8 角形 closed polygon profile) + Extrude (extrude 結果は決定性確認用、正しさは #217 のスコープ) | Extrude 自体の正しさ assertion (体積・面数・vertex 位置) → #217 |
+| `crates/engawa-build/tests/face_sketch_placement_acceptance.rs` (新規 integration test) — Face EntityRef 経路の決定性 + smoke + non-regression を 5 つの ID 付きテストで固定 | ExtrudeCut 経路 → #218 |
+| Phase 7 の RefPlane 経路 (`examples/sketch_via_refplane.engawa`) が引き続き成功することを smoke で再確認 | Arc / 真の Circle / Spline 等の Phase 10 曲線種 |
+| `crates/engawa-build/tests/examples_smoke.rs` に新 example の smoke 追加 (`sketch_circle_on_face`) | 非平面 Face (cylindrical face 等) からの Plane 導出 → Phase 10 以降 |
+| 退化テスト T_degen_zero_radius: 半径 0 → `InvalidParameter` / `EmptyProfile` 系で graceful error (panic でない) | `EntityRef::Derived` variant の解決 → Phase 9 以降 |
+| | 新規 kernel API の追加 (find_face_by_entity_ref / surface_to_plane は既存) |
+
+## Non-Goals
+
+- Extrude 結果体の volume / face count / vertex 位置の assertion (#217 に委譲)
+- ExtrudeCut 経路の検証 (#218 に委譲)
+- Arc / Circle primitive feature の format 追加 (Phase 10)
+- 非平面 Face からの Plane 導出 (Phase 10 以降)
+- `EntityRef::Derived` の解決 (Phase 9 以降)
+- 8 角形以外の N 角形パラメータ化、polygon 生成ヘルパの公開 API 化 (本 Issue では .engawa にハードコードする 8 頂点で十分)
+
+## 実装対象
+
+- **新規ファイル**:
+  - `examples/sketch_circle_on_face.engawa` — cuboid(width=10, height=10, depth=5) → 上面 Face EntityRef (feature_id=box_1, kind=face, role=f_z_pos) → 8 角形 (中心 (0,0) [plane u-v]、半径 2) closed polygon profile → Extrude depth=1 (cuboid は原点中心: dx=10 → spans -5..+5、top face origin world=(0,0,2.5)、extrude の存在は STL 出力可観測性のため)
+  - `crates/engawa-build/tests/face_sketch_placement_acceptance.rs` — Acceptance test skeleton + 実装テスト 5 件 (T01〜T05)
+- **既存ファイル変更**:
+  - `crates/engawa-build/tests/examples_smoke.rs` — `sketch_circle_on_face` smoke エントリ追加 (`fn sketch_circle_on_face() { smoke(include_str!("../../../examples/sketch_circle_on_face.engawa")); }`)
+- **新規 kernel API は追加しない** — `Solid::find_face_by_entity_ref` (#214) と `PlaneRef::Entity` 経路 (#215) はすでに揃っているため、本 Issue は **既存実装の e2e 検証** に専念する
+
+## 設計方針
+
+### 決定性
+
+- **STL byte 列で決定性を検証する**: acceptance test 内で **`engawa_build::build_assembly` + `tessellate_solid_with` + `to_ascii_stl` を 3 回呼び出す** in-process 方式を採用する (CLI バイナリの `std::process::Command::spawn` は依存パスや並列ビルド時のフレーキー要因になりやすいため避ける)。すなわち T01 実装は以下:
+  ```rust
+  let doc = Document::from_yaml(include_str!("../../../examples/sketch_circle_on_face.engawa")).unwrap();
+  let stl_run = || {
+      let mut gen = IdGenerator::new(0);
+      let bodies = build_assembly(&doc, Path::new("examples"), &mut gen).unwrap();
+      let meshes: Vec<_> = bodies.iter().map(|b| tessellate_solid_with(&b.solid, &TessellationOptions::default()).unwrap()).collect();
+      to_ascii_stl(&merge_meshes(&meshes), "model")
+  };
+  let a = stl_run(); let b = stl_run(); let c = stl_run();
+  assert_eq!(a, b); assert_eq!(b, c);
+  ```
+  これにより CLI spawn と同等の決定性を、外部プロセス依存なしに検証する (IN01 採用)
+- `IdGenerator::new(0)` を毎回固定 seed (cli 本体も `gen = IdGenerator::new(0)` を使用、`crates/engawa-cli/src/main.rs:74`) → 同入力 → 同 EntityID → 同 mesh
+- ADR-005 命名 (`feature_id_kind_role`) が崩れないことの間接確認: STL バイト列の安定性 = `find_face_by_entity_ref` の解決が決定的であることの十分条件
+- **tessellation の決定性前提**: 既存 `tessellate_solid_with` は index-based 処理であり決定的 (`crates/engawa-kernel/src/tessellation/` 全体で HashMap iteration 順への依存なし)。`to_ascii_stl` も index 順で facet を直列化するため非決定性要因なし (IN02 採用)
+
+### B-rep / Plane 幾何整合
+
+- 既存 Surface::Plane variant に対する surface_to_plane (`crates/engawa-build/src/lib.rs:171-186`) を経由するため、Face.surface が `Surface::Plane` のとき origin/normal/u_axis/v_axis が一意に Plane へ写る
+- cuboid の上面 (f_z_pos) は `Surface::Plane` で出力されること (既存実装) を前提とする。万一非平面が返ったら `FaceNotPlanar` で graceful error (`crates/engawa-build/src/lib.rs:139-143`)
+- 退化幾何 (半径 0 polygon = 8 頂点が同点) は `validate_profile_closed` で reject される (`crates/engawa-build/src/lib.rs:206`)
+
+### derive 規約
+
+本 Issue で新規型は追加しない。
+
+### エラーハンドリング
+
+既存の `KernelError` variant (FaceEntityRefNotFound, FaceNotPlanar, EmptyProfile, ProfileNotClosed) を再利用する。新規 error variant は追加しない。
+
+### workspace.dependencies
+
+変更なし (新規 dep 不要)。
+
+### 数値モデル (Phase 8 必須)
+
+- **tolerance: ε_snap = 1e-9** — Plane origin / normal 比較に用いる f64 許容差。`assert!((actual - expected).abs() < 1e-9)` で plane origin の各成分・plane normal のノルム偏差を比較する (NU01 採用、f64::EPSILON ≈ 2.2e-16 は machine epsilon であり幾何比較 tolerance としては採用しない)
+- **tolerance: ε_len = 1e-9** — 8 角形 polygon profile の各辺長は非ゼロ (半径 2 で十分大きい)、退化判定では同 ε_snap を流用
+- **tolerance: ε_area = N/A** — 本 Issue は面積比較を行わない (extrude 結果体の検証は #217)
+- **ADR-004 準拠方針: tolerant** — `f64` 比較で `< 1e-9` を採用 (既存 brep テストと整合)
+
+## テスト計画 (ID 付き)
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | `examples/sketch_circle_on_face.engawa` を CLI export で 3 回実行し、生成 STL を byte 比較 | `assert_eq!(stl_run1, stl_run2); assert_eq!(stl_run2, stl_run3);` (Vec<u8> 完全一致) |
+| T02 | 正常系 | `examples/sketch_circle_on_face.engawa` を `build_assembly` で build し、結果 `BuiltBodies` に box_1 (create_box) と extrude_1 が両方 live (extrude は box を fuse_target で消費しないため) | build が `Ok` を返し、`bodies.len() == 2` (box_1 と extrude_1 が両方 live) |
+| T03 | Plane 解決 (kernel unit) | **`let mut gen = IdGenerator::new(0);`** を使い cuboid (dx=10, dy=10, dz=5) を `make_cuboid` で生成 → 上面 Face を `find_face_by_entity_ref(&EntityRef::Named { feature_id:"box_1", kind:Face, role:"f_z_pos" })` で解決 → cuboid は原点中心 (`cuboid.rs:17` "spans from (-dx/2, -dy/2, -dz/2)") のため Plane.origin.z = hz = 2.5 ± 1e-9、Plane.normal = `(0,0,1)` ± 1e-9 (IN03 採用: 固定 seed を明記) | `assert!((plane.origin.z - 2.5).abs() < 1e-9); assert!((plane.normal - Vec3::new(0.0,0.0,1.0)).norm() < 1e-9);` |
+| T04 | Phase 7 non-regression | `examples/sketch_via_refplane.engawa` を `build_assembly` で build | `Ok` を返す (現状 smoke と同等、テストファイル名で「regression」を明示) |
+| T05_degen_zero_radius | 退化境界 | 半径 0 の 8 角形 (8 頂点が同点) を `.engawa` で build | `Err(KernelError::EmptyProfile)`・`Err(KernelError::ProfileNotClosed)`・`Err(KernelError::DegenerateSegment)` のいずれかで panic でないことを assert。**実装時に `validate_profile_closed` の現挙動を実測** (`assert!(matches!(err, KernelError::ProfileNotClosed { .. }))` 等) して 1 variant に固定する。SC03 採用: In-Scope 表「`InvalidParameter` / `EmptyProfile` 系」との粒度整合のため候補 variant を明示列挙。AM01 採用: 実装時に実測して 1 variant に収束させる方針。 |
+
+**退化/境界ケース ID**: `T05_degen_zero_radius` が _degen_ 命名規約を満たす。
+
+## 幾何的不変条件チェックリスト
+
+- [x] N/A — partition / assemble / boolean は本 Issue のスコープ外
+- [x] N/A — polygon profile の向きは既存 `validate_profile_closed` (CCW 想定) に従う
+- [x] N/A — flip_normals / same_sense は本 Issue で触らない
+- [x] N/A — pslg_subdivide は呼ばれない
+
+## 実装順序
+
+1. `examples/sketch_circle_on_face.engawa` を新規作成 (cuboid + 8 角形 sketch + extrude)
+2. `crates/engawa-build/tests/face_sketch_placement_acceptance.rs` を新規作成 — skeleton (T01〜T05_ を `#[ignore]` で先行配置) (STEP 5.5)
+3. `crates/engawa-build/tests/examples_smoke.rs` に `sketch_circle_on_face` smoke エントリ追加
+4. T01〜T05_ を実装 (STEP 6)
+5. `cargo test --workspace` green 確認
+
+## 既知の制約
+
+- 円スケッチを「真の Circle primitive」で表現するのは Phase 10 マターであり、本 Issue では **8 角形 polygon 近似** で代用する (ROADMAP L178-184)
+- `engawa export` は STL を生成するが、`bodies` が空 (extrude なし) のときは空 STL になる。決定性検証のためには extrude を含む example が必要であり、本 Issue はそうする (extrude の **正しさ** assertion は #217 に委譲)

@@ -1,0 +1,20 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/tests/examples_smoke.rs"
+    line_hint: 156
+    finding: "この提出差分で Git 管理されているのは smoke 追加だけで、参照先 `examples/sketch_circle_on_face.engawa` と計画上必須の `crates/engawa-build/tests/face_sketch_placement_acceptance.rs` は未追跡です。`git diff` ベースで適用すると `include_str!` の参照先が欠けてコンパイル不能になり、T01〜T05 の追加テストも 0 件のままです。"
+    suggestion: "新規 example と acceptance test ファイルを差分に含めてから再提出する"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_placement_acceptance.rs"
+    line_hint: 194
+    finding: "T05_degen_zero_radius が `Debug` 文字列の部分一致で複数のエラー型を許容しており、ゼロ半径 profile が別要因で失敗しても `InvalidParameter` を含むだけで通ってしまいます。退化入力検出の契約を固定できていません。"
+    suggestion: "実測どおりの具体的な `KernelError` variant と field を `matches!` で厳密に検証する"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_placement_acceptance.rs"
+    line_hint: 427
+    finding: "`t11_face_ref_repeated_determinism` 冒頭の `solid` が未使用で、`unused_variables` warning が発生します。`cargo clippy --tests -D warnings` を gate にするとこの追加テストで落ちます。"
+    suggestion: "未使用の `solid` 生成を削除するか、その値を実際の比較に使う"
+verdict: fail

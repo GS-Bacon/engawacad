@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_placement_acceptance.rs"
+    line_hint: 39
+    finding: "新規 acceptance は `plane_ref` が実際に使われて `extrude_1` の底面が `box_1` の `f_z_pos` face に載っていることを一度も検証していない。fixture は `plane: xy` を併記しており、実装が `plane_ref` を無視して原点 z=0 の XY 平面で押し出しても、T01/T02/T04/T05/T10 は通り、T03/T06-T11 も `make_cuboid` とローカル `surface_to_plane` しか見ないため #216 の成果物が壊れても検出できない。"
+    suggestion: "`build_assembly` 後に `extrude_1` の底面 Plane(origin/normal/u_axis/v_axis) を `box_1` の `f_z_pos` face と比較する assertion を追加するか、fixture の `plane`/`offset` を意図的に不一致にして `plane_ref` 無視が必ず落ちるようにする。"
+
+verdict: fail

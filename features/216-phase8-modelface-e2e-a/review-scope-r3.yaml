@@ -1,0 +1,8 @@
+issues:
+  - id: SC03
+    severity: low
+    section: "テスト計画 (T05_degen_zero_radius)"
+    finding: "T05_degen_zero_radius の期待結果「`Err(KernelError::*)` で panic でないことを assert」が、In-Scope 表の「`InvalidParameter` / `EmptyProfile` 系で graceful error」との粒度整合を欠いている（variant 列挙がある In-Scope vs 任意の variant を許容するテスト計画）"
+    suggestion: "T05_degen_zero_radius の期待結果を「`Err(KernelError::InvalidParameter)` または `Err(KernelError::EmptyProfile)` で panic でない」に修正し、In-Scope 表の文言と整合させる。variant 実測方針（AM01）は補足として維持"
+
+verdict: pass

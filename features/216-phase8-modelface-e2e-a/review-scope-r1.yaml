@@ -1,0 +1,7 @@
+issues:
+  - id: SC01
+    severity: critical
+    section: "Non-Goals"
+    finding: "Non-Goals セクションが存在しない"
+    suggestion: "ADR-006 §plan.md 必須セクションに従って Non-Goals セクションを追加すること"
+verdict: fail

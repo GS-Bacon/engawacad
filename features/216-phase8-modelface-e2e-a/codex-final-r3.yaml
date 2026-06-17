@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_placement_acceptance.rs"
+    line_hint: 325
+    finding: "`t10_negative_radius_graceful` が契約を固定していない。入力は実際には『負半径パラメータ』ではなく 8 角形の巻き方向違いを手書きしたケースで、さらに `Ok` と複数種類の `Err` をすべて許容しているため、巻き方向処理が壊れてもこのテストは回帰を検出できない。"
+    suggestion: "このケースを `reversed_winding` 等の実態に合わせた名前へ改め、期待結果を 1 つに固定する。現実装を守るなら `Ok` を assert し、拒否を契約にするなら `KernelError::InvalidParameter { kind: \"profile\" }` など enum match で 1 variant に固定する。"
+
+verdict: pass
