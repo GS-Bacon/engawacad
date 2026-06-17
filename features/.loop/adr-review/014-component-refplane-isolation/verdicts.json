@@ -1,0 +1,17 @@
+[
+  {
+    "persona": "architect",
+    "approved": false,
+    "raw_excerpt": "1. [ADR-014](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:41) と [ADR-014](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:59) は「親 datum が必要なら将来 `fa"
+  },
+  {
+    "persona": "contrarian",
+    "approved": false,
+    "raw_excerpt": "**Findings**\n1. `Option B` は誤った意味付けで正当化されています。[ADR 本文](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:32) は A を「親 datum 共有」、B を「独立 coordinate frame 維持」と対比していますが、実装では `effecti"
+  },
+  {
+    "persona": "migration",
+    "approved": false,
+    "raw_excerpt": "1. `[ADR-014](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:55)` の「parser-level 不変との整合」は成立していません。実装で canonical three を自動補完しているのは root だけで、`Document::new` / `from_yaml` / `De"
+  }
+]

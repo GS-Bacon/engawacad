@@ -1,0 +1,17 @@
+[
+  {
+    "persona": "architect",
+    "approved": false,
+    "raw_excerpt": "**Findings**\n1. `needs-human` 退避が Phase 境界を壊します。[ADR-013](/home/bacon/engawacad/docs/decisions/013-adr-auto-accept-flow.md:66) は ADR 再生成 cap 超過時に `needs-human` を付けて loop を先へ進めますが、Phase 完了判定は `gate:hum"
+  },
+  {
+    "persona": "contrarian",
+    "approved": false,
+    "raw_excerpt": "1. `Multi-LLM Adversarial Review` は、この ADR が自分で問題視している「Codex draft 単独では reviewable でない」を解決していません。GLM 3 ペルソナは見かけ上は多重防御でも、同系統モデル・同一入力・同一評価軸に強く相関するため、最も危険な「3者そろって誤って approved」を検出できません。しかも trigger は「同じ re"
+  },
+  {
+    "persona": "migration",
+    "approved": false,
+    "raw_excerpt": "1. `F01` 再生成ループが現行 L-5.6 に接続されていません。[loop-adr-pause-detector.ts](/home/bacon/engawacad/.claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts:50) は `git log --diff-filter=A` で「新規追加 ADR」しか拾わず、auto-r"
+  }
+]

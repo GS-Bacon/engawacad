@@ -1,0 +1,11 @@
+**Findings**
+1. `Option B` は誤った意味付けで正当化されています。[ADR 本文](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:32) は A を「親 datum 共有」、B を「独立 coordinate frame 維持」と対比していますが、実装では `effective_ref_planes` を使って形状を作った後に transform を適用しています([crates/engawa-build/src/lib.rs](/home/bacon/engawacad/crates/engawa-build/src/lib.rs:492), [同](/home/bacon/engawacad/crates/engawa-build/src/lib.rs:506))。つまり A で継承されるのは親の“世界座標上の datum”ではなく、child のローカル frame で再解釈される `(plane, offset)` の名前付き集合です。独立 frame は A でも崩れません。実際の争点は「階層的な datum 名再利用を許すか、毎 child で再宣言させるか」であり、その軸では B は hierarchy の利点を捨てています。
+
+2. 採用理由 1 の parser-level 不変は設計根拠として弱いです。root の canonical 補完は [Document::new/from_yaml](/home/bacon/engawacad/crates/engawa-format/src/document.rs:39) にしかなく、`build_assembly` は任意の `Document`/`Component` をそのまま消費します。`Component::ref_planes` 自体も「省略時 canonical」と読めるコメントを持ちながら([crates/engawa-format/src/component.rs](/home/bacon/engawacad/crates/engawa-format/src/component.rs:141))、実際の serializer は empty と canonical three を同一の default として潰しています([crates/engawa-format/src/ref_plane.rs](/home/bacon/engawacad/crates/engawa-format/src/ref_plane.rs:68))。これは I/O 上の便宜であって、child の意味論を B に固定する理由にはなりません。
+
+3. stdlib/reusable part の議論も B に有利すぎます。ADR-007 では、独立した再利用部品はそもそも `ComponentRef::StdLib/File` で参照ロードする設計です([docs/decisions/007-assembly-and-references.md](/home/bacon/engawacad/docs/decisions/007-assembly-and-references.md:57))。親 datum 命名規約から切り離したい部品は参照 component を使えば足ります。にもかかわらず B は「inline child として再利用部品を置く」ケースを守るために、inline assembly で最も自然な親 datum 名の継承を捨てています。却下された Option A の利点は、まさにこの inline hierarchy で datum を重複定義せずに使い回せる点です。
+
+4. Option C の棄却は過大評価です。[ADR 本文](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:45) は「マージ規則が複雑」と言いますが、衝突し得る canonical id は実質 `Front/Top/Right` の 3 個だけです。これを予約語にする、canonical 優先にする、重複を validation error にする、のいずれかで十分です。B が持ち込む datum 重複、変数同期不能、将来の migration コストの方がはるかに重いです。
+
+Refute理由: この ADR は「Component の独立座標系」と「plane 名の解決規則」を混同しています。独立座標系は transform で既に成立しており、Option B が追加でやっているのは親 datum 名の再利用を禁止して child に再宣言を強いることだけです。しかも、その正当化に使っている parser-level 不変は root の I/O 補完に過ぎず、再利用部品の独立性も参照 component で既に満たせます。逆に、却下された Option A/C 側には inline assembly で datum 名を階層的に再利用できる明確な利点があり、特に C は 3 個の canonical id の衝突規則を決めるだけで B の欠点をかなり避けられます。現状の根拠では「既存実装に合わせて B を追認している」以上の説明になっておらず、採用判断としては弱すぎます。
+verdict: refuted
