@@ -88,7 +88,7 @@ fn build_cyl_sphere_intersect() -> engawa_kernel::brep::topology::Solid {
 /// Build cyl∩cuboid intersect: cuboid(10³) ∩ cylinder(r=2, h=15, origin=(0,0,-7.5))
 fn build_cyl_cuboid_intersect() -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
     boolean(&box_solid, &cyl, BooleanOp::Intersect, &mut gen).expect("cyl intersect cuboid")
 }

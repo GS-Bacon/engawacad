@@ -51,7 +51,7 @@ fn count_naked_edges(mesh: &TriangleMesh, tol: f64) -> usize {
 fn t01_determinism_axis_z() {
     let build = || {
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
         let sphere = make_sphere(3.0, Point::new(0.0, 0.0, 6.0), &mut gen).expect("sphere");
         let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
         tessellate_solid(&result).expect("tessellate")
@@ -69,7 +69,7 @@ fn t01_determinism_axis_z() {
 #[test]
 fn t02_watertight_axis_z() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let sphere = make_sphere(3.0, Point::new(0.0, 0.0, 6.0), &mut gen).expect("sphere");
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");
@@ -732,7 +732,7 @@ fn t04_shared_boundary_with_cyl_lateral() {
     use engawa_kernel::geometry::surface::Surface;
 
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let sphere = make_sphere(3.0, Point::new(0.0, 0.0, 6.0), &mut gen).expect("sphere");
     let mut result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
 

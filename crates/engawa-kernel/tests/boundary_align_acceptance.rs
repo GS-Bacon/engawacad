@@ -99,7 +99,7 @@ fn assert_watertight_welded(positions: &[[f64; 3]], indices: &[u32], eps: f64, l
 /// Build fuse solid: box(10³) ∪ cylinder(r=2, h=15, origin=(0,0,-7.5)).
 fn build_fuse_box_cyl() -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
     boolean(&box_solid, &cyl, BooleanOp::Fuse, &mut gen).expect("fuse box cyl should succeed")
 }
@@ -107,7 +107,7 @@ fn build_fuse_box_cyl() -> engawa_kernel::brep::topology::Solid {
 /// Build intersect solid: box(10³) ∩ cylinder(r=2, h=15, origin=(0,0,-7.5)).
 fn build_intersect_box_cyl() -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
     boolean(&box_solid, &cyl, BooleanOp::Intersect, &mut gen)
         .expect("intersect box cyl should succeed")

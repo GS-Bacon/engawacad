@@ -19,6 +19,7 @@ pub fn make_cuboid(
     dx: f64,
     dy: f64,
     dz: f64,
+    feature_id: &str,
     id_gen: &mut IdGenerator,
 ) -> Result<Solid, KernelError> {
     if !dx.is_finite() || dx <= 0.0 {
@@ -58,10 +59,7 @@ pub fn make_cuboid(
         (Point::new(hx, hy, hz), "v_ppp"),    // 7
     ];
 
-    // We'll use a fixed feature_id "cuboid" for the EntityRef names since the actual
-    // feature_id is not available inside the kernel. The build dispatcher will need to
-    // re-name these if needed. For now this gives named entities for boolean operations.
-    let fid = "cuboid";
+    let fid = feature_id;
 
     let v: Vec<usize> = v_data
         .iter()
@@ -228,7 +226,7 @@ mod tests {
     #[test]
     fn test_cuboid_topology() {
         let mut id_gen = IdGenerator::new(0);
-        let solid = make_cuboid(10.0, 20.0, 30.0, &mut id_gen).unwrap();
+        let solid = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut id_gen).unwrap();
 
         assert_eq!(solid.vertices.len(), 8, "cuboid should have 8 vertices");
         assert_eq!(solid.edges.len(), 12, "cuboid should have 12 edges");
@@ -246,7 +244,7 @@ mod tests {
     #[test]
     fn test_cuboid_vertex_positions() {
         let mut id_gen = IdGenerator::new(0);
-        let solid = make_cuboid(2.0, 4.0, 6.0, &mut id_gen).unwrap();
+        let solid = make_cuboid(2.0, 4.0, 6.0, "cuboid", &mut id_gen).unwrap();
 
         let expected = [
             Point::new(-1.0, -2.0, -3.0),
@@ -274,8 +272,8 @@ mod tests {
         let mut id_gen1 = IdGenerator::new(0);
         let mut id_gen2 = IdGenerator::new(0);
 
-        let solid1 = make_cuboid(10.0, 20.0, 30.0, &mut id_gen1).unwrap();
-        let solid2 = make_cuboid(10.0, 20.0, 30.0, &mut id_gen2).unwrap();
+        let solid1 = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut id_gen1).unwrap();
+        let solid2 = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut id_gen2).unwrap();
 
         assert_eq!(solid1.vertices.len(), solid2.vertices.len());
         for (v1, v2) in solid1.vertices.iter().zip(solid2.vertices.iter()) {
@@ -300,67 +298,67 @@ mod tests {
         let mut gen = IdGenerator::new(0);
 
         assert!(matches!(
-            make_cuboid(0.0, 1.0, 1.0, &mut gen),
+            make_cuboid(0.0, 1.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "width" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, 0.0, 1.0, &mut gen),
+            make_cuboid(1.0, 0.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "height" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, 1.0, 0.0, &mut gen),
+            make_cuboid(1.0, 1.0, 0.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
         ));
 
         assert!(matches!(
-            make_cuboid(-1.0, 1.0, 1.0, &mut gen),
+            make_cuboid(-1.0, 1.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "width" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, -1.0, 1.0, &mut gen),
+            make_cuboid(1.0, -1.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "height" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, 1.0, -1.0, &mut gen),
+            make_cuboid(1.0, 1.0, -1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
         ));
 
         assert!(matches!(
-            make_cuboid(f64::NAN, 1.0, 1.0, &mut gen),
+            make_cuboid(f64::NAN, 1.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "width" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, f64::NAN, 1.0, &mut gen),
+            make_cuboid(1.0, f64::NAN, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "height" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, 1.0, f64::NAN, &mut gen),
+            make_cuboid(1.0, 1.0, f64::NAN, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
         ));
 
         assert!(matches!(
-            make_cuboid(f64::INFINITY, 1.0, 1.0, &mut gen),
+            make_cuboid(f64::INFINITY, 1.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "width" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, f64::INFINITY, 1.0, &mut gen),
+            make_cuboid(1.0, f64::INFINITY, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "height" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, 1.0, f64::INFINITY, &mut gen),
+            make_cuboid(1.0, 1.0, f64::INFINITY, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
         ));
 
         assert!(matches!(
-            make_cuboid(f64::NEG_INFINITY, 1.0, 1.0, &mut gen),
+            make_cuboid(f64::NEG_INFINITY, 1.0, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "width" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, f64::NEG_INFINITY, 1.0, &mut gen),
+            make_cuboid(1.0, f64::NEG_INFINITY, 1.0, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "height" })
         ));
         assert!(matches!(
-            make_cuboid(1.0, 1.0, f64::NEG_INFINITY, &mut gen),
+            make_cuboid(1.0, 1.0, f64::NEG_INFINITY, "test", &mut gen),
             Err(KernelError::InvalidParameter { kind: "depth" })
         ));
     }
@@ -368,7 +366,7 @@ mod tests {
     #[test]
     fn test_make_cuboid_near_zero_positive_ok() {
         let mut gen = IdGenerator::new(0);
-        let result = make_cuboid(1e-9, 1.0, 1.0, &mut gen);
+        let result = make_cuboid(1e-9, 1.0, 1.0, "cuboid", &mut gen);
         assert!(
             result.is_ok(),
             "near-zero positive should be Ok per exact <= 0.0 policy"
@@ -378,7 +376,7 @@ mod tests {
     #[test]
     fn test_cuboid_entity_names() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let solid = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
 
         for v in &solid.vertices {
             assert!(v.name.is_some(), "vertex should have a name");

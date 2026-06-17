@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 fn make_box_minus_sphere(gen: &mut IdGenerator) -> engawa_kernel::brep::topology::Solid {
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", gen).expect("cuboid");
     let sphere = make_sphere(3.0, Point::origin(), gen).expect("sphere");
     boolean(&box_solid, &sphere, BooleanOp::Cut, gen).expect("box - sphere cut")
 }
@@ -403,27 +403,27 @@ fn ec04_make_sphere_numerical_boundaries() {
 fn ec05_make_cuboid_numerical_boundaries() {
     // NaN dimension → error
     assert!(
-        make_cuboid(f64::NAN, 1.0, 1.0, &mut IdGenerator::new(0)).is_err(),
+        make_cuboid(f64::NAN, 1.0, 1.0, "test", &mut IdGenerator::new(0)).is_err(),
         "NaN width should error"
     );
     // +Inf dimension → error
     assert!(
-        make_cuboid(f64::INFINITY, 1.0, 1.0, &mut IdGenerator::new(0)).is_err(),
+        make_cuboid(f64::INFINITY, 1.0, 1.0, "test", &mut IdGenerator::new(0)).is_err(),
         "+Inf width should error"
     );
     // -0.0 dimension → error
     assert!(
-        make_cuboid(-0.0, 1.0, 1.0, &mut IdGenerator::new(0)).is_err(),
+        make_cuboid(-0.0, 1.0, 1.0, "test", &mut IdGenerator::new(0)).is_err(),
         "-0.0 width should error"
     );
     // Negative dimension → error
     assert!(
-        make_cuboid(-1.0, 1.0, 1.0, &mut IdGenerator::new(0)).is_err(),
+        make_cuboid(-1.0, 1.0, 1.0, "test", &mut IdGenerator::new(0)).is_err(),
         "negative width should error"
     );
     // Zero dimension → error
     assert!(
-        make_cuboid(1.0, 0.0, 1.0, &mut IdGenerator::new(0)).is_err(),
+        make_cuboid(1.0, 0.0, 1.0, "test", &mut IdGenerator::new(0)).is_err(),
         "zero height should error"
     );
 }

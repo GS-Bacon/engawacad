@@ -12,13 +12,13 @@ use engawa_kernel::primitives::make_cuboid;
 
 /// Helper: build a 10×20×30 cuboid centered at origin. Right face at X=+5.
 fn target_box(gen: &mut IdGenerator) -> Solid {
-    make_cuboid(10.0, 20.0, 30.0, gen).expect("target cuboid")
+    make_cuboid(10.0, 20.0, 30.0, "cuboid", gen).expect("target cuboid")
 }
 
 /// Helper: build a solid with two coplanar overlapping faces.
 /// Takes a valid cuboid and duplicates its bottom face.
 fn build_solid_with_coplanar_overlapping_faces(gen: &mut IdGenerator) -> Solid {
-    let mut cuboid = make_cuboid(2.0, 2.0, 2.0, gen).expect("cuboid");
+    let mut cuboid = make_cuboid(2.0, 2.0, 2.0, "cuboid", gen).expect("cuboid");
 
     let bot_face_idx = cuboid
         .faces
@@ -48,8 +48,8 @@ fn build_solid_with_coplanar_overlapping_faces(gen: &mut IdGenerator) -> Solid {
 /// Helper: build a solid with two coplanar faces that do NOT overlap in 2D.
 /// Two separate cuboids on the same Z=0 plane but far apart in X.
 fn build_solid_with_coplanar_non_overlapping_faces(gen: &mut IdGenerator) -> Solid {
-    let mut box1 = make_cuboid(2.0, 2.0, 2.0, gen).expect("box1");
-    let mut box2 = make_cuboid(2.0, 2.0, 2.0, gen).expect("box2");
+    let mut box1 = make_cuboid(2.0, 2.0, 2.0, "cuboid", gen).expect("box1");
+    let mut box2 = make_cuboid(2.0, 2.0, 2.0, "cuboid", gen).expect("box2");
     box2.translate(Vec3::new(10.0, 0.0, 0.0));
 
     // Merge box2 topology into box1
@@ -127,7 +127,7 @@ fn t01_cut_tool_face_at_len_eps_from_target_face() {
     let target = target_box(&mut gen);
 
     let len_eps = 1e-9_f64;
-    let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool cuboid");
+    let mut tool = make_cuboid(4.0, 10.0, 20.0, "cuboid", &mut gen).expect("tool cuboid");
     tool.translate(Vec3::new(3.0 - len_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -146,7 +146,7 @@ fn t01_degen_boundary_cut_with_epsilon_guard_clearance() {
     let mut gen = IdGenerator::new(2);
     let target = target_box(&mut gen);
     let epsilon_guard = 1e-6_f64;
-    let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool");
+    let mut tool = make_cuboid(4.0, 10.0, 20.0, "cuboid", &mut gen).expect("tool");
     tool.translate(Vec3::new(3.0 - epsilon_guard, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -170,7 +170,7 @@ fn t02_classify_boundary_coplanar_at_len_eps() {
     let mut gen = IdGenerator::new(3);
     let target = target_box(&mut gen);
     let len_eps = 1e-9_f64;
-    let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool");
+    let mut tool = make_cuboid(4.0, 10.0, 20.0, "cuboid", &mut gen).expect("tool");
     tool.translate(Vec3::new(3.0 - len_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -191,7 +191,7 @@ fn t02_boundary_dist_just_above_len_eps_not_coplanar() {
     let mut gen = IdGenerator::new(4);
     let target = target_box(&mut gen);
     let above_eps = 1e-9 + 1e-15_f64;
-    let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool");
+    let mut tool = make_cuboid(4.0, 10.0, 20.0, "cuboid", &mut gen).expect("tool");
     tool.translate(Vec3::new(3.0 - above_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -235,7 +235,7 @@ fn t04_determinism_extrude_cut_near_face() {
     let run = || {
         let mut gen = IdGenerator::new(99);
         let target = target_box(&mut gen);
-        let mut tool = make_cuboid(4.0, 10.0, 20.0, &mut gen).expect("tool");
+        let mut tool = make_cuboid(4.0, 10.0, 20.0, "cuboid", &mut gen).expect("tool");
         tool.translate(Vec3::new(2.0, 0.0, 0.0));
         let solid = boolean(&target, &tool, BooleanOp::Cut, &mut gen).unwrap();
         (solid.vertices.len(), solid.edges.len(), solid.faces.len())

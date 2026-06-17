@@ -44,7 +44,7 @@ fn t01_determinism() {
                 },
             ],
             plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
-                feature_id: "cuboid".to_string(),
+                feature_id: "box_1".to_string(),
                 kind: EntityKind::Face,
                 role: "f_z_pos".to_string(),
             })),
@@ -214,7 +214,7 @@ fn t03_plane_ref_entity_extrude() {
                 },
             ],
             plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
-                feature_id: "cuboid".to_string(),
+                feature_id: "box_1".to_string(),
                 kind: EntityKind::Face,
                 role: "f_z_pos".to_string(),
             })),
@@ -250,7 +250,7 @@ fn t03_plane_ref_entity_extrude() {
     let body_cuboid = &bodies[0].solid;
     let face_idx = body_cuboid
         .find_face_by_entity_ref(&EntityRef::Named {
-            feature_id: "cuboid".to_string(),
+            feature_id: "box_1".to_string(),
             kind: EntityKind::Face,
             role: "f_z_pos".to_string(),
         })
@@ -328,7 +328,7 @@ fn t04_plane_ref_entity_extrude_cut() {
                 },
             ],
             plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
-                feature_id: "cuboid".to_string(),
+                feature_id: "box_target".to_string(),
                 kind: EntityKind::Face,
                 role: "f_z_pos".to_string(),
             })),

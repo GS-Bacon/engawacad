@@ -43,12 +43,9 @@ root_component:
           to:
           - 0.0
           - 0.0
-      # NOTE: 現状 make_cuboid は内部で fid="cuboid" を固定で使うため (#219 参照)、
-      # CreateBox の id (box_1) ではなく "cuboid" を指定する必要がある。
-      # #219 で kernel に Feature 起点の feature_id を伝える対応をすれば box_1 が使える。
       plane_ref:
         ref: named
-        feature_id: cuboid
+        feature_id: box_1
         kind: face
         role: f_z_pos
     # Extrude the sketch

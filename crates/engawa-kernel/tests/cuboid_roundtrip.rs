@@ -6,7 +6,7 @@ use engawa_kernel::tessellation::tessellate_solid;
 #[test]
 fn cuboid_to_mesh_pipeline() {
     let mut id_gen = IdGenerator::new(0);
-    let solid = make_cuboid(10.0, 20.0, 30.0, &mut id_gen).unwrap();
+    let solid = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut id_gen).unwrap();
 
     // Verify topology
     assert_eq!(solid.vertices.len(), 8);
@@ -28,7 +28,7 @@ fn cuboid_to_mesh_pipeline() {
 fn cuboid_pipeline_is_deterministic() {
     let run = || {
         let mut id_gen = IdGenerator::new(42);
-        let solid = make_cuboid(5.0, 10.0, 15.0, &mut id_gen).unwrap();
+        let solid = make_cuboid(5.0, 10.0, 15.0, "cuboid", &mut id_gen).unwrap();
         tessellate_solid(&solid).unwrap()
     };
 

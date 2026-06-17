@@ -1312,7 +1312,7 @@ mod tests {
     #[test]
     fn test_tessellate_cuboid_unchanged() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cuboid(1.0, 1.0, 1.0, &mut gen).unwrap();
+        let solid = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         assert_eq!(mesh.triangle_count(), 12);
@@ -1327,8 +1327,8 @@ mod tests {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
 
-        let s1 = make_cuboid(1.0, 1.0, 1.0, &mut gen1).unwrap();
-        let s2 = make_cuboid(1.0, 1.0, 1.0, &mut gen2).unwrap();
+        let s1 = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen1).unwrap();
+        let s2 = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen2).unwrap();
 
         let m1 = tessellate_solid(&s1).unwrap();
         let m2 = tessellate_solid(&s2).unwrap();
@@ -1457,7 +1457,7 @@ mod tests {
     #[test]
     fn test_tessellate_cuboid() {
         let mut id_gen = IdGenerator::new(0);
-        let solid = make_cuboid(1.0, 1.0, 1.0, &mut id_gen).unwrap();
+        let solid = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut id_gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         assert_eq!(mesh.triangle_count(), 12);
@@ -1471,8 +1471,8 @@ mod tests {
         let mut id_gen1 = IdGenerator::new(0);
         let mut id_gen2 = IdGenerator::new(0);
 
-        let solid1 = make_cuboid(2.0, 3.0, 4.0, &mut id_gen1).unwrap();
-        let solid2 = make_cuboid(2.0, 3.0, 4.0, &mut id_gen2).unwrap();
+        let solid1 = make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut id_gen1).unwrap();
+        let solid2 = make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut id_gen2).unwrap();
 
         let mesh1 = tessellate_solid(&solid1).unwrap();
         let mesh2 = tessellate_solid(&solid2).unwrap();
@@ -2236,8 +2236,8 @@ mod tests {
     fn t09_merge_determinism() {
         let mut gen1 = IdGenerator::new(0);
         let mut gen2 = IdGenerator::new(0);
-        let s1 = make_cuboid(1.0, 1.0, 1.0, &mut gen1).unwrap();
-        let s2 = make_cuboid(1.0, 1.0, 1.0, &mut gen2).unwrap();
+        let s1 = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen1).unwrap();
+        let s2 = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen2).unwrap();
 
         let mesh1a = tessellate_solid(&s1).unwrap();
         let mesh1b = tessellate_solid(&s2).unwrap();
@@ -2246,8 +2246,8 @@ mod tests {
 
         let mut gen3 = IdGenerator::new(0);
         let mut gen4 = IdGenerator::new(0);
-        let s3 = make_cuboid(1.0, 1.0, 1.0, &mut gen3).unwrap();
-        let s4 = make_cuboid(1.0, 1.0, 1.0, &mut gen4).unwrap();
+        let s3 = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen3).unwrap();
+        let s4 = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen4).unwrap();
         let mesh2a = tessellate_solid(&s3).unwrap();
         let mesh2b = tessellate_solid(&s4).unwrap();
         let merged2 = merge_meshes(&[mesh2a, mesh2b]);
@@ -2601,7 +2601,7 @@ mod tests {
     #[test]
     fn fan_winding_cw_box_face() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         // Centroid at origin, all facet normals should point away
@@ -2638,7 +2638,7 @@ mod tests {
     #[test]
     fn fan_winding_ccw_positive_signed_volume() {
         let mut gen = IdGenerator::new(0);
-        let solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let mesh = tessellate_solid(&solid).unwrap();
 
         let mut vol = 0.0_f64;
@@ -2722,7 +2722,7 @@ mod tests {
         use crate::booleans::{boolean, BooleanOp};
 
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let mut sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
         shift_solid_for_test(&mut sphere, 0.0, 0.0, 6.0);
         let solid = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen)
@@ -2947,7 +2947,7 @@ mod tests {
         use crate::booleans::{boolean, BooleanOp};
 
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
         let solid =
             boolean(&box_solid, &cyl, BooleanOp::Intersect, &mut gen).expect("box∩cyl intersect");

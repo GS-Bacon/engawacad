@@ -345,7 +345,7 @@ pub fn build_bodies_from_features(
                 height,
                 depth,
             } => {
-                let solid = make_cuboid(*width, *height, *depth, gen)?;
+                let solid = make_cuboid(*width, *height, *depth, id, gen)?;
                 built.register(id.to_string(), solid);
             }
             Feature::CreateCylinder {

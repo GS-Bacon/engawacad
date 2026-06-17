@@ -2537,7 +2537,7 @@ mod tests {
     #[test]
     fn t14_sphere_face_partition_no_panic() {
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
 
         let result = partition_faces(&box_solid, &sphere, BooleanOp::Cut);
@@ -2554,7 +2554,7 @@ mod tests {
     #[test]
     fn tx2_box_sphere_partition_fragment_counts() {
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
 
         let result = partition_faces(&box_solid, &sphere, BooleanOp::Cut);
@@ -2623,7 +2623,7 @@ mod tests {
     #[test]
     fn t16_circle_pslg_interior_detection() {
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
         let cylinder = make_cylinder(2.0, 6.0, Point::origin(), &mut gen).unwrap();
 
         let (target_frags, _tool_frags) = partition_faces(&box_solid, &cylinder, BooleanOp::Cut)
@@ -2676,8 +2676,8 @@ mod tests {
     fn dbg_surface_cut_partition_trace() {
         let x_offset = 4.97809298669049_f64;
         let mut gen = IdGenerator::new(42);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
 
         // Show tool face normals for identification

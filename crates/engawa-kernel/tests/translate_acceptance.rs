@@ -10,7 +10,7 @@ use engawa_kernel::geometry::{Plane, Point, Vec3};
 
 fn make_test_cuboid() -> Solid {
     let mut gen = IdGenerator::new(1);
-    engawa_kernel::primitives::make_cuboid(2.0, 3.0, 4.0, &mut gen).unwrap()
+    engawa_kernel::primitives::make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut gen).unwrap()
 }
 
 #[test]

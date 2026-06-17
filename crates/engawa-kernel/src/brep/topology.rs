@@ -1173,7 +1173,7 @@ mod tests {
 
     fn make_test_cuboid() -> Solid {
         let mut gen = IdGenerator::new(1);
-        crate::primitives::make_cuboid(2.0, 3.0, 4.0, &mut gen).unwrap()
+        crate::primitives::make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut gen).unwrap()
     }
 
     /// T01: Determinism — same offset applied 100 times yields identical serialized output.

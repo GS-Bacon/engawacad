@@ -40,8 +40,8 @@ proptest! {
         tool_d in 1.0_f64..10.0_f64,
     ) {
         let mut gen = IdGenerator::new(99);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(tool_w, tool_h, tool_d, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(tool_w, tool_h, tool_d, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
         match result {
@@ -65,8 +65,8 @@ proptest! {
         x_offset in -5.0_f64..=5.0_f64,
     ) {
         let mut gen = IdGenerator::new(200);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         // Must not panic — Ok or Err are both acceptable
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -94,8 +94,8 @@ proptest! {
         x_offset in 4.1_f64..5.4_f64,
     ) {
         let mut gen = IdGenerator::new(42);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
         prop_assert!(
@@ -120,8 +120,8 @@ proptest! {
 #[test]
 fn t02_degen_minimum_tool_size_ok_or_err() {
     let mut gen = IdGenerator::new(300);
-    let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-    let mut tool = make_cuboid(1.0, 1.0, 1.0, &mut gen).unwrap();
+    let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+    let mut tool = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen).unwrap();
     tool.translate(Vec3::new(0.0, 0.0, 0.0));
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
     match result {
@@ -141,8 +141,8 @@ fn t02_degen_minimum_tool_size_ok_or_err() {
 fn t03_determinism_fixed_seed() {
     let build = || {
         let mut gen = IdGenerator::new(99);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(3.0, 4.0, 5.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(3.0, 4.0, 5.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(1.0, 0.0, 0.0));
         boolean(&target, &tool, BooleanOp::Cut, &mut gen).unwrap()
     };
@@ -176,8 +176,8 @@ fn t03_determinism_fixed_seed() {
 #[test]
 fn t02_void_cut_volume_exceeds_initial() {
     let mut gen = IdGenerator::new(77);
-    let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-    let tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+    let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+    let tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
     // tool centred at origin → fully inside target (target X ∈ [-5,5], tool X ∈ [-1,1])
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
     let cut = result.expect("void cut should succeed");
@@ -208,9 +208,9 @@ proptest! {
         x_offset in -0.4_f64..0.4_f64,
     ) {
         let mut gen = IdGenerator::new(88);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
         // tool_w=9.9 → X range [x_offset-4.95, x_offset+4.95], always exits target X=±5
-        let mut tool = make_cuboid(9.9, 8.0, 10.0, &mut gen).unwrap();
+        let mut tool = make_cuboid(9.9, 8.0, 10.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
         match result {
@@ -231,8 +231,8 @@ proptest! {
 fn t03_boundary_seed_determinism() {
     let build = |x_offset: f64| {
         let mut gen = IdGenerator::new(200);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         boolean(&target, &tool, BooleanOp::Cut, &mut gen)
     };
@@ -277,8 +277,8 @@ fn t03_repeated_determinism_100_runs() {
 
     for _ in 0..100 {
         let mut gen = IdGenerator::new(99);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(3.0, 4.0, 5.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(3.0, 4.0, 5.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(1.0, 0.0, 0.0));
         let solid = boolean(&target, &tool, BooleanOp::Cut, &mut gen).unwrap();
         let ids: Vec<u64> = solid.vertices.iter().map(|v| v.id).collect();
@@ -311,15 +311,15 @@ fn t03_repeated_determinism_100_runs() {
 fn t04_make_cuboid_nan_returns_err() {
     let mut gen = IdGenerator::new(1);
     assert!(
-        make_cuboid(f64::NAN, 1.0, 1.0, &mut gen).is_err(),
+        make_cuboid(f64::NAN, 1.0, 1.0, "test", &mut gen).is_err(),
         "NaN width should be rejected"
     );
     assert!(
-        make_cuboid(1.0, f64::NAN, 1.0, &mut gen).is_err(),
+        make_cuboid(1.0, f64::NAN, 1.0, "test", &mut gen).is_err(),
         "NaN height should be rejected"
     );
     assert!(
-        make_cuboid(1.0, 1.0, f64::NAN, &mut gen).is_err(),
+        make_cuboid(1.0, 1.0, f64::NAN, "test", &mut gen).is_err(),
         "NaN depth should be rejected"
     );
 }
@@ -328,11 +328,11 @@ fn t04_make_cuboid_nan_returns_err() {
 fn t04_make_cuboid_infinity_returns_err() {
     let mut gen = IdGenerator::new(1);
     assert!(
-        make_cuboid(f64::INFINITY, 1.0, 1.0, &mut gen).is_err(),
+        make_cuboid(f64::INFINITY, 1.0, 1.0, "test", &mut gen).is_err(),
         "Inf width should be rejected"
     );
     assert!(
-        make_cuboid(1.0, f64::NEG_INFINITY, 1.0, &mut gen).is_err(),
+        make_cuboid(1.0, f64::NEG_INFINITY, 1.0, "test", &mut gen).is_err(),
         "-Inf height should be rejected"
     );
 }
@@ -341,15 +341,15 @@ fn t04_make_cuboid_infinity_returns_err() {
 fn t04_make_cuboid_negative_returns_err() {
     let mut gen = IdGenerator::new(1);
     assert!(
-        make_cuboid(-1.0, 1.0, 1.0, &mut gen).is_err(),
+        make_cuboid(-1.0, 1.0, 1.0, "test", &mut gen).is_err(),
         "negative width should be rejected"
     );
     assert!(
-        make_cuboid(1.0, -5.0, 1.0, &mut gen).is_err(),
+        make_cuboid(1.0, -5.0, 1.0, "test", &mut gen).is_err(),
         "negative height should be rejected"
     );
     assert!(
-        make_cuboid(1.0, 1.0, -0.1, &mut gen).is_err(),
+        make_cuboid(1.0, 1.0, -0.1, "test", &mut gen).is_err(),
         "negative depth should be rejected"
     );
 }
@@ -358,15 +358,15 @@ fn t04_make_cuboid_negative_returns_err() {
 fn t04_make_cuboid_zero_returns_err() {
     let mut gen = IdGenerator::new(1);
     assert!(
-        make_cuboid(0.0, 1.0, 1.0, &mut gen).is_err(),
+        make_cuboid(0.0, 1.0, 1.0, "test", &mut gen).is_err(),
         "zero width should be rejected"
     );
     assert!(
-        make_cuboid(1.0, 0.0, 1.0, &mut gen).is_err(),
+        make_cuboid(1.0, 0.0, 1.0, "test", &mut gen).is_err(),
         "zero height should be rejected"
     );
     assert!(
-        make_cuboid(1.0, 1.0, 0.0, &mut gen).is_err(),
+        make_cuboid(1.0, 1.0, 0.0, "test", &mut gen).is_err(),
         "zero depth should be rejected"
     );
 }
@@ -375,7 +375,7 @@ fn t04_make_cuboid_zero_returns_err() {
 fn t04_make_cuboid_negative_zero_returns_err() {
     let mut gen = IdGenerator::new(1);
     assert!(
-        make_cuboid(-0.0, 1.0, 1.0, &mut gen).is_err(),
+        make_cuboid(-0.0, 1.0, 1.0, "test", &mut gen).is_err(),
         "-0.0 width should be rejected"
     );
 }
@@ -388,6 +388,7 @@ fn t04_make_cuboid_min_positive_ok() {
         f64::MIN_POSITIVE,
         f64::MIN_POSITIVE,
         f64::MIN_POSITIVE,
+        "test",
         &mut gen,
     );
     assert!(result.is_ok(), "MIN_POSITIVE dimensions should be valid");
@@ -422,11 +423,11 @@ fn t05_empty_solid_validate_manifold_is_consistent() {
 fn t06_make_cuboid_determinism() {
     let a = {
         let mut gen = IdGenerator::new(42);
-        make_cuboid(3.0, 4.0, 5.0, &mut gen).unwrap()
+        make_cuboid(3.0, 4.0, 5.0, "cuboid", &mut gen).unwrap()
     };
     let b = {
         let mut gen = IdGenerator::new(42);
-        make_cuboid(3.0, 4.0, 5.0, &mut gen).unwrap()
+        make_cuboid(3.0, 4.0, 5.0, "cuboid", &mut gen).unwrap()
     };
 
     assert_eq!(a.vertices.len(), b.vertices.len());

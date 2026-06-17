@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn t_validate_cuboid_passes() {
         let mut gen = IdGenerator::new(0);
-        let cuboid = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let cuboid = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         assert!(validate_boolean_input(&cuboid, "test").is_ok());
     }
 
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn tx1_validate_mixed_sphere_cuboid_solid() {
         let mut gen = IdGenerator::new(0);
-        let cuboid = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let cuboid = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         let sphere = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
 
         let mut mixed = cuboid;

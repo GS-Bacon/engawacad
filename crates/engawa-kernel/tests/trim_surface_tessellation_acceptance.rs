@@ -53,7 +53,7 @@ fn count_naked_edges(mesh: &TriangleMesh, tol: f64) -> usize {
 fn t01_box_cut_determinism() {
     let build = || {
         let mut gen = IdGenerator::new(0);
-        let box_solid = make_cuboid(4.0, 4.0, 4.0, &mut gen).expect("cuboid");
+        let box_solid = make_cuboid(4.0, 4.0, 4.0, "cuboid", &mut gen).expect("cuboid");
         let cyl = make_cylinder(1.0, 6.0, Point::new(0.0, 0.0, -3.0), &mut gen).expect("cylinder");
         let result = boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("cut");
         tessellate_solid(&result).expect("tessellate")
@@ -72,7 +72,7 @@ fn t01_box_cut_determinism() {
 #[test]
 fn t02_box_cut_naked_edge_zero() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(4.0, 4.0, 4.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(4.0, 4.0, 4.0, "cuboid", &mut gen).expect("cuboid");
     let cyl = make_cylinder(1.0, 6.0, Point::new(0.0, 0.0, -3.0), &mut gen).expect("cylinder");
     let result = boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");
@@ -89,7 +89,7 @@ fn t02_box_cut_naked_edge_zero() {
 #[test]
 fn t03_box_void_naked_edge_zero() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(6.0, 6.0, 6.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(6.0, 6.0, 6.0, "cuboid", &mut gen).expect("cuboid");
     let sphere = make_sphere(2.0, Point::new(0.0, 0.0, 3.5), &mut gen).expect("sphere");
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");
@@ -106,7 +106,7 @@ fn t03_box_void_naked_edge_zero() {
 #[test]
 fn t04_sphere_dimple_naked_edge_zero() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let sphere = make_sphere(3.0, Point::new(0.0, 0.0, 6.0), &mut gen).expect("sphere");
     let result = boolean(&box_solid, &sphere, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");
@@ -125,7 +125,7 @@ fn t04_sphere_dimple_naked_edge_zero() {
 #[test]
 fn t07_degen_inner_small_loop_no_panic() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     // Very small sphere that barely clips the top face → tiny inner_loop
     let sphere = make_sphere(0.05, Point::new(0.0, 0.0, 6.0), &mut gen).expect("sphere");
     // Main contract: no panic. Boolean may succeed or fail for degenerate overlap.
@@ -153,7 +153,7 @@ fn t07_degen_inner_small_loop_no_panic() {
 #[test]
 fn t08_boundary_seam_cylinder_unwrap() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(4.0, 4.0, 4.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(4.0, 4.0, 4.0, "cuboid", &mut gen).expect("cuboid");
     let cyl = make_cylinder(1.0, 6.0, Point::new(0.0, 0.0, -3.0), &mut gen).expect("cyl");
     let result = boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");

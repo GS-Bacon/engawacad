@@ -273,7 +273,7 @@ fn assert_shared_boundary(solid: &Solid, label: &str) -> usize {
 /// cross-face 円境界を持たないため fixture として不適切。Codex review #144-F02 参照)
 fn make_box_cut_cyl_through() -> Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).expect("cylinder");
     boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("box - cyl through-hole cut")
 }
@@ -309,7 +309,7 @@ fn make_cyl_intersect_sphere() -> Solid {
 /// box(10³) ∪ cyl(r=2, h=15, c=(0,0,-7.5))
 fn make_box_fuse_cyl() -> Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
     boolean(&box_solid, &cyl, BooleanOp::Fuse, &mut gen).expect("fuse box cyl")
 }
@@ -384,7 +384,7 @@ fn t05_degen_self_adjacent_seam_no_panic() {
 #[test]
 fn t06_boundary_pure_cuboid_no_circle_edges() {
     let mut gen = IdGenerator::new(0);
-    let cuboid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let cuboid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let count = assert_shared_boundary(&cuboid, "T06");
     assert_eq!(count, 0, "T06: cuboid has no Circle edges, got {count}");
 }

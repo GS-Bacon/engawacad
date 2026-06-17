@@ -12,12 +12,12 @@ fn t01_determinism() {
     // T01: 同一入力を2回実行し face_ids が完全一致
     let mesh1 = {
         let mut idgen = IdGenerator::new(0);
-        let solid = make_cuboid(2.0, 3.0, 4.0, &mut idgen).unwrap();
+        let solid = make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut idgen).unwrap();
         tessellate_solid(&solid).unwrap()
     };
     let mesh2 = {
         let mut idgen = IdGenerator::new(0);
-        let solid = make_cuboid(2.0, 3.0, 4.0, &mut idgen).unwrap();
+        let solid = make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut idgen).unwrap();
         tessellate_solid(&solid).unwrap()
     };
     assert_eq!(mesh1.face_ids, mesh2.face_ids);
@@ -27,7 +27,7 @@ fn t01_determinism() {
 fn t02_length_invariant_cuboid() {
     // T02: cuboid の face_ids.len() == triangle_count()
     let mut idgen = IdGenerator::new(0);
-    let solid = make_cuboid(1.0, 2.0, 3.0, &mut idgen).unwrap();
+    let solid = make_cuboid(1.0, 2.0, 3.0, "cuboid", &mut idgen).unwrap();
     let mesh = tessellate_solid(&solid).unwrap();
     assert_eq!(mesh.face_ids.len(), mesh.triangle_count());
 }
@@ -36,7 +36,7 @@ fn t02_length_invariant_cuboid() {
 fn t03_cuboid_face_ids_correct() {
     // T03: cuboid の各 face_id が N(...;F:...) 形式の非空文字列、6種のidが出現
     let mut idgen = IdGenerator::new(0);
-    let solid = make_cuboid(1.0, 1.0, 1.0, &mut idgen).unwrap();
+    let solid = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut idgen).unwrap();
     let mesh = tessellate_solid(&solid).unwrap();
 
     for id in &mesh.face_ids {

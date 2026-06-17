@@ -29,8 +29,8 @@ fn mesh_signed_volume(mesh: &engawa_kernel::tessellation::TriangleMesh) -> f64 {
 fn t01_determinism_surface_cut() {
     let build = || {
         let mut gen = IdGenerator::new(42);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(4.5, 0.0, 0.0));
         boolean(&target, &tool, BooleanOp::Cut, &mut gen).unwrap()
     };
@@ -59,8 +59,8 @@ fn t01_determinism_surface_cut() {
 #[test]
 fn t02_volume_reduced_after_surface_cut() {
     let mut gen = IdGenerator::new(42);
-    let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-    let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+    let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+    let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
     tool.translate(Vec3::new(4.5, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -88,8 +88,8 @@ fn t02_volume_reduced_after_surface_cut() {
 #[test]
 fn t02_boundary_large_offset_manifold() {
     let mut gen = IdGenerator::new(42);
-    let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-    let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+    let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+    let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
     tool.translate(Vec3::new(5.3, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
@@ -108,8 +108,8 @@ fn t02_boundary_large_offset_manifold() {
 fn t02_degen_flush_no_panic() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut gen = IdGenerator::new(42);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(4.0, 0.0, 0.0));
         boolean(&target, &tool, BooleanOp::Cut, &mut gen)
     }));
@@ -122,8 +122,8 @@ fn t02_degen_flush_no_panic() {
 #[test]
 fn t02_regression_fixed_x_offset() {
     let mut gen = IdGenerator::new(42);
-    let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-    let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+    let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+    let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
     tool.translate(Vec3::new(4.97809298669049, 0.0, 0.0));
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
     assert!(
@@ -143,8 +143,8 @@ fn t02_regression_fixed_x_offset() {
 fn t03_determinism_fixed_seed() {
     let build = |seed: u64| {
         let mut gen = IdGenerator::new(seed);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(4.97809298669049, 0.0, 0.0));
         boolean(&target, &tool, BooleanOp::Cut, &mut gen).unwrap()
     };
@@ -164,8 +164,8 @@ fn t03_surface_cut_100_run_determinism() {
     let mut results: Vec<(usize, usize, usize, Vec<u64>)> = Vec::with_capacity(100);
     for _ in 0..100 {
         let mut gen = IdGenerator::new(42);
-        let target = make_cuboid(10.0, 20.0, 30.0, &mut gen).unwrap();
-        let mut tool = make_cuboid(2.0, 2.0, 2.0, &mut gen).unwrap();
+        let target = make_cuboid(10.0, 20.0, 30.0, "cuboid", &mut gen).unwrap();
+        let mut tool = make_cuboid(2.0, 2.0, 2.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(4.5, 0.0, 0.0));
         let solid = boolean(&target, &tool, BooleanOp::Cut, &mut gen).unwrap();
         let ids: Vec<u64> = solid.vertices.iter().map(|v| v.id).collect();

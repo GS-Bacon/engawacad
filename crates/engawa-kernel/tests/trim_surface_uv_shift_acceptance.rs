@@ -130,7 +130,7 @@ fn t09_box_cut_regression() {
     use engawa_kernel::tessellation::tessellate_solid;
 
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(4.0, 4.0, 4.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(4.0, 4.0, 4.0, "cuboid", &mut gen).expect("cuboid");
     let cyl = make_cylinder(1.0, 6.0, Point::new(0.0, 0.0, -3.0), &mut gen).expect("cylinder");
     let result = boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");

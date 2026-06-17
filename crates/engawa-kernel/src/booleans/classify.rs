@@ -587,7 +587,8 @@ mod tests {
         );
 
         let mut gen = crate::brep::topology::IdGenerator::new(0);
-        let box_solid = crate::primitives::make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+        let box_solid =
+            crate::primitives::make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
 
         let result = classify_fragment_against_solid(&frag, &box_solid, LENGTH_TOLERANCE);
         assert!(result.is_ok(), "classify should succeed: {:?}", result);

@@ -57,7 +57,7 @@ fn count_naked_edges(mesh: &TriangleMesh, tol: f64) -> usize {
 }
 
 fn make_box_minus_sphere(gen: &mut IdGenerator) -> engawa_kernel::brep::topology::Solid {
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", gen).expect("cuboid");
     let sphere = make_sphere(3.0, Point::origin(), gen).expect("sphere");
     boolean(&box_solid, &sphere, BooleanOp::Cut, gen).expect("box - sphere cut")
 }
@@ -141,7 +141,7 @@ fn t03_cyl_sph_intersect_naked_edge() {
 #[test]
 fn t04_boundary_degen_cut_cyl() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).expect("cuboid");
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).expect("cuboid");
     let cyl = make_cylinder(2.0, 6.0, Point::origin(), &mut gen).expect("cylinder");
     let result = boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("cut");
     let mesh = tessellate_solid(&result).expect("tessellate");

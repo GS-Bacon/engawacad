@@ -16,7 +16,7 @@ use engawa_kernel::primitives::make_cuboid;
 
 fn make_test_cuboid() -> Solid {
     let mut gen = IdGenerator::new(1);
-    make_cuboid(2.0, 3.0, 4.0, &mut gen).unwrap()
+    make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut gen).unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -643,7 +643,7 @@ fn edge_rotation_preserves_topology_indices() {
 #[test]
 fn edge_yaml_roundtrip_after_rotation() {
     let mut gen = IdGenerator::new(1);
-    let cuboid = make_cuboid(2.0, 3.0, 4.0, &mut gen).unwrap();
+    let cuboid = make_cuboid(2.0, 3.0, 4.0, "cuboid", &mut gen).unwrap();
     let matrix = euler_to_matrix(
         45.0_f64.to_radians(),
         0.0_f64.to_radians(),

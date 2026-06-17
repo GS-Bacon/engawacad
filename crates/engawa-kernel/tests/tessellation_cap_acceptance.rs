@@ -206,7 +206,7 @@ fn t03_outward_normals_intersect() {
 #[test]
 fn t04_watertight_cut_hole() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let cyl = make_cylinder(2.0, 6.0, Point::origin(), &mut gen).unwrap();
     let solid =
         boolean(&box_solid, &cyl, BooleanOp::Cut, &mut gen).expect("cut cylinder should succeed");
@@ -240,7 +240,7 @@ fn t04_watertight_cut_hole() {
 #[test]
 fn t05_watertight_fuse() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
     let solid =
         boolean(&box_solid, &cyl, BooleanOp::Fuse, &mut gen).expect("fuse box cyl should succeed");
@@ -270,7 +270,7 @@ fn t05_watertight_fuse() {
 #[test]
 fn t06_degen_sphere_equator() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let mut sph = make_sphere(5.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sph, 5.0, 5.0, 7.0);
     let solid = boolean(&box_solid, &sph, BooleanOp::Cut, &mut gen)
@@ -301,7 +301,7 @@ fn t06_degen_sphere_equator() {
 #[test]
 fn t07_boundary_same_sense_false() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let mut sph = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sph, 0.0, 0.0, 6.0);
     let solid =
@@ -326,7 +326,7 @@ fn t07_boundary_same_sense_false() {
 /// Build box(10³) − sphere(r=3, center=(0,0,6)) Cut solid.
 fn build_cut_hole() -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let mut sph = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sph, 0.0, 0.0, 6.0);
     boolean(&box_solid, &sph, BooleanOp::Cut, &mut gen).expect("cut should succeed")
@@ -335,7 +335,7 @@ fn build_cut_hole() -> engawa_kernel::brep::topology::Solid {
 /// Build boolean_fuse_box_cyl: make_cuboid(10,10,10) ∪ cylinder(r=2, h=15, origin=(0,0,-7.5)).
 fn build_fuse() -> engawa_kernel::brep::topology::Solid {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let cyl = make_cylinder(2.0, 15.0, Point::new(0.0, 0.0, -7.5), &mut gen).unwrap();
     boolean(&box_solid, &cyl, BooleanOp::Fuse, &mut gen).expect("fuse box cyl should succeed")
 }
@@ -427,7 +427,7 @@ fn t11_yaml_roundtrip_boolean_tessellation() {
 #[test]
 fn t12_shallow_dimple_positive_volume() {
     let mut gen = IdGenerator::new(0);
-    let box_solid = make_cuboid(10.0, 10.0, 10.0, &mut gen).unwrap();
+    let box_solid = make_cuboid(10.0, 10.0, 10.0, "cuboid", &mut gen).unwrap();
     let mut sph = make_sphere(3.0, Point::origin(), &mut gen).unwrap();
     shift_solid(&mut sph, 0.0, 0.0, 8.0);
     let solid = boolean(&box_solid, &sph, BooleanOp::Cut, &mut gen)
