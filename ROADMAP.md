@@ -143,7 +143,7 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 
 ---
 
-## 🚧 Phase 8: モデル面上のスケッチ
+## ✅ Phase 8: モデル面上のスケッチ
 
 **外から見た成果**: モデルの任意の平面上にスケッチを描き、造形を積み上げられる
 
@@ -151,6 +151,9 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 - モデル面を選択してスケッチ平面を設定できる
 - その平面上でスケッチを描いて押出/押出カットできる
 - トポロジカル命名（ADR-005）によりモデル再生成後も面参照が安定する
+
+**状態**: 完了 (2026-06-17、Cycle #18)。子 Issue #214/#215/#216/#217/#218 + 親 #206 すべて closed。  
+ExtrudeCut の **実カット (穴あき形状)** は kernel boolean `MultipleOuterShellsResult` 制限のため #218 では plumbing 検証のみで receipt。実カットは follow-up [#220](https://github.com/GS-Bacon/engawacad/issues/220) で対応する。
 
 ---
 
