@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-17
 **Status**: Accepted
-**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-012 (tmux ランタイム), plan: `~/.claude/plans/milestone-issue-3ailoopskill-ui-majestic-kahan.md`
+**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-012 (tmux ランタイム), ADR-014 (Component RefPlane 隔離), plan: `~/.claude/plans/milestone-issue-3ailoopskill-ui-majestic-kahan.md`
 
 ---
 

@@ -449,6 +449,103 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
 }
 
 #[test]
+fn t17_degen_grandchild_canonical_fallback() {
+    use engawa_build::build_assembly;
+    use engawa_format::component::Transform;
+    use engawa_format::{Component, Document, Feature, SketchPlane, SketchSegment};
+
+    // 親 custom-only + 中間 child custom-only + 孫 empty の深ネスト構成。
+    // 孫の features で plane_ref: "Front" を使い、canonical fallback により解決されることを確認。
+    let parent_custom_only = vec![RefPlane {
+        id: "ParentCustom".into(),
+        plane: SketchPlane::Yz,
+        offset: 100.0,
+    }];
+    let child_custom_only = vec![RefPlane {
+        id: "ChildCustom".into(),
+        plane: SketchPlane::Xz,
+        offset: 50.0,
+    }];
+
+    let grandchild = Component {
+        name: "grandchild".into(),
+        transform: Transform::default(),
+        reference: None,
+        features: vec![
+            Feature::CreateSketch {
+                id: "sk".into(),
+                plane: SketchPlane::Xy,
+                offset: 0.0,
+                plane_ref: Some("Front".into()),
+                profile: vec![
+                    SketchSegment {
+                        id: "s1".into(),
+                        from: [0.0, 0.0],
+                        to: [1.0, 0.0],
+                    },
+                    SketchSegment {
+                        id: "s2".into(),
+                        from: [1.0, 0.0],
+                        to: [1.0, 1.0],
+                    },
+                    SketchSegment {
+                        id: "s3".into(),
+                        from: [1.0, 1.0],
+                        to: [0.0, 1.0],
+                    },
+                    SketchSegment {
+                        id: "s4".into(),
+                        from: [0.0, 1.0],
+                        to: [0.0, 0.0],
+                    },
+                ],
+            },
+            Feature::Extrude {
+                id: "ex".into(),
+                sketch: "sk".into(),
+                depth: 1.0,
+                fuse_target: None,
+            },
+        ],
+        children: vec![],
+        ref_planes: vec![], // 空。canonical three にフォールバック
+    };
+
+    let child = Component {
+        name: "child".into(),
+        transform: Transform::default(),
+        reference: None,
+        features: vec![],
+        children: vec![grandchild],
+        ref_planes: child_custom_only, // 中間 child も custom-only
+    };
+
+    let parent = Component {
+        name: "parent".into(),
+        transform: Transform::default(),
+        reference: None,
+        features: vec![],
+        children: vec![child],
+        ref_planes: parent_custom_only, // 親も custom-only
+    };
+
+    let doc = Document {
+        schema_version: 1,
+        version: "0.1.0".into(),
+        root_component: parent,
+    };
+
+    let mut gen = IdGenerator::new(0);
+    let bodies = build_assembly(&doc, std::path::Path::new("."), &mut gen).expect(
+        "ADR-014: grandchild must use canonical fallback, not inherit parent/child custom-only",
+    );
+    assert!(
+        !bodies.is_empty(),
+        "grandchild Extrude with plane_ref=Front must succeed via canonical fallback"
+    );
+}
+
+#[test]
 fn t18_degen_build_layer_refplane_offset_not_finite() {
     use engawa_format::Feature;
 

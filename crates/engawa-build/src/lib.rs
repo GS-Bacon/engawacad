@@ -438,7 +438,6 @@ pub fn build_assembly(
 ) -> Result<Vec<Body>, KernelError> {
     let mut bodies: Vec<Body> = Vec::new();
     let mut visiting: Vec<PathBuf> = Vec::new();
-    let ref_planes = doc.root_component.ref_planes.as_slice();
     build_component_tree(
         &doc.root_component,
         base_dir,
@@ -448,7 +447,6 @@ pub fn build_assembly(
         IDENTITY3,
         gen,
         &mut bodies,
-        ref_planes,
     )?;
     Ok(bodies)
 }
@@ -463,7 +461,6 @@ fn build_component_tree(
     accumulated_rotation: [[f64; 3]; 3],
     gen: &mut IdGenerator,
     out: &mut Vec<Body>,
-    _ref_planes: &[RefPlane], // Kept for signature compatibility; unused per F01 r2 fix
 ) -> Result<(), KernelError> {
     // --- position ---
     let p = &component.transform.position;
@@ -494,9 +491,10 @@ fn build_component_tree(
 
     // 1. Build this component's own features and apply total transform.
     //
-    // child Component が自前の ref_planes を持つ場合はそれを優先 (= child ローカル plane_ref id が
-    // 解決される)。空の Component は親を継承せず、ローカルでデフォルト 3 件を独立に解決する。
-    // 親が custom-only ref_planes を持つ場合に child の plane_ref: "Front" が解決失敗するのを防ぐため。
+    // ADR-014: 各 Component は独立した coordinate frame を持ち、空の `ref_planes` は親を継承せず
+    // canonical three (Front/Top/Right) にフォールバックする。child の `plane_ref: "Front"` は親が
+    // custom-only ref_planes であっても常に解決可能。custom datum を child で使うには child 自身に
+    // 宣言する。
     let canonical = RefPlane::default_canonical_three();
     let effective_ref_planes: &[RefPlane] = if !component.ref_planes.is_empty() {
         component.ref_planes.as_slice()
@@ -549,13 +547,13 @@ fn build_component_tree(
             total_rotation,
             gen,
             out,
-            &ref_doc.root_component.ref_planes,
         )?;
         visiting.pop();
     }
 
     // 3. Recurse into children, propagating total_offset and total_rotation.
-    // 再帰側で各 child.ref_planes が空なら親 (= 今 effective_ref_planes) を継承する。
+    //
+    // 各 child は独立した coordinate frame (ADR-014) を持ち、自身の effective_ref_planes を導出する。
     for child in &component.children {
         build_component_tree(
             child,
@@ -566,7 +564,6 @@ fn build_component_tree(
             total_rotation,
             gen,
             out,
-            effective_ref_planes,
         )?;
     }
     Ok(())
