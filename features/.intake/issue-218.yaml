@@ -1,0 +1,6 @@
+# intake record for Issue #218
+issue: 218
+stages:
+  - stage: created
+    at: 2026-06-17T13:19:30.821Z
+    data: {"labels":"type: feature,batch:kernel","phase":"8","parent":206,"split_from":"intake_206"}
