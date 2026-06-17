@@ -1,0 +1,10 @@
+{
+  "verdict": "pass",
+  "severity_counts": {
+    "critical": 0,
+    "high": 1,
+    "medium": 1,
+    "low": 1
+  },
+  "blocking": 1
+}

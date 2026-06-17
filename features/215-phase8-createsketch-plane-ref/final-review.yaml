@@ -1,0 +1,21 @@
+issues:
+  - id: FN01
+    severity: high
+    file: "examples/sketch_via_face_entity_ref.engawa"
+    line_hint: 49
+    finding: "YAML 形式が Issue 仕様と異なる。Issue 案では `plane_ref: { ref_plane: \"id\" } | { face: { feature_id, kind, role } }` と記述されているが、実装の EntityRef YAML は `ref: named, feature_id, kind, role` フラットマップであり、`face:` キーでネストされていない"
+    suggestion: "Issue 側の記載を修正するか、YAML シリアライズ形式をネスト形式に揃える"
+  - id: FN02
+    severity: medium
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 260
+    finding: "`#[serde(untagged)]` による String と EntityRef のディスパッチは、EntityRef 内部に単一文字列フィールド (`feature_id`) が含まれる場合に YAML 解析があいまいになる可能性がある。ただし現状 EntityRef は `ref: named` + `feature_id` の multi-field map なので文字列形式と衝突しない"
+    suggestion: "将来の単一フィールド EntityRef 追加時にタグ形式への移行を検討"
+  - id: FN03
+    severity: low
+    file: "examples/sketch_via_face_entity_ref.engawa"
+    line_hint: 51
+    finding: "コメントで指摘されている通り、CreateBox の feature_id (\"box_1\") ではなく固定の \"cuboid\" を指定する workaround が必要 (#219 依存)"
+    suggestion: "#219 (Feature 起点の feature_id 伝達) 完了後、box_1 を使うように更新する"
+
+verdict: pass

@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: critical
+    section: "Issue 整合"
+    finding: "Issue #215 完了条件に「YAML 表現: `plane_ref: { ref_plane: \"id\" }` または `plane_ref: { face: { feature_id, kind, role } }` の enum 表現」とあるが、plan.md は untagged enum `PlaneRef { RefPlane(String), Entity(EntityRef) }` を採用している。表現形式が一致していない。"
+    suggestion: "自律判断ログ (B-3) で untagged 採用理由を説明しているが、Issue 本文は Plan 収集前に書かれたもの。整合性のため、完了条件の YAML 表現記述を Plan の untagged 方針に合わせるか、Issue コメントで設計逸脱を記録すること。"
+
+verdict: pass

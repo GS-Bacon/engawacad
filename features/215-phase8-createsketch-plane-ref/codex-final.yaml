@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 295
+    finding: "ExtrudeCut の `PlaneRef::Entity` 経路は、参照先 face が見つかっても `surface_to_plane()` が `None` を返した場合に `FaceEntityRefNotFound` を返します。非平面 face を指定した退化入力が `FaceNotPlanar` ではなく未検出扱いになっており、仕様どおりに分類できていません。"
+    suggestion: "`ExtrudeCut` 側も `resolve_plane(entry, ref_planes, &built)?` を再利用するか、`surface_to_plane()` が `None` の時点で `KernelError::FaceNotPlanar` を返すようにしてください。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/tests/face_entity_ref_planeref.rs"
+    line_hint: 68
+    finding: "T01 の決定性テストは `built.live()[0]` の body しか比較しておらず、今回の変更で新規に生成される `extrude_1` body を一切検証していません。同一入力 2 回で結果一致という最重要要件に対し、EntityRef 経路の非決定性を見逃します。"
+    suggestion: "`live()` の全 body を比較し、少なくとも `extrude_1` 側の face/edge/vertex ID と `Surface` を 2 回の build 間で突き合わせてください。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-build/tests/face_entity_ref_planeref.rs"
+    line_hint: 321
+    finding: "`t04_plane_ref_entity_extrude_cut` は「boolean 後の Solid が manifold」とコメントしている一方、実際の検証は `faces.len() >= 6` だけです。これでは twin/loop/Euler の破綻でも通ってしまい、B-rep トポロジー要件を担保できません。"
+    suggestion: "`result_solid.validate_manifold()` を呼び、必要なら Euler-Poincare も併せて確認してください。"
+
+verdict: fail

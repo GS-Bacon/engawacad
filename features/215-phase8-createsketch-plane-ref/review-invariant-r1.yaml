@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "`built.live()` の走査順が「Feature 列挿入順」と記載されているが、実際の実装で決定的である保証がない"
+    suggestion: "実装時に `BuiltBodies.bodies: Vec<Body>` の順序が Feature 列挿入順であることをコメントで明示し、決定性テスト T01 で検証すること"
+
+verdict: fail

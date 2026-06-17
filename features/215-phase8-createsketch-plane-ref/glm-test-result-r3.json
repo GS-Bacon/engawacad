@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "ci_passed": true,
+  "summary": "feature.rs に inline test 2件追加 (test_create_sketch_yaml_golden_with_plane_ref_refplane, test_create_sketch_yaml_golden_with_plane_ref_entity)。既存テスト T01-T09 は実装済み。テスト・clippy・fmt は全 pass。TypeScript drift は生成ファイル (Feature.ts, PlaneRef.ts) のコミット待ち (git commit は禁止指示のため未実施)。",
+  "tests_added": 2,
+  "tests_added_in_phase_2": 2,
+  "failed_reason": ""
+}

@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > T03 正常系 (Entity)"
+    finding: "期待結果「押出 Solid が期待形状になる」が定性記述で、具体的な assert 条件が未定義"
+    suggestion: "「押出後の Solid について face.count == 7 かつ、上面の平面方程式が input Face の Surface::Plane と一致することを assert」等の具体的検証条件を記載すること"
+
+verdict: pass

@@ -1,0 +1,202 @@
+# #215 feat(phase8): CreateSketch.plane_ref を EntityRef 互換に拡張 (Face 参照対応)
+
+## 自律判断ログ (B-3 自律モード)
+
+Issue #215 は `ambiguous: true` で起票されたが、本文に十分な完了条件 (In-Scope/Out-of-Scope) があったため、Claude が以下の方針で要件を確定して続行した。
+
+| 曖昧点 | 採った判断 | 根拠 |
+|---|---|---|
+| YAML 表現 (enum 形式) | **serde untagged enum** で `RefPlane(String) \| Entity(EntityRef)` を区別。文字列なら旧形式、map なら新形式 (EntityRef 内部タグ `ref: named` で variant 判定) | EntityRef は既に `#[serde(tag = "ref")]` を持つので untagged で衝突しない。Issue 案の `{ ref_plane: "id" }` 包装より既存 EntityRef そのものを使う方が ADR-005 と整合 |
+| 既存形式の後方互換 | **migration なしで保持**。`plane_ref: Front` のような単純文字列は untagged enum の文字列 variant にそのまま流れる | `examples/sketch_via_refplane.engawa` の regression を避ける。golden_examples テスト (l.238) を変更しない |
+| Face → Plane 導出 | `Surface::Plane` のみ受け入れ。Cylinder/Sphere/Cone は `KernelError::FaceNotPlanar` でエラー | Issue Out-of-Scope に「平面でない Face (cylindrical face 等) からの平面導出 (Phase 10 以降)」と明記 |
+| EntityRef::Derived の扱い | `find_face_by_entity_ref` が `None` を返すので `FaceEntityRefNotFound` エラー | Issue Out-of-Scope に「EntityRef::Derived の解決 (Phase 9 以降)」と明記 |
+| 複数 Solid 走査順 | `built.live()` の順 (= Feature 列挿入順)、最初に見つかった Face を採用 | `BuiltBodies.bodies: Vec<Body>` で挿入順保証、決定的 |
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `Feature::CreateSketch.plane_ref` の型を `Option<String>` → `Option<PlaneRef>` に拡張 | スケッチ曲線の Face 上描画 e2e (#216 8c) |
+| 新 enum `PlaneRef { RefPlane(String), Entity(EntityRef) }` (untagged) | Extrude / ExtrudeCut の Face plane_ref 動作 e2e (#217 8d / #218 8e) |
+| `engawa-build` dispatcher の `resolve_plane` を Face EntityRef 経路に拡張 | 平面でない Face (cylindrical/spherical/conical) からの平面導出 (Phase 10 以降) |
+| Face は `built.live()` を走査し `Solid::find_face_by_entity_ref` で解決 | `EntityRef::Derived` 解決 (Phase 9 以降) |
+| Face Surface が `Surface::Plane` の場合のみ受理、その他は `FaceNotPlanar` エラー | Edge/Vertex の EntityRef 経路 (Phase 9 以降) |
+| 新 `KernelError` variant: `FaceEntityRefNotFound { canonical_name: String }`, `FaceNotPlanar { canonical_name: String }` | `plane_ref` と `plane`/`offset` の組合せ意味論変更 (現状の優先順位を維持) |
+| 後方互換: 既存 string 形式 `plane_ref: Front` をそのまま動作維持 | golden test の YAML スキーマ大改修 |
+| 既存 `Extrude` / `ExtrudeCut` 両経路で新 PlaneRef::Entity に対応 | `EntityRef::Named.kind != Face` の場合の特別対応 (既に `find_face_by_entity_ref` が None を返す) |
+
+## Non-Goals
+
+- スケッチ描画 e2e — #216 で対応
+- Extrude/ExtrudeCut の Face plane_ref 押出本体 — #217/#218 で対応 (本 Issue は dispatcher の plane 解決のみ)
+- 非平面 Face からの平面導出 — Phase 10 以降
+- EntityRef::Derived 解決 — Phase 9 以降
+- Edge/Vertex の逆引き本実装 — Phase 9 以降
+- TypeScript binding (TS) の export — JsonSchema は付与するが ts-rs export は別 Issue で
+
+## 実装対象
+
+Issue: #215
+影響クレート/ファイル:
+- `crates/engawa-format/src/feature.rs` — `PlaneRef` enum 追加、`CreateSketch.plane_ref` 型変更
+- `crates/engawa-format/src/document.rs:405` — `plane_ref: None` のテスト初期化を新型に追従 (None のまま)
+- `crates/engawa-format/tests/golden_examples.rs` — 既存 golden (`plane_ref: Front` 文字列) が roundtrip 通過することを確認 (変更なしのはず)
+- `crates/engawa-kernel/src/error.rs` — `FaceEntityRefNotFound`, `FaceNotPlanar` を追加
+- `crates/engawa-build/src/lib.rs` — `SketchEntry.plane_ref` 型変更、`resolve_plane` および ExtrudeCut の分岐を `PlaneRef` 対応に拡張、`Body` 走査経路追加
+- `crates/engawa-build/tests/refplane_acceptance.rs` — 既存 `plane_ref: Some("Front".to_string())` を `Some(PlaneRef::RefPlane("Front".into()))` に追従修正
+- 新: `crates/engawa-build/tests/face_entity_ref_planeref.rs` — Face EntityRef 経路の acceptance テスト
+- 新: `examples/sketch_via_face_entity_ref.engawa` — Face EntityRef 形式の最小 example
+- `crates/engawa-build/tests/examples_smoke.rs` — 新 example の smoke テスト追加
+
+### `PlaneRef` 新設 (engawa-format/src/feature.rs)
+
+新規追加:
+```rust
+/// Plane reference for a sketch. Either a named RefPlane (legacy) or an EntityRef pointing
+/// to an existing Face. Serialized untagged so YAML keeps the simple string form for legacy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(untagged)]
+pub enum PlaneRef {
+    /// Reference to a `RefPlane.id` (legacy string form, e.g. "Front").
+    RefPlane(String),
+    /// Reference to a Face via topological naming (ADR-005 EntityRef::Named).
+    Entity(EntityRef),
+}
+```
+
+### `CreateSketch.plane_ref` 型変更 (feature.rs:302)
+
+before:
+```rust
+CreateSketch {
+    id: String,
+    plane: SketchPlane,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    offset: f64,
+    profile: Vec<SketchSegment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_ref: Option<String>,
+},
+```
+
+after:
+```rust
+CreateSketch {
+    id: String,
+    plane: SketchPlane,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    offset: f64,
+    profile: Vec<SketchSegment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_ref: Option<PlaneRef>,
+},
+```
+
+### `engawa-build/src/lib.rs` の dispatcher 拡張
+
+`SketchEntry.plane_ref` を `Option<PlaneRef>` に変更。`resolve_plane` シグネチャを拡張して `built: &BuiltBodies` を受け取り、Face EntityRef 経路を追加する。
+
+before (l.110-134, 抜粋):
+```rust
+fn resolve_plane(entry: &SketchEntry, ref_planes: &[RefPlane]) -> Result<Plane, KernelError> {
+    if let Some(ref_id) = &entry.plane_ref {
+        let rp = ref_planes.iter().find(|p| &p.id == ref_id)
+            .ok_or_else(|| KernelError::UnknownRefPlane { id: ref_id.clone() })?;
+        // ... 既存 ref_plane 経路
+    } else {
+        // ... 既存 plane/offset 経路
+    }
+}
+```
+
+after:
+```rust
+fn resolve_plane(
+    entry: &SketchEntry,
+    ref_planes: &[RefPlane],
+    built: &BuiltBodies,
+) -> Result<Plane, KernelError> {
+    match &entry.plane_ref {
+        Some(PlaneRef::RefPlane(ref_id)) => {
+            // 既存 ref_plane 経路 (挙動不変)
+        }
+        Some(PlaneRef::Entity(entity_ref)) => {
+            // 新規 Face EntityRef 経路
+            for body in built.live() {
+                if let Some(face_idx) = body.solid.find_face_by_entity_ref(entity_ref) {
+                    let face = &body.solid.faces[face_idx];
+                    return surface_to_plane(&face.surface)
+                        .ok_or_else(|| KernelError::FaceNotPlanar {
+                            canonical_name: entity_ref.canonical_name(),
+                        });
+                }
+            }
+            Err(KernelError::FaceEntityRefNotFound { canonical_name: entity_ref.canonical_name() })
+        }
+        None => {
+            // 既存 plane/offset 経路 (挙動不変)
+        }
+    }
+}
+```
+
+helper `surface_to_plane(&Surface) -> Option<Plane>` を新設し、`Surface::Plane { origin, normal, u_axis, v_axis }` から `Plane { origin, normal, u_axis, v_axis }` を直接組み立てる。`Cylinder/Sphere/Cone` は `None`。
+
+ExtrudeCut 分岐 (lib.rs:234-252) も同じパターンで `match &entry.plane_ref` に書き換え。コードを共有しないと重複が発生するため、ExtrudeCut 側も `resolve_plane(entry, ref_planes, &built)?` を呼ぶように統一する (元仕様の「plane_ref None で offset 無視」バグは別 Issue #161 で対応のため温存)。
+
+### `KernelError` 追加 (engawa-kernel/src/error.rs)
+
+before (関連箇所のみ):
+```rust
+#[error("unknown ref_plane: {id}")]
+UnknownRefPlane { id: String },
+```
+
+after:
+```rust
+#[error("unknown ref_plane: {id}")]
+UnknownRefPlane { id: String },
+
+#[error("face EntityRef not found in built bodies: {canonical_name}")]
+FaceEntityRefNotFound { canonical_name: String },
+
+#[error("face is not planar (only Surface::Plane supported): {canonical_name}")]
+FaceNotPlanar { canonical_name: String },
+```
+
+## 設計方針
+
+- **決定性**: `built.live()` は `Vec<Body>` の挿入順走査。Solid 内 `find_face_by_entity_ref` は線形スキャンで「最初にマッチした index」を返す (既に決定的)。Plane 構築は純関数。
+- **B-rep トポロジー**: 本 Issue は Sketch plane の解決のみで B-rep 不変条件 (V-E+F=2 等) には影響しない。
+- **退化幾何**: 平面でない Face を指定 → 明示エラー (`FaceNotPlanar`)。存在しない EntityRef → 明示エラー (`FaceEntityRefNotFound`)。`Surface::Plane.normal` のゼロベクトル等は kernel 側の不変条件 (primitives で構築済) のため本層では追加検査しない。
+- **derive 規約**: `PlaneRef` は `Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS`。EntityRef と同じ derive 集合。
+- **エラーハンドリング**: `KernelError` の variant 追加。`thiserror` を使用 (既存パターン踏襲)。
+- **後方互換**: serde untagged により既存 `plane_ref: Front` の文字列形式が `PlaneRef::RefPlane` に自動 deser。golden_examples.rs / examples/sketch_via_refplane.engawa は変更不要。テストコード (`Some("Front".to_string())` 形式) のみ型変更に追従。
+- **workspace.dependencies**: 新規依存は追加しない (`schemars` / `ts-rs` / `serde` は既存)。
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一 features 列を 2 回 build_bodies_from_features し全 FaceIndex/Plane が一致 | `assert_eq!(result1, result2)` (Solid 全体比較) |
+| T02 | 正常系 (legacy) | `plane_ref: Some(PlaneRef::RefPlane("Front".into()))` で Extrude 成功 | sketch_via_refplane.engawa と同等 |
+| T03 | 正常系 (Entity) | cuboid 生成 → 上面 Face の EntityRef を取り出し → CreateSketch の plane_ref に指定 → Extrude 成功 | 押出 Solid が期待形状になる |
+| T04 | 正常系 (Entity + ExtrudeCut) | T03 と同じ Face EntityRef を ExtrudeCut で使う | cut 成功、boolean 後の Solid 構造が manifold |
+| T05 | 正常系 (YAML roundtrip Legacy) | `examples/sketch_via_refplane.engawa` を deserialize → serialize → deserialize で同一 | 既存 golden 通過 |
+| T06 | 正常系 (YAML roundtrip Entity) | 新 example sketch_via_face_entity_ref.engawa を roundtrip | 文字列形式と区別される YAML 出力 |
+| T07_degen_unknown_entity_ref | 退化/境界 | 存在しない EntityRef を指定 | `KernelError::FaceEntityRefNotFound` |
+| T08_degen_non_planar_face | 退化/境界 | (将来 cylinder primitive 等が登場した場合の構造) 平面でない Face → エラー | `KernelError::FaceNotPlanar`。現状 Surface::Plane 以外を CreateBox では持たないので、Surface mock または cylinder primitive を直接構築してテスト |
+| T09_boundary_derived_ref | 退化/境界 | `EntityRef::Derived` を指定 | `find_face_by_entity_ref` が None → `FaceEntityRefNotFound` |
+| T10 | 後方互換 (golden) | feature.rs inline golden test (l.430-462) が新型でも roundtrip 通過 | 既存テスト pass |
+| T11 | 後方互換 (refplane_acceptance) | 既存 refplane_acceptance.rs テスト群が新型で pass (型注釈追従のみ) | 全 pass |
+
+退化/境界テスト ID は `T07_degen_*`, `T08_degen_*`, `T09_boundary_*` の 3 件以上で要件を満たす。
+
+## 幾何的不変条件チェックリスト
+
+Boolean/Partition/Assemble 系の本 Issue ではないため N/A。
+
+- [N/A] partition 出力の polygon 頂点順と assemble の normal 処理 (本 Issue は plane resolve のみ、boolean 内部は触らない)
+- [N/A] 各プリミティブの face ごとの outer_loop 2D 向き (プリミティブ生成は触らない)
+- [N/A] flip_normals / same_sense の意味論
+- [N/A] pslg_subdivide の出力向き

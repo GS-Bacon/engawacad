@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 348
+    finding: "`PlaneRef::Entity` の lookup は `EntityRef::Named.feature_id` をそのまま face 名に突き合わせますが、primitive 側の名前は依然 `cuboid` / `cylinder` / `sphere` 固定のままです。`CreateBox { id: \"box_1\" }` を `feature_id: box_1` で参照すると解決できず、同種 primitive が複数あると最初に見つかった固定名 body に誤解決します。新規 example / tests が固定名 workaround を使っているため、この破綻が隠れています。"
+    suggestion: "primitive を `built.register()` する前に `Vertex/Edge/Face.name` の `EntityRef::Named.feature_id` を owning feature の `id` に張り替えるか、primitive constructor に feature id を渡して命名してください。`box_1` / `box_2` を実際に参照する回帰テストも追加が必要です。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 440
+    finding: "合意済み T10 に相当する `Feature::CreateSketch` の inline golden/roundtrip test が未実装です。現状の `test_create_sketch_yaml_golden()` は `plane_ref: None` の旧経路しか固定しておらず、新しい `PlaneRef::RefPlane` / `PlaneRef::Entity` の YAML 形状や field order の退行をこのファイル単位で検出できません。"
+    suggestion: "`feature.rs` の `CreateSketch` テストに `PlaneRef::RefPlane(\"Front\")` と `PlaneRef::Entity(...)` の 2 ケースを追加し、出力 YAML 形状と roundtrip を直接固定してください。"
+
+verdict: fail
