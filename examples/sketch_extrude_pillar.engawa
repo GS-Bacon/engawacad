@@ -1,0 +1,54 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "Octagon Pillar Extruded from Top Face (Phase 8 #217)"
+  features:
+    # Base cuboid centered at origin: dx=10, dy=10, dz=5 → top face at z=2.5
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 10.0
+      depth: 5.0
+    # Sketch on top face (f_z_pos) via EntityRef.
+    # Profile: 8-gon centered at plane u-v origin with radius 2 (CCW ordering).
+    # Vertices at angles k * 45° (k=0..7), pre-computed.
+    # x_k = 2*cos(k*PI/4), y_k = 2*sin(k*PI/4)
+    - type: create_sketch
+      id: sketch_1
+      plane: xy
+      offset: 0.0
+      profile:
+        - id: seg_0
+          from: [2.0, 0.0]
+          to:   [1.4142135623730951, 1.4142135623730951]
+        - id: seg_1
+          from: [1.4142135623730951, 1.4142135623730951]
+          to:   [0.0, 2.0]
+        - id: seg_2
+          from: [0.0, 2.0]
+          to:   [-1.4142135623730951, 1.4142135623730951]
+        - id: seg_3
+          from: [-1.4142135623730951, 1.4142135623730951]
+          to:   [-2.0, 0.0]
+        - id: seg_4
+          from: [-2.0, 0.0]
+          to:   [-1.4142135623730951, -1.4142135623730951]
+        - id: seg_5
+          from: [-1.4142135623730951, -1.4142135623730951]
+          to:   [0.0, -2.0]
+        - id: seg_6
+          from: [0.0, -2.0]
+          to:   [1.4142135623730951, -1.4142135623730951]
+        - id: seg_7
+          from: [1.4142135623730951, -1.4142135623730951]
+          to:   [2.0, 0.0]
+      plane_ref:
+        ref: named
+        feature_id: box_1
+        kind: face
+        role: f_z_pos
+    # Extrude depth=2: pillar grows from z=2.5 to z=4.5 along the top face normal (+Z).
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_1
+      depth: 2.0

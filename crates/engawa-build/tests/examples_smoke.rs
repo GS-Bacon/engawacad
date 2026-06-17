@@ -158,3 +158,11 @@ fn sketch_circle_on_face() {
         "../../../examples/sketch_circle_on_face.engawa"
     ));
 }
+
+/// Issue #217: ModelFace Sketch を Extrude で押出 (柱) の smoke テスト
+#[test]
+fn sketch_extrude_pillar() {
+    smoke(include_str!(
+        "../../../examples/sketch_extrude_pillar.engawa"
+    ));
+}
