@@ -134,16 +134,30 @@ done
 bun .claude/skills/3ailoop/scripts/loop-decision-log.ts append --kind <kind> --message "..."
 ```
 
-### L-5.6: ADR pause detector (#178 指摘 6 配線)
+### L-5.6: ADR auto-accept フロー (ADR-013)
 
-このサイクル中に /3ai が新規 ADR を作成していれば gate:adr-review Issue を起票:
+このサイクル中に /3ai が新規 ADR を作成していれば `gate:adr-review` Issue を起票し、続けて
+自動 review chain (Decision Matrix lint + Multi-LLM Review + 暴走防止 cap) を走らせる:
 
 ```bash
-ADR_JSON=$(bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan)
+ADR_JSON=$(bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan --auto-accept)
 echo "$ADR_JSON"
 ```
 
 (`features/.loop/last-adr-scan-sha` の marker を使って前回 scan 以降のみ検出)
+
+`--auto-accept` モードでは各 ADR について `loop-adr-auto-accept.ts` を呼び出し、以下を実施:
+
+1. **Decision Matrix lint** (`loop-adr-decision-matrix-lint.ts`) — Options A/B/C / Trade-off / 採用前提崩壊 trigger / 既存 ADR 関係を機械判定
+2. **Multi-LLM Adversarial Review** — Codex を architect / contrarian / migration の 3 ペルソナで並列実行、refute デフォルト
+3. **暴走防止 cap** (`loop-adr-regen-tracker.ts`) — 再生成 3 回越え or 1 ADR 200k token 越えで `needs-human` 退避
+
+3 ペルソナ全員 approved なら `gate:adr-review` を削除して Issue を close (auto-accept)。
+1 ペルソナでも refute なら regen_required (呼び元 = 次サイクルの /3ai が draft 再生成)。
+cap 越えなら `gate:adr-review` 削除 + `needs-human` 付与 で loop は他 Issue に進む。
+
+旧運用 (手動 gate:adr-review pause) に戻すには `--auto-accept` を外す。fallback として gate ラベルと
+人間判定経路は残してある (ADR-002 ラベル運用)。
 
 新規に起票した gate Issue を通知 (JSON 出力以外の "no new ADRs" 行は skip):
 
@@ -299,7 +313,10 @@ memory `project-3ailoop-known-races` に詳細。loop-lock の stale takeover ra
 - `loop-token-meter.ts` (#171) — token 閾値 (累積 100M / 24h 5M)
 - `loop-decision-log.ts` (#171) — 重要判断の時系列追記
 - `loop-failure-tracker.ts` (#172) — 連続失敗 N=3 で needs-human
-- `loop-adr-pause-detector.ts` (#172) — 新規 ADR で gate:adr-review
+- `loop-adr-pause-detector.ts` (#172, #190) — 新規 ADR で gate:adr-review、`--auto-accept` で review chain 連動
+- `loop-adr-decision-matrix-lint.ts` (#191, ADR-013) — ADR draft の必須セクションを機械 lint
+- `loop-adr-auto-accept.ts` (#190, ADR-013) — Decision Matrix lint + Multi-LLM Review + auto-accept フロー本体
+- `loop-adr-regen-tracker.ts` (#192, ADR-013) — 再生成 cap 3 + token 上限 200k の永続化トラッカー
 - `loop-split-detector.ts` (#172) — split_proposal で親 blocked + 子起票
 - `loop-intent-guard.ts` (#172) — aligned:no N=3 で needs-intent-review
 - `loop-phase-close-check.ts` (#173) — Phase 完了条件検証 + ROADMAP/milestone 更新

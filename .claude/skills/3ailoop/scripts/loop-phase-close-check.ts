@@ -20,6 +20,56 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 
 const ROADMAP_PATH = "ROADMAP.md";
 
+// ADR-013: 3 Phase ごとの Fable 5 全体監査トリガー
+export const FABLE5_AUDIT_PHASES = new Set([11, 14, 17, 20]);
+
+async function raiseFable5AuditIssue(phase: number): Promise<{ ok: boolean; issue?: number; error?: string }> {
+  const title = `audit(fable5): Phase ${phase} 完了監査 — 直近 3 Phase の ADR + 実装乖離 + 過去 ADR 矛盾`;
+  const body = [
+    `## 概要`,
+    "",
+    `ADR-013 の規定により、Phase ${phase} 完了時に Fable 5 で全体監査を実施する。`,
+    "",
+    `## 監査対象`,
+    "",
+    `直近 3 Phase (Phase ${phase - 2}〜${phase}) の以下を Fable 5 で審査:`,
+    "",
+    `- 新規 / 改訂 ADR の整合性 (過去 ADR との矛盾、採用前提崩壊 trigger の発火可能性)`,
+    `- 実装と ADR の乖離 (ADR で決めた性質を破る実装)`,
+    `- 過去 ADR の前提崩壊 (Phase 進行で前提が変わった可能性)`,
+    `- ADR 自動 accept フロー (ADR-013) の判定品質 (Phase ${phase - 2}〜${phase} で accept された ADR の事後妥当性)`,
+    "",
+    `## 出力`,
+    "",
+    `- critical: 即座に修正 Issue 起票 (loop が消化)`,
+    `- high / medium: 別 Issue 起票して Phase ${phase + 1} 中に消化`,
+    `- low: ADR-013 採用前提崩壊 trigger の発火判定材料として記録`,
+    "",
+    `## 関連`,
+    "",
+    `- ADR-013 (ADR 自動 accept フロー)`,
+    `- memory: feedback_fable5_strategy`,
+  ].join("\n");
+
+  const proc = Bun.spawn(
+    [
+      "gh", "issue", "create",
+      "--title", title,
+      "--body", body,
+      "--label", "type: foundation,batch:kernel",
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const out = (await new Response(proc.stdout).text()).trim();
+  const err = (await new Response(proc.stderr).text()).trim();
+  await proc.exited;
+  if (proc.exitCode !== 0) {
+    return { ok: false, error: err || `gh exit ${proc.exitCode}` };
+  }
+  const m = out.match(/\/issues\/(\d+)$/);
+  return { ok: true, issue: m ? parseInt(m[1]) : undefined };
+}
+
 function detectCurrentPhase(): number | null {
   if (!existsSync(ROADMAP_PATH)) return null;
   for (const line of readFileSync(ROADMAP_PATH, "utf-8").split("\n")) {
@@ -198,6 +248,17 @@ async function apply(phase: number, dryRun: boolean): Promise<{ ok: boolean; act
 
   await recordDecision(`Phase ${phase} 完了 (milestone closed, ROADMAP ✅化)`);
   actions.push(`appended decision-log`);
+
+  // ADR-013: Phase 11/14/17/20 完了時に Fable 5 監査 Issue を起票
+  if (FABLE5_AUDIT_PHASES.has(phase)) {
+    const audit = await raiseFable5AuditIssue(phase);
+    if (audit.ok) {
+      actions.push(`raised Fable 5 audit issue #${audit.issue ?? "?"}`);
+      await recordDecision(`Phase ${phase} Fable 5 監査 Issue #${audit.issue ?? "?"} を起票 (ADR-013)`);
+    } else {
+      actions.push(`WARNING: Fable 5 audit issue create failed: ${audit.error}`);
+    }
+  }
 
   return { ok: true, actions, reason: "applied" };
 }

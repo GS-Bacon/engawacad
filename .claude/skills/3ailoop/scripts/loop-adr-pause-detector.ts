@@ -5,14 +5,17 @@
 // 該当ファイルがあれば、各 ADR について以下を実施:
 // - ADR 内容の冒頭 80 行を抜粋
 // - gh issue create --label "gate:adr-review,docs" で gate Issue を起票
+// - --auto-accept フラグが付いていれば、起票後に loop-adr-auto-accept.ts を呼び出して
+//   Decision Matrix lint + Multi-LLM Review を走らせる (ADR-013)
 //
 // 使い方:
-//   bun loop-adr-pause-detector.ts scan [--depth N] [--dry-run]
+//   bun loop-adr-pause-detector.ts scan [--depth N] [--auto-accept] [--dry-run]
 //
 // 関連 plan: dashboard の Decision Log に「ADR-NNN draft 起票」として追加される想定
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import { autoAccept } from "./loop-adr-auto-accept";
 
 const DEFAULT_MARKER_PATH = "features/.loop/last-adr-scan-sha";
 
@@ -150,13 +153,14 @@ if (import.meta.main) {
   function flag(name: string): boolean { return rest.includes(name); }
 
   if (cmd !== "scan") {
-    console.error("Usage: loop-adr-pause-detector.ts scan [--depth N] [--since-sha SHA] [--cycle-marker PATH] [--dry-run]");
+    console.error("Usage: loop-adr-pause-detector.ts scan [--depth N] [--since-sha SHA] [--cycle-marker PATH] [--auto-accept] [--dry-run]");
     process.exit(2);
   }
   const depth = parseInt(arg("--depth") ?? "5");
   const sinceShaArg = arg("--since-sha");
   const markerPath = arg("--cycle-marker") ?? DEFAULT_MARKER_PATH;
   const dryRun = flag("--dry-run");
+  const autoAcceptMode = flag("--auto-accept");
   // sinceSha は引数 → marker → depth fallback の順 (#177 指摘 7)
   const sinceSha = sinceShaArg ?? readMarker(markerPath) ?? undefined;
   const adrs = await findNewAdrs(depth, sinceSha);
@@ -172,12 +176,22 @@ if (import.meta.main) {
   }
 
   // #178 指摘 2: 全 ADR の起票成功を確認してから marker 更新、1 件でも失敗なら exit 1 + marker 未更新
-  const created: { adr: string; issue: number | null }[] = [];
+  const created: { adr: string; issue: number | null; auto_accept?: string }[] = [];
   let allOk = true;
   for (const a of adrs) {
     const num = await raiseGateIssue(a, dryRun);
     if (num === null && !dryRun) allOk = false;
-    created.push({ adr: a, issue: num });
+    const rec: { adr: string; issue: number | null; auto_accept?: string } = { adr: a, issue: num };
+    // ADR-013: --auto-accept モードなら起票直後に review chain を起動
+    if (autoAcceptMode && num !== null && !dryRun) {
+      try {
+        const outcome = await autoAccept({ adrPath: a, issueNum: num });
+        rec.auto_accept = outcome.kind;
+      } catch (e) {
+        rec.auto_accept = `error:${(e as Error).message}`;
+      }
+    }
+    created.push(rec);
   }
 
   if (!dryRun && allOk) {
@@ -185,7 +199,7 @@ if (import.meta.main) {
     if (head) writeMarker(markerPath, head);
   }
 
-  console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: adrs.length, ok: allOk, created }, null, 2));
+  console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: adrs.length, ok: allOk, auto_accept: autoAcceptMode, created }, null, 2));
   if (!allOk) {
     process.stderr.write(`ERROR: some ADR gate issues failed to create; marker NOT updated for retry\n`);
     process.exit(1);
