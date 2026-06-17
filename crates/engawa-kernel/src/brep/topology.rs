@@ -487,6 +487,29 @@ impl Solid {
         // half_edges.pcurve is UV-space and invariant under rotation.
         let _ = rotate_vec;
     }
+
+    /// Find a face whose `name` matches the given `EntityRef::Named { feature_id, kind: Face, role }`.
+    ///
+    /// Returns `Some(face_index)` for the first matching face, or `None` if:
+    /// - `entity_ref` is not `EntityRef::Named` (i.e., `Derived`),
+    /// - `entity_ref.kind != EntityKind::Face`,
+    /// - no face's `name` matches.
+    ///
+    /// Deterministic: same input always yields the same index (linear scan over
+    /// the insertion-ordered `faces` vector).
+    pub fn find_face_by_entity_ref(&self, entity_ref: &EntityRef) -> Option<usize> {
+        use engawa_format::EntityKind;
+        match entity_ref {
+            EntityRef::Named {
+                kind: EntityKind::Face,
+                ..
+            } => self
+                .faces
+                .iter()
+                .position(|f| f.name.as_ref() == Some(entity_ref)),
+            _ => None,
+        }
+    }
 }
 
 /// AABB overlap check for two polygon vertex sets projected onto the dominant axis of `normal`.
