@@ -1,0 +1,50 @@
+schema_version: 1
+version: "0.1.0"
+root_component:
+  name: "ExtrudeCut + Face EntityRef Tangent-Cut Plumbing Demo (Phase 8 #218; real hole drilling deferred to #220)"
+  features:
+    # Base cuboid centered at origin: dx=10, dy=10, dz=10 → top face at z=5
+    # Matches the size used by #215 face_entity_ref_planeref::t04 (a fixture proven to
+    # produce a manifold result under the current degenerate-cut behavior).
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 10.0
+      depth: 10.0
+    # Sketch on top face (f_z_pos) via EntityRef.
+    # Profile: ASYMMETRIC rectangle [(0,0),(2,0),(2,2),(0,2)] — same shape as #215 t04 fixture.
+    # The asymmetry (off-origin, unequal axis coverage) ensures a u_axis/v_axis swap or sign
+    # flip in face basis resolution would shift the cut location visibly (Codex r4 F02).
+    - type: create_sketch
+      id: sketch_1
+      plane: xy
+      offset: 0.0
+      profile:
+        - id: seg_0
+          from: [0.0, 0.0]
+          to:   [2.0, 0.0]
+        - id: seg_1
+          from: [2.0, 0.0]
+          to:   [2.0, 2.0]
+        - id: seg_2
+          from: [2.0, 2.0]
+          to:   [0.0, 2.0]
+        - id: seg_3
+          from: [0.0, 2.0]
+          to:   [0.0, 0.0]
+      plane_ref:
+        ref: named
+        feature_id: box_1
+        kind: face
+        role: f_z_pos
+    # ExtrudeCut depth=5: under current implementation the tool extrudes outward along
+    # +face_normal (no dispatcher inversion yet) → tool z range [5, 10], cuboid z range
+    # [-5, 5]. The boolean Cut treats this as a tangent cut: the result is a manifold
+    # solid (validate_manifold passes, euler_poincare = 0). Real hole drilling (tool
+    # extruded inward) is tracked in #220 — at that point this example will use a partial
+    # depth and the cut result will have an actual cavity.
+    - type: extrude_cut
+      id: extrude_cut_1
+      sketch: sketch_1
+      depth: 5.0
+      target: box_1

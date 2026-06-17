@@ -166,3 +166,11 @@ fn sketch_extrude_pillar() {
         "../../../examples/sketch_extrude_pillar.engawa"
     ));
 }
+
+/// Issue #218: ModelFace Sketch を ExtrudeCut で穴あけ の smoke テスト
+#[test]
+fn sketch_extrudecut_hole() {
+    smoke(include_str!(
+        "../../../examples/sketch_extrudecut_hole.engawa"
+    ));
+}
