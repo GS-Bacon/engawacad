@@ -1,7 +1,7 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 11,
-  "last_cycle_at": "2026-06-17T11:37:05.568Z",
+  "cycle": 12,
+  "last_cycle_at": "2026-06-17T11:48:40.525Z",
   "recent_cycles": [
     {
       "cycle": 1,
@@ -396,15 +396,28 @@
       "merged_commits": 1,
       "adr_drafts": [],
       "pause_reason": "Phase 8 起点 #206 needs-review (人間判断待ち); 副次 fix として #212 (should-stop の needs-review 抜け) を Claude 直接修正"
+    },
+    {
+      "cycle": 12,
+      "started_at": "2026-06-17T11:37:05.568Z",
+      "ended_at": "2026-06-17T11:48:40.525Z",
+      "closed": [
+        213
+      ],
+      "raised": [
+        213
+      ],
+      "merged_commits": 3,
+      "adr_drafts": []
     }
   ],
   "cumulative": {
-    "cycles_total": 11,
-    "issues_closed": 124,
+    "cycles_total": 12,
+    "issues_closed": 125,
     "raised_resolved": 0,
     "adr_total": 14,
     "token_claude": 0,
     "token_glm": 0,
-    "token_codex": 47105281
+    "token_codex": 52483153
   }
 }
