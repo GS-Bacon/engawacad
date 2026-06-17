@@ -1,7 +1,7 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 16,
-  "last_cycle_at": "2026-06-17T16:38:36.167Z",
+  "cycle": 17,
+  "last_cycle_at": "2026-06-17T17:41:33.113Z",
   "recent_cycles": [
     {
       "cycle": 1,
@@ -459,11 +459,22 @@
       ],
       "merged_commits": 3,
       "adr_drafts": []
+    },
+    {
+      "cycle": 17,
+      "started_at": "2026-06-17T16:38:36.167Z",
+      "ended_at": "2026-06-17T17:41:33.113Z",
+      "closed": [
+        219
+      ],
+      "raised": [],
+      "merged_commits": 3,
+      "adr_drafts": []
     }
   ],
   "cumulative": {
-    "cycles_total": 16,
-    "issues_closed": 127,
+    "cycles_total": 17,
+    "issues_closed": 128,
     "raised_resolved": 0,
     "adr_total": 14,
     "token_claude": 0,
