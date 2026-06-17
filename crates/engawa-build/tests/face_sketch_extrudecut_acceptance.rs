@@ -96,6 +96,28 @@ fn t02_plumbing_manifold_contract() {
         "ExtrudeCut + Face EntityRef result must satisfy validate_manifold (same gate as #215 t04)",
     );
 
+    // Target-vs-tool discriminator (B-6 cross-cut F01): the cuboid spans z ∈ [-5, 5],
+    // the tool alone would span z ∈ [5, 10]. Asserting the result's z range == [-5, 5]
+    // proves the returned body is the boolean Cut output (which still contains the
+    // original target volume), not the standalone tool extrusion.
+    let (z_min, z_max) = result
+        .solid
+        .vertices
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+            (lo.min(v.point.z), hi.max(v.point.z))
+        });
+    assert!(
+        (z_min - (-5.0)).abs() < 1e-9,
+        "result z_min = {}, expected -5 (target cuboid bottom); a returned-tool regression would give z_min = 5",
+        z_min
+    );
+    assert!(
+        (z_max - 5.0).abs() < 1e-9,
+        "result z_max = {}, expected 5 (target cuboid top); a returned-tool regression would give z_max = 10",
+        z_max
+    );
+
     // Face basis sanity (Codex r5 F01): the f_z_pos top face has origin (0,0,5),
     // normal +Z, u_axis = -X, v_axis = +Y (see cuboid.rs:130-140). A profile point
     // (u, v) therefore maps to world (-u, v, 5). The fixture's asymmetric rectangle
@@ -138,16 +160,8 @@ fn t02_topology_pinned_until_220() {
     let bodies = build_assembly(&doc, Path::new("examples"), &mut gen).expect("build failed");
     let result = &bodies[0];
 
-    // Cuboid 10×10×10 centered at origin → z range [-5, 5].
-    let (z_min, z_max) = result
-        .solid
-        .vertices
-        .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
-            (lo.min(v.point.z), hi.max(v.point.z))
-        });
-    assert!((z_min - (-5.0)).abs() < 1e-9, "z_min = {}", z_min);
-    assert!((z_max - 5.0).abs() < 1e-9, "z_max = {}", z_max);
+    // z range and the target-vs-tool discrimination are now covered by T02_plumbing.
+    // This test only pins the broken euler_poincare value until #220 ships the fix.
     assert_eq!(
         result.solid.euler_poincare(),
         1,
