@@ -1,9 +1,3 @@
-issues:
-  - id: F01
-    severity: critical
-    file: "crates/engawa-build/tests/refplane_acceptance.rs"
-    line_hint: 451
-    finding: "追加された T17 は `build_assembly` の成功可否しか見ておらず、今回変更対象の nested component + `IdGenerator` 経路の決定性を検証していない。`coverage_hints.determinism = 0` のままで、既存 `assembly_acceptance::t01` も Body 数・座標しか比較していないため、深ネスト ref_plane fallback で EntityId 割当順がずれてもこの差分では検出できない。"
-    suggestion: "T17 と同じ親 custom-only → 子 custom-only → 孫 empty の文書を `IdGenerator::new(0)` から 2 回 `build_assembly` し、Body 順序と face/edge/vertex ID を比較する決定性回帰テストを追加する。"
+issues: []
 
-verdict: fail
+verdict: pass
