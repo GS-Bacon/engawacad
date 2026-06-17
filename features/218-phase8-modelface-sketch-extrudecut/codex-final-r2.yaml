@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 111
+    finding: "T02 が `euler_poincare()==1` を期待値として固定し、同じファイルの T03/T04 も『穴が空いていない／no cut occurred』状態を成功条件にしています。これでは Face EntityRef + ExtrudeCut 経路で B-rep 不変条件を満たさない結果が CI を通り、ファイル先頭で宣言している `euler_poincare()==0` / 単一 manifold body の契約も検証できません。"
+    suggestion: "acceptance の主契約は `validate_manifold()` と `euler_poincare()==0` を必須にし、現状の退化挙動を残す必要があるなら既知制約の回帰テストとして別扱いに分離してください。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 590
+    finding: "T10 の極小 depth 境界テストは `build_assembly` 成功と `bodies.len()==1` しか見ておらず、返却 Solid の manifold 性や Euler 不変条件を確認していません。near-zero の extrude_cut は既存 kernel 回帰でも退化 B-rep を起こしやすい経路なので、このままでは壊れた topology を返してもテストが通ります。"
+    suggestion: "T10 でも成功後に `validate_manifold()` と `euler_poincare()` を検査し、境界数値での退化を明示的に捕まえてください。"
+
+verdict: fail

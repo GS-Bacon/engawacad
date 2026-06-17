@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 68
+    finding: "新規 fixture `sketch_extrudecut_hole` に対するアクティブな正常系検証は `t02_plumbing_consume_and_register` の `bodies.len()==1` と `feature_id` だけで、トポロジー確認は `#[ignore]` に退避されています。`T06` は別形状の既存回帰でしかないため、この fixture が deterministic な no-op や非 manifold solid に退行しても issue 固有の受け入れテストは通ってしまい、ファイル先頭で宣言している `euler_poincare()==0` 契約を実際には担保できません。"
+    suggestion: "この issue のアクティブ正常系を、今日成立する Face EntityRef + ExtrudeCut 形状で `validate_manifold()` と `euler_poincare()==0` まで assert する形に組み替えてください。partial-pit 形状が #220 まで blocked なら、その fixture は ignored の補助回帰に落とし、main contract から外すべきです。"
+  - id: F02
+    severity: medium
+    file: "examples/sketch_extrudecut_hole.engawa"
+    line_hint: 13
+    finding: "例のプロファイルが face 原点中心の正八角形なので、`plane_ref` 解決で起こりがちな `u_axis`/`v_axis` の swap や符号反転に対して形状が不変です。したがって新規の determinism/STL/snapshot テストは、Face EntityRef 平面の in-plane 向きや handedness が壊れても検出できません。"
+    suggestion: "profile を非対称形状にするか face 原点から平行移動して、XY 位置や特徴頂点を assert してください。Face EntityRef の basis 解決が誤っても必ず差分が出る fixture にした方がよいです。"
+
+verdict: fail

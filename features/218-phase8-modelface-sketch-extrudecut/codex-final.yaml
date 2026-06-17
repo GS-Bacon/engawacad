@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 63
+    finding: "T02 は `euler_poincare() == 0` を契約として掲げていますが、実際には `bodies.len()`・z range・`faces.len() == 7` しか検証していません。新規ファイル内の manifold 検証は別 fixture を使う T06 だけなので、`sketch_extrudecut_hole` の 8 角形経路で Euler 不変条件が崩れてもこの acceptance では見逃します。"
+    suggestion: "T02 で `result.solid.euler_poincare() == 0` を明示的に assert し、可能なら同じ solid に対して `validate_manifold()` も追加してください。"
+  - id: F02
+    severity: medium
+    file: "examples/sketch_extrudecut_hole.engawa"
+    line_hint: 48
+    finding: "この example は『穴あけ済み』『dispatcher が depth を反転する』と記述していますが、追加された acceptance は現状挙動を『外側へ伸びる degenerate cut で実カットなし』として固定しています。example の説明と実際に生成される形状が食い違っており、参照モデルとして使うと誤解を生みます。"
+    suggestion: "コメントと `root_component.name` を現状の degenerate-cut plumbing 検証に合わせて修正するか、実穴あき形状の example は #220 完了後に分離してください。"
+
+verdict: fail

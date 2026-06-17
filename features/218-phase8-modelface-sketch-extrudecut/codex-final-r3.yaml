@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 69
+    finding: "新規 `sketch_extrudecut_hole` の正常系 contract（`bodies.len()==1`、`feature_id==\"extrude_cut_1\"`、`faces.len()==7`、`euler_poincare()==1`）を pin している T02 が `#[ignore]` のため、CI 上で実行されるテストは build/tessellate の決定性しか見ていない。`ExtrudeCut` が target を consume しなくなっても T01/T11 は通り得るので、#218 の plumbing 成果物を守れていない。"
+    suggestion: "T02 から『現状挙動の pin』部分だけを non-ignored のテストに切り出し、実 hole drilling / manifold 化が必要な assert だけを #220 まで `#[ignore]` に分離する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 610
+    finding: "決定性テストが STL 文字列と頂点座標だけを比較しており、Face/Edge/Vertex の ID 順序や EntityRef 解決先の安定性を検証していない。B-rep の face 順や entity ID が揺れても mesh と座標が同じなら見逃すため、ModelFace EntityRef 経路で最も重要な決定性リスクを捕まえられない。"
+    suggestion: "2 回 build した結果について `feature_id`、`solid.id`、`faces[].id`、`edges[].id`、`vertices[].id`、必要なら `find_face_by_entity_ref` の返り値まで比較し、#215 と同じ粒度で決定性を固定する。"
+
+verdict: fail

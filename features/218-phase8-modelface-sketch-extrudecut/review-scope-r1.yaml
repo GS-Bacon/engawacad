@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: low
+    section: "テスト計画"
+    finding: "完了条件にある 'cargo clippy --workspace -- -D warnings 通過' がテスト計画（T01-T05）に記載されていない"
+    suggestion: "T06 として clippy 通過テストを追加するか、または完了条件に照らしてテスト計画が十分であることを明示すること"
+
+verdict: pass

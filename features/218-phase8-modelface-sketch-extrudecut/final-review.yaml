@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 7-49
+    finding: "Issue 完了条件「穴あき形状が生成される」が満たされていない。acceptance test コメントが自認する通り、実装では tool が外側に伸びており boolean Cut は「何も削らない」縮退化になっている。T02/T03/T04 の assert がすべて「no actual cut occurred」前提で書かれており、内側カットが発生していない。"
+    suggestion: "ExtrudeCut dispatcher で ModelFace 法線方向（内側）への tool 生成を修正し、T03 で穴底面（z=0.5 周辺）の頂点存在を assert するようテストを書き換えること"
+
+verdict: fail

@@ -1,0 +1,8 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 580
+    finding: "`depth=1e-6` の唯一の境界数値テストが `#[ignore]` のままなので、Face EntityRef -> ExtrudeCut 経路の正の極小深さが CI で一切検証されていません。`depth <= 0` のガードは見ていますが、ゼロ近傍での tool 生成や boolean の退化はこの差分では見逃されます。"
+    suggestion: "実カット形状までは要求しなくてもよいので、現在の plumbing contract に沿う最小限の assertion で極小正値 depth の active test を残す"
+verdict: pass

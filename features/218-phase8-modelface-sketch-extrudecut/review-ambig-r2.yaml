@@ -1,0 +1,8 @@
+issues:
+  - id: AM02
+    severity: medium
+    section: "テスト計画 > T04"
+    finding: "T04 の期待結果に `z_min ≈ -4.0 && z_max ≈ 4.0 && exists v with z ≈ 2.0` と「≈」が使われているが、T02 では AM01 採用により `(z - expected).abs() < 1e-9` と具体化済み。T04 でも同様に具体化すべき"
+    suggestion: "期待結果を `(z_min - (-4.0)).abs() < 1e-9 && (z_max - 4.0).abs() < 1e-9 && result.vertices.iter().any(|v| (v.point.z - 2.0).abs() < 1e-9)` と具体化する"
+
+verdict: pass

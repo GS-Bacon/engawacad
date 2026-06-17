@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 73
+    finding: "アクティブな acceptance が `bodies.len()==1`、`feature_id`、`validate_manifold()` しか見ておらず、Face EntityRef の面内配置を検証していない。`examples/sketch_extrudecut_hole.engawa` の非対称矩形は `u_axis`/`v_axis` の swap や符号反転を検出する意図だが、現在は deterministic に間違った配置でも全テストが通る。"
+    suggestion: "少なくとも 1 本は非 `#[ignore]` のまま、接触パッチや結果頂点の XY 座標/境界箱を期待値比較し、`f_z_pos` の面基底解決を直接検証する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
+    line_hint: 621
+    finding: "`t11_two_run_topology_determinism` は『topology が完全一致』と説明しているが、比較対象は `solid_id`、vertex/edge/face ID、頂点座標だけで、`half_edges`・`loops`・`shells`・entity name を見ていない。B-rep の接続関係や shell 構成だけが非決定になる退行はこのテストでは捕まらない。"
+    suggestion: "既存の `assert_solids_equal` / `assert_solids_equal_with_names` 相当まで広げ、half-edge・loop・shell・name も比較する。"
+
+verdict: fail

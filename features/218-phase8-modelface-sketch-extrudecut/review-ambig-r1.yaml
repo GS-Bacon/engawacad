@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "テスト計画 > T02"
+    finding: "期待結果に「≈」記号を使用。「z_min ≈ -2.5」の具体誤差範囲がテストコード実装者に委ねられている"
+    suggestion: "数値モデルセクションで ε_snap=1e-9 と定義済みのため、「z_min が -2.5 から 1e-9 以内」等の文言へ補強するか、T02 実装時に ADR-004 準拠 `< 1e-9` 比較を明示的にコメントすること"
+
+verdict: pass
