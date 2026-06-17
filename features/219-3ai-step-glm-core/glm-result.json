@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": false,
+  "failed_reason": "cargo xtask ci failed — see features/219-3ai-step-glm-core/ci.log",
+  "error_pattern": "error[E0658]: use of unstable library feature `str_as_str` --> crates/engawa-build/src/lib.rs:LINE:COL",
+  "error_pattern_kind": "compile"
+}
