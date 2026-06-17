@@ -195,6 +195,8 @@ bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts
 
 `features/.loop/state.json` の `recent_cycles[-1].ended_at` が `LOOP_TMUX_STUCK_MIN` (デフォルト 45 分) 以上更新されないと、watcher は `loop-tmux-stuck` 通知を出して自滅する。
 
+ただし #209 修正以降、worker pane の foreground command (`tmux display -p '#{pane_current_command}'`) が `bash`/`zsh`/`sh`/`fish`/`dash` 以外のとき (= claude / bun / cargo / node 等が走っている間) は 10s poll の heartbeat で `lastActivityAt` が更新される。長尺 cycle (例 15h) でも自爆しなくなり、stuck 閾値は「素の shell プロンプトで真に idle になってから 45 分」の意味になる。watcher.log の `heartbeat: pane_cmd=... active=... idle=...min` 行で実際の判定経過を追跡できる。
+
 復旧:
 ```bash
 # 1) watcher.log で原因確認

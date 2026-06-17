@@ -85,11 +85,25 @@ export type WatcherAction =
   | { kind: "worker-gone" }
   | { kind: "should-stop-error"; rc: number };
 
+// #209: worker pane の foreground command が「idle shell」のいずれでもなければアクティブ扱い。
+// allow-list (claude/bun/cargo/... を列挙) より、想定外コマンド (vim/python/htop など) を
+// 誤って idle に倒すリスクが低い inverse 方式。`/clear` 直後の短時間 bash 露出は
+// send-clear-and-restart 側の lastActivityAt リセットで吸収される。
+const IDLE_COMMANDS = new Set(["bash", "zsh", "sh", "fish", "dash"]);
+
+/** worker pane の foreground command がアクティブなら true。null / 空 / 既知 shell は false。 */
+export function isPaneActive(cmd: string | null): boolean {
+  if (!cmd) return false;
+  return !IDLE_COMMANDS.has(cmd.trim());
+}
+
 export interface DecideInput {
   prevEndedAt: string | null;
   currEndedAt: string | null;
   shouldStopRc: number | null; // 差分検知時のみ評価。null = まだ呼んでいない
-  minutesSinceLastUpdate: number; // baseline 確立 / 最後の cycle 完了からの経過 (分)
+  // baseline 確立 / 最後の cycle 完了 / 最後のアクティブ command 検知 (#209 heartbeat) のいずれかから
+  // の経過 (分)。watcher 側で lastActivityAt を更新し、ここでは閾値比較のみ行う。
+  minutesSinceLastUpdate: number;
   stuckThresholdMin: number;
   workerPaneAlive: boolean;
 }
@@ -214,6 +228,22 @@ async function tmuxPaneExists(info: PaneInfo): Promise<boolean | "unknown"> {
     return out.split("\n").map(s => s.trim()).includes(expected);
   } catch {
     return "unknown";
+  }
+}
+
+/** #209: worker pane の foreground command を取得。tmux 一時障害や pane 不在は null。 */
+async function tmuxPaneCurrentCommand(paneId: string): Promise<string | null> {
+  try {
+    const proc = Bun.spawn(
+      ["tmux", "display", "-p", "-t", paneId, "#{pane_current_command}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    if (proc.exitCode !== 0) return null;
+    return out.trim() || null;
+  } catch {
+    return null;
   }
 }
 
@@ -439,6 +469,9 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
   // stuck タイマー基準: 起動時刻で初期化し、baseline 確立 / cycle 完了で都度リセットする。
   // state.json の currEndedAt の age を使うと、起動直後の baseline 確立瞬間に
   // 既存 ended_at が古い場合 (= サーバ長時間停止後の再開) に即 stuck と誤判定される。
+  // #209: 加えて、worker pane の foreground command がアクティブ (= idle shell 以外) である間も
+  // heartbeat で都度リセットする。長尺 cycle (例 15h) でも worker が走り続けている限り stuck
+  // 通知は出ない。素の bash プロンプトで真に idle になった場合のみ stuckThresholdMin で発火する。
   let lastActivityAt = Date.now();
 
   // メインループ
@@ -468,6 +501,17 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
           workerAlive = q;
         }
       }
+      // #209: worker pane の foreground command で heartbeat。アクティブなら lastActivityAt を更新。
+      // workerAlive=true (3 つ組一致確認済み) のときのみ取り、別 pane の取り違いを構造的に防ぐ。
+      // mockAlive 経路は dry-run / smoke test 用のため heartbeat をスキップ。
+      if (!mockAlive && workerAlive) {
+        const paneCmd = await tmuxPaneCurrentCommand(targetPaneId);
+        const active = isPaneActive(paneCmd);
+        if (active) lastActivityAt = Date.now();
+        const idleMin = (Date.now() - lastActivityAt) / 60000;
+        log(`heartbeat: pane_cmd=${paneCmd ?? "(null)"} active=${active} idle=${idleMin.toFixed(1)}min`);
+      }
+
       const state = readState();
       if (state === null && existsSync(STATE_PATH)) {
         parseFailures++;

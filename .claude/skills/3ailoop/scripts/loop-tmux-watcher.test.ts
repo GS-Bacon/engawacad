@@ -6,6 +6,7 @@ import {
   decideAction,
   detectCycleCompleted,
   extractLastEndedAt,
+  isPaneActive,
 } from "./loop-tmux-watcher.ts";
 
 describe("extractLastEndedAt", () => {
@@ -32,6 +33,38 @@ describe("extractLastEndedAt", () => {
     const state = { recent_cycles: [{}] };
     expect(extractLastEndedAt(state)).toBeNull();
   });
+});
+
+describe("isPaneActive (#209)", () => {
+  // 想定外コマンドも全部 active 扱いに倒すため、idle は既知 shell のみで判定する。
+  const cases: Array<[string | null, boolean]> = [
+    ["claude", true],
+    ["bun", true],
+    ["node", true],
+    ["cargo", true],
+    ["rustc", true],
+    ["codex", true],
+    ["gh", true],
+    ["git", true],
+    ["make", true],
+    ["vim", true],
+    ["python", true],
+    ["htop", true],
+    ["sleep", true],
+    ["bash", false],
+    ["zsh", false],
+    ["sh", false],
+    ["fish", false],
+    ["dash", false],
+    ["  bash  ", false],
+    ["", false],
+    [null, false],
+  ];
+  for (const [cmd, expected] of cases) {
+    it(`isPaneActive(${JSON.stringify(cmd)}) === ${expected}`, () => {
+      expect(isPaneActive(cmd)).toBe(expected);
+    });
+  }
 });
 
 describe("detectCycleCompleted", () => {
