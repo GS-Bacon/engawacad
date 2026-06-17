@@ -85,6 +85,22 @@ function getHeadSha(): string {
   return new TextDecoder().decode(proc.stdout).trim();
 }
 
+/**
+ * #210: foundation-batch tier の milestone gating
+ *   milestone なし / 非 `Phase N` title → false (除外しない)
+ *   milestone `Phase N` (N <= currentPhase) → false (除外しない、過去 Phase の振り返り作業)
+ *   milestone `Phase N` (N > currentPhase) → true (除外、将来 Phase の起点 Issue)
+ */
+export function isFutureMilestoneTitle(
+  milestoneTitle: string | null,
+  currentPhase: number | null,
+): boolean {
+  if (milestoneTitle === null || currentPhase === null) return false;
+  const m = milestoneTitle.match(/^Phase\s+(\d+)/);
+  if (!m) return false;
+  return parseInt(m[1], 10) > currentPhase;
+}
+
 /** ROADMAP.md から現在の (非✅) Phase 番号を返す */
 function detectCurrentPhase(roadmapPath: string): number | null {
   if (!existsSync(roadmapPath)) return null;
@@ -225,6 +241,9 @@ async function main() {
   const isFoundationTier = (labels: string[]) =>
     labels.some(l => l === "type:foundation" || l === "type: foundation");
 
+  const isFutureMilestone = (issue: GhIssue): boolean =>
+    isFutureMilestoneTitle(issue.milestone?.title ?? null, currentPhase);
+
   // --- 優先順位ラダーで対象 Issue を選択 ---
   let selected: GhIssue[] = [];
   let tier: BatchPlan["tier"] = "bug-batch";
@@ -249,7 +268,10 @@ async function main() {
     tier = "bug-batch";
   } else if (batchArg === "foundation") {
     // --batch foundation: type:foundation + batch:* のみ
-    selected = allIssues.filter(i => isFoundationTier(labelNames(i)) && hasBatchLabel(i));
+    // #210: 将来 Phase milestone は除外
+    selected = allIssues.filter(
+      i => isFoundationTier(labelNames(i)) && hasBatchLabel(i) && !isFutureMilestone(i),
+    );
     tier = "foundation-batch";
   } else if (batchArg === "phase") {
     // --batch phase: 現 Phase milestone の type:feature のみ
@@ -295,7 +317,10 @@ async function main() {
         tier = "enh-batch";
       } else {
         const foundationBatch = tryTier(
-          allIssues.filter(i => isFoundationTier(labelNames(i)) && hasBatchLabel(i)),
+          // #210: 将来 Phase milestone (Phase N で N > currentPhase) は除外
+          allIssues.filter(
+            i => isFoundationTier(labelNames(i)) && hasBatchLabel(i) && !isFutureMilestone(i),
+          ),
         );
         if (foundationBatch.length > 0) {
           selected = foundationBatch;
@@ -481,4 +506,6 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+if (import.meta.main) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}
