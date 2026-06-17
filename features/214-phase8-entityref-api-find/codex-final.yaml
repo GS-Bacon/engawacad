@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-kernel/tests/find_face_by_entity_ref_acceptance.rs"
+    line_hint: 1
+    finding: "Issue #214 で必須の T01-T06 受け入れテストはこのファイルにあるが、現時点では未追跡のため `git diff` に含まれていない。レビュー対象の差分としては `total_added=0` のままで、決定性・退化入力の要件を CI で担保できていない。"
+    suggestion: "`crates/engawa-kernel/tests/find_face_by_entity_ref_acceptance.rs` を git add して実装差分に含め、Issue #214 の必須テストとして一緒に提出する"
+
+verdict: fail
