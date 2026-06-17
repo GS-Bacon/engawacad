@@ -154,27 +154,182 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 
 ---
 
-## Phase 9: STEP export (低優先度)
+## Phase 8 以降の総括 — 自律実装期と UI 期
 
-**外から見た成果**: CAD 業界標準の STEP フォーマットで出力できる
-
-```bash
-engawa export model.engawa -o model.step
-```
-
-**完了条件**:
-- `engawa export ... -o <output.step>` が動作する
-- 出力 STEP が主要 CAD ソフトで読み込める
-
-**備考**: STEP (ISO 10303) は仕様規模が大きく Rust エコシステムも限定的なため、対話編集の基盤が整ってから着手する。詳細は ADR-002 参照。
+Phase 8 から先は **自律実装期 (Phase 9-20)** と **UI 期 (Phase 21-24)** の二段構成。自律実装期は CLI + YAML + 3ailoop で消化可能な「Feature 列で操作できる機能」の拡充に集中し、UI 期突入前に Quality + Refactor Pass (Phase 12 / 16 / 20) で品質基盤を固める。詳細な再設計の経緯と機能ユニバース (Solidworks / Fusion / Onshape 統合) は `/home/bacon/.claude/plans/phase8-3ailoop-intake-phase-fluttering-blossom.md` 参照。
 
 ---
 
-## 将来（番号未確定・粗く列挙）
+## Phase 9: 履歴編集 + 変数 + CLI 拡張 + 品質基盤入口
 
-以下は将来フェーズの候補。着手する Phase の Issue のみ作成する（空想 Issue 禁止 / ADR-002）。
+**外から見た成果**: 作った Feature を後から編集・並べ替え・サプレスでき、変数で形を駆動できる
 
-- **円/円弧 + 拘束ソルバ**: スケッチに曲線要素と幾何拘束を追加
-- **フィレット / 面取り**: ADR-004 の自由曲面基盤の上に実装
-- **履歴編集 + undo/redo**: Feature CRUD パネル、Feature の削除・並べ替え
-- **Tauri デスクトップ化**: ローカル完結のネイティブアプリ（ADR-003 既定の発展ステップ）
+**完了条件**:
+- Feature CRUD (Edit / Roll back / Suppress / Reorder / Delete / Insert) が `.engawa` から動作する
+- Document 全域 + Sketch 内の 2 段スコープ Variable / Equation が動作する
+- `engawa entry add/edit/remove/reorder/suppress` 統一 CLI が利用できる
+- `schema_version` フィールドと migration hook の入口が `engawa-format` に入っている
+- 品質基盤 (proptest / criterion / cargo-fuzz / cargo-llvm-cov / Playwright) の最小 setup と main の bench baseline が取得済み
+
+**前提 ADR**: 新規 (履歴 CRUD 抽象 + Variable スコープ + schema_version + 品質基盤、CLI 命名規約)
+
+---
+
+## Phase 10: スケッチ基本曲線拡張
+
+**外から見た成果**: 線分以外のスケッチ要素 (円・弧・楕円・矩形・多角形・Slot・Conic) を描ける
+
+**完了条件**:
+- 上記スケッチ要素が `.engawa` で記述・描画可能
+- スケッチ編集 (Trim / Extend / Offset / Sketch Fillet / Sketch Chamfer / Mirror / Pattern) が動作
+
+---
+
+## Phase 11: 拘束ソルバ 基礎
+
+**外から見た成果**: スケッチに幾何拘束・寸法拘束を付与してパラメトリックに駆動できる
+
+**完了条件**:
+- 幾何拘束 (Horizontal / Vertical / Coincident / Collinear / Parallel / Perpendicular / Tangent / Equal / Midpoint / Fix / Concentric / Symmetric / Pierce / Mirror / Merge points) が動作
+- 寸法拘束 (Linear / Aligned / Angular / Radial / Diameter / Driven) が動作
+- Over/Under-constrained 検出が動作
+- ソルバの決定性テスト緑
+
+**前提 ADR**: 新規 (拘束ソルバ ライブラリ方針、ADR-004 tolerant model との整合)
+
+---
+
+## Phase 12: Quality + Refactor Pass 1
+
+**外から見た成果**: Phase 9-11 で蓄積した複雑さの整理と、品質基盤の本格運用 (機能追加なし)
+
+**完了条件**:
+- 直近 Phase の `needs-human` 退避バグ集中修正
+- proptest / fuzz / bench リグレッション検知 / coverage 閾値 / Visual Regression Testing 本実装
+- 最新ベストプラクティス調査 ADR (Pass 1)
+- viewer (TypeScript 側) もテスト網羅・bench 対象
+
+---
+
+## Phase 13: 拘束ソルバ 拡張
+
+**外から見た成果**: Spline (Fit/Control point) と高度な拘束 (Smooth/Curvature/Path length/Baseline/Ordinate) が使える
+
+**完了条件**:
+- Spline (Fit point / Control point) が描画・拘束可能
+- Smooth (G2) / Curvature / Normal / On-curve / Coradial / Same length / Same radius が動作
+- 寸法 (Baseline / Ordinate / Arc length / Path length) が動作
+- Equation Driven Curve が動作
+
+---
+
+## Phase 14: 拡張形状操作
+
+**外から見た成果**: Revolve / Sweep / Loft / Pattern / Mirror / Helix で複雑な形状を作れる
+
+**完了条件**:
+- Revolve / Sweep / Loft が `.engawa` から動作
+- Pattern (Linear / Circular / Curve) と Mirror が動作
+- Helix が動作 (Thread/Coil 自体は将来候補)
+
+**前提 ADR**: 新規 (スケッチ → ソリッド変換規約)
+
+---
+
+## Phase 15: 自由曲面・面処理
+
+**外から見た成果**: Fillet / Chamfer / Shell / Draft と、Surface workspace (Patch / Boundary / Knit / Trim / Thicken) が使える
+
+**完了条件**:
+- Fillet (Constant / Variable / Chord / Full Round) と Chamfer (Equal / Distance-distance / Angle) が動作
+- Shell / Draft / Offset Face / Scale (Uniform/Non-uniform) が動作
+- Surface workspace (Patch / Boundary / Ruled / Knit / Trim / Untrim / Extend / Thicken / Mid Surface) が動作
+- ADR-004 で予告した自由曲面の本格導入
+
+**前提 ADR**: 新規 (自由曲面 NURBS/Bezier 表現、面処理の数値安定性)
+
+---
+
+## Phase 16: Quality + Refactor Pass 2
+
+**外から見た成果**: Phase 13-15 (拘束拡張・拡張形状・自由曲面) の整理と品質確認 (機能追加なし)
+
+**完了条件**: Phase 12 と同じ必須項目 + 最新ベストプラクティス調査 ADR (Pass 2)
+
+---
+
+## Phase 17: アセンブリ Mate 基礎
+
+**外から見た成果**: 部品同士を Mate / Joint で接合し、サブアセンブリと干渉検査ができる
+
+**完了条件**:
+- Standard Mate (Coincident / Parallel / Perpendicular / Tangent / Concentric / Lock / Distance / Angle) が動作
+- Joint (Rigid / Revolute / Slider / Cylindrical / Pin-Slot / Planar / Ball) が動作
+- Mate Connector / Joint Origin / As-built joint が動作
+- Sub-assembly / Component Pattern (Linear / Circular) / Mirror Component が動作
+- Interference / Clearance detection が動作
+
+**前提 ADR**: 新規 (アセンブリ Mate データモデル、Mate Connector 表現)
+
+---
+
+## Phase 18: アセンブリ機構拘束
+
+**外から見た成果**: Cam / Gear / Screw / Belt-Chain などの機構的接合を表現できる
+
+**完了条件**:
+- Mechanical Mate (Cam / Slot / Hinge / Gear / Rack-Pinion / Screw / Universal Joint / Belt-Chain) が動作
+- Motion Link / Drive Joints / Joint Limits / Contact Set が動作
+
+---
+
+## Phase 19: データ連携
+
+**外から見た成果**: STEP / IGES / DXF/DWG / GLTF / USDZ の入出力と、`.engawa` スキーマの版管理ができる
+
+**完了条件**:
+- STEP I/O ライブラリ調査 ADR → 実装 (重さに応じて縮退判断、最低 AP203 export)
+- IGES export、DXF/DWG (sketch) export、GLTF/USDZ (Web 表示用) export
+- Schema versioning + migration の本実装
+
+**前提 ADR**: 新規 (STEP I/O ライブラリ調査結果と縮退方針)
+
+---
+
+## Phase 20: Quality + Refactor Pass 3 + UI 期前ゲート
+
+**外から見た成果**: UI 期突入の最終ゲート。Phase 12/16 の品質手法全て + UI 期に向けた整理
+
+**完了条件**:
+- Phase 12 の必須項目 (proptest / fuzz / bench / coverage / Visual Regression / 最新調査 ADR)
+- CLI コマンド体系の安定化レビュー (UI 期で wrap する前提で命名・引数・出力形式を統合)
+- API ドキュメント自動生成体制 (rustdoc + CLI help → markdown)
+- E2E シナリオテスト (全 examples の export ハッシュ一致 + Visual Regression)
+- サンプルファイル群の完備 (全 Phase の代表 `.engawa` が examples/ にある)
+
+**このゲートを通過しないと UI 期 (Phase 21+) に入らない**。
+
+---
+
+## Phase 21-24: UI 期
+
+Phase 20 ゲート通過後に詳細を再計画する。現時点では項目名のみ:
+
+- **Phase 21**: 編集 GUI 基盤 (Feature tree UI / inline params / 押出・押出カット分離など UI 細部)
+- **Phase 22**: スケッチ拘束 GUI (拘束追加 / 寸法入力 / Over-constrained 視覚化)
+- **Phase 23**: アセンブリ Mate GUI + Inspect (Mate ダイアログ / Measure / Section / Curvature 解析)
+- **Phase 24**: Tauri デスクトップ化 (ローカル完結ネイティブアプリ)
+
+---
+
+## 将来候補（番号未確定・粗く列挙）
+
+着手する Phase の Issue のみ作成する（空想 Issue 禁止 / ADR-002）。
+
+- **2D Drawing**: 投影図・寸法記入・図面テンプレート
+- **T-Spline (Form workspace)**: 有機的自由曲面のスカルプティング
+- **Cloud collab / Multi-user editing**: Onshape 風の同時編集 (Versions/Branches ネイティブ管理含む — 現状は `.engawa` YAML + git で代替)
+- **Custom Feature DSL**: Onshape FeatureScript 相当、CLI が整備された後に重ねる拡張機能定義言語
+- **Thread / Coil**: Helix の上に螺旋形状を作る組み合わせ機能 (Helix は Phase 14)
+- **Sheet metal**: 板金特化 (bend / unfold / flat pattern)
+- **Direct Edit**: Press Pull / Instant3D / Modify Face — Feature 履歴主義 (ADR-003) との折り合いを別途検討
