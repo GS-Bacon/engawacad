@@ -15,4 +15,6 @@ features/**/*.raw
 features/**/*.log
 features/.batch/
 features/.loop/tmux/
+features/.loop/issue-cache.json
+features/.loop/context-cache.json
 .claude/scheduled_tasks.lock

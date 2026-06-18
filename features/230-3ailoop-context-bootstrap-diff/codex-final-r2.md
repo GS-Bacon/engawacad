@@ -1,0 +1,7 @@
+verdict: fail
+severity: high
+  - [loop-context-bootstrap.ts](/home/bacon/engawacad/.claude/skills/3ailoop/scripts/loop-context-bootstrap.ts:286) makes diff mode the default and suppresses unchanged ROADMAP/CLAUDE/MEMORY/dashboard bodies on the no-flag path; [SKILL.md](/home/bacon/engawacad/.claude/skills/3ailoop/SKILL.md:60) still calls the script without `--full`, and [SKILL.md](/home/bacon/engawacad/.claude/skills/3ailoop/SKILL.md:272) clears the worker before each new `/3ailoop`, so after cycle 1 the bootstrap stops rehydrating the core instructions it exists to restore.
+  - [loop-context-bootstrap.ts](/home/bacon/engawacad/.claude/skills/3ailoop/scripts/loop-context-bootstrap.ts:179) compares sorted label sets with `join("|")`; that is order-safe, but not delimiter-safe, so a label containing `|` can hide a real `labelsChanged` diff.
+
+notes:
+  `diffIssues()` is otherwise disjoint and exhaustive for issue-number presence plus label-set changes; title-only edits currently count as `unchanged`. `issue-cache.json` parse/wrong-shape failures do fall back to cold-start, and the 12-hex SHA prefix is a negligible collision risk here. Gate/needs breakdown is still emitted in diff mode; the important information loss is the suppressed file bodies, plus the cached-issue path no longer emits the old `loopActionable===0` note. I could not run the full Bun test file in this sandbox because temp-dir creation is blocked (`EROFS`); the review is from code inspection plus helper-level `bun -e` sanity checks.
