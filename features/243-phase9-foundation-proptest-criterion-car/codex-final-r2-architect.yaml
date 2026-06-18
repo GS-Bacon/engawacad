@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-kernel/tests/cuboid_determinism_proptest.rs"
+    line_hint: 29
+    finding: "新規 proptest は 2 回生成した `Solid` の `Debug` 文字列比較しかしておらず、`validate_manifold()` や Euler-Poincare を確認していないため、同一入力で毎回同じ壊れた HalfEdge/Loop/Shell を返す回帰を通してしまう。境界ケース側も tessellation 成功しか見ていない。"
+    suggestion: "生成した `Solid` ごとに `validate_manifold()` と `euler_poincare() == 0` を assert し、必要なら tessellation 結果も 2 回比較して決定性を下流成果物まで固定する"
+  - id: F02
+    severity: low
+    file: "crates/engawa-format/fuzz/fuzz_targets/from_yaml.rs"
+    line_hint: 3
+    finding: "未使用の `CStr` import が残っており、この fuzz target 単体で `clippy -D warnings` を回すと警告で落ちる。"
+    suggestion: "未使用 import を削除する"
+
+verdict: pass

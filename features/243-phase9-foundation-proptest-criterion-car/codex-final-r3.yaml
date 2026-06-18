@@ -1,0 +1,19 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: medium
+    file: "crates/engawa-kernel/tests/cuboid_determinism_proptest.rs"
+    line_hint: 16
+    finding: "追加した決定性プロパティテストが寸法生成範囲を `0.01..1000.0` に固定しており、`make_cuboid` の実契約で許容される near-zero 正値領域 `(0.0, 0.01)` を一切通していません。既存実装は `1e-9` を有効入力として受け入れるため、この差分の `T_BOUNDARY` / `T01` は数値的に最も壊れやすい境界での決定性・トポロジー安定性を保証できていません。"
+    suggestion: "生成戦略を API 契約に合わせて `> 0.0` の有限値まで広げ、少なくとも near-zero 正値（例: `1e-12`, `1e-9`）を含むケースで 2 回生成結果一致を検証してください。`0.0` の拒否は別テストのまま維持して構いません。"
+  - id: C-F01
+    severity: medium
+    file: "docs/QUALITY_TOOLS.md"
+    line_hint: 51
+    finding: "`cd crates/engawa-format/fuzz` の直後に `cargo fuzz run from_yaml fuzz/corpus/from_yaml/` を案内しているため、相対パスが 1 段深くなり `.../fuzz/fuzz/corpus/from_yaml/` を参照して失敗する。manual guide の corpus 実行手順がそのままでは再現できない。"
+    suggestion: "`cd` 後のコマンドは `cargo fuzz run from_yaml corpus/from_yaml/` に修正するか、repo ルートから実行する前提の記述に統一する。"
+  # [migration] issues: [] (verdict=pass)
+
+verdict: pass
+# severity_counts: critical=0, high=0, medium=2, low=0
+# blocking: 0

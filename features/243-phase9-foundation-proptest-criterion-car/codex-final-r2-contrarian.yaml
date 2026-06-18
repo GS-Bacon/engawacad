@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "bench-results/baseline-phase9.json"
+    line_hint: 1
+    finding: "commit されている `phase9` baseline は Criterion が再利用できる baseline ではなく要約 JSON に留まっている。`docs/QUALITY_TOOLS.md` の `cargo bench -p engawa-kernel --bench tessellation -- --baseline phase9` は `target/criterion/.../phase9/` を要求するため、fresh clone では Phase 9 基準値比較が成立しない。"
+    suggestion: "この JSON を参考スナップショット扱いにして docs を訂正するか、実際の Criterion baseline を materialize するスクリプト/配置を追加して `--baseline phase9` が再現可能になる形にする。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-kernel/benches/tessellation.rs"
+    line_hint: 8
+    finding: "`tessellate_cuboid_10x20x30` の測定区間に `IdGenerator` 初期化と `make_cuboid` が含まれており、tessellation 回帰ではなく solid 構築＋tessellation の合算値を baseline 化している。"
+    suggestion: "測定対象を `tessellate_solid` に絞るなら `solid` を `b.iter` の外で一度だけ作るか、fresh state が必要なら `iter_batched` で setup と測定を分離する。"
+
+verdict: fail

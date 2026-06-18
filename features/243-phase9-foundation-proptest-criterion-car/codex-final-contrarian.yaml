@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/fuzz/Cargo.toml"
+    line_hint: 1
+    finding: "`cargo-fuzz` の manifest に `[[bin]]` ターゲットが無いため、plan の T03 と `docs/QUALITY_TOOLS.md` の `cd crates/engawa-format/fuzz && cargo build` は `no targets specified in the manifest` で成立しません。現状の setup では fuzz crate の通常ビルド経路が壊れています。"
+    suggestion: "`[[bin]] name = \"from_yaml\" path = \"fuzz_targets/from_yaml.rs\"` を追加するか、検証手順自体を `cargo fuzz build from_yaml` に変更して plan と docs を一致させる。"
+  - id: F02
+    severity: high
+    file: "bench-results/baseline-phase9.json"
+    line_hint: 13
+    finding: "baseline artifact 自体が `criterion migration pending` を宣言しており、Phase 9 の criterion setup が未実装のままです。`docs/QUALITY_TOOLS.md` で案内している `--save-baseline` / `--baseline` 手順も、現行の `crates/engawa-kernel/benches/tessellation.rs` が手書き `fn main` ベンチのため実際には基準値保存・比較を行えません。"
+    suggestion: "`crates/engawa-kernel/benches/tessellation.rs` を criterion ベンチに切り替えて実測 baseline を再生成するか、criterion 導入を今回の成果物から外して docs と baseline を manual bench 前提に訂正する。"
+  - id: F03
+    severity: medium
+    file: "docs/QUALITY_TOOLS.md"
+    line_hint: 62
+    finding: "manual 実行ガイドのコマンドが repo 実装と食い違っています。`cargo install cargo llvm-cov` では `cargo-llvm-cov` が入らず、Playwright も `bun test` ではなく既存構成どおり `npx playwright test` か `npm run playwright` を使う必要があるため、この手順のままでは 2 ツールを実行できません。"
+    suggestion: "LLVM coverage は `cargo install cargo-llvm-cov`、Playwright は `cd web && npx playwright test` もしくは `npm run playwright` に修正し、必要な前提条件も追記する。"
+
+verdict: fail

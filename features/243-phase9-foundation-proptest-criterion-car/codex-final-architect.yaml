@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/benches/tessellation.rs"
+    line_hint: 6
+    finding: "Phase 9 で criterion baseline を導入した前提になっているが、この bench はまだ手書き `main` のままで criterion harness ではない。`crates/engawa-kernel/Cargo.toml` にも `criterion` 依存が無いため、`docs/QUALITY_TOOLS.md` にある `--save-baseline` / `--baseline` 手順では baseline を生成・比較できず、commit 済み `bench-results/baseline-phase9.json` も実ベンチと結び付かない。"
+    suggestion: "`tessellation.rs` を `criterion_group!` / `criterion_main!` ベースの bench に置き換えて `criterion` を依存追加する。手動ベンチのままにするなら criterion 導入済みという記述と baseline JSON の扱いを見直す。"
+  - id: F02
+    severity: medium
+    file: "docs/QUALITY_TOOLS.md"
+    line_hint: 52
+    finding: "`QUALITY_TOOLS.md` の手動実行コマンドに実行不能なものが混在している。`cd crates/engawa-format/fuzz && cargo build` は `fuzz/Cargo.toml` に通常ターゲットが無いため失敗し、`cargo install cargo llvm-cov` は `cargo-llvm-cov` を導入できず、`bun test*` は `web/package.json` 上 Vitest を起動して Playwright を実行しない。"
+    suggestion: "fuzz は `cargo fuzz build/run from_yaml`、llvm-cov は `cargo install cargo-llvm-cov`、Playwright は `bun run playwright -- ...` か `npx playwright test ...` に修正する。"
+
+verdict: fail

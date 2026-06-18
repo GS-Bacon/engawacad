@@ -1,0 +1,22 @@
+{
+  "totals": {
+    "passed": 1152,
+    "failed": 0,
+    "ignored": 16
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_proptest_make_cuboid_determinism",
+      "kind": "determinism"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 1,
+    "determinism": 1,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

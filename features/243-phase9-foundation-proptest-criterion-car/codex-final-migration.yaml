@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/fuzz/Cargo.toml"
+    line_hint: 1
+    finding: "cargo-fuzz マニフェストに `[[bin]]` ターゲット定義が無いため、`cargo build` / `cargo fuzz run from_yaml` が `no targets specified in the manifest` で失敗する。T03 の『fuzz setup が compile する』成果物を満たしていない。"
+    suggestion: "`[[bin]]` を追加し、`name = \"from_yaml\"`, `path = \"fuzz_targets/from_yaml.rs\"`, `test = false`, `doc = false` を定義して、`crates/engawa-format/fuzz` 単体で Cargo がターゲット解決できる状態にする。"
+  - id: F02
+    severity: high
+    file: "docs/QUALITY_TOOLS.md"
+    line_hint: 62
+    finding: "manual 実行手順に無効なコマンドが含まれている。`cargo install cargo llvm-cov` は `cargo-llvm-cov` の導入コマンドとして誤りで、Playwright も現行 repo は `npx playwright test` / `npm run playwright` で動かしているのに `bun test` を案内しているため、T04 と T_PLAYWRIGHT_smoke を手順どおり再現できない。"
+    suggestion: "`cargo install cargo-llvm-cov` に修正し、Playwright は `cd web && npx playwright test` と `npx playwright test tests/smoke.spec.ts` のように `web/package.json` と `crates/xtask/src/main.rs` の実行系に合わせる。"
+
+verdict: fail

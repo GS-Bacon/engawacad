@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "docs/QUALITY_TOOLS.md"
+    line_hint: 51
+    finding: "`cd crates/engawa-format/fuzz` の直後に `cargo fuzz run from_yaml fuzz/corpus/from_yaml/` を案内しているため、相対パスが 1 段深くなり `.../fuzz/fuzz/corpus/from_yaml/` を参照して失敗する。manual guide の corpus 実行手順がそのままでは再現できない。"
+    suggestion: "`cd` 後のコマンドは `cargo fuzz run from_yaml corpus/from_yaml/` に修正するか、repo ルートから実行する前提の記述に統一する。"
+
+verdict: pass
