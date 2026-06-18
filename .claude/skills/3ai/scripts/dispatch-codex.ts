@@ -2,7 +2,7 @@
 // dispatch-codex.ts — Codex (gpt-5.4) レビュー起動スクリプト
 // CODEX_DRY_RUN=1 のとき Codex を呼ばず stdin prefix をダンプして exit 0 (テスト用)
 
-import { readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 
 export type CodexPersona = "single" | "architect" | "contrarian" | "migration";
 
@@ -103,6 +103,13 @@ export async function dispatchCodex(opts: DispatchCodexOpts): Promise<number> {
   if (process.env.CODEX_DRY_RUN === "1") {
     process.stdout.write(stdinContent);
     return 0;
+  }
+
+  // #231 codex review F-cont-02 / F-mig-01: stale artifact 防止のため spawn 前に
+  // 旧 resultFile と verdict.json を削除。Codex が新規生成しなかったときに前回 run の
+  // verdict を再利用して fail を隠す事故を防ぐ。
+  for (const stale of [resultFile, `${resultFile}.verdict.json`]) {
+    try { if (existsSync(stale)) unlinkSync(stale); } catch {}
   }
 
   const logFile = `${resultFile}.log`;

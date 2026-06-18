@@ -160,9 +160,10 @@ export async function dispatchCodexAuto(opts: Opts): Promise<void> {
     );
   }
 
+  let codexExit = 0;
   try {
     if (mode === "design") {
-      await dispatchCodex({
+      codexExit = await dispatchCodex({
         mode: "design",
         instructionFile: reviewInstructionPath,
         resultFile,
@@ -171,7 +172,7 @@ export async function dispatchCodexAuto(opts: Opts): Promise<void> {
         scopeHint,
       });
     } else {
-      await dispatchCodex({
+      codexExit = await dispatchCodex({
         mode: "review",
         instructionFile: reviewInstructionPath,
         resultFile,
@@ -183,6 +184,9 @@ export async function dispatchCodexAuto(opts: Opts): Promise<void> {
   } finally {
     if (extraInputFile) try { unlinkSync(extraInputFile); } catch {}
     if (finalExtraFile) try { unlinkSync(finalExtraFile); } catch {}
+  }
+  if (codexExit !== 0) {
+    throw new Error(`dispatch-codex-auto: Codex CLI failed (exit ${codexExit})`);
   }
 }
 

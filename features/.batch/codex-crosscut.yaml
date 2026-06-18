@@ -1,9 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
 issues:
-  - id: F01
+  - id: A-F01
+    severity: critical
+    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
+    line_hint: 104
+    finding: "persona 実行失敗が fail-open です。`mergePersonaResults` は 1〜2 件の `unknown` を許容して aggregate を `pass` にでき、さらに全 persona が `unknown` のときは `verdict=fail` を返しても CLI 側は line 299 で `blocking > 0` だけを見ているため exit 0 になります。3 ペルソナ gate が欠損したまま成功扱いされます。"
+    suggestion: "任意の persona が `unknown` になった時点で aggregate を `fail` にし、CLI の終了判定も `merged.verdict` から決める。少なくとも `process.exit(merged.verdict === 'fail' ? 1 : 0)` に修正する。"
+  - id: A-F02
     severity: high
-    file: "crates/engawa-build/tests/face_sketch_extrudecut_acceptance.rs"
-    line_hint: 79
-    finding: "`t02_plumbing_manifold_contract` の active assertion は `bodies.len()==1`、`feature_id`、`validate_manifold()`、および profile 4 頂点の存在しか見ておらず、返却 Solid が本当に target 側の Cut 結果かを識別していない。`ExtrudeCut` が `box_1` を consume した後に boolean の結果ではなく tool extrusion 自体を `extrude_cut_1` として返しても、その tool も manifold で同じ 4 頂点を持つため、この差分の active test は通ってしまう。"
-    suggestion: "ignored の `T02_topology` から `z range == [-5, 5]` のような target 側結果を識別できる assertion を active T02 に移し、`euler_poincare()==1` の pin だけを `#220` まで ignored に残す。"
+    file: ".claude/skills/3ai/scripts/dispatch-codex.ts"
+    line_hint: 135
+    finding: "`dispatchCodex` が exit code を返す API に変わった一方、既存 caller の `dispatch-codex-intent.ts:87` と `dispatch-codex-auto.ts:165/174` は戻り値を無視したままです。`codex exec` が非 0 で落ちても single-persona の design/final フローが継続し、結果ファイル未生成や stale 出力でも成功扱いになります。"
+    suggestion: "`dispatchCodex` 内で `exitCode !== 0` を例外化するか、すべての caller で戻り値を検査して即座に `process.exit(code)` または `throw` するよう更新する。"
+  - id: C-F01
+    severity: critical
+    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
+    line_hint: 300
+    finding: "全 persona が `unknown` で `merged.verdict` が `fail` になっても、CLI の終了条件が `blocking > 0` のみなので exit code 0 になり、silent fail 防止のゲートが迂回される"
+    suggestion: "終了判定を `merged.verdict === \"fail\"` に合わせるか、all-unknown ケースを `blocking` に反映して必ず非 0 で終了させる"
+  - id: C-F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
+    line_hint: 223
+    finding: "persona 実行が失敗しても既存の `<persona>.yaml.verdict.json` を無条件で再読込するため、同じ結果パスでの再実行時に前回の verdict を集計して失敗を隠せてしまう"
+    suggestion: "各 persona 実行前に旧 `yaml` / `verdict.json` を削除し、少なくとも `exitCode === 0` のときだけ sidecar を採用する"
+  - id: M-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-codex.ts"
+    line_hint: 124
+    finding: "`dispatchCodex()` が `process.exit()` せず exit code を返す API に変わったのに、既存呼び出し元 (`dispatch-codex-intent.ts`, `dispatch-codex-auto.ts`, `dispatch-codex-3persona.ts`) は戻り値を検査していない。Codex CLI が非 0 で落ちてもフローが継続し、しかも `resultFile` を事前削除していないため前回 run の YAML / verdict.json を再利用して review が成功したように見える。"
+    suggestion: "`dispatchCodex()` で非 0 exit を throw するか、全呼び出し元で `code !== 0` を即 fail 扱いにする。併せて spawn 前に `resultFile` と `resultFile.verdict.json` を削除して stale artifact を読まないようにする。"
+  - id: M-F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
+    line_hint: 116
+    finding: "全 persona が `issues: []` のときも統合 YAML は `issues:` の下にコメントだけを書き、空配列を出力しない。結果として `codex-final.yaml` の `issues` は従来の `[]` ではなく `null` になり、成功時の出力スキーマが後方非互換になる。"
+    suggestion: "統合 issue 数が 0 の場合は厳密に `issues: []` を出力し、per-persona の補足は YAML 外のコメントか verdict.json 側へ移す。all-pass merged file の回帰テストも追加する。"
 
 verdict: fail
+# severity_counts: critical=2, high=3, medium=1, low=0
+# blocking: 5

@@ -113,6 +113,23 @@ export function mergePersonaResults(results: PersonaResult[]): MergedVerdict {
 function buildMergedYaml(results: PersonaResult[], merged: MergedVerdict): string {
   const lines: string[] = [];
   lines.push("# Merged Codex review (3 persona parallel, #231)");
+  // 全 persona が issues=[] のときは厳密に YAML 配列 [] を出力 (codex review F-mig-02:
+  // 後方互換のため `issues:` のキー値型が null ではなく [] であること)
+  const totalIssueBlocks = results.reduce((sum, r) => {
+    const t = existsSync(r.yamlPath) ? readFileSync(r.yamlPath, "utf-8") : "";
+    return sum + extractIssueBlocks(t).length;
+  }, 0);
+  if (totalIssueBlocks === 0) {
+    lines.push("issues: []");
+    for (const r of results) {
+      lines.push(`# [${r.persona}] issues: [] (verdict=${r.verdict})`);
+    }
+    lines.push("");
+    lines.push(`verdict: ${merged.verdict}`);
+    lines.push(`# severity_counts: critical=${merged.severity_counts.critical}, high=${merged.severity_counts.high}, medium=${merged.severity_counts.medium}, low=${merged.severity_counts.low}`);
+    lines.push(`# blocking: ${merged.blocking}`);
+    return lines.join("\n") + "\n";
+  }
   lines.push("issues:");
   for (const r of results) {
     const prefix = r.persona[0].toUpperCase();
@@ -222,6 +239,19 @@ export async function dispatchCodex3Persona(opts: Persona3Opts): Promise<MergedV
       } catch (err) {
         process.stderr.write(`[${persona}] dispatchCodex threw: ${err instanceof Error ? err.message : String(err)}\n`);
       }
+      // codex review F-arch-02 / F-cont-02 / F-mig-01: Codex CLI が非 0 で落ちた場合は
+      // verdict.json (前回 run の残骸 or 自動生成された unknown) を信用せず unknown 扱いにする。
+      // mergePersonaResults は全 unknown を fail に倒すため silent fail が発生しない。
+      if (exitCode !== 0) {
+        return {
+          persona,
+          exitCode,
+          yamlPath,
+          verdict: "unknown" as const,
+          severity_counts: { critical: 0, high: 0, medium: 0, low: 0 },
+          blocking: 0,
+        };
+      }
       const v = readVerdictJson(yamlPath);
       return {
         persona,
@@ -296,5 +326,7 @@ if (import.meta.main) {
     mockMode,
   });
   process.stderr.write(`=== dispatch-codex-3persona: merged verdict=${merged.verdict}, blocking=${merged.blocking} ===\n`);
-  process.exit(merged.blocking > 0 ? 1 : 0);
+  // codex review F-arch-01 / F-cont-01: silent fail 防止のため verdict=fail なら必ず非 0 exit。
+  // blocking==0 でも 全 persona unknown (= fail) のときは fail 扱いになる。
+  process.exit(merged.verdict === "fail" ? 1 : 0);
 }

@@ -177,4 +177,16 @@ describe("dispatchCodex3Persona parallel mock", () => {
     expect(mergedYaml).toMatch(/id:\s*C-F01/);
     expect(mergedYaml).toMatch(/id:\s*M-F01/);
   });
+
+  test("T08e (codex review F-mig-02): 全 persona issues=[] 時、merged yaml に `issues: []` を明示出力 (後方互換)", async () => {
+    const { instr, result } = freshTmpRoot("t08e");
+    await dispatchCodex3Persona({
+      instructionFile: instr,
+      resultFile: result,
+      mockMode: "pass",
+    });
+    const mergedYaml = readFileSync(result, "utf-8");
+    expect(mergedYaml).toMatch(/^issues:\s*\[\]\s*$/m);
+    expect(mergedYaml).toMatch(/^verdict:\s*pass\s*$/m);
+  });
 });

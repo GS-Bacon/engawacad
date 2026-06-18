@@ -83,8 +83,9 @@ async function main() {
   const src = issueNum ? `#${issueNum}` : issueDraftFile;
   process.stderr.write(`=== dispatch-codex-intent: ${src} ===\n`);
 
+  let codexExit = 0;
   try {
-    await dispatchCodex({
+    codexExit = await dispatchCodex({
       mode: "design",
       instructionFile: ".claude/skills/3ai/agents/codex-intent-checker.md",
       resultFile,
@@ -92,6 +93,10 @@ async function main() {
     });
   } finally {
     try { Bun.spawnSync(["rm", "-f", tmpInput]); } catch {}
+  }
+  if (codexExit !== 0) {
+    process.stderr.write(`\n❌ Codex CLI failed (exit ${codexExit})\n`);
+    process.exit(codexExit);
   }
 
   // 結果を表示してアドバイス
