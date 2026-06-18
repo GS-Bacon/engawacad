@@ -22,9 +22,26 @@ const FEATURES_DIR = "features";
 // git ユーティリティ
 // -----------------------------------------------------------------------
 
-/** dir を git stage する。.gitignore (*.raw / *.log) は自動除外される。 */
+/** dir を git stage する。.gitignore (*.raw / *.log) は自動除外される。
+ * #234: dir 内に untracked + ignored ファイルが混在する場合 `git add` が "paths are ignored"
+ * で失敗するため、tracked-only モードで再試行する。
+ */
 function gitAdd(dir: string): void {
-  execSync(`git add -- ${dir}`, { encoding: "utf-8" });
+  try {
+    execSync(`git add -- ${dir}`, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    const msg = err instanceof Error ? (err as Error & { stderr?: Buffer }).stderr?.toString() ?? err.message : String(err);
+    if (msg.includes("ignored by one of your .gitignore files")) {
+      // tracked ファイルのみを update する fallback (ignored は確実に飛ばす)
+      try {
+        execSync(`git add -u -- ${dir}`, { encoding: "utf-8" });
+      } catch {
+        // 二段とも失敗ならスキップ (sweep を止めない)
+      }
+      return;
+    }
+    throw err;
+  }
 }
 
 /** stage 済みの dir に実際の差分があるか（なければ up-to-date）*/
