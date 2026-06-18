@@ -15,11 +15,18 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname } from "path";
 import { withFileLock } from "./loop-file-lock.ts";
 import { runChecked } from "./loop-spawn-checked.ts";
+import { collect as collectTokens } from "./loop-token-meter.ts";
 
 const STATE_PATH = "features/.loop/state.json";
 // #177 指摘 2: append-only journal で state.json 破損耐性確保
 const JOURNAL_PATH = "features/.loop/cycle-journal.log";
 const RECENT_LIMIT = 20;
+
+interface CycleTokenDelta {
+  claude: number;
+  glm: number;
+  codex: number;
+}
 
 interface RecentCycle {
   cycle: number;
@@ -30,6 +37,8 @@ interface RecentCycle {
   merged_commits: number;
   adr_drafts: string[];
   pause_reason?: string;
+  /** #228: per-cycle token consumption (delta from previous cumulative). */
+  tokens?: CycleTokenDelta;
 }
 
 interface CumulativeStats {
@@ -160,6 +169,10 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
     fetchNewAdrDraftsSince(sinceIso),
   ]);
 
+  // #228: per-cycle token delta を計算する。collect() は features/*/ の log を全 scan して
+  // 現時点の累積を返す。state.cumulative との差分が本 cycle で消費した token。
+  const tokenSnapshot = collectTokens();
+
   // RMW under lock: re-read latest state, merge, write.
   // #226 prevents lost updates against concurrent state.json writers (token-meter, intent-guard).
   const entry: RecentCycle = await withFileLock(STATE_PATH, async () => {
@@ -176,12 +189,23 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
     };
     if (opts.pauseReason) e.pause_reason = opts.pauseReason;
 
+    // #228: per-cycle delta = snapshot - 前 cumulative (負値は 0 にクランプ、log 削除等の異常対策)
+    e.tokens = {
+      claude: Math.max(0, tokenSnapshot.claude - state.cumulative.token_claude),
+      glm: Math.max(0, tokenSnapshot.glm - state.cumulative.token_glm),
+      codex: Math.max(0, tokenSnapshot.codex - state.cumulative.token_codex),
+    };
+
     state.cycle = newCycle;
     state.last_cycle_at = endedAt;
     state.recent_cycles = [...state.recent_cycles, e].slice(-RECENT_LIMIT);
     state.cumulative.cycles_total += 1;
     state.cumulative.issues_closed += closed.length;
     state.cumulative.adr_total += adrDrafts.length;
+    // cumulative は snapshot で上書き (token-meter check と同等)
+    state.cumulative.token_claude = tokenSnapshot.claude;
+    state.cumulative.token_glm = tokenSnapshot.glm;
+    state.cumulative.token_codex = tokenSnapshot.codex;
 
     atomicWriteState(state);
     return e;

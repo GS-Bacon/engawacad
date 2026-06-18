@@ -29,6 +29,8 @@ interface RecentCycle {
   merged_commits: number;
   adr_drafts: string[];
   pause_reason?: string;
+  /** #228: per-cycle token delta (loop-cycle-record で記録)。古い entry には未付与の可能性。 */
+  tokens?: { claude: number; glm: number; codex: number };
 }
 interface LoopState {
   loop_start: string;
@@ -108,6 +110,12 @@ function sectionCurrentStatus(state: LoopState | null, openIssues: IssueSummary[
   return lines.join("\n") + "\n";
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 function section24hActivity(state: LoopState | null): string {
   const lines: string[] = ["## 24h Activity"];
   if (!state) { lines.push("*no state yet*"); return lines.join("\n") + "\n"; }
@@ -117,11 +125,23 @@ function section24hActivity(state: LoopState | null): string {
   const raised = recent24h.flatMap(c => c.raised);
   const merged = recent24h.reduce((s, c) => s + c.merged_commits, 0);
   const adr = recent24h.flatMap(c => c.adr_drafts);
+  // #228: per-cycle delta を 24h で合算して表示。未付与 entry は 0 として扱う。
+  const t24 = recent24h.reduce(
+    (acc, c) => ({
+      claude: acc.claude + (c.tokens?.claude ?? 0),
+      glm: acc.glm + (c.tokens?.glm ?? 0),
+      codex: acc.codex + (c.tokens?.codex ?? 0),
+    }),
+    { claude: 0, glm: 0, codex: 0 },
+  );
+  const t24Total = t24.claude + t24.glm + t24.codex;
   lines.push(`- Closed Issues: ${closed.length}${closed.length ? ` (${closed.map(n => `#${n}`).join(", ")})` : ""}`);
   lines.push(`- Merged commits: ${merged}`);
   lines.push(`- Auto-raised Issues: ${raised.length}${raised.length ? ` (${raised.map(n => `#${n}`).join(", ")})` : ""}`);
   lines.push(`- New ADR drafts: ${adr.length}${adr.length ? ` (${adr.join(", ")})` : ""}`);
-  lines.push(`- Token (24h tracked): claude+glm+codex collected by loop-token-meter`);
+  lines.push(
+    `- Token (24h delta sum): total=${fmtTokens(t24Total)} (claude=${fmtTokens(t24.claude)}, glm=${fmtTokens(t24.glm)}, codex=${fmtTokens(t24.codex)})`,
+  );
   return lines.join("\n") + "\n";
 }
 

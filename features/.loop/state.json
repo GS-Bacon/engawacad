@@ -294,8 +294,8 @@
     "issues_closed": 137,
     "raised_resolved": 0,
     "adr_total": 14,
-    "token_claude": 0,
-    "token_glm": 0,
+    "token_claude": 104822623,
+    "token_glm": 272605467,
     "token_codex": 57241955
   }
 }
