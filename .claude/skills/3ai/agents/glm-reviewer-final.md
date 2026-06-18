@@ -38,10 +38,35 @@ stdin に渡されるのはコード差分と Issue コンテキストです。�
   - `total_added = 0` かつテスト追加が期待される場合: critical
 - エッジケーステストが退化入力・境界数値を含んでいるか
 
+### クレート層境界 & 公開 API（必ず参照すること）
+
+EngawaCAD は以下 6 crate のフラット構成。レビュー対象 plan / diff がどの crate を触っているかを必ず特定し、**その crate に存在しない型・API を要求する指摘は出さないこと**。
+
+| crate | 責務 | 主要公開型・関数 (必須に限定) |
+|-------|------|--------------------------------|
+| `engawa-format` | `.engawa` YAML schema + parser (serde 層) | `Document`, `Component`, `Feature` (enum), `Variable { name: String, expr: String }`, `RefPlane`, `EvalError`, `FormatError`, `Document::from_yaml`, `Document::to_yaml`, `CURRENT_SCHEMA_VERSION`, `evaluate_scope`, `SketchPlane`, `SketchSegment`, `EntityKind`, `EntityRef`, `PlaneRef`, `MigrationHook` |
+| `engawa-kernel` | B-rep トポロジー + 幾何 + tessellation | `IdGenerator`, `Solid`, `Shell`, `Face`, `Loop`, `Edge`, `HalfEdge`, `Vertex`, `Point`, `Vec3`, `Plane`, `Curve`, `Surface`, `make_cuboid`, `make_cylinder`, `make_sphere`, `tessellate_solid`, `TriangleMesh`, Boolean op (`boolean`, `BooleanOp`) |
+| `engawa-build` | Feature ディスパッチャ (format → kernel) | `build_bodies_from_features`, `build_assembly`, `Body`, `BuiltBodies` (Feature dispatch は内部関数で公開しない) |
+| `engawa-api` | HTTP API server (axum) | `Router`, `handler::*`, `state::AppState`, `transport::*` (Phase 8+ で導入) |
+| `engawa-cli` | CLI バイナリ (`engawa`) | `main.rs`, `view.rs`。ロジックは持たない (kernel/build/format に委譲) |
+| `engawa-viewer` | 3D viewer (未実装) | (Phase 21+ で実装) |
+
+#### この層には存在しないもの (誤認頻発項目)
+
+- `engawa-format` には **`IdGenerator` は存在しない**。`Variable.name` / `Component.name` / `CreateSketch.id` 等の文字列はすべて user 入力 (YAML から読まれる文字列)。決定性が要求されるのは **`engawa-kernel` で生成される EntityID** であり、`engawa-format` 層では「YAML を 2 回 parse → 同一 Rust 構造体」が決定性の定義 (= serde の決定性に委ねる)。`engawa-format` の plan に対して「`IdGenerator::next()` を使え」と指摘するのは層越境の誤り。
+- `engawa-kernel` は **レンダリング非依存**。`TriangleMesh` は出力するが GPU buffer / wgpu / winit には触らない (`engawa-viewer` の責務)。
+- `engawa-build` は **Feature → kernel の薄い dispatcher**。ここに B-rep ロジックや YAML 解釈ロジックを書くのは越権。
+- `engawa-cli` は **ロジックを持たない**。アルゴリズム実装の plan / diff がここに集中していたら層越境を疑う。
+
+#### Issue 本文 vs plan の参照齟齬の扱い
+
+Issue 本文が古い ADR 番号 / 廃止 API を参照していて plan 側が正しく更新済みの場合、それは **plan の問題ではない** (= 指摘しない)。Issue 本文の修正は別途 user / loop が行う。レビュー対象は **plan の整合性** であり、Issue 本文の正誤ではない。
+
 ### スコープ規律（過剰指摘の禁止）
 - `===== SCOPE DEFENSE =====` の項目は指摘しない
 - 将来の仮想要件のための機能追加・gold-plating は指摘しない
 - severity 規律: critical/high は「宣言された成果物を壊す」または「Issue Acceptance tests を満たさない」問題に限定
+- 上記「クレート層境界 & 公開 API」を踏み外した指摘 (存在しない型 / API の要求、層越境の責務押し付け) は出さない
 
 ---
 
