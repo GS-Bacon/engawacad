@@ -1,0 +1,8 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/agents/glm-reviewer-final.md"
+    line_hint: 47
+    finding: "false alarm 防止のために追加した「公開 API」表そのものに、現行コードに存在しない/現状とずれた API が混入している。`engawa-build` に `build_document(&Document) -> Result<Vec<Solid>, _>` は存在せず、実際の公開入口は `build_assembly` と `build_bodies_from_features`。`engawa-kernel` の Boolean 入口も `boolean_*` ではなく `boolean`。さらに本文中の `Sketch.name` や `schema_version` も現状の公開面と一致していない。この誤った表が 6 reviewer prompt に複製されているため、「存在しない型・API を要求しない」という今回の成果物を逆に壊している。"
+    suggestion: "6 ファイル共通の API 表を実コードの公開シンボルに合わせて全面修正し、少なくとも `build_document` / `boolean_*` / `Sketch.name` / `schema_version` のような不正確な項目は、実在する API (`build_assembly`, `build_bodies_from_features`, `boolean`, `Document::{from_yaml,to_yaml}`, `CURRENT_SCHEMA_VERSION` など) に置き換える"
+verdict: fail
