@@ -21,6 +21,39 @@ const STATE_PATH = "features/.loop/state.json";
 // #177 指摘 2: append-only journal で state.json 破損耐性確保
 const JOURNAL_PATH = "features/.loop/cycle-journal.log";
 const RECENT_LIMIT = 20;
+// #229: same-state pause を検出したとき failure-tracker を直接押し上げる閾値。
+// loop-failure-tracker の FAILURE_THRESHOLD と一致させること。
+const FAILURE_THRESHOLD = 3;
+
+/** #229: pause_reason から root cause hash (主要 Issue 番号 + STEP 名) を抽出する。
+ *  Issue 番号が取れなければ null。step が取れなければ "_" placeholder。
+ *  実 pause_reason は "Cycle #N: #220 STEP 6-D ..." の prefix を含むことがある (Cycle #22 実例)。
+ *  cycle 番号を root cause として拾わないよう "Cycle #N:" prefix を剥がしてから #NNN 抽出する。 */
+export function extractRootCauseHash(pauseReason: string | undefined): { issueNum: number; step: string; hash: string } | null {
+  if (!pauseReason) return null;
+  const stripped = pauseReason.replace(/^Cycle\s+#\d+:\s*/i, "");
+  const issueMatch = stripped.match(/#(\d+)/);
+  if (!issueMatch) return null;
+  const issueNum = parseInt(issueMatch[1], 10);
+  // STEP 6-D / STEP 7.5 / STEP B-3 / STEP 6-D escalation 等にマッチ。
+  // 先頭の英数 token (-_. 区切り) を拾う。
+  const stepMatch = stripped.match(/STEP[\s-]?[A-Z0-9]+(?:[-_.][A-Z0-9]+)*/i);
+  const step = stepMatch ? stepMatch[0].toUpperCase().replace(/\s+/g, " ").trim() : "_";
+  return { issueNum, step, hash: `${issueNum}:${step}` };
+}
+
+/** #229: 直前 cycle と現サイクルの pause_reason が同じ root cause hash を持つか判定。
+ *  両方の hash が一致した場合のみ same-state とみなす (片方が null なら false)。 */
+export function isSameStatePause(
+  current: string | undefined,
+  previous: string | undefined,
+): { sameState: boolean; issueNum: number | null; hash: string | null } {
+  const cur = extractRootCauseHash(current);
+  const prev = extractRootCauseHash(previous);
+  if (!cur || !prev) return { sameState: false, issueNum: null, hash: null };
+  if (cur.hash !== prev.hash) return { sameState: false, issueNum: null, hash: null };
+  return { sameState: true, issueNum: cur.issueNum, hash: cur.hash };
+}
 
 interface CycleTokenDelta {
   claude: number;
@@ -153,6 +186,24 @@ async function fetchNewAdrDraftsSince(sinceIso: string): Promise<string[]> {
   return out.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 }
 
+/** #229: loop-failure-tracker.ts inc を threshold まで繰り返し呼び、needs-human ラベルを付与させる。
+ *  loop-failure-tracker.ts は閾値到達時に gh edit --add-label needs-human を発火するので、
+ *  needs-human label 付与もここで自動的に行われる。 */
+async function bumpFailureToNeedsHuman(issue: number): Promise<void> {
+  for (let i = 0; i < FAILURE_THRESHOLD; i++) {
+    const r = await runChecked(
+      ["bun", ".claude/skills/3ailoop/scripts/loop-failure-tracker.ts", "inc", "--issue", String(issue)],
+      { allowFailure: true },
+    );
+    if (r.exitCode !== 0) {
+      process.stderr.write(`WARN: failure-tracker inc #${issue} exit=${r.exitCode}: ${r.stderr.trim().slice(0, 200)}\n`);
+      return;
+    }
+    const count = parseInt(r.stdout.trim(), 10);
+    if (Number.isFinite(count) && count >= FAILURE_THRESHOLD) return;
+  }
+}
+
 async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): Promise<void> {
   // Fetch GH/git data outside the lock — these are slow I/O on read-only sources,
   // safe to run without serialization. We re-read state.json under the lock before
@@ -175,6 +226,9 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
 
   // RMW under lock: re-read latest state, merge, write.
   // #226 prevents lost updates against concurrent state.json writers (token-meter, intent-guard).
+  // #229: lock 内で previous pause_reason を取得し、外で short-circuit 用 issue 番号を解決する。
+  let sameStateIssue: number | null = null;
+  let sameStateHash: string | null = null;
   const entry: RecentCycle = await withFileLock(STATE_PATH, async () => {
     const state = readState();
     const newCycle = state.cycle + 1;
@@ -188,6 +242,14 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
       adr_drafts: adrDrafts,
     };
     if (opts.pauseReason) e.pause_reason = opts.pauseReason;
+
+    // #229: 直前 cycle と pause_reason の root cause hash が一致したら same-state とマーク
+    const prevCycle = state.recent_cycles[state.recent_cycles.length - 1];
+    const sameState = isSameStatePause(opts.pauseReason, prevCycle?.pause_reason);
+    if (sameState.sameState && sameState.issueNum !== null) {
+      sameStateIssue = sameState.issueNum;
+      sameStateHash = sameState.hash;
+    }
 
     // #228: per-cycle delta = snapshot - 前 cumulative (負値は 0 にクランプ、log 削除等の異常対策)
     e.tokens = {
@@ -210,6 +272,15 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
     atomicWriteState(state);
     return e;
   });
+
+  // #229: same-state pause 検出時は loop-failure-tracker を 1 サイクルで needs-human 閾値まで押し上げる。
+  // 反復 (cycle #20→#21) を 1 cycle で打ち切り、別 Issue へ進めるようにする。
+  if (sameStateIssue !== null) {
+    process.stderr.write(
+      `WARN: same-state pause detected (hash=${sameStateHash}) — bumping failure-tracker for #${sameStateIssue} to ${FAILURE_THRESHOLD}\n`,
+    );
+    await bumpFailureToNeedsHuman(sameStateIssue);
+  }
 
   // Append-only journal (#177 指摘 2): state.json 破損時の復旧用
   try {

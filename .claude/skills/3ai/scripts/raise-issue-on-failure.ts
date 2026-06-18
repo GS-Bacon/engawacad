@@ -6,10 +6,14 @@
 //   --feature-dir <features/N-slug> \
 //   --error-summary <エラー概要テキスト> \
 //   [--result-file <dispatch result JSON>] \
-//   [--dry-run]
+//   [--dry-run] \
+//   [--new-on-block]   # 他者ブロック時のみ新規起票 (default は dedup → 親 Issue にコメント)
 //
-// 既に同じ STEP+feature の Issue が open なら二重起票しない
-// exit 0: Issue 起票成功 or dry-run
+// dedup ガード (#229):
+//   - default: 同 step + 同 parent + 直近 24h で auto-raised Issue が open なら新規起票せず親 Issue にコメント
+//   - --new-on-block 指定時のみ強制新規起票 (他者ブロック / 別 Issue が止まっている等で明示的に分けたい時)
+//
+// exit 0: Issue 起票成功 or dedup 経由でコメント追記 or dry-run
 // exit 1: 起票失敗
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -26,6 +30,31 @@ export function shouldSkipStep(step: string): { skip: boolean; reason: string } 
   return { skip: false, reason: "" };
 }
 
+/** #229: 既 open の auto-raised Issue 候補から「同 step + 同 parent + 直近 24h」を探す。
+ *  見つかれば dedupTo にその Issue 番号を返す。呼び元はコメント追記して新規起票を skip する。
+ *  parent 番号は `#NNN` の後ろに非数字 (or 末尾) があることを要求し、#220 が #2200 にマッチしないようにする。 */
+export function findRecentSameStepIssue(
+  step: string,
+  parentIssue: number,
+  candidates: Array<{ title: string; number: number; createdAt: string }>,
+  now: Date,
+  maxAgeHours: number = 24,
+): { dedupTo: number | null } {
+  const cutoffMs = now.getTime() - maxAgeHours * 3600 * 1000;
+  // `#220` の次が非数字 or 末尾。`#2200` 等の数字続きをマッチさせない。
+  const parentRe = new RegExp(`#${parentIssue}(?!\\d)`);
+  for (const c of candidates) {
+    const createdMs = Date.parse(c.createdAt);
+    if (!Number.isFinite(createdMs) || createdMs < cutoffMs) continue;
+    // title 形式: `fix(3ai): [自動起票] <step> でエラー — Issue #<parentIssue> (<slug>)`
+    // step と parent 両方含むものだけ dedup 対象
+    if (c.title.includes(step) && parentRe.test(c.title)) {
+      return { dedupTo: c.number };
+    }
+  }
+  return { dedupTo: null };
+}
+
 if (import.meta.main) {
   await main();
 }
@@ -37,6 +66,7 @@ let featureDir = "";
 let errorSummary = "";
 let resultFile = "";
 let dryRun = false;
+let newOnBlock = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--step") step = args[++i];
@@ -44,6 +74,7 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === "--error-summary") errorSummary = args[++i];
   else if (args[i] === "--result-file") resultFile = args[++i];
   else if (args[i] === "--dry-run") dryRun = true;
+  else if (args[i] === "--new-on-block") newOnBlock = true;
 }
 
 if (!step || !featureDir || !errorSummary) {
@@ -154,18 +185,58 @@ if (dryRun) {
   process.exit(0);
 }
 
-// 重複チェック: 同タイトルの open issue があれば skip
+// 重複チェック (#229 拡張):
+//   - default: 同 step + 同 parent + 直近 24h の open Issue があれば、新規起票せず親 Issue にコメント追記
+//   - --new-on-block: dedup を skip して強制新規起票 (他者ブロック / 別 Issue が止まる時の明示フラグ)
 const searchProc = Bun.spawn(
-  ["gh", "issue", "list", "--state", "open", "--search", `"${step}" "${issueNum}"`, "--json", "title,number", "--limit", "5"],
+  ["gh", "issue", "list", "--state", "open", "--search", `"${step}" "${issueNum}"`, "--json", "title,number,createdAt", "--limit", "10"],
   { stdout: "pipe", stderr: "pipe" }
 );
 const searchOut = await new Response(searchProc.stdout).text();
 await searchProc.exited;
 
+if (!newOnBlock && issueNum !== "unknown") {
+  try {
+    const existing = JSON.parse(searchOut) as Array<{ title: string; number: number; createdAt: string }>;
+    const dedupResult = findRecentSameStepIssue(step, parseInt(issueNum), existing, new Date(), 24);
+    if (dedupResult.dedupTo !== null) {
+      // 親 Issue (#issueNum) にコメント追記して新規起票を skip
+      const commentBody = `## エラー再発 (auto-raised dedup, 24h 以内)
+
+**Step**: ${step}
+**Time**: ${new Date().toISOString()}
+**Existing auto-raised Issue**: #${dedupResult.dedupTo}
+
+## エラー概要
+${errorSummary}
+${ciExcerpt}
+
+---
+*このコメントは raise-issue-on-failure.ts により dedup 経由で追記されました。* \
+*直近 24h 以内に同 step (#${dedupResult.dedupTo}) で起票済みのため新規 Issue は作成していません。* \
+*\`--new-on-block\` フラグで強制新規起票が必要なケース (他者ブロック / 別 Issue が止まる) は明示してください。*`;
+    const commentProc = Bun.spawn(
+      ["gh", "issue", "comment", issueNum, "--body", commentBody],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const commentErr = await new Response(commentProc.stderr).text();
+    await commentProc.exited;
+    if (commentProc.exitCode !== 0) {
+      process.stderr.write(`WARN: 親 Issue #${issueNum} へのコメント追記失敗: ${commentErr}\n`);
+      // コメント失敗時は新規起票にフォールバックする
+    } else {
+      process.stdout.write(`OK: dedup 経由で親 Issue #${issueNum} にコメント追記しました (既存: #${dedupResult.dedupTo})\n`);
+      process.exit(0);
+    }
+    }
+  } catch {}
+}
+
+// 旧 dedup 経路 (--new-on-block or 24h 外で見つかった場合に同タイトルがあれば silent skip)
 try {
-  const existing = JSON.parse(searchOut) as Array<{ title: string; number: number }>;
+  const existing = JSON.parse(searchOut) as Array<{ title: string; number: number; createdAt: string }>;
   const dup = existing.find((i) => i.title.includes(issueNum) && i.title.includes(step));
-  if (dup) {
+  if (dup && !newOnBlock) {
     process.stdout.write(`SKIP: 既に同じトラブルの Issue #${dup.number} が open です\n`);
     process.exit(0);
   }
