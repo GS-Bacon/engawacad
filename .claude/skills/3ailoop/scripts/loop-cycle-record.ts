@@ -14,6 +14,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { withFileLock } from "./loop-file-lock.ts";
+import { runChecked } from "./loop-spawn-checked.ts";
 
 const STATE_PATH = "features/.loop/state.json";
 // #177 指摘 2: append-only journal で state.json 破損耐性確保
@@ -82,17 +83,22 @@ function atomicWriteState(state: LoopState): void {
 }
 
 async function runGh(args: string[]): Promise<string> {
-  const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  return out;
+  // #227: 失敗は呼び元 (fetchClosedIssuesSince 等) で空配列に degrade されるが、
+  // stderr を WARN ログに出して silent fail を可視化。
+  const r = await runChecked(["gh", ...args], { allowFailure: true });
+  if (r.exitCode !== 0) {
+    process.stderr.write(`WARN: gh ${args.slice(0, 3).join(" ")} exit=${r.exitCode}: ${r.stderr.trim().slice(0, 200)}\n`);
+  }
+  return r.stdout;
 }
 
 async function runGit(args: string[]): Promise<string> {
-  const proc = Bun.spawn(["git", ...args], { stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  return out;
+  // #227: 同上。git log が失敗するのは異常 (リポジトリ破損等) なので WARN を出す。
+  const r = await runChecked(["git", ...args], { allowFailure: true });
+  if (r.exitCode !== 0) {
+    process.stderr.write(`WARN: git ${args.slice(0, 3).join(" ")} exit=${r.exitCode}: ${r.stderr.trim().slice(0, 200)}\n`);
+  }
+  return r.stdout;
 }
 
 async function fetchClosedIssuesSince(sinceIso: string): Promise<number[]> {

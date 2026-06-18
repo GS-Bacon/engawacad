@@ -35,17 +35,21 @@ function atomicWriteHist(h: History): void {
   renameSync(tmp, HIST_PATH);
 }
 
-async function runGh(args: string[]): Promise<{ exit: number }> {
-  const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
-  await proc.exited;
-  return { exit: proc.exitCode ?? 0 };
-}
+import { runChecked } from "./loop-spawn-checked.ts";
 
 async function addLabel(issue: number): Promise<void> {
-  await runGh(["issue", "edit", String(issue), "--add-label", "needs-intent-review"]);
+  // #227: ラベル付与失敗 (gh auth error / 404) を silent fail させない。
+  await runChecked(["gh", "issue", "edit", String(issue), "--add-label", "needs-intent-review"]);
 }
 async function removeLabel(issue: number): Promise<void> {
-  await runGh(["issue", "edit", String(issue), "--remove-label", "needs-intent-review"]);
+  // #227: ラベル不在は正常 (allowFailure)、他 error は WARN ログ。
+  const r = await runChecked(
+    ["gh", "issue", "edit", String(issue), "--remove-label", "needs-intent-review"],
+    { allowFailure: true },
+  );
+  if (r.exitCode !== 0 && r.stderr) {
+    process.stderr.write(`WARN: remove-label needs-intent-review #${issue} exit=${r.exitCode}: ${r.stderr.trim()}\n`);
+  }
 }
 
 if (import.meta.main) {

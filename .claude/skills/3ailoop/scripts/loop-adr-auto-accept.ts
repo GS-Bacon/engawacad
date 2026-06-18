@@ -25,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { dirname, basename } from "path";
 import { lintAdr } from "./loop-adr-decision-matrix-lint";
 import { addTokens, incRegen, retire } from "./loop-adr-regen-tracker";
+import { runChecked } from "./loop-spawn-checked.ts";
 
 const PERSONAS = [
   {
@@ -104,19 +105,27 @@ async function runPersonaReview(
   writeFileSync(instructionFile, prompt, "utf-8");
 
   // Codex CLI を直接呼ぶ (dispatch-codex.ts は git diff を要求するためここでは独自呼び出し)
-  const proc = Bun.spawn(
+  // #227: runChecked allowFailure=true で exit code を捕捉、crash 時は exit/stderr を log + raw_excerpt に明示。
+  const r = await runChecked(
     ["codex", "exec", "-c", "sandbox_mode=read-only", "--output-last-message", resultFile, prompt],
-    { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+    { allowFailure: true },
   );
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  await proc.exited;
-  writeFileSync(`${resultFile}.log`, stdout + stderr, "utf-8");
+  writeFileSync(`${resultFile}.log`, r.stdout + r.stderr, "utf-8");
+
+  // codex が crash した (= resultFile が書かれなかった or 空) 場合、persona を "failed" として扱い
+  // 後段の judgement に「unknown verdict」を伝える。silent fail で stale resultFile を読まない。
+  if (r.exitCode !== 0) {
+    const errSnippet = r.stderr.trim().slice(-300) || "(no stderr)";
+    process.stderr.write(`WARN: codex exec exit=${r.exitCode} for persona=${persona.key}: ${errSnippet}\n`);
+    return {
+      persona: persona.key,
+      approved: false,
+      raw_excerpt: `[codex exit=${r.exitCode}] ${errSnippet}`,
+    };
+  }
 
   let text = "";
-  try { text = readFileSync(resultFile, "utf-8"); } catch { text = stdout; }
+  try { text = readFileSync(resultFile, "utf-8"); } catch { text = r.stdout; }
   const verdictMatch = text.match(/verdict:\s*(approved|refuted)/i);
   const verdict = verdictMatch?.[1].toLowerCase() ?? "unknown";
   return {

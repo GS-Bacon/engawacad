@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlin
 import { getReviewConfig } from "./get-review-config.ts";
 import { incState } from "./state.ts";
 import { dispatchCodex } from "./dispatch-codex.ts";
+import { runChecked, LoopCommandError } from "../../3ailoop/scripts/loop-spawn-checked.ts";
 
 interface Opts {
   issueNum: string;
@@ -26,15 +27,22 @@ export async function dispatchCodexAuto(opts: Opts): Promise<void> {
   const { issueNum, mode, stateFile, resultFile } = opts;
 
   // detect_base for final mode
+  // #227: git symbolic-ref が失敗するケース (origin/HEAD 未設定 = clone --no-tags 等) を silent で
+  // 通すと baseBranch が "" のまま dispatch-codex に渡って diff が壊れる。runChecked で throw。
   if (mode === "final" && !opts.baseBranch) {
-    const proc = Bun.spawn(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const ref = (await new Response(proc.stdout).text()).trim();
-    await proc.exited;
-    opts.baseBranch = ref.replace("refs/remotes/origin/", "");
-    if (!opts.baseBranch) throw new Error("--base unset and origin/HEAD undetectable");
+    try {
+      const r = await runChecked(["git", "symbolic-ref", "refs/remotes/origin/HEAD"]);
+      const ref = r.stdout.trim();
+      opts.baseBranch = ref.replace("refs/remotes/origin/", "");
+      if (!opts.baseBranch) throw new Error("--base unset and origin/HEAD undetectable");
+    } catch (e) {
+      if (e instanceof LoopCommandError) {
+        throw new Error(
+          `--base unset and 'git symbolic-ref refs/remotes/origin/HEAD' failed (exit ${e.exitCode}): ${e.stderr.trim()}`,
+        );
+      }
+      throw e;
+    }
   }
 
   const config = await getReviewConfig(issueNum, mode, {
@@ -81,17 +89,24 @@ export async function dispatchCodexAuto(opts: Opts): Promise<void> {
     let extra = "";
 
     // ① Issue context
+    // #227: gh exit code を検証して取得失敗時は stderr を context に残す (silent fail で空 context にしない)。
     try {
-      const proc = Bun.spawn(
+      const r = await runChecked(
         ["gh", "issue", "view", issueNum, "--json", "title,body,number"],
-        { stdout: "pipe", stderr: "pipe" }
+        { allowFailure: true },
       );
-      const json = JSON.parse(await new Response(proc.stdout).text());
-      await proc.exited;
-      const issueText = `Issue #${json.number ?? ""} ${json.title}\n\n${json.body}`;
-      extra += `===== ISSUE CONTEXT =====\n${issueText}\n===== END ISSUE CONTEXT =====\n\n`;
-    } catch {
-      extra += `===== ISSUE CONTEXT =====\n(Issue 取得失敗)\n===== END ISSUE CONTEXT =====\n\n`;
+      if (r.exitCode === 0) {
+        const json = JSON.parse(r.stdout);
+        const issueText = `Issue #${json.number ?? ""} ${json.title}\n\n${json.body}`;
+        extra += `===== ISSUE CONTEXT =====\n${issueText}\n===== END ISSUE CONTEXT =====\n\n`;
+      } else {
+        const errSnippet = r.stderr.trim().slice(0, 200);
+        extra += `===== ISSUE CONTEXT =====\n(Issue 取得失敗 exit=${r.exitCode}: ${errSnippet})\n===== END ISSUE CONTEXT =====\n\n`;
+        process.stderr.write(`WARN: gh issue view ${issueNum} exit=${r.exitCode}: ${errSnippet}\n`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      extra += `===== ISSUE CONTEXT =====\n(Issue 取得失敗: ${msg.slice(0, 200)})\n===== END ISSUE CONTEXT =====\n\n`;
     }
 
     // ② ADR excerpt

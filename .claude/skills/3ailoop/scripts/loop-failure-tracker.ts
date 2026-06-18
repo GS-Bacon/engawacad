@@ -9,29 +9,32 @@
 //   bun loop-failure-tracker.ts reset --issue N      # カウントと needs-human ラベル削除
 //   bun loop-failure-tracker.ts check --issue N      # 現在値 stdout、閾値超過で exit 1
 
+import { runChecked } from "./loop-spawn-checked.ts";
+
 const FAILURE_THRESHOLD = 3;
 const STATE_TS = ".claude/skills/3ai/scripts/state.ts";
 
 async function runBun(args: string[]): Promise<{ stdout: string; exit: number }> {
-  const proc = Bun.spawn(["bun", ...args], { stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  return { stdout: out.trim(), exit: proc.exitCode ?? 0 };
-}
-
-async function runGh(args: string[]): Promise<{ stdout: string; exit: number }> {
-  const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  return { stdout: out.trim(), exit: proc.exitCode ?? 0 };
+  // #227: state.ts inc-failure 等の bun 呼び出し。失敗は呼び元で扱うので allowFailure=true。
+  const r = await runChecked(["bun", ...args], { allowFailure: true });
+  return { stdout: r.stdout.trim(), exit: r.exitCode };
 }
 
 async function addNeedsHumanLabel(issue: number): Promise<void> {
-  await runGh(["issue", "edit", String(issue), "--add-label", "needs-human"]);
+  // #227: ラベル付与失敗 (gh auth error / 404) を silent fail させない。throw して呼び元に伝える。
+  await runChecked(["gh", "issue", "edit", String(issue), "--add-label", "needs-human"]);
 }
 
 async function removeNeedsHumanLabel(issue: number): Promise<void> {
-  await runGh(["issue", "edit", String(issue), "--remove-label", "needs-human"]);
+  // #227: ラベル不在で remove-label が 422 を返すのは正常系。allowFailure=true で許容。
+  // 認証や別 error はログに残るが loop は続行する (reset 経路、stop-the-world は避ける)。
+  const r = await runChecked(
+    ["gh", "issue", "edit", String(issue), "--remove-label", "needs-human"],
+    { allowFailure: true },
+  );
+  if (r.exitCode !== 0 && r.stderr) {
+    process.stderr.write(`WARN: remove-label needs-human #${issue} exit=${r.exitCode}: ${r.stderr.trim()}\n`);
+  }
 }
 
 if (import.meta.main) {
