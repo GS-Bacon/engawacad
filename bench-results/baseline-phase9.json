@@ -1,0 +1,14 @@
+{
+  "_note": "Reference snapshot only. Not a Criterion-replayable baseline. Generate fresh baseline locally with 'cargo bench --bench tessellation -- --save-baseline local' on your machine, then compare with '--baseline local'.",
+  "bench_name": "tessellate_cuboid_10x20x30",
+  "captured_at": "phase9",
+  "median_us": 24.551,
+  "estimates": {
+    "point_estimate_us": 24.551,
+    "lower_bound_us": 24.536,
+    "upper_bound_us": 24.572,
+    "confidence_interval": 0.95
+  },
+  "samples": 100,
+  "unit": "microseconds"
+}

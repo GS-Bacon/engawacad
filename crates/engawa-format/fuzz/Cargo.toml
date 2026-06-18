@@ -1,0 +1,22 @@
+[package]
+name = "engawa-format-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+engawa-format = { path = "../" }
+
+# Prevent workspace from interfering with fuzz builds
+[workspace]
+
+[[bin]]
+name = "from_yaml"
+path = "fuzz_targets/from_yaml.rs"
+test = false
+doc = false
+bench = false

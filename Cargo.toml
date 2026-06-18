@@ -8,6 +8,7 @@ members = [
     "crates/engawa-api",
     "crates/xtask",
 ]
+exclude = ["crates/engawa-format/fuzz"]
 resolver = "2"
 
 [workspace.package]
@@ -30,6 +31,7 @@ tempfile = "3"
 proptest = "1"
 rand = "0.9"
 serial_test = { version = "3", features = ["file_locks"] }
+criterion = "0.5"
 # Error handling
 thiserror = "2"
 # CLI
