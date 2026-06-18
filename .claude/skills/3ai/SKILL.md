@@ -63,7 +63,7 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
     --issue $N \
     --result features/.batch/intent-$N.yaml
   ```
-  `aligned: yes` → 続行。`aligned: no` → Claude が ROADMAP/ADR でスコープ整合を再確認し、推奨スコープに調整して続行。ただし *Phase/スコープ自体の根本的不整合*（例: 別 Phase 向け Issue など）と判断したら推奨実装せず停止してユーザーにエスカレーション。
+  `aligned: yes` → 続行。`aligned: no` → Claude が ROADMAP/ADR でスコープ整合を再確認し、推奨スコープに調整して続行。ただし *Phase/スコープ自体の根本的不整合*（例: 別 Phase 向け Issue など）と判断したら推奨実装せず停止してユーザーにエスカレーション。`aligned: skip (split-detector parent)` → **yes と等価扱い** (#235: body に `loop-split-detector で分割される想定` か label `splittable` のある起点 Issue は intent-check を skip し、STEP 3 で `split_proposal` 経路に乗せる)。
 
 **対話モード（`batch_arg !== null`）**:
 

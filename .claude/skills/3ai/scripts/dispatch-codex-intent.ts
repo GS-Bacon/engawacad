@@ -2,6 +2,10 @@
 // dispatch-codex-intent.ts — Issue 起票時の Codex intent-check (入口 gate)
 // ADR-006 §4: 新規 Issue を起票する前に「意図・スコープが明確か」を Codex に審査させる。
 //
+// #235: loop-split-detector で分割される想定の大粒度 Phase 起点 Issue は、
+//       Codex を呼ばず skip 経路に乗せて aligned: skip (split-detector parent) を返す。
+//       (body に固定文字列 / label `splittable` の二重マーカー)
+//
 // 使い方:
 //   bun dispatch-codex-intent.ts \
 //     --issue-draft <issue-draft.md> \
@@ -11,49 +15,83 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { dispatchCodex } from "./dispatch-codex.ts";
 
-async function main() {
-  const args = process.argv.slice(2);
-  let issueDraftFile = "", issueNum = "", resultFile = "", roadmapFile = "ROADMAP.md";
+// #235: 起点 Issue 検出マーカー。canonical な固定文字列は `loop-split-detector で分割される想定` だが、
+// 既存 Phase 起点 Issue (#194-#206) は実際には「loop-split-detector で粒度に合うように分割される想定」
+// や順序反転バリアントを含むため、body に「loop-split-detector」と「分割される想定」が共存していれば
+// 同じ意図とみなして skip 経路に乗せる (Issue #235 本文 "推奨: 既存起点 Issue 全件が該当" を満たす意図)。
+export const SPLIT_DETECTOR_MARKER = "loop-split-detector で分割される想定";
+export const SPLIT_DETECTOR_TERMS = ["loop-split-detector", "分割される想定"] as const;
+export const SPLIT_DETECTOR_LABEL = "splittable";
+export const ALIGNED_SKIP_LINE = "aligned: skip (split-detector parent)";
 
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case "--issue-draft": issueDraftFile = args[++i]; break;
-      case "--issue":       issueNum = args[++i]; break;
-      case "--result":      resultFile = args[++i]; break;
-      case "--roadmap":     roadmapFile = args[++i]; break;
-      default: console.error(`Unknown arg: ${args[i]}`); process.exit(1);
-    }
+export interface IssueMeta {
+  body: string;
+  labels: string[];
+}
+
+export interface RunIntentCheckOpts {
+  issueDraftFile?: string;
+  issueNum?: string;
+  resultFile: string;
+  roadmapFile?: string;
+  /** テスト用: Issue メタ取得を差し替え (gh issue view を呼ばない) */
+  fetchOverride?: (issueNum: string) => Promise<IssueMeta>;
+}
+
+async function fetchIssueMeta(issueNum: string): Promise<IssueMeta> {
+  const proc = Bun.spawn(
+    ["gh", "issue", "view", issueNum, "--json", "title,body,labels"],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const stdoutText = (await new Response(proc.stdout).text()).trim();
+  await proc.exited;
+  if (!stdoutText) {
+    throw new Error(`Issue #${issueNum} の本文を取得できませんでした`);
   }
+  const json = JSON.parse(stdoutText) as { title?: string; body?: string; labels?: Array<{ name: string }> };
+  const title = json.title ?? "";
+  const body = json.body ?? "";
+  const labels = (json.labels ?? []).map((l) => l.name);
+  return { body: `# ${title}\n\n${body}`, labels };
+}
+
+export function shouldSkipForSplitDetector(meta: IssueMeta): boolean {
+  if (meta.labels.includes(SPLIT_DETECTOR_LABEL)) return true;
+  if (meta.body.includes(SPLIT_DETECTOR_MARKER)) return true;
+  if (SPLIT_DETECTOR_TERMS.every((t) => meta.body.includes(t))) return true;
+  return false;
+}
+
+export async function runIntentCheck(opts: RunIntentCheckOpts): Promise<number> {
+  const { issueDraftFile, issueNum, resultFile, roadmapFile = "ROADMAP.md", fetchOverride } = opts;
 
   if ((!issueDraftFile && !issueNum) || !resultFile) {
-    console.error("Usage: dispatch-codex-intent.ts (--issue-draft <file> | --issue N) --result <file>");
-    process.exit(1);
+    throw new Error("issueDraftFile/issueNum のいずれかと resultFile が必須です");
   }
   if (issueDraftFile && issueNum) {
-    console.error("--issue-draft と --issue は排他的です");
-    process.exit(1);
+    throw new Error("issueDraftFile と issueNum は排他的です");
   }
 
-  // draft テキストの取得
-  let draftText: string;
+  // Issue meta 取得 (body + labels)
+  let meta: IssueMeta;
   if (issueNum) {
-    const proc = Bun.spawn(
-      ["gh", "issue", "view", issueNum, "--json", "title,body", "-q", "\"# \" + .title + \"\n\n\" + .body"],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    draftText = (await new Response(proc.stdout).text()).trim();
-    await proc.exited;
-    if (!draftText) {
-      console.error(`Issue #${issueNum} の本文を取得できませんでした`);
-      process.exit(1);
-    }
+    meta = await (fetchOverride ? fetchOverride(issueNum) : fetchIssueMeta(issueNum));
   } else {
-    if (!existsSync(issueDraftFile)) {
-      console.error(`Issue draft not found: ${issueDraftFile}`);
-      process.exit(1);
+    if (!existsSync(issueDraftFile!)) {
+      throw new Error(`Issue draft not found: ${issueDraftFile}`);
     }
-    draftText = readFileSync(issueDraftFile, "utf-8");
+    meta = { body: readFileSync(issueDraftFile!, "utf-8"), labels: [] };
   }
+
+  // #235 skip ガード: split-detector 想定の親 Issue は Codex を呼ばず skip 経路
+  if (shouldSkipForSplitDetector(meta)) {
+    writeFileSync(resultFile, `${ALIGNED_SKIP_LINE}\n`, "utf-8");
+    process.stdout.write(`${ALIGNED_SKIP_LINE}\n`);
+    process.stderr.write(`\n✅ Codex intent-check SKIPPED: split-detector parent → STEP 3 へ進行\n`);
+    return 0;
+  }
+
+  const draftText = meta.body;
 
   // ROADMAP コンテキストを追加 (Phase 完了条件と整合しているか判定に使う)
   let roadmapCtx = "";
@@ -96,7 +134,7 @@ async function main() {
   }
   if (codexExit !== 0) {
     process.stderr.write(`\n❌ Codex CLI failed (exit ${codexExit})\n`);
-    process.exit(codexExit);
+    return codexExit;
   }
 
   // 結果を表示してアドバイス
@@ -107,9 +145,44 @@ async function main() {
       process.stderr.write(`\n✅ Codex intent-check PASSED: aligned=yes → gh issue create で起票可能\n`);
     } else if (aligned === "no") {
       process.stderr.write(`\n❌ Codex intent-check FAILED: aligned=no → Issue 案を修正して再実行してください\n`);
-      process.exit(1);
+      return 1;
     }
   } catch {}
+  return 0;
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+async function main() {
+  const args = process.argv.slice(2);
+  let issueDraftFile = "", issueNum = "", resultFile = "", roadmapFile = "ROADMAP.md";
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case "--issue-draft": issueDraftFile = args[++i]; break;
+      case "--issue":       issueNum = args[++i]; break;
+      case "--result":      resultFile = args[++i]; break;
+      case "--roadmap":     roadmapFile = args[++i]; break;
+      default: console.error(`Unknown arg: ${args[i]}`); process.exit(1);
+    }
+  }
+
+  if ((!issueDraftFile && !issueNum) || !resultFile) {
+    console.error("Usage: dispatch-codex-intent.ts (--issue-draft <file> | --issue N) --result <file>");
+    process.exit(1);
+  }
+  if (issueDraftFile && issueNum) {
+    console.error("--issue-draft と --issue は排他的です");
+    process.exit(1);
+  }
+
+  const code = await runIntentCheck({
+    issueDraftFile: issueDraftFile || undefined,
+    issueNum: issueNum || undefined,
+    resultFile,
+    roadmapFile,
+  });
+  process.exit(code);
+}
+
+if (import.meta.main) {
+  main().catch((e) => { console.error(e); process.exit(1); });
+}
