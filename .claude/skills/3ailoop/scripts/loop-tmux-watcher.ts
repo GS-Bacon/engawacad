@@ -32,14 +32,21 @@ const STATE_PATH = join(REPO_ROOT, "features/.loop/state.json");
 const TMUX_DIR = join(REPO_ROOT, "features/.loop/tmux");
 const PID_PATH = join(TMUX_DIR, "watcher.pid");
 const LOG_PATH = join(TMUX_DIR, "watcher.log");
+const RING_LOG_PATH = join(TMUX_DIR, "watcher.ring.log");
 const LAST_ENDED_PATH = join(TMUX_DIR, "last-cycle-ended-at");
 const PANE_PATH = join(TMUX_DIR, "worker.pane");
+
+// #233: heartbeat 専用 ring buffer の最大件数。
+// POLL_SEC=30s × 60 件 = 30 min 分 (stuck 閾値 45min の 2/3)。
+export const RING_BUFFER_MAX_ENTRIES = 60;
 
 // #185 R3-F01: metadata 欠落時の fallback として、worker pane に tmux 側で
 // 識別タイトルを付与する。`tmux list-panes -F "#{pane_title}"` で逆引きできる。
 export const WORKER_PANE_TITLE = "3ailoop-worker";
 
-const POLL_SEC = parseInt(process.env.LOOP_TMUX_POLL_SEC ?? "10", 10);
+// #233: heartbeat noise 削減のため default を 30s に (旧 10s)。env override で従来値も使える。
+const POLL_SEC = parseInt(process.env.LOOP_TMUX_POLL_SEC ?? "30", 10);
+export const POLL_SEC_DEFAULT = 30;
 const STUCK_MIN = parseInt(process.env.LOOP_TMUX_STUCK_MIN ?? "45", 10);
 const CLEAR_WAIT_SEC = parseInt(process.env.LOOP_TMUX_CLEAR_WAIT_SEC ?? "8", 10);
 const SHOULD_STOP_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-should-stop.ts");
@@ -95,6 +102,15 @@ const IDLE_COMMANDS = new Set(["bash", "zsh", "sh", "fish", "dash"]);
 export function isPaneActive(cmd: string | null): boolean {
   if (!cmd) return false;
   return !IDLE_COMMANDS.has(cmd.trim());
+}
+
+/** #233: heartbeat ring buffer の trim ロジック。pure 関数。
+ * existing + 新規 1 行を結合し、空行を除外して末尾 maxEntries 件のみ保持。
+ * maxEntries <= 0 のとき結果は空。 */
+export function trimRingBuffer(existingLines: string[], newLine: string, maxEntries: number): string[] {
+  const merged = existingLines.concat([newLine]).filter(l => l.length > 0);
+  if (maxEntries <= 0) return [];
+  return merged.slice(Math.max(0, merged.length - maxEntries));
 }
 
 export interface DecideInput {
@@ -156,6 +172,22 @@ function log(msg: string): void {
     // ログ失敗で daemon は止めない
   }
   process.stderr.write(line);
+}
+
+// #233: heartbeat 専用 ring buffer。watcher.log を event-only に絞り、heartbeat noise を隔離する。
+// 失敗しても daemon は止めない (heartbeat は監視補助、loop 本体には影響しない)。
+function ringLog(msg: string): void {
+  const line = `[${nowIso()}] ${msg}`;
+  try {
+    mkdirSync(dirname(RING_LOG_PATH), { recursive: true });
+    const existing = existsSync(RING_LOG_PATH)
+      ? readFileSync(RING_LOG_PATH, "utf-8").split("\n").filter(l => l.length > 0)
+      : [];
+    const next = trimRingBuffer(existing, line, RING_BUFFER_MAX_ENTRIES);
+    writeFileSync(RING_LOG_PATH, next.join("\n") + "\n", "utf-8");
+  } catch {
+    // ring buffer 失敗は silent (次 heartbeat で復旧)
+  }
 }
 
 function readState(): CycleState | null {
@@ -509,7 +541,8 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
         const active = isPaneActive(paneCmd);
         if (active) lastActivityAt = Date.now();
         const idleMin = (Date.now() - lastActivityAt) / 60000;
-        log(`heartbeat: pane_cmd=${paneCmd ?? "(null)"} active=${active} idle=${idleMin.toFixed(1)}min`);
+        // #233: heartbeat は ring buffer (watcher.ring.log) に分離。watcher.log は event-only。
+        ringLog(`heartbeat: pane_cmd=${paneCmd ?? "(null)"} active=${active} idle=${idleMin.toFixed(1)}min`);
       }
 
       const state = readState();
