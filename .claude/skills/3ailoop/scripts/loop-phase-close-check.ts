@@ -73,7 +73,8 @@ async function raiseFable5AuditIssue(phase: number): Promise<{ ok: boolean; issu
 function detectCurrentPhase(): number | null {
   if (!existsSync(ROADMAP_PATH)) return null;
   for (const line of readFileSync(ROADMAP_PATH, "utf-8").split("\n")) {
-    const m = line.match(/^##\s+(?:✅\s+)?Phase\s+(\d+)/);
+    // コロン必須: "## Phase 9 以降の総括" のような解説見出しを誤検出しないため
+    const m = line.match(/^##\s+(?:✅\s+)?Phase\s+(\d+):/);
     if (m && !line.includes("✅")) return parseInt(m[1]);
   }
   return null;

@@ -107,7 +107,8 @@ function detectCurrentPhase(roadmapPath: string): number | null {
   if (!existsSync(roadmapPath)) return null;
   for (const line of readFileSync(roadmapPath, "utf-8").split("\n")) {
     // "## Phase N:" または "## ✅ Phase N:" にマッチし、✅ を含む行 (完了済み) はスキップ
-    const m = line.match(/^##\s+(?:✅\s+)?Phase\s+(\d+)/);
+    // コロン必須: "## Phase 9 以降の総括" のような解説見出しを誤検出しないため
+    const m = line.match(/^##\s+(?:✅\s+)?Phase\s+(\d+):/);
     if (m && !line.includes("✅")) {
       return parseInt(m[1]);
     }

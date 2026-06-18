@@ -157,7 +157,7 @@ ExtrudeCut の **実カット (穴あき形状)** は kernel boolean `MultipleOu
 
 ---
 
-## Phase 8 以降の総括 — 自律実装期と UI 期
+## 自律実装期と UI 期の総括 (Phase 9 以降)
 
 Phase 8 から先は **自律実装期 (Phase 9-20)** と **UI 期 (Phase 21-24)** の二段構成。自律実装期は CLI + YAML + 3ailoop で消化可能な「Feature 列で操作できる機能」の拡充に集中し、UI 期突入前に Quality + Refactor Pass (Phase 12 / 16 / 20) で品質基盤を固める。詳細な再設計の経緯と機能ユニバース (Solidworks / Fusion / Onshape 統合) は `/home/bacon/.claude/plans/phase8-3ailoop-intake-phase-fluttering-blossom.md` 参照。
 
