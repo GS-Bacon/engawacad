@@ -21,9 +21,9 @@ pub enum ApiError {
 impl From<FormatError> for ApiError {
     fn from(err: FormatError) -> Self {
         match &err {
-            FormatError::InvalidExtension(_) | FormatError::Yaml(_) => {
-                ApiError::BadRequest(err.to_string())
-            }
+            FormatError::InvalidExtension(_)
+            | FormatError::Yaml(_)
+            | FormatError::UnknownSchemaVersion { .. } => ApiError::BadRequest(err.to_string()),
             FormatError::Io(io_err) => match io_err.kind() {
                 std::io::ErrorKind::NotFound => ApiError::NotFound(err.to_string()),
                 _ => ApiError::Internal(err.to_string()),
@@ -35,6 +35,7 @@ impl From<FormatError> for ApiError {
             | FormatError::InvalidRefPlaneOffset { .. }
             | FormatError::EmptyProvenance { .. }
             | FormatError::InvalidPosition { .. } => ApiError::Unprocessable(err.to_string()),
+            _ => ApiError::Unprocessable(err.to_string()),
         }
     }
 }

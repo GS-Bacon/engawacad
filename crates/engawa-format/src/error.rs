@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum FormatError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -31,4 +32,7 @@ pub enum FormatError {
 
     #[error("RefPlane '{id}' has non-finite offset (NaN or Inf)")]
     InvalidRefPlaneOffset { id: String },
+
+    #[error("unknown schema_version {found}: this engawa-format supports up to {current}")]
+    UnknownSchemaVersion { found: u32, current: u32 },
 }

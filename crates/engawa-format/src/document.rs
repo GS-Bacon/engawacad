@@ -8,8 +8,13 @@ use ts_rs::TS;
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
+/// Schema version assumed for documents that omit `schema_version` (pre-field documents).
+/// Must remain `1` regardless of `CURRENT_SCHEMA_VERSION` so that legacy .engawa files
+/// without the field always migrate through v1 → ... → current via MigrationHook.
+const INITIAL_SCHEMA_VERSION: u32 = 1;
+
 fn default_schema_version() -> u32 {
-    CURRENT_SCHEMA_VERSION
+    INITIAL_SCHEMA_VERSION
 }
 
 /// The top-level document representing a EngawaCAD design file.
@@ -59,7 +64,22 @@ impl Document {
 
     /// Deserialize from YAML string with typed validation errors.
     pub fn from_yaml(yaml: &str) -> Result<Self, FormatError> {
-        let raw: RawDocument = serde_yaml::from_str(yaml)?;
+        // Stage 1: untyped peek to enforce schema_version contract before typed parsing.
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml)?;
+        let peeked_version = value
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .unwrap_or(INITIAL_SCHEMA_VERSION);
+        if peeked_version > CURRENT_SCHEMA_VERSION {
+            return Err(FormatError::UnknownSchemaVersion {
+                found: peeked_version,
+                current: CURRENT_SCHEMA_VERSION,
+            });
+        }
+
+        // Stage 2: typed deserialize (now we know the schema is one we support).
+        let raw: RawDocument = serde_yaml::from_value(value)?;
         let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
@@ -86,7 +106,19 @@ impl Document {
 
 impl<'de> Deserialize<'de> for Document {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = RawDocument::deserialize(deserializer)?;
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+        let peeked_version = value
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .unwrap_or(INITIAL_SCHEMA_VERSION);
+        if peeked_version > CURRENT_SCHEMA_VERSION {
+            return Err(serde::de::Error::custom(format_args!(
+                "unknown schema_version {}: this engawa-format supports up to {}",
+                peeked_version, CURRENT_SCHEMA_VERSION
+            )));
+        }
+        let raw: RawDocument = serde_yaml::from_value(value).map_err(serde::de::Error::custom)?;
         let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
@@ -435,18 +467,25 @@ mod tests {
     #[test]
     fn test_schema_version_large_value() {
         let yaml = "schema_version: 4294967295\nversion: 0.1.0\nroot_component:\n  name: Max\n  features: []\n";
-        let doc = Document::from_yaml(yaml).expect("u32 max should parse");
-        assert_eq!(doc.schema_version, u32::MAX);
+        let err = Document::from_yaml(yaml).expect_err("u32 max should be rejected");
+        assert!(matches!(
+            err,
+            FormatError::UnknownSchemaVersion {
+                found: u32::MAX,
+                ..
+            }
+        ));
     }
 
     #[test]
     fn test_schema_version_roundtrip_preserves_value() {
+        // Values <= CURRENT_SCHEMA_VERSION are preserved through roundtrip
         let yaml =
-            "schema_version: 42\nversion: 0.1.0\nroot_component:\n  name: v42\n  features: []\n";
+            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: v1\n  features: []\n";
         let doc = Document::from_yaml(yaml).unwrap();
         let reserialized = doc.to_yaml().unwrap();
         let doc2 = Document::from_yaml(&reserialized).unwrap();
-        assert_eq!(doc2.schema_version, 42);
+        assert_eq!(doc2.schema_version, 1);
     }
 
     #[test]
@@ -1153,5 +1192,151 @@ root_component:
                 FormatError::InvalidPosition { .. }
             ));
         }
+    }
+
+    // --- Schema version migration tests (Issue #239) ---
+
+    /// T_DEG_unknown_version: schema_version > CURRENT_SCHEMA_VERSION は
+    /// UnknownSchemaVersion エラーで拒否される。
+    #[test]
+    fn t_deg_unknown_version_rejected() {
+        let yaml = "\
+schema_version: 99
+version: 0.1.0
+root_component:
+  name: Future
+  features: []
+";
+        let result = Document::from_yaml(yaml);
+        match result {
+            Err(FormatError::UnknownSchemaVersion { found, current }) => {
+                assert_eq!(found, 99);
+                assert_eq!(current, CURRENT_SCHEMA_VERSION);
+            }
+            other => panic!("expected UnknownSchemaVersion, got {other:?}"),
+        }
+    }
+
+    /// T_BOUNDARY_current_version: schema_version == CURRENT_SCHEMA_VERSION は正常に parse できる。
+    #[test]
+    fn t_boundary_current_version_accepted() {
+        let yaml = format!(
+            "\
+schema_version: {current}
+version: 0.1.0
+root_component:
+  name: Current
+  features: []
+",
+            current = CURRENT_SCHEMA_VERSION
+        );
+        let doc = Document::from_yaml(&yaml).expect("current version should parse");
+        assert_eq!(doc.schema_version, CURRENT_SCHEMA_VERSION);
+    }
+
+    /// T_DEG_max_u32: schema_version: u32::MAX は UnknownSchemaVersion で拒否される。
+    #[test]
+    fn t_deg_max_u32_rejected() {
+        let yaml = format!(
+            "\
+schema_version: {max}
+version: 0.1.0
+root_component:
+  name: Max
+  features: []
+",
+            max = u32::MAX
+        );
+        let result = Document::from_yaml(&yaml);
+        match result {
+            Err(FormatError::UnknownSchemaVersion { found, current }) => {
+                assert_eq!(found, u32::MAX);
+                assert_eq!(current, CURRENT_SCHEMA_VERSION);
+            }
+            other => panic!("expected UnknownSchemaVersion, got {other:?}"),
+        }
+    }
+
+    /// T_DEG_unknown_version via direct serde_yaml::from_str も拒否される。
+    #[test]
+    fn t_deg_unknown_version_via_direct_deserialize() {
+        let yaml = "\
+schema_version: 99
+version: 0.1.0
+root_component:
+  name: Future
+  features: []
+";
+        let result: Result<Document, serde_yaml::Error> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown schema_version 99"),
+            "error message should mention unknown version: {msg}"
+        );
+    }
+
+    /// T01: 同一 YAML を 2 回 from_yaml して、構築された Document が一致すること（決定性）。
+    #[test]
+    fn t01_deterministic_from_yaml() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test
+  features:
+    - type: create_box
+      id: box_1
+      width: 10.0
+      height: 20.0
+      depth: 30.0
+";
+        let doc1 = Document::from_yaml(yaml).unwrap();
+        let doc2 = Document::from_yaml(yaml).unwrap();
+        // Deep equality via canonical YAML serialization.
+        let yaml1 = doc1.to_yaml().expect("doc1 to_yaml");
+        let yaml2 = doc2.to_yaml().expect("doc2 to_yaml");
+        assert_eq!(yaml1, yaml2, "from_yaml must produce identical Documents");
+    }
+
+    /// T_FUTURE_unknown_feature_type: schema_version > CURRENT で、現行 Component が
+    /// deserialize できない future Feature.type を含むペイロードでも、
+    /// UnknownSchemaVersion で reject されること (2-stage 経路の回帰テスト)。
+    #[test]
+    fn t_future_unknown_feature_type_reject() {
+        let yaml = "\
+schema_version: 99
+version: 0.1.0
+root_component:
+  name: Future
+  features:
+    - type: create_hyperspace_warp
+      id: hw_1
+      foo: 42
+      bar: 7.0
+";
+        let result = Document::from_yaml(yaml);
+        match result {
+            Err(FormatError::UnknownSchemaVersion { found, current }) => {
+                assert_eq!(found, 99);
+                assert_eq!(current, CURRENT_SCHEMA_VERSION);
+            }
+            other => panic!("expected UnknownSchemaVersion, got {:?}", other),
+        }
+    }
+
+    /// 旧 version (schema_version: 0) は依然として受け入れられる。
+    #[test]
+    fn t_boundary_version_zero_accepted() {
+        let yaml = "\
+schema_version: 0
+version: 0.1.0
+root_component:
+  name: Old
+  features: []
+";
+        let doc = Document::from_yaml(yaml).expect("version 0 should parse");
+        assert_eq!(doc.schema_version, 0);
     }
 }
