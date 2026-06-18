@@ -1,15 +1,15 @@
 issues:
   - id: F01
     severity: medium
-    file: "crates/engawa-format/src/document.rs"
-    line_hint: 69
-    finding: "`schema_version` 先読みで `u64` を即 `u32` へ cast しているため、`4294967296` のような `u32::MAX` 超え入力は wrap して `UnknownSchemaVersion` 判定を素通りし、契約どおりの明示エラーではなく generic な deserialize error に落ちる"
-    suggestion: "`peeked_version` は `u64` のまま `CURRENT_SCHEMA_VERSION as u64` と比較し、`u32` へ落とすのは上限確認後にする。`u32::MAX + 1` の回帰テストも追加する"
+    file: "docs/QUALITY_TOOLS.md"
+    line_hint: 43
+    finding: "`cd crates/engawa-format/fuzz` の直後に `cargo fuzz run from_yaml fuzz/corpus/from_yaml/` を案内しており、実際には `crates/engawa-format/fuzz/fuzz/corpus/from_yaml/` を参照して失敗する。manual corpus 実行手順が壊れている。"
+    suggestion: "`cd` 後は `cargo fuzz run from_yaml corpus/from_yaml/` に修正するか、repo ルートから実行する前提の記述に統一する。"
   - id: F02
     severity: medium
-    file: "crates/engawa-format/src/document.rs"
-    line_hint: 106
-    finding: "カスタム `Deserialize` 実装が `serde_yaml::Value` / `serde_yaml::from_value` を直に使うようになり、公開 `Document: Deserialize` が YAML 前提に狭まっている。以前の `RawDocument::deserialize` 経路で読めた非 YAML の Serde フォーマットは、この変更で失敗または意味が変わる"
-    suggestion: "generic な `Deserialize` は `RawDocument::deserialize` ベースのまま保ち、2 段階の schema_version 判定は `from_yaml` など YAML 専用入口へ閉じ込めるか、YAML 用の補助関数を別途追加する"
+    file: "crates/xtask/src/main.rs"
+    line_hint: 1000
+    finding: "ts-rs の回帰テスト更新が `Document.ts` と `Feature.ts` の golden 比較だけに留まっており、新規公開 DTO `web/src/generated/Variable.ts` を一度も検証していない。今回追加した生成ファイルが未生成・署名ドリフトしても CI で検出できない。"
+    suggestion: "`Variable.ts` 用の golden 文字列と比較テストを `xtask` の既存生成物テストへ追加する。"
 
 verdict: pass
