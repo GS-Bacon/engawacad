@@ -199,6 +199,7 @@ pub fn build_bodies_from_features(
                 id: _,
                 plane,
                 offset,
+                variables: _,
                 profile,
                 plane_ref,
             } => {

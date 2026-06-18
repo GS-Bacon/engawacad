@@ -94,6 +94,7 @@ fn t06_plane_ref_priority_over_plane() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Yz, // This should be ignored
             offset: 100.0,          // This offset should be ignored
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -150,6 +151,7 @@ fn t07_legacy_plane_offset_still_works() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 5.0, // offset
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -203,6 +205,7 @@ fn t10_degen_unknown_plane_ref() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -255,6 +258,7 @@ fn t11_boundary_empty_plane_ref_string() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -314,6 +318,7 @@ fn t15_child_component_uses_own_ref_planes() {
             id: "sk".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: Some(PlaneRef::RefPlane("Custom".into())),
             profile: vec![
                 SketchSegment {
@@ -354,6 +359,7 @@ fn t15_child_component_uses_own_ref_planes() {
     let doc = Document {
         schema_version: 1,
         version: "0.1.0".into(),
+        variables: Vec::new(),
         root_component: parent,
     };
 
@@ -389,6 +395,7 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
                 id: "sk".into(),
                 plane: SketchPlane::Xy,
                 offset: 0.0,
+                variables: Vec::new(),
                 plane_ref: Some(PlaneRef::RefPlane("Front".into())),
                 profile: vec![
                     SketchSegment {
@@ -436,6 +443,7 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
     let doc = Document {
         schema_version: 1,
         version: "0.1.0".into(),
+        variables: Vec::new(),
         root_component: parent,
     };
 
@@ -476,6 +484,7 @@ fn t17_degen_grandchild_canonical_fallback() {
                 id: "sk".into(),
                 plane: SketchPlane::Xy,
                 offset: 0.0,
+                variables: Vec::new(),
                 plane_ref: Some(PlaneRef::RefPlane("Front".into())),
                 profile: vec![
                     SketchSegment {
@@ -532,6 +541,7 @@ fn t17_degen_grandchild_canonical_fallback() {
     let doc = Document {
         schema_version: 1,
         version: "0.1.0".into(),
+        variables: Vec::new(),
         root_component: parent,
     };
 
@@ -590,6 +600,7 @@ fn t18_degen_build_layer_refplane_offset_not_finite() {
             id: "sk".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: Vec::new(),
             plane_ref: Some(PlaneRef::RefPlane("BadOffset".into())),
             profile: vec![
                 SketchSegment {

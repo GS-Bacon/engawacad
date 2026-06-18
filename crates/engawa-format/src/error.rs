@@ -35,4 +35,16 @@ pub enum FormatError {
 
     #[error("unknown schema_version {found}: this engawa-format supports up to {current}")]
     UnknownSchemaVersion { found: u32, current: u32 },
+
+    /// Variable.name が空 / 不正文字
+    #[error("invalid variable name {value:?}: {reason}")]
+    InvalidVariableName { value: String, reason: &'static str },
+
+    /// 同一スコープに同名 Variable が複数存在
+    #[error("duplicate variable name {name:?} in {scope} scope of {component:?}")]
+    DuplicateVariableName {
+        name: String,
+        scope: &'static str,
+        component: String,
+    },
 }

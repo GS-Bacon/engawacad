@@ -1,6 +1,7 @@
 use crate::component::Component;
 use crate::error::FormatError;
 use crate::ref_plane::RefPlane;
+use crate::variable::Variable;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -25,6 +26,8 @@ pub struct Document {
     pub schema_version: u32,
     /// Kernel version that created this document.
     pub version: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variables: Vec<Variable>,
     /// The root component (assembly or single part).
     pub root_component: Component,
 }
@@ -35,6 +38,8 @@ struct RawDocument {
     #[serde(default = "default_schema_version")]
     schema_version: u32,
     version: String,
+    #[serde(default)]
+    variables: Vec<Variable>,
     root_component: Component,
 }
 
@@ -47,12 +52,14 @@ impl Document {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
             version: env!("CARGO_PKG_VERSION").to_string(),
+            variables: Vec::new(),
             root_component: root,
         }
     }
 
     /// Validate the entire document tree.
     pub fn validate(&self) -> Result<(), FormatError> {
+        validate_variables(&self.variables, "document", &self.root_component.name)?;
         validate_component(&self.root_component, &self.root_component.name)
     }
 
@@ -83,6 +90,7 @@ impl Document {
         let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
+            variables: raw.variables,
             root_component: raw.root_component,
         };
         // Populate default ref_planes if empty
@@ -122,6 +130,7 @@ impl<'de> Deserialize<'de> for Document {
         let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
+            variables: raw.variables,
             root_component: raw.root_component,
         };
         // Populate default ref_planes if empty
@@ -221,6 +230,9 @@ fn validate_component(component: &Component, component_name: &str) -> Result<(),
             crate::feature::Feature::CreateSphere { center, .. } => {
                 check_finite_position(id, center)?
             }
+            crate::feature::Feature::CreateSketch { variables, .. } => {
+                validate_variables(variables, "sketch", id)?;
+            }
             _ => {}
         }
     }
@@ -230,11 +242,46 @@ fn validate_component(component: &Component, component_name: &str) -> Result<(),
     Ok(())
 }
 
+/// Validate variable names within a scope.
+fn validate_variables(
+    vars: &[Variable],
+    scope: &'static str,
+    container: &str,
+) -> Result<(), FormatError> {
+    let mut seen = std::collections::HashSet::new();
+    for v in vars {
+        if v.name.is_empty() {
+            return Err(FormatError::InvalidVariableName {
+                value: v.name.clone(),
+                reason: "variable name must not be empty",
+            });
+        }
+        if !v
+            .name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
+            return Err(FormatError::InvalidVariableName {
+                value: v.name.clone(),
+                reason: "variable name contains invalid characters (allowed: ASCII alnum / underscore / hyphen)",
+            });
+        }
+        if !seen.insert(v.name.clone()) {
+            return Err(FormatError::DuplicateVariableName {
+                name: v.name.clone(),
+                scope,
+                component: container.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::error::FormatError;
-    use crate::feature::Feature;
+    use crate::feature::{Feature, SketchPlane};
     use std::path::Path;
 
     #[test]
@@ -412,6 +459,7 @@ mod tests {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: Vec::new(),
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -1338,5 +1386,131 @@ root_component:
 ";
         let doc = Document::from_yaml(yaml).expect("version 0 should parse");
         assert_eq!(doc.schema_version, 0);
+    }
+
+    // --- R5: Variable validation tests ---
+
+    /// T_VALIDATE_doc_var_empty_name: Document.variables に空名 → InvalidVariableName
+    #[test]
+    fn t_validate_doc_var_empty_name() {
+        let mut doc = Document::new("Test");
+        doc.variables = vec![Variable {
+            name: "".into(),
+            expr: "1".into(),
+        }];
+        let err = doc.validate().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidVariableName { .. }));
+    }
+
+    /// T_VALIDATE_doc_var_invalid_char: Document.variables に不正文字 → InvalidVariableName
+    #[test]
+    fn t_validate_doc_var_invalid_char() {
+        let mut doc = Document::new("Test");
+        doc.variables = vec![Variable {
+            name: "a b".into(),
+            expr: "1".into(),
+        }];
+        let err = doc.validate().unwrap_err();
+        assert!(matches!(err, FormatError::InvalidVariableName { .. }));
+    }
+
+    /// T_VALIDATE_doc_var_duplicate: Document.variables に同名 → DuplicateVariableName(scope=document)
+    #[test]
+    fn t_validate_doc_var_duplicate() {
+        let mut doc = Document::new("Test");
+        doc.variables = vec![
+            Variable {
+                name: "a".into(),
+                expr: "1".into(),
+            },
+            Variable {
+                name: "a".into(),
+                expr: "2".into(),
+            },
+        ];
+        match doc.validate() {
+            Err(FormatError::DuplicateVariableName { scope, name, .. }) => {
+                assert_eq!(scope, "document");
+                assert_eq!(name, "a");
+            }
+            other => panic!("expected DuplicateVariableName(document), got {other:?}"),
+        }
+    }
+
+    /// T_VALIDATE_sketch_var_duplicate: CreateSketch.variables に同名 → DuplicateVariableName(scope=sketch)
+    #[test]
+    fn t_validate_sketch_var_duplicate() {
+        let mut doc = Document::new("Test");
+        doc.root_component.features.push(Feature::CreateSketch {
+            id: "s1".into(),
+            plane: SketchPlane::Xy,
+            offset: 0.0,
+            variables: vec![
+                Variable {
+                    name: "x".into(),
+                    expr: "1".into(),
+                },
+                Variable {
+                    name: "x".into(),
+                    expr: "2".into(),
+                },
+            ],
+            profile: vec![],
+            plane_ref: None,
+        });
+        match doc.validate() {
+            Err(FormatError::DuplicateVariableName { scope, name, .. }) => {
+                assert_eq!(scope, "sketch");
+                assert_eq!(name, "x");
+            }
+            other => panic!("expected DuplicateVariableName(sketch), got {other:?}"),
+        }
+    }
+
+    /// T_VALIDATE_cross_scope_shadowing_ok: Document.a + Sketch.a (shadowing) は valid
+    #[test]
+    fn t_validate_cross_scope_shadowing_ok() {
+        let mut doc = Document::new("Test");
+        doc.variables = vec![Variable {
+            name: "a".into(),
+            expr: "1".into(),
+        }];
+        doc.root_component.features.push(Feature::CreateSketch {
+            id: "s1".into(),
+            plane: SketchPlane::Xy,
+            offset: 0.0,
+            variables: vec![Variable {
+                name: "a".into(),
+                expr: "2".into(),
+            }],
+            profile: vec![],
+            plane_ref: None,
+        });
+        assert!(
+            doc.validate().is_ok(),
+            "cross-scope shadowing must be valid"
+        );
+    }
+
+    /// T_VALIDATE_from_yaml_doc_var_duplicate: 重複名を持つ YAML が from_yaml() で reject される
+    #[test]
+    fn t_validate_from_yaml_doc_var_duplicate() {
+        let yaml = "\
+schema_version: 1
+version: 0.1.0
+variables:
+- name: a
+  expr: '1'
+- name: a
+  expr: '2'
+root_component:
+  name: Test
+  features: []
+";
+        let result = Document::from_yaml(yaml);
+        assert!(matches!(
+            result,
+            Err(FormatError::DuplicateVariableName { .. })
+        ));
     }
 }

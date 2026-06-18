@@ -421,6 +421,7 @@ fn ec02_build_yaml_rebuild_roundtrip() {
     let doc = Document {
         schema_version: 1,
         version: "0.1.0".into(),
+        variables: Vec::new(),
         root_component: Component {
             name: "Roundtrip Test".into(),
             transform: Default::default(),

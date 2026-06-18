@@ -346,6 +346,7 @@ fn t05_fuse_disjoint_boxes() {
             id: "sketch1".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -380,6 +381,7 @@ fn t05_fuse_disjoint_boxes() {
             id: "sketch2".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -437,6 +439,7 @@ fn t05_intersect_disjoint_boxes() {
             id: "sketch1".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -471,6 +474,7 @@ fn t05_intersect_disjoint_boxes() {
             id: "sketch2".to_string(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -555,6 +559,7 @@ fn t07_duplicate_feature_id() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -573,6 +578,7 @@ fn t07_duplicate_feature_id() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -607,6 +613,7 @@ fn t11_zero_bodies() {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        variables: vec![],
         plane_ref: None,
         profile: vec![
             SketchSegment {
@@ -666,6 +673,7 @@ fn forward_reference_prohibited() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -705,6 +713,7 @@ fn duplicate_segment_id() {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        variables: vec![],
         plane_ref: None,
         profile: vec![
             SketchSegment {
@@ -796,6 +805,7 @@ fn t02_fuse_touching_boxes() {
             id: "sk1".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -830,6 +840,7 @@ fn t02_fuse_touching_boxes() {
             id: "sk2".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -989,6 +1000,7 @@ fn t06_cut_partial_l_shape() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1083,6 +1095,7 @@ fn t09_intersect_contact_only() {
             id: "sk1".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1117,6 +1130,7 @@ fn t09_intersect_contact_only() {
             id: "sk2".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1188,6 +1202,7 @@ fn t12_boolean_determinism() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1249,6 +1264,7 @@ fn t17_boolean_stl_export() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1312,6 +1328,7 @@ fn t20_build_live_bodies() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1412,6 +1429,7 @@ fn t24_disjoint_fuse_boxes() {
             id: "sk1".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1446,6 +1464,7 @@ fn t24_disjoint_fuse_boxes() {
             id: "sk2".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1509,6 +1528,7 @@ fn t18_intersection_edge_names() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1589,6 +1609,7 @@ fn t19_boolean_determinism_with_names() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -1658,6 +1679,7 @@ fn t20_intersection_edge_name_golden() {
             id: "sk_tool".into(),
             plane: engawa_format::SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -2113,6 +2135,7 @@ fn u01_extrude_cut_determinism() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2174,6 +2197,7 @@ fn u02_extrude_cut_void_shell() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2236,6 +2260,7 @@ fn u05_extrude_cut_degen_depth() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2287,6 +2312,7 @@ fn u05_extrude_cut_degen_depth() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2343,6 +2369,7 @@ fn u06a_extrude_cut_missing_target() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2408,6 +2435,7 @@ fn u06b_extrude_cut_nonintersecting() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2519,6 +2547,7 @@ fn u03_extrude_cut_partial_l() {
             id: "sk_cut".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2594,6 +2623,7 @@ fn t01_positive_extrude_centroid() {
             id: "sk_pos".into(),
             plane: SketchPlane::Yz,
             offset: 5.0,
+            variables: Vec::new(),
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2663,6 +2693,7 @@ fn t02_reg_negative_extrude_centroid() {
             id: "sk_neg".into(),
             plane: SketchPlane::Yz,
             offset: -5.0,
+            variables: Vec::new(),
             plane_ref: None,
             profile: vec![
                 SketchSegment {
@@ -2738,6 +2769,7 @@ fn t04_negative_extrude_fuse_integration() {
             id: "sk_neg".into(),
             plane: SketchPlane::Yz,
             offset: -3.0,
+            variables: Vec::new(),
             plane_ref: None,
             profile: vec![
                 SketchSegment {

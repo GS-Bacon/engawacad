@@ -21,6 +21,7 @@ fn t01_determinism() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -136,6 +137,7 @@ fn t02_legacy_string_planeref_backward_compat() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -191,6 +193,7 @@ fn t03_plane_ref_entity_extrude() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -305,6 +308,7 @@ fn t04_plane_ref_entity_extrude_cut() {
             id: "sketch_cut".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -373,6 +377,7 @@ fn t07_degen_unknown_entity_ref() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -439,6 +444,7 @@ fn t08_degen_non_planar_face() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -502,6 +508,7 @@ fn t09_boundary_derived_ref() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),

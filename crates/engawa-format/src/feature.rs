@@ -1,4 +1,5 @@
 use crate::error::FormatError;
+use crate::variable::Variable;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -308,6 +309,8 @@ pub enum Feature {
         plane: SketchPlane,
         #[serde(default, skip_serializing_if = "is_zero")]
         offset: f64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        variables: Vec<Variable>,
         profile: Vec<SketchSegment>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plane_ref: Option<PlaneRef>,
@@ -442,6 +445,7 @@ mod tests {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: Vec::new(),
             profile: vec![
                 SketchSegment {
                     id: "seg_a".to_string(),
@@ -482,6 +486,7 @@ mod tests {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: Vec::new(),
             profile: vec![],
             plane_ref: Some(PlaneRef::RefPlane("Front".to_string())),
         };
@@ -501,6 +506,7 @@ mod tests {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: Vec::new(),
             profile: vec![],
             plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
                 feature_id: "cuboid".to_string(),

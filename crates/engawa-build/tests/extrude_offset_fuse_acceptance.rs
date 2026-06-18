@@ -43,6 +43,7 @@ fn t05_offset_zero_no_translate() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: rect_profile(),
         },
@@ -99,6 +100,7 @@ fn t06_fuse_target_none_independent_body() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: rect_profile(),
         },
@@ -132,6 +134,7 @@ fn t07_fuse_target_not_found_returns_error() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            variables: vec![],
             plane_ref: None,
             profile: rect_profile(),
         },
@@ -165,6 +168,7 @@ fn t04a_extrusion_is_manifold() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: -7.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -223,6 +227,7 @@ fn t04b_box_extrude_fuse_via_feature() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: -7.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
@@ -284,6 +289,7 @@ fn t04_fuse_target_overlapping_box() {
             id: "sketch_0".into(),
             plane: SketchPlane::Xy,
             offset: -7.0,
+            variables: vec![],
             plane_ref: None,
             profile: vec![
                 engawa_format::SketchSegment {
