@@ -1,22 +1,8 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 22,
-  "last_cycle_at": "2026-06-17T23:18:46.759Z",
+  "cycle": 23,
+  "last_cycle_at": "2026-06-18T00:56:14.869Z",
   "recent_cycles": [
-    {
-      "cycle": 3,
-      "started_at": "2026-06-16T07:19:55.559Z",
-      "ended_at": "2026-06-16T07:39:54.558Z",
-      "closed": [
-        187
-      ],
-      "raised": [
-        187,
-        186
-      ],
-      "merged_commits": 2,
-      "adr_drafts": []
-    },
     {
       "cycle": 4,
       "started_at": "2026-06-16T07:39:54.558Z",
@@ -288,11 +274,24 @@
       "merged_commits": 0,
       "adr_drafts": [],
       "pause_reason": "Cycle #22: #220 WIP (uncommitted assemble.rs partial-pit detect + sketch_extrudecut_hole.engawa inward depth) leaves cargo xtask ci red (sketch_extrudecut_hole → MultipleOuterShellsResult). #220 already needs-human in cycle #21. Loop cannot validate any Issue while baseline is red. Closed redundant escalation snapshots #221-#224 (all pointed at #220). Awaiting human to resolve WIP (commit/stash/discard) and restore green main."
+    },
+    {
+      "cycle": 23,
+      "started_at": "2026-06-17T23:18:46.759Z",
+      "ended_at": "2026-06-18T00:56:14.869Z",
+      "closed": [
+        225
+      ],
+      "raised": [
+        225
+      ],
+      "merged_commits": 3,
+      "adr_drafts": []
     }
   ],
   "cumulative": {
-    "cycles_total": 22,
-    "issues_closed": 136,
+    "cycles_total": 23,
+    "issues_closed": 137,
     "raised_resolved": 0,
     "adr_total": 14,
     "token_claude": 0,
