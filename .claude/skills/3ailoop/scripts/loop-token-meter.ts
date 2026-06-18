@@ -16,6 +16,7 @@
 
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
+import { withFileLockSync } from "./loop-file-lock.ts";
 
 const STATE_PATH = "features/.loop/state.json";
 const FEATURES_DIR = "features";
@@ -134,25 +135,32 @@ if (import.meta.main) {
   const cmd = process.argv[2];
   if (cmd === "collect") {
     const result = collect();
-    const state = readState();
-    if (state) {
-      state.cumulative.token_claude = result.claude;
-      state.cumulative.token_glm = result.glm;
-      state.cumulative.token_codex = result.codex;
-      atomicWriteState(state);
-    }
+    // #226: state.json の token_* 更新は cycle-record の cumulative 更新と競合し得るため、
+    // withFileLockSync で RMW を直列化する。
+    withFileLockSync(STATE_PATH, () => {
+      const state = readState();
+      if (state) {
+        state.cumulative.token_claude = result.claude;
+        state.cumulative.token_glm = result.glm;
+        state.cumulative.token_codex = result.codex;
+        atomicWriteState(state);
+      }
+    });
     console.log(JSON.stringify(result, null, 2));
     process.exit(0);
   } else if (cmd === "check") {
     const result = collect();
     // check 内でも state.cumulative.token_* を更新して dashboard が常に最新値を見られるように (#177 指摘 9)
-    const state = readState();
-    if (state) {
-      state.cumulative.token_claude = result.claude;
-      state.cumulative.token_glm = result.glm;
-      state.cumulative.token_codex = result.codex;
-      atomicWriteState(state);
-    }
+    // #226: 同上、collect/check 両経路で RMW serialize。
+    withFileLockSync(STATE_PATH, () => {
+      const state = readState();
+      if (state) {
+        state.cumulative.token_claude = result.claude;
+        state.cumulative.token_glm = result.glm;
+        state.cumulative.token_codex = result.codex;
+        atomicWriteState(state);
+      }
+    });
     const total = result.claude + result.glm + result.codex;
     if (total >= CUM_PAUSE) {
       console.log(`PAUSE: cumulative token ${total} >= ${CUM_PAUSE} threshold`);

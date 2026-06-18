@@ -13,6 +13,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import { withFileLock } from "./loop-file-lock.ts";
 
 const STATE_PATH = "features/.loop/state.json";
 // #177 指摘 2: append-only journal で state.json 破損耐性確保
@@ -138,8 +139,11 @@ async function fetchNewAdrDraftsSince(sinceIso: string): Promise<string[]> {
 }
 
 async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): Promise<void> {
-  const state = readState();
-  const startedAt = opts.startedAt ?? state.last_cycle_at;
+  // Fetch GH/git data outside the lock — these are slow I/O on read-only sources,
+  // safe to run without serialization. We re-read state.json under the lock before
+  // merge to pick up any concurrent updates (e.g. token-meter updating cumulative).
+  const preliminary = readState();
+  const startedAt = opts.startedAt ?? preliminary.last_cycle_at;
   const sinceIso = startedAt > "1970" ? startedAt : new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const endedAt = new Date().toISOString();
 
@@ -150,26 +154,32 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
     fetchNewAdrDraftsSince(sinceIso),
   ]);
 
-  const newCycle = state.cycle + 1;
-  const entry: RecentCycle = {
-    cycle: newCycle,
-    started_at: sinceIso,
-    ended_at: endedAt,
-    closed,
-    raised,
-    merged_commits: merged,
-    adr_drafts: adrDrafts,
-  };
-  if (opts.pauseReason) entry.pause_reason = opts.pauseReason;
+  // RMW under lock: re-read latest state, merge, write.
+  // #226 prevents lost updates against concurrent state.json writers (token-meter, intent-guard).
+  const entry: RecentCycle = await withFileLock(STATE_PATH, async () => {
+    const state = readState();
+    const newCycle = state.cycle + 1;
+    const e: RecentCycle = {
+      cycle: newCycle,
+      started_at: sinceIso,
+      ended_at: endedAt,
+      closed,
+      raised,
+      merged_commits: merged,
+      adr_drafts: adrDrafts,
+    };
+    if (opts.pauseReason) e.pause_reason = opts.pauseReason;
 
-  state.cycle = newCycle;
-  state.last_cycle_at = endedAt;
-  state.recent_cycles = [...state.recent_cycles, entry].slice(-RECENT_LIMIT);
-  state.cumulative.cycles_total += 1;
-  state.cumulative.issues_closed += closed.length;
-  state.cumulative.adr_total += adrDrafts.length;
+    state.cycle = newCycle;
+    state.last_cycle_at = endedAt;
+    state.recent_cycles = [...state.recent_cycles, e].slice(-RECENT_LIMIT);
+    state.cumulative.cycles_total += 1;
+    state.cumulative.issues_closed += closed.length;
+    state.cumulative.adr_total += adrDrafts.length;
 
-  atomicWriteState(state);
+    atomicWriteState(state);
+    return e;
+  });
 
   // Append-only journal (#177 指摘 2): state.json 破損時の復旧用
   try {

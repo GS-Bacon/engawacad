@@ -20,6 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { StateData } from "./types.ts";
+import { withFileLockSync } from "../../3ailoop/scripts/loop-file-lock.ts";
 
 // === failure_streak (個別ファイル管理) ===
 
@@ -64,10 +65,12 @@ function atomicWriteFailureFile(issue: number, count: number): void {
 }
 
 export function incFailureStreak(issue: number): number {
-  const cur = readFailureFile(issue);
-  const n = cur + 1;
-  atomicWriteFailureFile(issue, n);
-  return n;
+  return withFileLockSync(failureFilePath(issue), () => {
+    const cur = readFailureFile(issue);
+    const n = cur + 1;
+    atomicWriteFailureFile(issue, n);
+    return n;
+  });
 }
 
 export function resetFailureStreak(issue: number): void {
@@ -104,9 +107,11 @@ export function initState(path: string, issue: number, slug: string): void {
 }
 
 export function setState(path: string, step: string, value: string): void {
-  const data = readState(path);
-  data.steps[step] = value;
-  writeState(path, data);
+  withFileLockSync(path, () => {
+    const data = readState(path);
+    data.steps[step] = value;
+    writeState(path, data);
+  });
 }
 
 export function getState(path: string, step: string): string {
@@ -118,25 +123,27 @@ export function assertState(path: string, step: string): boolean {
 }
 
 export function incState(path: string, key: string): number {
-  const data = readState(path);
-  let n: number;
-  if (key.includes(".")) {
-    const parts = key.split(".");
-    let node = data as unknown as Record<string, unknown>;
-    for (const p of parts.slice(0, -1)) {
-      if (typeof node[p] !== "object" || node[p] === null) node[p] = {};
-      node = node[p] as Record<string, unknown>;
+  return withFileLockSync(path, () => {
+    const data = readState(path);
+    let n: number;
+    if (key.includes(".")) {
+      const parts = key.split(".");
+      let node = data as unknown as Record<string, unknown>;
+      for (const p of parts.slice(0, -1)) {
+        if (typeof node[p] !== "object" || node[p] === null) node[p] = {};
+        node = node[p] as Record<string, unknown>;
+      }
+      const last = parts[parts.length - 1];
+      n = ((node[last] as number) ?? 0) + 1;
+      node[last] = n;
+    } else {
+      if (!data.loops) data.loops = {};
+      n = (data.loops[key] ?? 0) + 1;
+      data.loops[key] = n;
     }
-    const last = parts[parts.length - 1];
-    n = ((node[last] as number) ?? 0) + 1;
-    node[last] = n;
-  } else {
-    if (!data.loops) data.loops = {};
-    n = (data.loops[key] ?? 0) + 1;
-    data.loops[key] = n;
-  }
-  writeState(path, data);
-  return n;
+    writeState(path, data);
+    return n;
+  });
 }
 
 export function judgeState(
@@ -145,10 +152,12 @@ export function judgeState(
   adopted: number,
   rejected: number
 ): void {
-  const data = readState(path);
-  if (!data.judgments) data.judgments = [];
-  data.judgments.push({ round, adopted, rejected });
-  writeState(path, data);
+  withFileLockSync(path, () => {
+    const data = readState(path);
+    if (!data.judgments) data.judgments = [];
+    data.judgments.push({ round, adopted, rejected });
+    writeState(path, data);
+  });
 }
 
 export function checkFullAdoptionWarning(path: string): boolean {

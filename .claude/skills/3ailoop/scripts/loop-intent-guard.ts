@@ -11,6 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import { withFileLockSync } from "./loop-file-lock.ts";
 
 const HIST_PATH = "features/.loop/intent-history.json";
 const THRESHOLD = 3;
@@ -62,10 +63,12 @@ if (import.meta.main) {
 
   try {
     if (cmd === "inc") {
-      const h = readHist();
-      h[String(issue)] = (h[String(issue)] ?? 0) + 1;
-      atomicWriteHist(h);
-      const count = h[String(issue)];
+      const count = withFileLockSync(HIST_PATH, () => {
+        const h = readHist();
+        h[String(issue)] = (h[String(issue)] ?? 0) + 1;
+        atomicWriteHist(h);
+        return h[String(issue)];
+      });
       console.log(count);
       if (count >= THRESHOLD) {
         await addLabel(issue);
@@ -73,15 +76,17 @@ if (import.meta.main) {
       }
       process.exit(0);
     } else if (cmd === "reset") {
-      const h = readHist();
-      if (h[String(issue)] !== undefined) {
-        delete h[String(issue)];
-        if (Object.keys(h).length === 0 && existsSync(HIST_PATH)) {
-          rmSync(HIST_PATH);
-        } else {
-          atomicWriteHist(h);
+      withFileLockSync(HIST_PATH, () => {
+        const h = readHist();
+        if (h[String(issue)] !== undefined) {
+          delete h[String(issue)];
+          if (Object.keys(h).length === 0 && existsSync(HIST_PATH)) {
+            rmSync(HIST_PATH);
+          } else {
+            atomicWriteHist(h);
+          }
         }
-      }
+      });
       await removeLabel(issue);
       console.log("0");
       process.exit(0);
