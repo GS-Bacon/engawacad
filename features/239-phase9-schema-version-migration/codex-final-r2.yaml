@@ -1,0 +1,30 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 67
+    finding: "`from_yaml`/`Deserialize` ともに `RawDocument`（`root_component: Component`）へ全文を deserialize した後でしか `schema_version` を検査していない。このため将来 schema の文書が新しい `Feature.type` など現行 `Component` で読めない payload を含むと、`UnknownSchemaVersion` に到達する前に generic な YAML deserialize error で落ちる。unsupported future file を `UnknownSchemaVersion` で明示拒否する契約がここで破れる。"
+    suggestion: "`schema_version` を untyped な `serde_yaml::Value`/map から先に抜いて `> CURRENT_SCHEMA_VERSION` を判定し、その後でのみ `root_component` を現行 `Component` に deserialize する 2 段階経路へ変える。新しい `Feature.type` を含む future-schema fixture で回帰テストも追加する。"
+  - id: C-F01
+    severity: medium
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 12
+    finding: "`MigrationHook` の公開ドキュメントが「deserialization 後、validation 前に migration が適用される」と断定しているが、この差分では hook を呼ぶ API は追加されていない。現状は trait 定義だけなので、自動適用されるかのような誤った API 契約になっている。"
+    suggestion: "この phase では説明を「将来の migration driver が利用する hook」に留めるか、hook 適用 API が入るまで適用タイミングの記述を削る。"
+  - id: C-F02
+    severity: low
+    file: "crates/engawa-format/tests/schema_version_migration_acceptance.rs"
+    line_hint: 41
+    finding: "`t_boundary_current_version` と未知 version 系の acceptance テストが `CURRENT_SCHEMA_VERSION` ではなく `1` を直書きしており、テスト名どおりの『current version 追従』になっていない。次回 schema bump 時に仕様は正しくてもこのテスト群だけが stale になる。"
+    suggestion: "`engawa_format::document::CURRENT_SCHEMA_VERSION` を参照して expected/current を組み立てる。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/error.rs"
+    line_hint: 4
+    finding: "公開 enum `FormatError` に `UnknownSchemaVersion` を追加し、同時に `#[non_exhaustive]` も付与しているため、既存の外部利用者が行っている exhaustive match がこの更新だけでコンパイル不能になる。migration persona の後方互換性/API 破壊変更レビュー観点では、これは source-compatible ではない。"
+    suggestion: "この変更は semver-major として扱うか、後方互換を維持したいなら既存の公開 enum 形を壊さない別 API で unknown schema version を返すようにする。少なくとも公開 API 破壊として明示し、下流 crate の match 修正を同時に要求する。"
+
+verdict: fail
+# severity_counts: critical=0, high=2, medium=1, low=1
+# blocking: 2

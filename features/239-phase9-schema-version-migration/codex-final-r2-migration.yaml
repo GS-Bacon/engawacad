@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/error.rs"
+    line_hint: 4
+    finding: "公開 enum `FormatError` に `UnknownSchemaVersion` を追加し、同時に `#[non_exhaustive]` も付与しているため、既存の外部利用者が行っている exhaustive match がこの更新だけでコンパイル不能になる。migration persona の後方互換性/API 破壊変更レビュー観点では、これは source-compatible ではない。"
+    suggestion: "この変更は semver-major として扱うか、後方互換を維持したいなら既存の公開 enum 形を壊さない別 API で unknown schema version を返すようにする。少なくとも公開 API 破壊として明示し、下流 crate の match 修正を同時に要求する。"
+
+verdict: fail

@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 63
+    finding: "schema_version チェックロジックが from_yaml と Deserialize impl で重複しており、メンテナンス性が低下している"
+    suggestion: "チェックロジックを共通関数に抽出するか、RawDocument 側で検証を行う構造にリファクタすること"
+
+verdict: pass

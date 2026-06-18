@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 12
+    finding: "`MigrationHook` の公開ドキュメントが「deserialization 後、validation 前に migration が適用される」と断定しているが、この差分では hook を呼ぶ API は追加されていない。現状は trait 定義だけなので、自動適用されるかのような誤った API 契約になっている。"
+    suggestion: "この phase では説明を「将来の migration driver が利用する hook」に留めるか、hook 適用 API が入るまで適用タイミングの記述を削る。"
+  - id: F02
+    severity: low
+    file: "crates/engawa-format/tests/schema_version_migration_acceptance.rs"
+    line_hint: 41
+    finding: "`t_boundary_current_version` と未知 version 系の acceptance テストが `CURRENT_SCHEMA_VERSION` ではなく `1` を直書きしており、テスト名どおりの『current version 追従』になっていない。次回 schema bump 時に仕様は正しくてもこのテスト群だけが stale になる。"
+    suggestion: "`engawa_format::document::CURRENT_SCHEMA_VERSION` を参照して expected/current を組み立てる。"
+
+verdict: pass

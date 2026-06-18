@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 11
+    finding: "`default_schema_version()` が `CURRENT_SCHEMA_VERSION` を返しているため、`CURRENT_SCHEMA_VERSION` を 2 へ上げた時点で `schema_version` 欄のない旧 `.engawa` が v1 ではなく v2 として解釈される。これでは「未指定なら v1 fallback」という本 Issue の契約を満たせず、pre-field 文書が将来の migration 経路を完全に素通りする。"
+    suggestion: "デシリアライズ用の固定値 (`INITIAL_SCHEMA_VERSION = 1` など) を `RawDocument` の default に使い、新規生成/再シリアライズ時だけ `CURRENT_SCHEMA_VERSION` を使うよう分離する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 30
+    finding: "公開 API の `MigrationHook` が `from()`/`to()` + `migrate(&mut Document)` という形で固定されており、合意済みの最小入口 `migrate(from, to, doc)` から逸脱している。crate root から re-export される公開 trait なので、この形で downstream 実装が始まると ADR に合わせるだけで将来破壊的変更になる。"
+    suggestion: "公開前に trait を `migrate(from: u32, to: u32, doc: &mut Document) -> Result<(), FormatError>` の最小形へ揃える。"
+
+verdict: fail

@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 30
+    finding: "公開された `MigrationHook` が `from()/to()/migrate(doc)` 形になっており、レビュー入力で合意済みの最小形 `migrate(from, to, doc)` と一致していません。この Issue の成果物そのものが別シグネチャで固定されるため、後で仕様へ合わせる際に source-breaking になります。"
+    suggestion: "`MigrationHook` はこの Issue では `migrate(&self, from: u32, to: u32, doc: &mut Document) -> Result<(), FormatError>` に合わせ、`from()`/`to()` の公開は別 Issue に分離する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/error.rs"
+    line_hint: 35
+    finding: "`FormatError` は public かつ `#[non_exhaustive]` ではない enum なので、`UnknownSchemaVersion` variant の追加は downstream の exhaustive `match` をコンパイル不能にします。実際に workspace 内でも `engawa-api` 側の `From<FormatError>` 追従修正が必要になっており、既存 API 互換を壊しています。"
+    suggestion: "互換維持が要件なら新 variant 追加を避けて既存 error 経路へ畳む。追加が必要なら breaking change として versioning 方針を明示する。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-format/tests/schema_version_migration_acceptance.rs"
+    line_hint: 8
+    finding: "`t01_determinism_from_yaml` は `schema_version`/`version`/`name`/`features.len()` しか比較しておらず、feature 本体・ref_planes・child component の内容や順序が揺れても通ります。決定性要件の『同一入力で2回実行→結果一致』を実質的に検証できていません。"
+    suggestion: "`doc1` と `doc2` の `to_yaml()` を比較するか、`Document` 全体の deep equality を取って完全一致を検証する。inline test 側の T01 も同じ形にそろえる。"
+
+verdict: fail

@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 30
+    finding: "公開 `MigrationHook` が `from()/to()/migrate(&mut Document)` の3メソッド形で固定されており、Issue で合意された最小入口 `migrate(from, to, doc) -> Result<(), FormatError>` と API 契約が一致していない。現状のまま公開すると、後続の migration ドライバ実装時にこの trait 自体を破壊的変更する必要が出る。"
+    suggestion: "trait を `fn migrate(&self, from: u32, to: u32, doc: &mut Document) -> Result<(), FormatError>` に揃え、`from()`/`to()` を前提にした unit/integration test も同じ契約へ更新する。"
+
+verdict: fail

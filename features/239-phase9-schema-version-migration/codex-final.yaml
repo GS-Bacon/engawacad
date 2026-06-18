@@ -1,0 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 30
+    finding: "公開 `MigrationHook` が `from()/to()/migrate(&mut Document)` の3メソッド形で固定されており、Issue で合意された最小入口 `migrate(from, to, doc) -> Result<(), FormatError>` と API 契約が一致していない。現状のまま公開すると、後続の migration ドライバ実装時にこの trait 自体を破壊的変更する必要が出る。"
+    suggestion: "trait を `fn migrate(&self, from: u32, to: u32, doc: &mut Document) -> Result<(), FormatError>` に揃え、`from()`/`to()` を前提にした unit/integration test も同じ契約へ更新する。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 11
+    finding: "`default_schema_version()` が `CURRENT_SCHEMA_VERSION` を返しているため、`CURRENT_SCHEMA_VERSION` を 2 へ上げた時点で `schema_version` 欄のない旧 `.engawa` が v1 ではなく v2 として解釈される。これでは「未指定なら v1 fallback」という本 Issue の契約を満たせず、pre-field 文書が将来の migration 経路を完全に素通りする。"
+    suggestion: "デシリアライズ用の固定値 (`INITIAL_SCHEMA_VERSION = 1` など) を `RawDocument` の default に使い、新規生成/再シリアライズ時だけ `CURRENT_SCHEMA_VERSION` を使うよう分離する。"
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 30
+    finding: "公開 API の `MigrationHook` が `from()`/`to()` + `migrate(&mut Document)` という形で固定されており、合意済みの最小入口 `migrate(from, to, doc)` から逸脱している。crate root から re-export される公開 trait なので、この形で downstream 実装が始まると ADR に合わせるだけで将来破壊的変更になる。"
+    suggestion: "公開前に trait を `migrate(from: u32, to: u32, doc: &mut Document) -> Result<(), FormatError>` の最小形へ揃える。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/migration.rs"
+    line_hint: 30
+    finding: "公開された `MigrationHook` が `from()/to()/migrate(doc)` 形になっており、レビュー入力で合意済みの最小形 `migrate(from, to, doc)` と一致していません。この Issue の成果物そのものが別シグネチャで固定されるため、後で仕様へ合わせる際に source-breaking になります。"
+    suggestion: "`MigrationHook` はこの Issue では `migrate(&self, from: u32, to: u32, doc: &mut Document) -> Result<(), FormatError>` に合わせ、`from()`/`to()` の公開は別 Issue に分離する。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-format/src/error.rs"
+    line_hint: 35
+    finding: "`FormatError` は public かつ `#[non_exhaustive]` ではない enum なので、`UnknownSchemaVersion` variant の追加は downstream の exhaustive `match` をコンパイル不能にします。実際に workspace 内でも `engawa-api` 側の `From<FormatError>` 追従修正が必要になっており、既存 API 互換を壊しています。"
+    suggestion: "互換維持が要件なら新 variant 追加を避けて既存 error 経路へ畳む。追加が必要なら breaking change として versioning 方針を明示する。"
+  - id: M-F03
+    severity: medium
+    file: "crates/engawa-format/tests/schema_version_migration_acceptance.rs"
+    line_hint: 8
+    finding: "`t01_determinism_from_yaml` は `schema_version`/`version`/`name`/`features.len()` しか比較しておらず、feature 本体・ref_planes・child component の内容や順序が揺れても通ります。決定性要件の『同一入力で2回実行→結果一致』を実質的に検証できていません。"
+    suggestion: "`doc1` と `doc2` の `to_yaml()` を比較するか、`Document` 全体の deep equality を取って完全一致を検証する。inline test 側の T01 も同じ形にそろえる。"
+
+verdict: fail
+# severity_counts: critical=0, high=5, medium=1, low=0
+# blocking: 5

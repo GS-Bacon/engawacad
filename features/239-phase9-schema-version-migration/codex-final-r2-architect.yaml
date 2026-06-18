@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 67
+    finding: "`from_yaml`/`Deserialize` ともに `RawDocument`（`root_component: Component`）へ全文を deserialize した後でしか `schema_version` を検査していない。このため将来 schema の文書が新しい `Feature.type` など現行 `Component` で読めない payload を含むと、`UnknownSchemaVersion` に到達する前に generic な YAML deserialize error で落ちる。unsupported future file を `UnknownSchemaVersion` で明示拒否する契約がここで破れる。"
+    suggestion: "`schema_version` を untyped な `serde_yaml::Value`/map から先に抜いて `> CURRENT_SCHEMA_VERSION` を判定し、その後でのみ `root_component` を現行 `Component` に deserialize する 2 段階経路へ変える。新しい `Feature.type` を含む future-schema fixture で回帰テストも追加する。"
+
+verdict: fail
