@@ -595,17 +595,18 @@ bun .claude/skills/3ai/scripts/build-codex-input.ts \
   --output features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
 ```
 
-### 7.5-B: Codex 技術レビュー dispatch
+### 7.5-B: Codex 技術レビュー dispatch (3 ペルソナ並列, #231)
 
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex.ts \
-  --mode review \
+bun .claude/skills/3ai/scripts/dispatch-codex-3persona.ts \
   --instruction .claude/skills/3ai/agents/codex-final-reviewer.md \
   --result features/$ISSUE_NUM-$ISSUE_SLUG/codex-final.yaml \
   --extra-input features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
 ```
 
-`base` は `origin/HEAD` から自動検出し、`git diff <base>...HEAD` を Codex に渡す。
+3 ペルソナ (architect / contrarian / migration) を `Promise.all` で並列実行し、各 persona の指摘を統合した `codex-final.yaml` と `codex-final.yaml.verdict.json` を生成する。1 つでも persona が critical/high を返せば aggregate `blocking >= 1` (#231)。`base` は `origin/HEAD` から自動検出し、`git diff <base>...HEAD` を各 Codex 呼び出しに渡す。
+
+per persona の生 yaml は `codex-final-architect.yaml` / `codex-final-contrarian.yaml` / `codex-final-migration.yaml` に書き出され、統合 yaml の issue id には persona プレフィックス (`A-` / `C-` / `M-`) が付与される。
 
 ### 7.5-C: 判定（`codex-final.yaml.verdict.json` を読む）
 

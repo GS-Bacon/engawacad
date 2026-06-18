@@ -4,6 +4,18 @@
 
 import { readFileSync, writeFileSync } from "fs";
 
+export type CodexPersona = "single" | "architect" | "contrarian" | "migration";
+
+export const PERSONA_HINTS: Record<CodexPersona, string> = {
+  single: "",
+  architect:
+    "# Persona: architect\n既存 invariant / API 契約 / B-rep トポロジー保証の観点で refute せよ。\n決定性 / Euler-Poincaré / HalfEdge twin 整合性に焦点を当てる。\n他観点 (テスト充足性、スコープ逸脱) は他 persona に委譲してよい。",
+  contrarian:
+    "# Persona: contrarian\n採用された修正案を refute し、棄却案の利点を強調せよ。\nスコープ逸脱 / 過度な抽象化 / 代替実装の見落としに焦点を当てる。\n決定性違反やテスト未充足の機械的指摘は他 persona に委譲してよい。",
+  migration:
+    "# Persona: migration\n既存テスト互換性 / 後方互換性 / API 破壊変更で refute せよ。\nテスト充足性 / golden YAML / public API シグネチャに焦点を当てる。",
+};
+
 function detectBase(): Promise<string> {
   const proc = Bun.spawn(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], {
     stdout: "pipe",
@@ -14,8 +26,16 @@ function detectBase(): Promise<string> {
     .then((s) => s.trim().replace("refs/remotes/origin/", ""));
 }
 
-function buildPrefix(scopeHint: string, extraInputFile: string): string {
+export function buildPrefix(
+  scopeHint: string,
+  extraInputFile: string,
+  persona: CodexPersona = "single",
+): string {
   let prefix = "";
+  const personaHint = PERSONA_HINTS[persona] ?? "";
+  if (personaHint) {
+    prefix += `===== PERSONA SCOPE =====\n${personaHint}\n===== END PERSONA SCOPE =====\n\n`;
+  }
   if (scopeHint) {
     prefix += `===== SCOPE PROFILE =====\n${scopeHint}\n===== END SCOPE PROFILE =====\n\n`;
   }
@@ -48,12 +68,14 @@ export interface DispatchCodexOpts {
   baseBranch?: string;
   extraInputFile?: string;
   scopeHint?: string;
+  persona?: CodexPersona;
 }
 
-export async function dispatchCodex(opts: DispatchCodexOpts): Promise<void> {
+export async function dispatchCodex(opts: DispatchCodexOpts): Promise<number> {
   const { mode, instructionFile, resultFile } = opts;
   const extraInputFile = opts.extraInputFile ?? "";
   const scopeHint = opts.scopeHint ?? "";
+  const persona = opts.persona ?? "single";
   let { inputFile, baseBranch } = opts;
 
   const instr = readFileSync(instructionFile, "utf-8");
@@ -63,8 +85,8 @@ export async function dispatchCodex(opts: DispatchCodexOpts): Promise<void> {
     if (!baseBranch) throw new Error("--base unset and origin/HEAD undetectable");
   }
 
-  process.stderr.write(`=== dispatch-codex: mode=${mode} ===\n`);
-  const prefix = buildPrefix(scopeHint, extraInputFile);
+  process.stderr.write(`=== dispatch-codex: mode=${mode} persona=${persona} ===\n`);
+  const prefix = buildPrefix(scopeHint, extraInputFile, persona);
   let stdinContent: string;
 
   if (mode === "design") {
@@ -80,7 +102,7 @@ export async function dispatchCodex(opts: DispatchCodexOpts): Promise<void> {
 
   if (process.env.CODEX_DRY_RUN === "1") {
     process.stdout.write(stdinContent);
-    return;
+    return 0;
   }
 
   const logFile = `${resultFile}.log`;
@@ -110,7 +132,7 @@ export async function dispatchCodex(opts: DispatchCodexOpts): Promise<void> {
   }
 
   process.stderr.write(`=== dispatch-codex: done (exit ${exitCode}), result → ${resultFile} ===\n`);
-  process.exit(exitCode);
+  return exitCode;
 }
 
 if (import.meta.main) {
@@ -121,6 +143,9 @@ if (import.meta.main) {
   let resultFile = "";
   let extraInputFile = "";
   let scopeHint = "";
+  let persona: CodexPersona = "single";
+
+  const validPersonas: readonly CodexPersona[] = ["single", "architect", "contrarian", "migration"];
 
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
@@ -131,6 +156,14 @@ if (import.meta.main) {
     else if (args[i] === "--result") resultFile = args[++i];
     else if (args[i] === "--extra-input") extraInputFile = args[++i];
     else if (args[i] === "--scope-hint") scopeHint = args[++i];
+    else if (args[i] === "--persona") {
+      const p = args[++i] as CodexPersona;
+      if (!validPersonas.includes(p)) {
+        console.error(`--persona must be one of ${validPersonas.join("|")}, got: ${p}`);
+        process.exit(1);
+      }
+      persona = p;
+    }
     else { console.error(`Unknown arg: ${args[i]}`); process.exit(1); }
   }
 
@@ -139,5 +172,6 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  await dispatchCodex({ mode, instructionFile, resultFile, inputFile, baseBranch, extraInputFile, scopeHint });
+  const code = await dispatchCodex({ mode, instructionFile, resultFile, inputFile, baseBranch, extraInputFile, scopeHint, persona });
+  process.exit(code);
 }
