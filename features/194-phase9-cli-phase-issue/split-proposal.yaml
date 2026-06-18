@@ -1,0 +1,209 @@
+summary: |
+  Phase 9 起点 Issue #194 を ROADMAP 完了条件 5 項目 + 前提 ADR 2 件に分解。
+  ADR-014/015 → schema_version → Feature CRUD → Variable → CLI → 品質基盤 の順で消化される。
+
+split_proposal:
+  - title: "feat(phase9-adr): ADR-014 draft — 履歴 CRUD 抽象 + Variable スコープ + schema_version + 品質基盤"
+    labels: ["type: foundation", "batch:skill"]
+    body: |
+      ## 概要
+
+      Phase 9 全体の設計方針を ADR-014 にまとめる draft Issue。子 2 以降 (#194 split) の前提となるブロッカー。
+
+      ## スコープ
+
+      - Feature CRUD (Edit / Roll back / Suppress / Reorder / Delete / Insert) API 抽象の Decision Matrix
+      - Variable の 2 段スコープ (Document / Sketch) 名前空間定義
+      - `schema_version` 命名規則と migration hook trait の形 (実装は #194 split の子 6 で)
+      - 品質基盤 (proptest / criterion / cargo-fuzz / cargo-llvm-cov / Playwright) の選定理由と最小 setup 範囲
+      - Options A/B/C + Trade-off + 採用前提崩壊 trigger + 既存 ADR (-005/-007/-013) との関係
+
+      ## 完了条件
+
+      - `docs/decisions/014-*.md` を draft 状態で commit
+      - `gate:adr-review` 付与 → ADR-013 auto-accept フロー (Decision Matrix lint + Codex 3 ペルソナ並列) で approved
+      - 親 #194 の分割計画書 (`features/194-phase9-cli-phase-issue/plan.md`) と整合
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-006 §1 粒度ガード
+      - ADR-013 auto-accept フロー
+
+  - title: "feat(phase9-adr): ADR-015 draft — engawa CLI 命名規約"
+    labels: ["type: foundation", "batch:skill"]
+    body: |
+      ## 概要
+
+      `engawa entry add/edit/remove/reorder/suppress` を含む CLI 全般の命名規約を ADR-015 にまとめる draft。子 5 (CLI 実装) の前提ブロッカー。
+
+      ## スコープ
+
+      - 動詞/名詞順序 (`engawa entry add` vs `engawa add entry` の選択理由)
+      - サブコマンド階層の深さ上限
+      - 共通フラグ命名 (`--feature-id` / `--entry-id` / `--at` / `--before` 等)
+      - Options A/B/C + 採用前提崩壊 trigger
+
+      ## 完了条件
+
+      - `docs/decisions/015-*.md` を draft 状態で commit
+      - `gate:adr-review` 付与 → ADR-013 auto-accept フロー approved
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-013 auto-accept フロー
+
+  - title: "feat(phase9): schema_version フィールド + migration hook 入口を engawa-format に追加"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      `engawa-format` の Document トップレベルに `schema_version: u32` を追加し、migration hook trait を空入口として定義する。Phase 9 完了条件 4 つ目。
+
+      ## 前提
+
+      - ADR-014 (schema_version 命名規約 + migration hook 形) approved 済み
+
+      ## スコープ
+
+      - `Document` 型に `schema_version: u32` フィールド追加 (現状は `1` 固定)
+      - `MigrationHook` trait 定義 (`migrate(from: u32, to: u32, doc: &mut Document)`)
+      - 読込時: 未指定なら v1 fallback、未知 version は明示エラー
+      - 既存 `examples/*.engawa` への `schema_version: 1` 追記
+
+      ## テスト
+
+      - T01 (決定性): 同一 YAML を 2 回 parse → 同一 Document
+      - T02 (正常系): schema_version=1 → 正常 parse
+      - T03 (未指定): schema_version 省略 → v1 として parse
+      - T_DEG_unknown_version (退化): schema_version=99 → MigrationError 返す
+      - examples_smoke.rs に schema_version 追加例を反映
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-014
+
+  - title: "feat(phase9): Feature CRUD (Edit/Roll back/Suppress/Reorder/Delete/Insert) を engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      `engawa-build` の Feature ディスパッチャに 6 つの CRUD 操作を追加する。Phase 9 完了条件 1 つ目。
+
+      ## 前提
+
+      - ADR-014 (Feature CRUD API 抽象) approved 済み
+
+      ## スコープ
+
+      - `FeatureCrud` API: `edit_feature` / `roll_back` / `suppress` / `reorder` / `delete` / `insert`
+      - 各操作は `Document.features` に対する純関数変換 (in-place ではなく新 Document を返す)
+      - ID-stable: Reorder/Insert/Delete でも既存 Feature ID は維持
+      - Suppress された Feature は B-rep 再生成時にスキップ (依存 Feature が参照していたら明示エラー)
+
+      ## テスト
+
+      - T01 (決定性): 同一 CRUD 列を 2 回適用 → 同一 Document
+      - T02-T07 (各操作の正常系)
+      - T_DEG_reorder_circular (退化): 依存サイクル発生時のエラー
+      - T_DEG_delete_referenced (退化): 他 Feature が参照中の Feature 削除エラー
+      - T_BOUNDARY_insert_at_zero (境界): 先頭 insert / 末尾 insert
+      - golden YAML: 各操作後の `.engawa` 期待値
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-014
+
+  - title: "feat(phase9): Document 全域 + Sketch 内 2 段スコープ Variable / Equation 評価"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      `engawa-format` に Variable 型 + Equation 評価エンジンを追加する。Document スコープと Sketch スコープの 2 段名前空間を実装。Phase 9 完了条件 2 つ目。
+
+      ## 前提
+
+      - ADR-014 (Variable スコープ規約) approved 済み
+
+      ## スコープ
+
+      - `Variable { name, expr }` 型 + `Equation` (四則演算 + 変数参照のみ、関数呼び出し未対応)
+      - 評価エンジン: 依存解決 (topological sort) + 循環検出
+      - 2 段スコープ: Sketch 内 Variable が同名の Document Variable を shadowing
+      - Variable 参照は `${var_name}` 構文 (or ADR-014 で確定した記法)
+
+      ## テスト
+
+      - T01 (決定性): 同一 Variable 列を 2 回評価 → 同一値
+      - T02 (正常系): Document Variable のみ
+      - T03 (正常系): Sketch Variable shadowing Document Variable
+      - T_DEG_circular (退化): 循環参照 → CircularDependencyError
+      - T_DEG_undefined (退化): 未定義変数参照 → UndefinedVariableError
+      - T_BOUNDARY_empty_expr (境界): 空式
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-014
+
+  - title: "feat(phase9): engawa entry add/edit/remove/reorder/suppress 統一 CLI"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      `engawa-cli` に entry 系サブコマンドを追加し、ユーザーから `.engawa` の Feature 列を直接編集できるようにする。Phase 9 完了条件 3 つ目。
+
+      ## 前提
+
+      - ADR-015 (CLI 命名規約) approved 済み
+      - #194 split 子 4 (Feature CRUD) 実装済み
+
+      ## スコープ
+
+      - `engawa entry add <feature-spec> --at <index>` / `engawa entry edit <id> <new-spec>` / `engawa entry remove <id>`
+      - `engawa entry reorder <id> --before <other-id>` / `engawa entry suppress <id>` / `engawa entry restore <id>`
+      - 子 4 の `FeatureCrud` API を呼ぶ thin wrapper
+
+      ## テスト
+
+      - golden file: 各サブコマンド実行後の `.engawa` 期待値
+      - 非正常系: 存在しない entry ID → exit 1 + stderr
+      - `--dry-run` フラグ対応
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-015
+      - #194 split 子 4 (Feature CRUD)
+
+  - title: "feat(phase9-foundation): 品質基盤 (proptest + criterion + cargo-fuzz + cargo-llvm-cov + Playwright) 最小 setup + bench baseline"
+    labels: ["type: foundation", "batch:kernel"]
+    body: |
+      ## 概要
+
+      5 ツールの最小 setup を workspace に入れ、main の bench baseline を取得する。`cargo xtask ci` には組み込まず手動実行を維持。Phase 9 完了条件 5 つ目。
+
+      ## 前提
+
+      - ADR-014 (品質基盤の選定理由 + 最小 setup 範囲) approved 済み
+
+      ## スコープ
+
+      - `proptest` を `engawa-kernel/tests/` に 1 件 (例: `make_cuboid` 入力域の決定性 property)
+      - `criterion` を `engawa-kernel/benches/` に 1 件 + main の baseline を `target/criterion-baseline/` 等に保存
+      - `cargo-fuzz` を `engawa-format/fuzz/` に 1 件 (`.engawa` parse fuzz target)
+      - `cargo-llvm-cov` の README + 実行手順
+      - Playwright は Phase 21 以降の Viewer 用、minimal hello-world のみ (`viewer/e2e/smoke.spec.ts` 等)
+
+      ## テスト
+
+      - 各 setup で `cargo bench` / `cargo fuzz run` / `cargo llvm-cov` / `pnpm playwright test` が 1 件動くこと
+      - `cargo xtask ci` には影響しないことを確認
+
+      ## 関連
+
+      - 親 #194 (blocked-by-split)
+      - ADR-014
