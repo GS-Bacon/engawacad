@@ -99,14 +99,15 @@ describe("mergePersonaResults (pure)", () => {
     expect(r.verdict).toBe("fail");
   });
 
-  test("T09_degen_all_unknown: 全 persona verdict=unknown → silent fail 防止で merged=fail", () => {
+  test("T09_degen_all_unknown: 全 persona verdict=unknown → silent fail 防止で merged=fail, blocking>=1 sentinel", () => {
     const r = mergePersonaResults([
       mockResult("architect", "unknown"),
       mockResult("contrarian", "unknown"),
       mockResult("migration", "unknown"),
     ]);
     expect(r.verdict).toBe("fail");
-    expect(r.blocking).toBe(0);
+    // codex review r2 F-arch-01 / F-cont-01: blocking sentinel >= 1
+    expect(r.blocking).toBeGreaterThanOrEqual(1);
   });
 
   test("T09b: empty results → merged verdict=pass, blocking=0 (no-op)", () => {

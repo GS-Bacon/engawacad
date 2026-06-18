@@ -186,7 +186,10 @@ export async function dispatchCodexAuto(opts: Opts): Promise<void> {
     if (finalExtraFile) try { unlinkSync(finalExtraFile); } catch {}
   }
   if (codexExit !== 0) {
-    throw new Error(`dispatch-codex-auto: Codex CLI failed (exit ${codexExit})`);
+    // codex review r2 F-cont-02: intent.ts と挙動を揃え、CLI 経路では元の exit code を維持。
+    const err = new Error(`dispatch-codex-auto: Codex CLI failed (exit ${codexExit})`);
+    (err as Error & { code?: number }).code = codexExit;
+    throw err;
   }
 }
 
@@ -226,18 +229,25 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  await dispatchCodexAuto({
-    issueNum,
-    mode,
-    inputFile,
-    baseBranch,
-    planFile,
-    stateFile,
-    resultFile,
-    rejectionFile,
-    adrContextFile,
-    judgmentSummaryFile,
-    planSnapshotDir,
-    testSummaryFile,
-  });
+  try {
+    await dispatchCodexAuto({
+      issueNum,
+      mode,
+      inputFile,
+      baseBranch,
+      planFile,
+      stateFile,
+      resultFile,
+      rejectionFile,
+      adrContextFile,
+      judgmentSummaryFile,
+      planSnapshotDir,
+      testSummaryFile,
+    });
+  } catch (e) {
+    // codex review r2 F-cont-02: 内部から throw された Error は code フィールドに元 exit を持つ。
+    const code = (e as Error & { code?: number }).code;
+    console.error(`${e instanceof Error ? e.message : String(e)}`);
+    process.exit(typeof code === "number" ? code : 1);
+  }
 }

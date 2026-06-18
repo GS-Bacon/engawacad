@@ -100,12 +100,17 @@ export function mergePersonaResults(results: PersonaResult[]): MergedVerdict {
     blockingSum += r.blocking;
     if (r.verdict !== "unknown") allUnknown = false;
   }
+  const isAllUnknownFail = allUnknown && results.length > 0;
   const verdict: "pass" | "fail" =
-    allUnknown && results.length > 0 ? "fail" : blockingSum > 0 ? "fail" : "pass";
+    isAllUnknownFail ? "fail" : blockingSum > 0 ? "fail" : "pass";
+  // codex review r2 F-arch-01 / F-cont-01: 全 unknown 時は blocking==0 のまま fail を返すと
+  // 下流 (`blocking == 0` だけを見る) が silent pass する事故が起きるため、sentinel として
+  // blocking=1 を立てる (severity_counts は 0 のままで、人間が「all-unknown failure」と判別可能)。
+  const finalBlocking = isAllUnknownFail ? Math.max(blockingSum, 1) : blockingSum;
   return {
     verdict,
     severity_counts: acc,
-    blocking: blockingSum,
+    blocking: finalBlocking,
     per_persona: results,
   };
 }
@@ -140,16 +145,18 @@ function buildMergedYaml(results: PersonaResult[], merged: MergedVerdict): strin
       continue;
     }
     for (const block of issueBlocks) {
+      // codex review r2 F-arch-02 / F-mig-01: per-persona の元インデントを保持し reformat しない。
+      // 元 yaml は `  - id:` で始まる 2 space indent + `    field:` の構造なので、
+      // 行 1 の id だけ書き換え、それ以降は trim せずそのまま転記する。
+      // これにより `finding: |` 形式の block scalar や複数行 string も保全される。
       const lines2 = block.split("\n");
       const idLine = lines2[0];
       const idMatch = idLine.match(/id:\s*(\S+)/);
       const newId = idMatch ? `${prefix}-${idMatch[1]}` : `${prefix}-?`;
       lines2[0] = idLine.replace(/id:\s*\S+/, `id: ${newId}`);
-      lines2[0] = lines2[0].replace(/^\s*-\s*/, "  - ");
-      for (let i = 1; i < lines2.length; i++) {
-        if (lines2[i].trim()) lines2[i] = "    " + lines2[i].trim();
-      }
-      lines.push(lines2.filter(l => l.length > 0).join("\n"));
+      // 先頭行が `  - id:` でない場合のみ 2 space indent を補完 (常識的フォーマット維持)
+      if (!/^\s*-\s*/.test(lines2[0])) lines2[0] = "  - " + lines2[0].trimStart();
+      lines.push(lines2.join("\n").replace(/\n+$/, ""));
     }
   }
   lines.push("");
