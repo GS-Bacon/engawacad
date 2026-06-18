@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使った決定的 ID 生成になっている"
+    suggestion: "IdGenerator::next() に置き換えること"
+
+verdict: pass

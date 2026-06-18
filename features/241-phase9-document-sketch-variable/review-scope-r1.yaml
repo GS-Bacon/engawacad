@@ -1,0 +1,7 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "Issue 整合"
+    finding: "Issue 本文が前提としている ADR-014 は誤りであり、実際は ADR-015 §2 が Variable 記法とスコープ規約の正規出典"
+    suggestion: "Issue 本文を修正して ADR-015 を参照すること（plan 側は既に ADR-015 を正しく参照済み）"
+verdict: pass

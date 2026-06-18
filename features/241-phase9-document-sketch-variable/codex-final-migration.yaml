@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "web/src/generated/Document.ts"
+    line_hint: 16
+    finding: "`Document.variables` と `Feature.create_sketch.variables` で永続化スキーマを拡張していますが、diff 内に互換性テストや golden YAML 更新が一切ありません。`TEST SUMMARY` でも `total_added=0` かつ `golden=0` のため、既存 YAML の読込互換と新フィールドの round-trip が未検証です。"
+    suggestion: "旧形式（variables なし）と新形式（Document/Sketch に variables あり）の YAML について deserialize/serialize round-trip と golden を追加し、後方互換を固定してください。"
+  - id: F02
+    severity: high
+    file: "web/src/generated/Document.ts"
+    line_hint: 1
+    finding: "この差分は `web/src/generated/*.ts` の生成物だけを更新しています。これらは `ts-rs` の生成ファイルなので、source of truth である Rust 側の型定義変更が同一差分に無いまま here だけ変えると、次回 regenerate で消えるうえ、フロントエンド型だけが先行する API ドリフトになります。"
+    suggestion: "Rust 側の `Document` / `Feature::CreateSketch` / `Variable` を更新してから `ts-rs` を再生成し、生成元の変更と生成結果を同じ差分に含めてください。"
+
+verdict: fail

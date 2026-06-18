@@ -1,0 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 37
+    finding: "`evaluate_scope` collapses document and sketch variables into one sketch-priority scope before building dependencies, so document expressions are also rebound through sketch shadowing. With `doc=[a=10,b=${a}]` and `sketch=[a=20]`, `b` resolves against `20`, and shapes like `sketch a=${b}+1` can be rejected as a false cycle."
+    suggestion: "Evaluate document variables in document-only scope first, then evaluate sketch variables against the computed document map plus sketch locals; do not let sketch shadowing rewrite document-variable dependencies/lookups."
+  - id: A-F02
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "`Document::validate()` still ignores both `Document.variables` and `CreateSketch.variables`, so empty/duplicate/invalid variable names serialize as valid `.engawa`. This is not harmless: `extract_var_refs` drops empty `${}` references while `lookup_var` can still resolve an empty-name variable, so malformed input can bypass the dependency graph."
+    suggestion: "Validate variable names and per-scope uniqueness during document/component validation, and reject malformed identifiers before serialization/evaluation."
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 38
+    finding: "`evaluate_scope` が document/sketch を最初から 1 つの `effective` マップに畳み込み、依存抽出と `lookup_var` も常に `sketch_vars` を優先しているため、document 変数式から sketch ローカル変数が見えてしまう。これで document 側の依存が shadowed sketch 定義にすり替わり、document 内の循環や未定義参照まで sketch 変数で隠せてしまい、宣言している 2-stage lexical scope を破る。"
+    suggestion: "document 変数を document スコープだけで先に評価し、その結果を親環境として sketch 変数を評価する 2 段階に分ける。少なくとも依存抽出と `lookup_var` に現在のスコープ種別を渡し、document 評価中は sketch 変数を探索しないようにする。"
+  - id: C-F02
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "新設した `Document.variables` / `CreateSketch.variables` が `Document::validate()` の検証対象に入っていないため、同一スコープ内の重複 variable 名を含む `.engawa` を妥当な文書として読み書きできてしまう。`evaluate_scope` 側は `or_insert` で先勝ちにするので、duplicate は silent drop になり、既存の feature/ref_plane と違って入力ミスが診断されない。"
+    suggestion: "`FormatError` を拡張して document/sketch 両方の variable 名一意性を `validate()` で強制し、同一スコープ重複は load-time に明示エラーにする。"
+  - id: M-F01
+    severity: critical
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 32
+    finding: "`evaluate_scope` が `doc_vars` と `sketch_vars` を単一グラフに統合し、`lookup_var` も常に sketch 側を先に引くため、Document 変数の式まで sketch の shadowing で再束縛される。例えば `doc: a=10, b=${a}` と `sketch: a=20` で `b=20` になり、Issue の 2-stage lexical scope を壊す。"
+    suggestion: "Document 変数は document-only のスコープで先に確定し、その結果を土台に sketch 変数を評価する 2 段階実装へ分離する。`doc b=${a}` + `sketch a=20` が `b=10` を維持する回帰テストも追加する。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-format/src/document.rs / crates/engawa-format/src/feature.rs"
+    line_hint: 26
+    finding: "公開型 `Document` と `Feature::CreateSketch` に必須の `variables` フィールドを追加したため、Rust の struct/enum literal 構築と exhaustive pattern match が後方互換でなくなった。差分内で大量の `variables: vec![]` 追加が必要になっている通り、下流 crate も YAML 互換の有無に関係なくコンパイル不能になる。"
+    suggestion: "v1 の Rust API 互換を維持するなら公開 shape を直接変えず、コンストラクタ/アクセサ経由の内部保存や別 wrapper 型で拡張する。既存 API を壊すなら semver-major bump を明示する。"
+
+verdict: fail
+# severity_counts: critical=1, high=3, medium=2, low=0
+# blocking: 4

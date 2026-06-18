@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 38
+    finding: "`evaluate_scope` が document/sketch を最初から 1 つの `effective` マップに畳み込み、依存抽出と `lookup_var` も常に `sketch_vars` を優先しているため、document 変数式から sketch ローカル変数が見えてしまう。これで document 側の依存が shadowed sketch 定義にすり替わり、document 内の循環や未定義参照まで sketch 変数で隠せてしまい、宣言している 2-stage lexical scope を破る。"
+    suggestion: "document 変数を document スコープだけで先に評価し、その結果を親環境として sketch 変数を評価する 2 段階に分ける。少なくとも依存抽出と `lookup_var` に現在のスコープ種別を渡し、document 評価中は sketch 変数を探索しないようにする。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "新設した `Document.variables` / `CreateSketch.variables` が `Document::validate()` の検証対象に入っていないため、同一スコープ内の重複 variable 名を含む `.engawa` を妥当な文書として読み書きできてしまう。`evaluate_scope` 側は `or_insert` で先勝ちにするので、duplicate は silent drop になり、既存の feature/ref_plane と違って入力ミスが診断されない。"
+    suggestion: "`FormatError` を拡張して document/sketch 両方の variable 名一意性を `validate()` で強制し、同一スコープ重複は load-time に明示エラーにする。"
+
+verdict: fail

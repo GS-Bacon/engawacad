@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 37
+    finding: "`evaluate_scope` collapses document and sketch variables into one sketch-priority scope before building dependencies, so document expressions are also rebound through sketch shadowing. With `doc=[a=10,b=${a}]` and `sketch=[a=20]`, `b` resolves against `20`, and shapes like `sketch a=${b}+1` can be rejected as a false cycle."
+    suggestion: "Evaluate document variables in document-only scope first, then evaluate sketch variables against the computed document map plus sketch locals; do not let sketch shadowing rewrite document-variable dependencies/lookups."
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "`Document::validate()` still ignores both `Document.variables` and `CreateSketch.variables`, so empty/duplicate/invalid variable names serialize as valid `.engawa`. This is not harmless: `extract_var_refs` drops empty `${}` references while `lookup_var` can still resolve an empty-name variable, so malformed input can bypass the dependency graph."
+    suggestion: "Validate variable names and per-scope uniqueness during document/component validation, and reject malformed identifiers before serialization/evaluation."
+verdict: fail

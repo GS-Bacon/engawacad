@@ -1,0 +1,90 @@
+{
+  "totals": {
+    "passed": 1149,
+    "failed": 0,
+    "ignored": 16
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_deterministic_evaluation",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_document_only_evaluation",
+      "kind": "other"
+    },
+    {
+      "name": "t03_shadowing_document_variable",
+      "kind": "other"
+    },
+    {
+      "name": "t05_arithmetic_precedence",
+      "kind": "other"
+    },
+    {
+      "name": "t06_parentheses",
+      "kind": "other"
+    },
+    {
+      "name": "t07_unary_minus",
+      "kind": "boundary"
+    },
+    {
+      "name": "t08_division",
+      "kind": "other"
+    },
+    {
+      "name": "t01_determinism",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_document_only",
+      "kind": "other"
+    },
+    {
+      "name": "t03_sketch_shadowing",
+      "kind": "other"
+    },
+    {
+      "name": "t05_arithmetic",
+      "kind": "other"
+    },
+    {
+      "name": "t06_parens",
+      "kind": "other"
+    },
+    {
+      "name": "t07_unary_minus",
+      "kind": "boundary"
+    },
+    {
+      "name": "t08_division",
+      "kind": "other"
+    },
+    {
+      "name": "t09_yaml_roundtrip",
+      "kind": "golden"
+    },
+    {
+      "name": "t10_empty_vars_omitted",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t11_doc_var_shadowed_not_in_result",
+      "kind": "other"
+    },
+    {
+      "name": "t12_shadowing_evaluation_order_stability",
+      "kind": "other"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 18,
+    "determinism": 2,
+    "degenerate": 1,
+    "boundary": 2,
+    "golden": 1,
+    "edge_case": 0
+  }
+}

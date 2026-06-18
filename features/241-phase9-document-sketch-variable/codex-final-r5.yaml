@@ -1,0 +1,36 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "Document::validate() only checks variable names. Cyclic, undefined, or empty expressions in `Document.variables` and `CreateSketch.variables` still pass `from_yaml()`/`to_yaml()`, so malformed variable graphs are accepted as valid documents even though the new evaluator rejects them."
+    suggestion: "Validate variable expressions during document validation: evaluate document scope once, then evaluate each sketch scope against that document scope, and convert `EvalError` into a `FormatError` so invalid variable definitions are rejected at load/serialize time."
+  - id: A-F02
+    severity: medium
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 67
+    finding: "`evaluate_scope()` is a public API but enforces duplicate names only. Direct callers can pass an empty variable name; the dependency extractor drops `${}` from the graph, while `lookup_var()` can still resolve that empty-name binding, so evaluation can bypass the intended scope rules."
+    suggestion: "Apply the same non-empty ASCII identifier validation used by `Document::validate()` inside `evaluate_scope()` before building dependency graphs."
+  - id: C-F01
+    severity: medium
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 67
+    finding: "公開 API の `evaluate_scope()` は重複名しか検証しておらず、空名や参照不能な名前をそのまま受理する。`extract_var_refs_*()` は `${}` の空名参照を依存グラフに載せない一方で `lookup_var()` は空文字キーを解決できるため、`Document::validate()` では不正な入力が direct API 経由だと成功扱いになる。"
+    suggestion: "`evaluate_scope()` の前段でも `Document::validate()` と同じ variable name 検証を適用し、違反時は `EvalError` を返す。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 307
+    finding: "公開 Rust API の `Feature::CreateSketch` に必須フィールド `variables` を追加し、同じ差分で `Document` にも `pub variables` を追加しているため、既存の enum/struct literal 構築やパターンマッチを行う外部クレートはそのままではコンパイルできません。YAML 互換は維持されていますが、Rust API 互換は壊れています。"
+    suggestion: "互換性を維持したいなら既存公開型を直接拡張せず、互換コンストラクタ/アクセサ経由の段階移行にするか、少なくとも将来拡張可能な API 形状にしてから新フィールドを導入する"
+  - id: M-F02
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 59
+    finding: "`Document::validate()` は variable 名の空文字・文字種・重複しか検証しておらず、式の parse error、未定義参照、循環参照を見ていません。そのため `Document::from_yaml()` / `to_yaml()` が `${missing}` や `2 + + 3` のような無効な variable 定義を『妥当なドキュメント』として通してしまいます。"
+    suggestion: "validation から各 sketch に対して `evaluate_scope(&self.variables, sketch_vars)` を呼び、`EvalError` を `FormatError` に写して variable 式の不正をロード/保存時に拒否する"
+
+verdict: fail
+# severity_counts: critical=0, high=2, medium=3, low=0
+# blocking: 2

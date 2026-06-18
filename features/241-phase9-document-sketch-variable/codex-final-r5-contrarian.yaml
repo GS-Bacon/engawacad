@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 67
+    finding: "公開 API の `evaluate_scope()` は重複名しか検証しておらず、空名や参照不能な名前をそのまま受理する。`extract_var_refs_*()` は `${}` の空名参照を依存グラフに載せない一方で `lookup_var()` は空文字キーを解決できるため、`Document::validate()` では不正な入力が direct API 経由だと成功扱いになる。"
+    suggestion: "`evaluate_scope()` の前段でも `Document::validate()` と同じ variable name 検証を適用し、違反時は `EvalError` を返す。"
+
+verdict: pass

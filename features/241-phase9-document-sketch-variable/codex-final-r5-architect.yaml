@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "Document::validate() only checks variable names. Cyclic, undefined, or empty expressions in `Document.variables` and `CreateSketch.variables` still pass `from_yaml()`/`to_yaml()`, so malformed variable graphs are accepted as valid documents even though the new evaluator rejects them."
+    suggestion: "Validate variable expressions during document validation: evaluate document scope once, then evaluate each sketch scope against that document scope, and convert `EvalError` into a `FormatError` so invalid variable definitions are rejected at load/serialize time."
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 67
+    finding: "`evaluate_scope()` is a public API but enforces duplicate names only. Direct callers can pass an empty variable name; the dependency extractor drops `${}` from the graph, while `lookup_var()` can still resolve that empty-name binding, so evaluation can bypass the intended scope rules."
+    suggestion: "Apply the same non-empty ASCII identifier validation used by `Document::validate()` inside `evaluate_scope()` before building dependency graphs."
+verdict: fail

@@ -1,0 +1,30 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "`Document::validate()` still only checks component/ref-plane/feature structure and never validates the newly added `Document.variables` or `CreateSketch.variables`. As a result, `.engawa` files with duplicate variable names, empty expressions, cycles, or undefined references pass `from_yaml()`/`to_yaml()` as if they were valid, even though `evaluate_scope()` would reject the same data."
+    suggestion: "Extend document validation to walk document-level and sketch-level variable scopes and run variable-specific checks there (or call `evaluate_scope()` per sketch), then surface those failures through `FormatError` so parse/serialize keeps its semantic-validation contract."
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "`Document::validate()` が新設した `Document.variables` / `CreateSketch.variables` を一切検証しておらず、同一スコープ重複名・循環参照・未定義参照を含む `.engawa` が `from_yaml()` / `to_yaml()` を通過してしまう。`evaluate_scope()` 側で reject している不変条件が wire-format の受理境界で守られていない。"
+    suggestion: "`validate()` / `validate_component()` で root/Sketch の variable scope を検査し、重複名・識別子不正・式評価エラーを `FormatError` として parse/serialize 時点で reject する"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs, crates/engawa-format/src/feature.rs"
+    line_hint: 30
+    finding: "`Document` と `Feature::CreateSketch` に `variables` の必須フィールドを追加したため、外部 crate の struct literal / enum variant construction と exhaustive pattern match がそのままではコンパイル不能になる。YAML では optional でも Rust の public API としては source-breaking で、移行互換を前提にした今回のスコープに反する。"
+    suggestion: "この変更は breaking change として扱い、少なくとも crate のメジャー更新を行うか、公開型を非破壊に拡張できる API（非公開フィールド + constructor/accessor、または互換レイヤ）へ切り替える。"
+  - id: M-F02
+    severity: medium
+    file: "crates/xtask/src/main.rs"
+    line_hint: 977
+    finding: "TS 生成物の回帰テストが `Document.ts` と `Feature.ts` は固定比較している一方で、新規 public DTO の `Variable.ts` を一度も検証していない。ts-rs 側の退行で `Variable.ts` が未生成・非決定的・署名ドリフトしても CI で検出できない。"
+    suggestion: "determinism の `files` 一覧と golden 比較に `Variable.ts` を追加し、新規公開型の生成結果も固定する。"
+
+verdict: fail
+# severity_counts: critical=0, high=3, medium=1, low=0
+# blocking: 3

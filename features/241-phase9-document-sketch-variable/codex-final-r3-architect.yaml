@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 160
+    finding: "同一 scope に同名 Variable があると、依存グラフは name 単位で 1 本に潰れる一方で zero-indegree ノードは `vars` の要素数ぶん heap に積まれるため、依存先があるケースでは `*deg -= 1` が 0 から underflow して panic する。依存が無いケースでも先頭定義だけが残り、重複定義が silently に欠落する。"
+    suggestion: "Document/Sketch ごとに `Variable.name` の一意性を validate し、評価器側でも重複名を検出した時点で `EvalError` を返すようにする。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 405
+    finding: "除算結果を有限値チェックせずそのまま返しているため、`1/0 -> Inf` と `0/0 -> NaN` が成功扱いになる。既存の format 層は position や ref-plane offset で non-finite を拒否しており、この evaluator だけ NaN/Inf を通すと数値 invariant が破れるうえ、NaN を含む結果は同一入力2回でも `assert_eq!` で一致判定できない。"
+    suggestion: "各演算後または式評価完了時に `is_finite()` を検査し、非有限値は `EvalError` で拒否する。"
+
+verdict: fail

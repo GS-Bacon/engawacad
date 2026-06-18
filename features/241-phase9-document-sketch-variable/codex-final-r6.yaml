@@ -1,0 +1,14 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  # [architect] issues: [] (verdict=pass)
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 59
+    finding: "`Document::validate()` only validates variable names and duplicates. As a result, invalid equations such as empty expressions, parse errors, undefined references, and dependency cycles still pass `from_yaml()`, `to_yaml()`, and the API save path as if the document were valid."
+    suggestion: "Add a semantic variable-validation pass in `Document::validate()` that evaluates document variables once and each `CreateSketch.variables` against the document scope, and map `EvalError` into `FormatError` so malformed variable graphs are rejected before persistence."
+  # [migration] issues: [] (verdict=pass)
+
+verdict: fail
+# severity_counts: critical=0, high=1, medium=0, low=0
+# blocking: 1

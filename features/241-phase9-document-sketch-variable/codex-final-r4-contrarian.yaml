@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "`Document::validate()` が新設した `Document.variables` / `CreateSketch.variables` を一切検証しておらず、同一スコープ重複名・循環参照・未定義参照を含む `.engawa` が `from_yaml()` / `to_yaml()` を通過してしまう。`evaluate_scope()` 側で reject している不変条件が wire-format の受理境界で守られていない。"
+    suggestion: "`validate()` / `validate_component()` で root/Sketch の variable scope を検査し、重複名・識別子不正・式評価エラーを `FormatError` として parse/serialize 時点で reject する"
+
+verdict: fail

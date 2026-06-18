@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 307
+    finding: "公開 Rust API の `Feature::CreateSketch` に必須フィールド `variables` を追加し、同じ差分で `Document` にも `pub variables` を追加しているため、既存の enum/struct literal 構築やパターンマッチを行う外部クレートはそのままではコンパイルできません。YAML 互換は維持されていますが、Rust API 互換は壊れています。"
+    suggestion: "互換性を維持したいなら既存公開型を直接拡張せず、互換コンストラクタ/アクセサ経由の段階移行にするか、少なくとも将来拡張可能な API 形状にしてから新フィールドを導入する"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 59
+    finding: "`Document::validate()` は variable 名の空文字・文字種・重複しか検証しておらず、式の parse error、未定義参照、循環参照を見ていません。そのため `Document::from_yaml()` / `to_yaml()` が `${missing}` や `2 + + 3` のような無効な variable 定義を『妥当なドキュメント』として通してしまいます。"
+    suggestion: "validation から各 sketch に対して `evaluate_scope(&self.variables, sketch_vars)` を呼び、`EvalError` を `FormatError` に写して variable 式の不正をロード/保存時に拒否する"
+
+verdict: fail

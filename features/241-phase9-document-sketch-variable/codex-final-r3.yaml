@@ -1,0 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 160
+    finding: "同一 scope に同名 Variable があると、依存グラフは name 単位で 1 本に潰れる一方で zero-indegree ノードは `vars` の要素数ぶん heap に積まれるため、依存先があるケースでは `*deg -= 1` が 0 から underflow して panic する。依存が無いケースでも先頭定義だけが残り、重複定義が silently に欠落する。"
+    suggestion: "Document/Sketch ごとに `Variable.name` の一意性を validate し、評価器側でも重複名を検出した時点で `EvalError` を返すようにする。"
+  - id: A-F02
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 405
+    finding: "除算結果を有限値チェックせずそのまま返しているため、`1/0 -> Inf` と `0/0 -> NaN` が成功扱いになる。既存の format 層は position や ref-plane offset で non-finite を拒否しており、この evaluator だけ NaN/Inf を通すと数値 invariant が破れるうえ、NaN を含む結果は同一入力2回でも `assert_eq!` で一致判定できない。"
+    suggestion: "各演算後または式評価完了時に `is_finite()` を検査し、非有限値は `EvalError` で拒否する。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 65
+    finding: "同一スコープ内の variable 名重複を検出しておらず、依存グラフを `HashSet`/`HashMap` で名前キー化した時点で重複定義が潰れます。さらに `evaluate_vars_topological()` は `vars.iter().find(|v| v.name == current)` で最初の定義だけを評価するため、`a=1, a=2` のような入力がエラーにならず後続定義を無視した結果を返します。ADR-015 で許されている shadowing は Sketch→Document 間だけなので、同一 scope の collision を silent accept するのは評価結果を壊します。"
+    suggestion: "`evaluate_scope()` の前段で Document/Sketch 各 scope の variable 名一意性を検証し、重複時は明示エラーを返してください。あわせて `Document::validate()` / `from_yaml()` でも同じ制約を適用し、壊れた `.engawa` を format 層で reject するべきです."
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 26
+    finding: "公開 Rust API に `Document.variables` と `Feature::CreateSketch.variables` の必須 field を追加しており、既存 downstream の struct literal / enum 構築・分解がそのままではコンパイル不能になる。YAML 互換でも Rust API としては source-breaking です。"
+    suggestion: "この変更は semver-major として扱うか、公開型へ必須 field を足さない形に設計を切り替える。少なくとも `engawa-format` の互換方針として breaking change を明示してください。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 136
+    finding: "同一 scope で同名 Variable を 2 件定義してもエラーにならず、依存 graph が `HashMap<String, ...>` で潰れたうえ `vars.iter().find()` が先頭定義だけを拾うため、後続定義が黙って失われます。`result.len() != vars.len()` でも cycle が無ければ成功扱いになるので、誤値を静かに返します。"
+    suggestion: "doc/sketch ごとに `name` 重複を事前検出して明示エラーにし、`result.len() != vars.len()` を成功扱いしないようにしてください。"
+  - id: M-F03
+    severity: medium
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 59
+    finding: "`Document::validate()` が新規 `Document.variables` / `CreateSketch.variables` を一切検証していないため、`expr: \"2 + + 3\"`、`${missing}`、循環参照を含む `.engawa` を `from_yaml()` / `to_yaml()` が正常系として通してしまいます。`Validate the entire document tree` という契約とずれています。"
+    suggestion: "load/save 時に top-level / sketch-level variables を評価して parse/undefined/cycle を `FormatError` に写像し、無効な variable 定義を早期に拒否してください。"
+
+verdict: fail
+# severity_counts: critical=0, high=5, medium=1, low=0
+# blocking: 5

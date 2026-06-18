@@ -1,0 +1,8 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 65
+    finding: "同一スコープ内の variable 名重複を検出しておらず、依存グラフを `HashSet`/`HashMap` で名前キー化した時点で重複定義が潰れます。さらに `evaluate_vars_topological()` は `vars.iter().find(|v| v.name == current)` で最初の定義だけを評価するため、`a=1, a=2` のような入力がエラーにならず後続定義を無視した結果を返します。ADR-015 で許されている shadowing は Sketch→Document 間だけなので、同一 scope の collision を silent accept するのは評価結果を壊します。"
+    suggestion: "`evaluate_scope()` の前段で Document/Sketch 各 scope の variable 名一意性を検証し、重複時は明示エラーを返してください。あわせて `Document::validate()` / `from_yaml()` でも同じ制約を適用し、壊れた `.engawa` を format 層で reject するべきです."
+verdict: fail

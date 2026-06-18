@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/document.rs"
+    line_hint: 61
+    finding: "`Document::validate()` still only checks component/ref-plane/feature structure and never validates the newly added `Document.variables` or `CreateSketch.variables`. As a result, `.engawa` files with duplicate variable names, empty expressions, cycles, or undefined references pass `from_yaml()`/`to_yaml()` as if they were valid, even though `evaluate_scope()` would reject the same data."
+    suggestion: "Extend document validation to walk document-level and sketch-level variable scopes and run variable-specific checks there (or call `evaluate_scope()` per sketch), then surface those failures through `FormatError` so parse/serialize keeps its semantic-validation contract."
+
+verdict: fail

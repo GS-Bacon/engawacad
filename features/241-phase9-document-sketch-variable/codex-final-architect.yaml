@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-format/src/lib.rs"
+    line_hint: 7
+    finding: "`pub mod variable;` / `pub use variable::{...}` を tracked diff に追加している一方で、新規 `crates/engawa-format/src/variable.rs` と `crates/engawa-format/tests/variable_acceptance.rs` が untracked のままです。`git diff` ベースでこの差分だけを適用すると `engawa-format::variable` モジュール不在でビルド不能になり、合意した Variable テスト群も差分に載りません。"
+    suggestion: "新規 `variable.rs` と `variable_acceptance.rs` を VCS に追加し、レビュー対象の差分へ含める。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 181
+    finding: "`eval_expr` が `parser.parse_expr()` の返り値をそのまま返しており、式末尾の未消費トークンを検査していません。このため `\"2 3\"` や `\"10foo\"` のような不正式が `EvalError::Parse` ではなく `2` / `10` として受理され、退化入力で誤値を静かに返します。"
+    suggestion: "`parse_expr()` 後に空白を読み飛ばし、まだ文字が残っていれば `EvalError::Parse` を返す終端チェックを追加する。"
+  - id: F03
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 193
+    finding: "`detect_cycle` が開始ノード集合を `HashSet` で反復しているため、複数の循環候補がある入力では返す `CircularDependency.cycle` が hash seed 依存になります。Issue #241 で最重要としている決定性と、plan で定めた lexicographic tiebreak の契約を満たせません。"
+    suggestion: "cycle 検出の走査順を `effective` の順序付きキーかソート済み `Vec<String>` に固定し、`HashSet` / `HashMap` の反復順へ依存しない実装にする。"
+
+verdict: fail

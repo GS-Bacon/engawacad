@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 117
+    finding: "循環検出で `effective.keys()` を `HashSet` に落としてから DFS を開始しているため、`CircularDependency { cycle }` の開始点がプロセスごとに揺れます。T_DEG_circular で前提にしている lexicographic な決定性を満たせません。"
+    suggestion: "`HashSet` ではなく `effective.keys()` の順序を保持した `Vec` / `IndexSet` / `BTreeSet` を使って DFS 開始順を固定し、cycle の返却順も決定的にする"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 181
+    finding: "`eval_expr` が `parser.parse_expr()` の結果をそのまま返しており、入力末尾の未消費トークンを検出しません。`\"1 2\"` や `\"10)garbage\"` のような不正式が先頭部分だけ評価されて成功扱いになります。"
+    suggestion: "`parse_expr()` 後に `skip_whitespace()` を呼び、`peek_char().is_some()` なら `EvalError::Parse` を返して式全体を必ず消費させる"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-format/tests/variable_acceptance.rs"
+    line_hint: 180
+    finding: "T09 のコメントは `Document.variables + Sketch.variables` の YAML roundtrip を要求していますが、実際のテストは `doc.variables` しか設定しておらず、新規追加した `Feature::CreateSketch.variables` の永続化経路を通していません。合意済みテスト計画と実装がずれています。"
+    suggestion: "`CreateSketch { variables: ... }` を含む `Document` を組み立てて roundtrip させ、Sketch 側 `variables` も byte-identical に保持されることを確認する"
+
+verdict: fail

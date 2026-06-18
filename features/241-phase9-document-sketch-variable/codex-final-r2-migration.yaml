@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-format/src/variable.rs"
+    line_hint: 32
+    finding: "`evaluate_scope` が `doc_vars` と `sketch_vars` を単一グラフに統合し、`lookup_var` も常に sketch 側を先に引くため、Document 変数の式まで sketch の shadowing で再束縛される。例えば `doc: a=10, b=${a}` と `sketch: a=20` で `b=20` になり、Issue の 2-stage lexical scope を壊す。"
+    suggestion: "Document 変数は document-only のスコープで先に確定し、その結果を土台に sketch 変数を評価する 2 段階実装へ分離する。`doc b=${a}` + `sketch a=20` が `b=10` を維持する回帰テストも追加する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/document.rs / crates/engawa-format/src/feature.rs"
+    line_hint: 26
+    finding: "公開型 `Document` と `Feature::CreateSketch` に必須の `variables` フィールドを追加したため、Rust の struct/enum literal 構築と exhaustive pattern match が後方互換でなくなった。差分内で大量の `variables: vec![]` 追加が必要になっている通り、下流 crate も YAML 互換の有無に関係なくコンパイル不能になる。"
+    suggestion: "v1 の Rust API 互換を維持するなら公開 shape を直接変えず、コンストラクタ/アクセサ経由の内部保存や別 wrapper 型で拡張する。既存 API を壊すなら semver-major bump を明示する。"
+
+verdict: fail
