@@ -403,7 +403,7 @@ fn t02_build_manifold_euler() { todo!() }
 ## STEP 6: GLM-5.1 コア実装（背景実行・自動エスカレーション付き）
 
 **目的**: コア機能の実装 + plan T01〜のうち決定性・正常系の最小テスト。  
-**ループ定数**: `GLM_MAX_LOOPS=3`（通常試行上限）、`ESC_MAX_LOOPS=1`（debug-spec 付き再 dispatch 上限）
+**ループ定数**: `GLM_MAX_LOOPS=3`（通常試行上限）、`ESC_MAX_LOOPS=3`（debug-spec 付き再 dispatch 上限）、`ESCALATION_TOKEN_CAP=200_000`（per-Issue 累積 token 上限。`escalate-glm-adversarial.ts` の tracker が `features/.loop/glm-escalation/<issue>.json` で永続化する。1 round あたり 90k 推定なので約 2 round で限界）
 
 **ゲート:**
 ```bash
@@ -439,15 +439,34 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
   - **2 連続同一 error_pattern** または **通常試行が GLM_MAX_LOOPS 回** → **6-C へ**
   - それ以外（新しいエラー）→ 6-A に戻って次の試行
 
-### 6-C: Claude デバッグアシスト（debug-spec 作成）
+### 6-C: Claude デバッグアシスト（debug-spec 作成・追記）
 
 `features/$ISSUE_NUM-$ISSUE_SLUG/ci.log` と `crates/**` の関連ファイルを **Read** して根本原因を分析する。  
-`features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` を **追記** する（2 回目以降は既存内容を保持して `試した修正と結果` のチェックをつける）。セクション: **仮説 / 関連ファイル / 修正方針 / 試した修正と結果 / 次にやること / 追加で書いてほしいテスト**  
-6-A に戻り `--debug-spec` 付きで dispatch（ESC_MAX_LOOPS=1 のため 1 回まで）。
+`features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` を **追記** する（2 回目以降は既存内容を保持して `試した修正と結果` のチェックをつける）。セクション: **仮説 / 関連ファイル / 修正方針 / 試した修正と結果 / 次にやること / 追加で書いてほしいテスト**
 
-### 6-D: 終結判定
+**自律モード（`batch_arg === null`）では Claude が自力で debug-spec を追記してよい**。`ESC_MAX_LOOPS=3` までの再 dispatch ループ内なら都度追記が前提（過去の保守解釈「ESC 越権で書けない」は誤り — #225 で明文化）。
 
-debug-spec 付き再 dispatch でも `status: failed` のままなら停止してユーザーにエスカレーション。`debug-spec.md` はユーザーが手動改稿して再投入できる。Anthropic claude への自動フォールバック禁止。
+6-A に戻り `--debug-spec` 付きで dispatch（ESC_MAX_LOOPS=3 のため最大 3 回まで）。
+
+### 6-D: ESC_MAX_LOOPS 到達時の adversarial review
+
+ESC 試行 3 回でも `status: failed` のまま → Codex 3 ペルソナ adversarial review にエスカレートする:
+
+```bash
+bun .claude/skills/3ai/scripts/escalate-glm-adversarial.ts \
+  --issue $ISSUE_NUM \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG
+RC=$?
+```
+
+ペルソナ: **architect** (既存 invariant との整合で refute) / **contrarian** (実装案を refute、棄却案の利点を強調) / **migration** (テスト互換性で refute)。refute デフォルト。
+
+判定 (exit code + stdout JSON):
+- `RC=0` (kind=continue, 全 approved): Claude が debug-spec.md にさらに新しい仮説を追記し、6-A に戻って **追加** dispatch する（ESC counter は継続、`ESCALATION_TOKEN_CAP=200_000` 越えで自動退避）
+- `RC=3` (kind=needs_human, reason=refute): 1 ペルソナでも refute → escalate スクリプトが Issue に `needs-human` 自動付与 + `raise-issue-on-failure.ts` を呼んで起票 → loop は他 Issue に進む
+- `RC=3` (kind=needs_human, reason=token_cap): per-Issue 累積 token 200k 越え → 同じく `needs-human` 自動退避
+
+`debug-spec.md` はユーザーが手動改稿して再投入できる。Anthropic claude への自動フォールバックは禁止。
 
 ---
 
@@ -685,7 +704,7 @@ bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
 2. **修正方針が不明なら**: Issue 起票 → ユーザーへエスカレーション
 
 **起票タイミング:**
-- STEP 6-D: GLM が ESC_MAX_LOOPS を超えて失敗 → 起票して修正またはユーザーへ
+- STEP 6-D: ESC_MAX_LOOPS=3 到達 → Codex adversarial で refute、または per-Issue token cap 200k 越え → `escalate-glm-adversarial.ts` が起票 + `needs-human` 自動付与
 - STEP 6.5: 期待値乖離検出 → 起票してユーザーへ
 - STEP 7 ループ上限超過 (critical ≥ 1) → 起票して修正またはユーザーへ
 - STEP 7.5 ループ上限超過 → 起票して修正またはユーザーへ
