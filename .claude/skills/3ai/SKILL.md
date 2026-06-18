@@ -423,6 +423,11 @@ bun .claude/skills/3ai/scripts/dispatch-glm.ts \
 # debug-spec 付き再 dispatch の場合は --debug-spec features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md を追加
 
 bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/state.json phases.core_impl.glm_runs
+
+# TS drift mitigation (#248): GLM が新規 Rust 型を追加した場合、web/src/generated/ の
+# dirty を intermediate commit して `cargo xtask ci` の drift check を通す。
+# clean なら no-op。STEP 8 の squash で 1 commit に集約される。
+bun .claude/skills/3ai/scripts/maybe-commit-generated-ts.ts --issue $ISSUE_NUM
 ```
 
 **`run_in_background: true` で起動し、完了通知を待つ（ポーリングしない）。**
@@ -651,6 +656,8 @@ bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/s
 ```
 
 ```bash
+# TS drift mitigation (#248): generated TS が dirty なら intermediate commit
+bun .claude/skills/3ai/scripts/maybe-commit-generated-ts.ts --issue $ISSUE_NUM
 # crates/ の unstaged/untracked ファイルを検出（git add 漏れ防止）
 bun .claude/skills/3ai/scripts/pre-step8-check.ts \
   --auto-raise --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG
@@ -683,6 +690,7 @@ bun .claude/skills/3ai/scripts/finalize-feature.ts --issue $ISSUE_NUM --slug $IS
 - GLM が詰まっても Anthropic claude へ自動フォールバック**しない**
 - dispatch 完了をポーリング**しない** — 背景実行 + 完了通知で受け取る
 - git commit/push は STEP 8 以外で行わない（`finalize-feature.ts` の commit は STEP 8 の一部として許可）
+  - **例外**: `web/src/generated/` の auto-generated TS は STEP 6 以降 `maybe-commit-generated-ts.ts` 経由の intermediate commit を許容 (#248)。STEP 8 squash で最終 1 commit に集約される。
 - `features/$ISSUE/` の手動 `git add` は行わない — 必ず `finalize-feature.ts` 経由にする
 
 ---
