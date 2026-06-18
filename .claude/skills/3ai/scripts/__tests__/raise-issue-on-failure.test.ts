@@ -7,7 +7,7 @@
 // 同 step + 同 parent + 直近 24h で open Issue があれば dedup 対象として返す。
 
 import { describe, expect, test } from "bun:test";
-import { findRecentSameStepIssue, shouldSkipStep } from "../raise-issue-on-failure.ts";
+import { findRecentSameStepIssue, shouldSkipError, shouldSkipStep } from "../raise-issue-on-failure.ts";
 
 describe("shouldSkipStep", () => {
   test("T01 (determinism): 同一入力を 2 回呼んで結果が一致", () => {
@@ -49,6 +49,44 @@ describe("shouldSkipStep", () => {
 
   test("T09_boundary_unrelated: 'check' 単体 → skip:false (intent が無いと判定不可)", () => {
     expect(shouldSkipStep("check status").skip).toBe(false);
+  });
+});
+
+describe("shouldSkipError (#250 Codex usage limit ガード)", () => {
+  test("T_E01 (skip): 'Codex 3 ペルソナ r1: usage limit (You\\'ve hit your usage limit, reset 6:06 PM)' → skip:true", () => {
+    const r = shouldSkipError("Codex 3 ペルソナ r1: usage limit (You've hit your usage limit, reset 6:06 PM)");
+    expect(r.skip).toBe(true);
+    expect(r.reason).toContain("usage|rate limit");
+  });
+
+  test("T_E02 (skip): 大文字 'USAGE LIMIT' → skip:true", () => {
+    expect(shouldSkipError("USAGE LIMIT").skip).toBe(true);
+  });
+
+  test("T_E03 (skip): 'rate limit reached' → skip:true", () => {
+    expect(shouldSkipError("rate limit reached").skip).toBe(true);
+  });
+
+  test("T_E04 (skip): HTTP 429 単体 → skip:true", () => {
+    expect(shouldSkipError("Got HTTP 429 from upstream").skip).toBe(true);
+  });
+
+  test("T_E05 (pass): 通常の test FAILED → skip:false", () => {
+    expect(shouldSkipError("test FAILED at brep::shell::tests::cuboid_shells").skip).toBe(false);
+  });
+
+  test("T_E06 (pass): 空文字列 → skip:false (誤マッチ防止)", () => {
+    expect(shouldSkipError("").skip).toBe(false);
+  });
+
+  test("T_E07 (boundary): 数字 '1429' は 429 単独ではないので skip:false", () => {
+    expect(shouldSkipError("error code 1429 (custom)").skip).toBe(false);
+  });
+
+  test("T_E08 (determinism): 同入力 2 回呼びで結果一致", () => {
+    const a = shouldSkipError("usage limit");
+    const b = shouldSkipError("usage limit");
+    expect(a).toEqual(b);
   });
 });
 

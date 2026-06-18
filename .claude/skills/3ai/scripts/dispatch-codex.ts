@@ -47,6 +47,13 @@ export function buildPrefix(
   return prefix;
 }
 
+/** #250: Codex CLI 出力 (stdout+stderr 結合) に usage/rate limit シグナルが
+ *  含まれていれば true。infra 一時障害として扱うための判定。 */
+export function detectCodexUsageLimit(combinedOutput: string): boolean {
+  const text = combinedOutput ?? "";
+  return /usage\s*limit|rate\s*limit|hit\s+your\s+(usage|rate)|\b429\b/i.test(text);
+}
+
 function parseVerdict(text: string): {
   verdict: string;
   severity_counts: Record<string, number>;
@@ -126,7 +133,20 @@ export async function dispatchCodex(opts: DispatchCodexOpts): Promise<number> {
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  writeFileSync(logFile, stdout + stderr);
+  const combined = stdout + stderr;
+  writeFileSync(logFile, combined);
+
+  // #250: Codex CLI が usage/rate limit に当たったときの infra 一時障害を検出して
+  // log に sentinel マーカー + stderr に分かりやすい WARN を出す。
+  // raise-issue-on-failure.ts 側で errorSummary に usage/rate limit が含まれていれば
+  // skip するため、呼び元 (3ai オーケストレーター) はそのまま errorSummary に
+  // この WARN を含めればよい。
+  if (detectCodexUsageLimit(combined)) {
+    process.stderr.write(
+      `[CODEX_USAGE_LIMIT] persona=${persona}: Codex CLI が usage/rate limit を返しました。\n` +
+        `  → infra 一時障害として扱い、次サイクルの retry で復旧する想定です (raise-issue-on-failure は skip)。\n`,
+    );
+  }
 
   try {
     const text = await Bun.file(resultFile).text().catch(() => "");

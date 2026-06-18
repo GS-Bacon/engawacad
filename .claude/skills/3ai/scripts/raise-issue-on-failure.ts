@@ -30,6 +30,23 @@ export function shouldSkipStep(step: string): { skip: boolean; reason: string } 
   return { skip: false, reason: "" };
 }
 
+/** #250: Codex/GLM の usage limit / rate limit は infra 一時障害であり、
+ *  実装側で修正できる "fault" ではない。auto-raise すると "loop が回るたびに
+ *  同じ infra Issue が湧く" だけになるため、errorSummary 側で検出して skip する。
+ *
+ *  検出対象: "You've hit your usage limit", "usage limit", "rate limit", "429"
+ *  (大文字小文字無視) */
+export function shouldSkipError(errorSummary: string): { skip: boolean; reason: string } {
+  const text = errorSummary ?? "";
+  if (/usage\s*limit|rate\s*limit|hit\s+your\s+(usage|rate)|\b429\b/i.test(text)) {
+    return {
+      skip: true,
+      reason: "Codex/GLM usage|rate limit (infra 制約) — auto-raise 対象外",
+    };
+  }
+  return { skip: false, reason: "" };
+}
+
 /** #229: 既 open の auto-raised Issue 候補から「同 step + 同 parent + 直近 24h」を探す。
  *  見つかれば dedupTo にその Issue 番号を返す。呼び元はコメント追記して新規起票を skip する。
  *  parent 番号は `#NNN` の後ろに非数字 (or 末尾) があることを要求し、#220 が #2200 にマッチしないようにする。 */
@@ -89,6 +106,18 @@ if (!step || !featureDir || !errorSummary) {
     process.stderr.write(
       `SKIP: step="${step}" は自動起票対象外 (${skip.reason}). ` +
         `人間通知には loop-notify.ts / loop-intent-guard.ts を使ってください。\n`,
+    );
+    process.exit(0);
+  }
+}
+
+// Codex/GLM usage limit 等の infra 一時障害は自動起票対象外 (#250)
+{
+  const skip = shouldSkipError(errorSummary);
+  if (skip.skip) {
+    process.stderr.write(
+      `SKIP: errorSummary に usage/rate limit シグナル検出 (${skip.reason}). ` +
+        `次サイクルの retry で復旧する想定のため新規 Issue は起票しません。\n`,
     );
     process.exit(0);
   }

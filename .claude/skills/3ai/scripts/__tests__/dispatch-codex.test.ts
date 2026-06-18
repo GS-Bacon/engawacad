@@ -4,7 +4,7 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { buildPrefix, dispatchCodex, PERSONA_HINTS } from "../dispatch-codex.ts";
+import { buildPrefix, detectCodexUsageLimit, dispatchCodex, PERSONA_HINTS } from "../dispatch-codex.ts";
 
 const TMP_BASE = join(tmpdir(), `dispatch-codex-test-${process.pid}`);
 
@@ -65,6 +65,36 @@ describe("dispatch-codex exit code return", () => {
       persona: "architect",
     });
     expect(code).toBe(0);
+  });
+});
+
+describe("detectCodexUsageLimit (#250)", () => {
+  test("T06: 'You\\'ve hit your usage limit, reset 6:06 PM' → true", () => {
+    expect(detectCodexUsageLimit("You've hit your usage limit, reset 6:06 PM")).toBe(true);
+  });
+
+  test("T07: 大文字 'USAGE LIMIT' → true", () => {
+    expect(detectCodexUsageLimit("USAGE LIMIT EXCEEDED")).toBe(true);
+  });
+
+  test("T08: 'rate limit' → true", () => {
+    expect(detectCodexUsageLimit("API rate limit exceeded")).toBe(true);
+  });
+
+  test("T09: HTTP 429 単体 → true", () => {
+    expect(detectCodexUsageLimit("HTTP 429 Too Many Requests")).toBe(true);
+  });
+
+  test("T10: 通常 stdout → false", () => {
+    expect(detectCodexUsageLimit("review yaml generated successfully")).toBe(false);
+  });
+
+  test("T11: 空文字 → false", () => {
+    expect(detectCodexUsageLimit("")).toBe(false);
+  });
+
+  test("T12: '1429' は 429 単独ではないので false", () => {
+    expect(detectCodexUsageLimit("error 1429 unrelated")).toBe(false);
   });
 });
 
