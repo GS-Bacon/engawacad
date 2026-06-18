@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "docs/decisions/015-phase9-design-foundations.md"
+    line_hint: 1
+    finding: "ADR-015 draft ファイルが untracked 状態で commit されていない。Issue #237 の完了条件「`docs/decisions/015-*.md` を draft 状態で commit」を満たしていない。"
+    suggestion: "git add docs/decisions/015-phase9-design-foundations.md crates/engawa-format/tests/adr_015_phase9_doc_acceptance.rs && git commit して完了条件を満たすこと。"
+
+verdict: fail

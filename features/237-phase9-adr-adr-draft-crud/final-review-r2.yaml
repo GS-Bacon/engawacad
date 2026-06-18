@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "docs/decisions/"
+    line_hint: 1
+    finding: "Issue #237 の完了条件である `docs/decisions/014-*.md` (ADR-014 draft: 履歴 CRUD 抽象 + Variable スコープ + schema_version + 品質基盤) が git diff に含まれていない。既存の `014-component-refplane-isolation.md` は Phase 8 Component/RefPlane isolation に関する別 ADR であり、#237 のスコープを満たさない。また、`015-phase9-design-foundations.md` は untracked で ADR-014 ではない。"
+    suggestion: "ADR-014 draft を `docs/decisions/014-phase9-design-foundations.md` または適切な名前で作成し、#237 の完了条件を満たすこと。"
+
+verdict: fail

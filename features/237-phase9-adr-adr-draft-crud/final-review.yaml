@@ -1,0 +1,21 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "docs/decisions/015-phase9-design-foundations.md"
+    line_hint: 1
+    finding: "Issue #237 title says 'ADR-014 draft' but implementation created ADR-015. ADR-014 already exists (014-component-refplane-isolation.md) with different content. Issue titleと実装が不一致"
+    suggestion: "Issue #237 titleを 'ADR-015 draft' に修正するか、または既存ADR-014を別番号にrenumberしてからADR-014として再作成する"
+  - id: FN02
+    severity: critical
+    file: "docs/decisions/015-phase9-design-foundations.md"
+    line_hint: 4
+    finding: "**Status**: Accepted となっているが、Issue完了条件は 'draft 状態で commit → gate:adr-review 付与 → ADR-013 auto-accept フローで approved'。auto-accept前なのにStatusがAccepted"
+    suggestion: "Statusを 'Proposed' または 'Draft' に変更し、gate:adr-reviewラベルを付与してADR-013 auto-acceptフローを回す"
+  - id: FN03
+    severity: high
+    file: ".github/labels"
+    line_hint: 237
+    finding: "Issue #237にgate:adr-reviewラベルが付与されていない。完了条件: 'gate:adr-review 付与 → ADR-013 auto-accept フロー (Decision Matrix lint + Codex 3 ペルソナ並列) で approved'"
+    suggestion: "gh issue edit 237 --add-label 'gate:adr-review' を実行してADR-013 auto-acceptフローをトリガーする"
+
+verdict: fail
