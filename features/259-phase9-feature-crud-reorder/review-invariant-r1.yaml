@@ -1,0 +1,16 @@
+レビューを実施します。
+
+---
+
+```yaml
+issues:
+  - id: IN01
+    severity: high
+    section: "実装 > impl FeatureCrud"
+    finding: "plan に記載の `simulate_history` シグネチャが不明確。`let (_, _, executed_at_pre) = simulate_history(...)` の戻り値 unpack は `simulate_history` が `(T1, T2, Vec<usize>)` を返すことを仮定しているが、この仮定が正しいか保証がない。また `unwrap()` の使用安全性が未検証。"
+    suggestion: "`simulate_history` の実際のシグネチャ (#256 / #257 実装) を確認し、plan のコードスニペットを実際のシグネチャに合わせること。また `post.iter().position(|f| f.id() == orig_id).unwrap()` が panic しない理由（orig_id が必ず存在する）をコメント等で明示すること。"
+
+verdict: pass
+```
+
+**注**: IN01 は `critical` ではなく `high` とした。理由は (a) この実装パターン（simulate_history 呼び出し）は既に #256 / #257 で動作済みであるため、plan の記述が不完全であるに過ぎず、実際の実装時に既存コードを参照すれば正しく実装できるから、(b) 決定性・B-rep 不変条件・既存 Feature への副作用という核心的な不変条件には関与しないからです。実装時に既存コードの `simulate_history` 呼び出しパターンを参照すれば問題なく解決できるレベルの記述不完備です。

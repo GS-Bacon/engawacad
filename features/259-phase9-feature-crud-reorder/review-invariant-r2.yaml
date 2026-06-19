@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性 > テスト計画"
+    finding: "T01 決定性テストの記載が「byte-equal assert」となっているが、`Document::validate()` がタイムスタンプ等の非決的要因を含まない保証がない"
+    suggestion: "`Document` 構造が `serde` で完全に決定的である（タイムスタンプ・UUID・非決定的ハッシュを含まない）ことを確認し、もし含まれる場合は ID 列・features 配列の部分比較に変更すること"
+
+verdict: fail
