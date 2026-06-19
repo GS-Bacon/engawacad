@@ -57,7 +57,7 @@ export interface ReviewConfig {
 
 export type BatchFlowType = "light" | "full";
 export type BatchGateType = "auto" | "pause";
-export type BatchTierType = "split-batch" | "bug-batch" | "enh-batch" | "foundation-batch" | "phase-feature";
+export type BatchTierType = "split-batch" | "bug-batch" | "enh-batch" | "foundation-batch" | "refactor-batch" | "phase-feature";
 
 export interface BatchIssue {
   number: number;

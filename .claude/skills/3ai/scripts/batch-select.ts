@@ -242,6 +242,9 @@ async function main() {
     labels.some(l => l === "type:feature" || l === "type: feature");
   const isFoundationTier = (labels: string[]) =>
     labels.some(l => l === "type:foundation" || l === "type: foundation");
+  // #254: refactor を独立 tier として認識する (ADR-002 type 軸の正規ラベル)
+  const isRefactorTier = (labels: string[]) =>
+    labels.some(l => l === "type:refactor" || l === "type: refactor");
 
   const isFutureMilestone = (issue: GhIssue): boolean =>
     isFutureMilestoneTitle(issue.milestone?.title ?? null, currentPhase);
@@ -285,11 +288,12 @@ async function main() {
     );
     tier = "phase-feature";
   } else {
-    // 引数なし: 優先順位 1 → 2 → 3 → 4
+    // 引数なし: 優先順位 1 → 2 → 3 → 4 → 5
     //   1: bug-batch         (bug + batch:*)
     //   2: enh-batch         (enhancement + batch:*) — ADR-002 正規外だが歴史互換
     //   3: foundation-batch  (type:foundation + batch:*)
-    //   4: phase-feature     (現 Phase milestone の type:feature)
+    //   4: refactor-batch    (type:refactor + batch:*) — #254 で追加
+    //   5: phase-feature     (現 Phase milestone の type:feature)
     //
     // #187: loop モードでは各 tier の filter 内で loop exclude も同時適用し、
     // exclude 後に 0 件なら次 tier に fall-through する。
@@ -328,15 +332,27 @@ async function main() {
           selected = foundationBatch;
           tier = "foundation-batch";
         } else {
-          selected = tryTier(
+          // #254: refactor-batch tier を foundation の次に挿入
+          //       (loop が永遠に pick できない問題の解消)
+          const refactorBatch = tryTier(
             allIssues.filter(
-              i => i.milestone !== null &&
-                   currentPhase !== null &&
-                   i.milestone.title.startsWith(`Phase ${currentPhase}`) &&
-                   isFeatureTier(labelNames(i)),
+              i => isRefactorTier(labelNames(i)) && hasBatchLabel(i) && !isFutureMilestone(i),
             ),
           );
-          tier = "phase-feature";
+          if (refactorBatch.length > 0) {
+            selected = refactorBatch;
+            tier = "refactor-batch";
+          } else {
+            selected = tryTier(
+              allIssues.filter(
+                i => i.milestone !== null &&
+                     currentPhase !== null &&
+                     i.milestone.title.startsWith(`Phase ${currentPhase}`) &&
+                     isFeatureTier(labelNames(i)),
+              ),
+            );
+            tier = "phase-feature";
+          }
         }
       }
     }

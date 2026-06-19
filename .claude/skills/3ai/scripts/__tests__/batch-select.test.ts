@@ -45,3 +45,21 @@ describe("isFutureMilestoneTitle (#210)", () => {
     expect(isFutureMilestoneTitle("Phase 11: 拘束ソルバ 基礎", 11)).toBe(false);
   });
 });
+
+// #254: refactor-batch tier が BatchTierType に追加されていることを型で確認
+import type { BatchTierType } from "../types.ts";
+
+describe("BatchTierType (#254)", () => {
+  test("refactor-batch が型に含まれる (foundation と phase-feature の間)", () => {
+    const tier: BatchTierType = "refactor-batch";
+    expect(tier).toBe("refactor-batch");
+  });
+
+  test("既存 tier はそのまま使える", () => {
+    const tiers: BatchTierType[] = [
+      "split-batch", "bug-batch", "enh-batch",
+      "foundation-batch", "refactor-batch", "phase-feature",
+    ];
+    expect(tiers.length).toBe(6);
+  });
+});
