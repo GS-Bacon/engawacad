@@ -18,7 +18,7 @@ use engawa_format::{
 /// 失敗パスの error 比較ではなく、成功パスの to_yaml() byte-equal で
 /// `refs_resolve_in_state` の transitive 分岐が決定的に振る舞うことを検証。
 #[test]
-fn t_269_success_path_determinism_byte_equal() {
+fn test_269_success_path_determinism_byte_equal() {
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
@@ -91,7 +91,7 @@ fn t_269_success_path_determinism_byte_equal() {
 /// 実シナリオの広い覆いは `feature_crud_prefix_validate_acceptance.rs:1185-` 側で
 /// `t_269_extrude_transitive_plane_ref_dead` 等が担う。
 #[test]
-fn t_269_minimal_transitive_check() {
+fn test_269_minimal_transitive_check() {
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
