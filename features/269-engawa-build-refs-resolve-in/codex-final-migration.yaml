@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/tests/refs_resolve_transitive_plane_ref_acceptance.rs"
+    line_hint: 1
+    finding: "Issue #269 の計画 ID (`t01_*` / `t02_*` / `t03_*` / `t_269_regression_*`) がこの新規 integration test では依然 `#[ignore] + todo!()` のまま残っています。実アサーションは別ファイルに追加されていますが、CI から見ると合意済み受け入れテストはまだ『STEP 6 未解除』で、今回の TEST SUMMARY でも coverage_hints が 0 のままになっており、migration 用のテスト計画判定を誤らせます。"
+    suggestion: "このスケルトンを削除するか、実際のテスト本体をこちらへ移して `#[ignore]` を外し、計画 ID と実行中のテストを一致させる。"
+  - id: F02
+    severity: low
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1650
+    finding: "`EDGE_269_*` ブロックで追加している YAML roundtrip / NaN / Infinity / empty id などの検証は、今回変更した `refs_resolve_in_state` の transitive plane_ref liveness を全く通りません。Issue #269 の宣言スコープを越えて `engawa-format` のシリアライズ挙動まで `engawa-build` 側 acceptance suite で固定してしまい、後続の format/migration 作業に不要な互換性ノイズを持ち込みます。"
+    suggestion: "この Issue では transitive plane_ref 修正に直接効くテストだけを残し、シリアライズ系の境界値検証が必要なら `engawa-format` 側の専用テストへ移す。"
+
+verdict: pass

@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: low
+    file: "crates/engawa-build/tests/refs_resolve_transitive_plane_ref_acceptance.rs"
+    line_hint: 1
+    finding: "STEP 6 後も #269 の skeleton test binary が 10 件の `#[ignore] todo!()` のまま残っている。CI では実装済みの `t_269_*` 群とは別にこの binary が丸ごと ignored で実行され、Issue 完了状態と coverage/ignored count を汚している。"
+    suggestion: "この skeleton ファイルを削除するか、実装済みテストをこちらへ移して `#[ignore]` を解除し、#269 のテスト定義を 1 箇所に統合する"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1507
+    finding: "決定性の検証が失敗パスの `BodyNotFound` 一致に偏っている。`t_269_determinism` と `t_269_edge_determinism_100_iter` はどちらも broken-prefix のエラー比較だけで、成功パス側は `t_269_clean_history_tail_insert` の `is_ok()` しかないため、成功時の feature 順序や YAML が非決定化してもこの suite では検出できない。"
+    suggestion: "clean history の成功ケースで同じ `FeatureCrud::insert` を 2 回実行し、`Document::to_yaml()` か feature ID 順序を byte-equal で比較するテストを追加する"
+
+verdict: pass

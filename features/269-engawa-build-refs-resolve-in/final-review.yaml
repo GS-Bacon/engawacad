@@ -1,0 +1,23 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 179
+    finding: "Issue スコープ1未実装: `refs_resolve_in_state` に `Extrude { sketch }` / `ExtrudeCut { sketch }` 分岐がなく、sketch の plane_ref body liveness が再評価されていない。現在は CreateSketch のみチェック。Extrude/ExtrudeCut は `sketches_at.contains` で sketch ID が存在すれば executed 扱いになるが、sketch の plane_ref body が既に消費されていても skip されない。これは Issue 本文に記載された broken-prefix history `[box_1, sk(plane=box_1), Cut(box_1), e1(sketch=sk)]` で e1 が executed として残る不整合そのもの。"
+    suggestion: "`refs_resolve_in_state` に `Feature::Extrude { sketch, .. } | Feature::ExtrudeCut { sketch, .. }` の match arm を追加し、features 全体から該当 sketch を lookup してその `feature_implicit_body_refs` (plane_ref) を `live_bodies_at` で再チェックする。Issue スコープ2で要求されている `features: &[Feature]` 引数の追加も必要。"
+
+  - id: FN02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 230
+    finding: "`simulate_history` 内の `Extrude`/`ExtrudeCut` 処理で `refs_resolve_in_state` チェックが呼ばれていない。`CreateSketch` には追加されたが、sketch consumer 側にも同じチェックが必要。これにより、plane_ref body が死んだ sketch を Extrude が実行状態として扱える。"
+    suggestion: "`Extrude`/`ExtrudeCut` の match arm で `refs_resolve_in_state` を呼び、false の場合は continue する。"
+
+  - id: FN03
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 140
+    finding: "Issue テスト要件未充足: Issue スコープ3に記載されたテストケース `[box_1, sk(plane=Entity(box_1)), Cut(c1, target=box_1, tool=box_other), e1(sketch=sk)]` が実装されていない。末尾 insert の 2 ケース（Extrude insert → downstream check が e1 を hit しない、Cut insert → BodyNotFound）は acceptance test に含まれていない。T10-T17 は既存 #266 テストの拡張であり、#269 固有の broken-prefix シナリオをカバーしていない。"
+    suggestion: "#269 専用 acceptance test（T18/T19 相当）を追加し、e1 が skip されることを検証する downstream check と、e1 が executed_at_full に無いことによる BodyNotFound を確認するテストを実装する。"
+
+verdict: fail
