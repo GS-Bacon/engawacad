@@ -151,14 +151,26 @@ describe("decideAction", () => {
     expect(action.kind).toBe("send-clear-and-restart");
   });
 
-  it("returns stop on cycle completion + shouldStopRc=1", () => {
+  it("returns pause on cycle completion + shouldStopRc=1 (#253 watcher 不死身化)", () => {
     const action = decideAction({
       ...baseInput,
       prevEndedAt: "2026-06-16T00:00:00.000Z",
       currEndedAt: "2026-06-16T01:00:00.000Z",
       shouldStopRc: 1,
     });
-    expect(action.kind).toBe("stop");
+    expect(action.kind).toBe("pause");
+    if (action.kind === "pause") expect(action.reason).toContain("RC=1");
+  });
+
+  it("returns halt on cycle completion + shouldStopRc=2 (#253 UI 期 / kill switch)", () => {
+    const action = decideAction({
+      ...baseInput,
+      prevEndedAt: "2026-06-16T00:00:00.000Z",
+      currEndedAt: "2026-06-16T01:00:00.000Z",
+      shouldStopRc: 2,
+    });
+    expect(action.kind).toBe("halt");
+    if (action.kind === "halt") expect(action.reason).toContain("RC=2");
   });
 
   it("first poll with prev=null + curr=value → init-baseline (#181 F01)", () => {
@@ -182,17 +194,6 @@ describe("decideAction", () => {
     expect(action.kind).toBe("wait");
   });
 
-  it("returns should-stop-error when shouldStopRc is 2 (#181 F02)", () => {
-    const action = decideAction({
-      ...baseInput,
-      prevEndedAt: "2026-06-16T00:00:00.000Z",
-      currEndedAt: "2026-06-16T01:00:00.000Z",
-      shouldStopRc: 2,
-    });
-    expect(action.kind).toBe("should-stop-error");
-    if (action.kind === "should-stop-error") expect(action.rc).toBe(2);
-  });
-
   it("returns should-stop-error when shouldStopRc is -1 (script missing; #181 F02)", () => {
     const action = decideAction({
       ...baseInput,
@@ -202,5 +203,16 @@ describe("decideAction", () => {
     });
     expect(action.kind).toBe("should-stop-error");
     if (action.kind === "should-stop-error") expect(action.rc).toBe(-1);
+  });
+
+  it("returns should-stop-error when shouldStopRc is 99 (想定外 RC; #253)", () => {
+    const action = decideAction({
+      ...baseInput,
+      prevEndedAt: "2026-06-16T00:00:00.000Z",
+      currEndedAt: "2026-06-16T01:00:00.000Z",
+      shouldStopRc: 99,
+    });
+    expect(action.kind).toBe("should-stop-error");
+    if (action.kind === "should-stop-error") expect(action.rc).toBe(99);
   });
 });

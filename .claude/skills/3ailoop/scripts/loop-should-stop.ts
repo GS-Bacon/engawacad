@@ -1,21 +1,27 @@
 #!/usr/bin/env bun
-// loop-should-stop.ts — /3ailoop サイクル冒頭の停止判定
+// loop-should-stop.ts — /3ailoop サイクル冒頭の停止判定 (3 段階出力, #253)
 //
 // batch-select.ts --loop --dry-run を呼んで候補 Issue を取得し、
-// 候補が gate/needs-* のみ or ゼロなら exit 1 (pause)、続行可なら exit 0 を返す。
+//   exit 0 (proceed)  — 続行可、上位候補を提示
+//   exit 1 (pause)    — 一時停止、watcher は sleep + retry する
+//   exit 2 (halt)     — 永遠停止、watcher は exit する (Phase 21 UI 期到達 等)
 //
 // stdout 形式:
 //   proceed: <#N>          — 続行、上位候補
-//   stop: <reason>         — pause、理由
+//   pause: <reason>        — 一時停止、retry 候補あり
+//   halt: <reason>         — 永遠停止、人間判断要
 //
 // 使い方:
 //   bun loop-should-stop.ts
 //
 // 関連: plan section "停止条件 = 候補 Issue が gate (gate:human-feel / gate:adr-review)
-//       または needs-* のみ"
+//       または needs-* のみ" + #253 watcher 不死身化
 
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import type { BatchPlan } from "../../3ai/scripts/types.ts";
+
+const ROADMAP_PATH = "ROADMAP.md";
+const HALT_SWITCH_PATH = "features/.loop/halt";
 
 const LOOP_EXCLUDE_LABELS = new Set([
   "gate:human-feel",
@@ -64,6 +70,23 @@ function isLoopActionable(labels: string[]): boolean {
   return true;
 }
 
+/** #253: ROADMAP.md に `## Phase 21:` が ✅ なしで存在するかを判定。
+ *  Phase 21 = UI 期 (memory: project_phase8_to_20_autonomous) の到達は
+ *  完全自律期の終端であり、watcher は halt して人間判断を仰ぐ。 */
+export function detectPhase21Reached(roadmapPath: string = ROADMAP_PATH): boolean {
+  if (!existsSync(roadmapPath)) return false;
+  for (const line of readFileSync(roadmapPath, "utf-8").split("\n")) {
+    const m = line.match(/^##\s+(?:✅\s+)?Phase\s+(\d+):/);
+    if (m && parseInt(m[1]) === 21 && !line.includes("✅")) return true;
+  }
+  return false;
+}
+
+/** #253: ユーザーが手動で配置できる kill switch ファイル。存在すれば即 halt。 */
+export function detectHaltSwitch(switchPath: string = HALT_SWITCH_PATH): boolean {
+  return existsSync(switchPath);
+}
+
 /** batch-select --loop --dry-run 結果から候補 Issue が存在するか確認 */
 async function runBatchSelectLoop(): Promise<BatchPlan | null> {
   const scriptPath = ".claude/skills/3ai/scripts/batch-select.ts";
@@ -83,14 +106,24 @@ async function runBatchSelectLoop(): Promise<BatchPlan | null> {
 }
 
 async function main() {
+  // #253: halt 条件を先に判定 (Phase 21 到達 / kill switch)
+  if (detectHaltSwitch()) {
+    console.log(`halt: kill switch file present (${HALT_SWITCH_PATH})`);
+    process.exit(2);
+  }
+  if (detectPhase21Reached()) {
+    console.log("halt: Phase 21 (UI 期) 到達 — 人間判断要 (完全自律期終端)");
+    process.exit(2);
+  }
+
   const issues = await fetchOpenIssues();
   if (issues === null) {
-    console.log("stop: gh issue list failed (offline or auth error)");
+    console.log("pause: gh issue list failed (offline or auth error)");
     process.exit(1);
   }
 
   if (issues.length === 0) {
-    console.log("stop: no open issues");
+    console.log("pause: no open issues");
     process.exit(1);
   }
 
@@ -109,7 +142,7 @@ async function main() {
     const breakdown: string[] = [];
     for (const [k, v] of Object.entries(gateCount)) breakdown.push(`${k}=${v}`);
     for (const [k, v] of Object.entries(needsCount)) breakdown.push(`${k}=${v}`);
-    console.log(`stop: all ${issues.length} open issues are gated/needs-* (${breakdown.join(", ")})`);
+    console.log(`pause: all ${issues.length} open issues are gated/needs-* (${breakdown.join(", ")})`);
     process.exit(1);
   }
 
@@ -123,7 +156,7 @@ async function main() {
 
   const planIssueCount = plan.groups.reduce((acc, g) => acc + g.issues.length, 0);
   if (planIssueCount === 0) {
-    console.log(`stop: batch-select returned 0 candidates (open=${issues.length}, actionable=${actionable.length})`);
+    console.log(`pause: batch-select returned 0 candidates (open=${issues.length}, actionable=${actionable.length})`);
     process.exit(1);
   }
 
@@ -137,7 +170,10 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(e => {
-  console.error(`ERROR: ${(e as Error).message}`);
-  process.exit(2);
-});
+// #253: テストから import される場合は main を起動しない
+if (import.meta.main) {
+  main().catch(e => {
+    console.error(`ERROR: ${(e as Error).message}`);
+    process.exit(2);
+  });
+}

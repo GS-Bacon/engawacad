@@ -49,6 +49,9 @@ const POLL_SEC = parseInt(process.env.LOOP_TMUX_POLL_SEC ?? "30", 10);
 export const POLL_SEC_DEFAULT = 30;
 const STUCK_MIN = parseInt(process.env.LOOP_TMUX_STUCK_MIN ?? "45", 10);
 const CLEAR_WAIT_SEC = parseInt(process.env.LOOP_TMUX_CLEAR_WAIT_SEC ?? "8", 10);
+// #253: pause sleep + 連続 pause halt 閾値 (= 構造的詰まりからの自動復帰 + 過剰停止の検知)
+const PAUSE_SLEEP_SEC = parseInt(process.env.LOOP_TMUX_PAUSE_SLEEP_SEC ?? "600", 10);
+const PAUSE_STREAK_HALT = parseInt(process.env.LOOP_TMUX_PAUSE_STREAK_HALT ?? "144", 10);
 const SHOULD_STOP_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-should-stop.ts");
 const NOTIFY_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-notify.ts");
 
@@ -87,7 +90,9 @@ export type WatcherAction =
   | { kind: "wait" }
   | { kind: "init-baseline"; baseline: string }
   | { kind: "send-clear-and-restart" }
-  | { kind: "stop"; reason: string }
+  | { kind: "pause"; reason: string }     // #253: RC=1 sleep+retry (watcher 不死身化)
+  | { kind: "halt"; reason: string }       // #253: RC=2 永遠停止 (Phase 21 等)
+  | { kind: "stop"; reason: string }       // 想定外パスでの停止 (旧 RC=1 と区別)
   | { kind: "stuck"; minutesIdle: number }
   | { kind: "worker-gone" }
   | { kind: "should-stop-error"; rc: number };
@@ -140,12 +145,15 @@ export function decideAction(input: DecideInput): WatcherAction {
   }
 
   if (detectCycleCompleted(input.prevEndedAt, input.currEndedAt)) {
-    // F02: shouldStopRc は厳密検証
-    if (input.shouldStopRc === 1) {
-      return { kind: "stop", reason: "loop-should-stop returned RC=1" };
-    }
+    // #253: RC=0 proceed / RC=1 pause (sleep+retry) / RC=2 halt (exit)
     if (input.shouldStopRc === 0) {
       return { kind: "send-clear-and-restart" };
+    }
+    if (input.shouldStopRc === 1) {
+      return { kind: "pause", reason: "loop-should-stop returned RC=1 (pause)" };
+    }
+    if (input.shouldStopRc === 2) {
+      return { kind: "halt", reason: "loop-should-stop returned RC=2 (halt — UI 期 / kill switch)" };
     }
     return { kind: "should-stop-error", rc: input.shouldStopRc ?? -1 };
   }
@@ -300,7 +308,8 @@ async function runShouldStop(): Promise<number> {
     const err = await new Response(proc.stderr).text();
     await proc.exited;
     const rc = proc.exitCode ?? -1;
-    if (rc !== 0 && rc !== 1) {
+    if (rc !== 0 && rc !== 1 && rc !== 2) {
+      // #253: RC=2 (halt) も正規値。それ以外を error log。
       log(`runShouldStop: RC=${rc} stderr=${err.trim().slice(0, 200)}`);
     }
     return rc;
@@ -505,9 +514,62 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
   // heartbeat で都度リセットする。長尺 cycle (例 15h) でも worker が走り続けている限り stuck
   // 通知は出ない。素の bash プロンプトで真に idle になった場合のみ stuckThresholdMin で発火する。
   let lastActivityAt = Date.now();
+  // #253: watcher 不死身化のための pause mode 状態
+  let inPauseMode = false;
+  let pauseStreak = 0;
 
   // メインループ
   while (true) {
+    // #253: pause mode 中は POLL_SEC ベースの cycle-completed 検知をスキップし、
+    //       PAUSE_SLEEP_SEC ごとに should-stop を独立判定する (= sleep+retry)。
+    //       連続 pause が PAUSE_STREAK_HALT を超えたら halt 昇格して exit する。
+    if (inPauseMode) {
+      log(`pause mode: streak=${pauseStreak}/${PAUSE_STREAK_HALT}, sleeping ${PAUSE_SLEEP_SEC}s before retry`);
+      await sleepMs(PAUSE_SLEEP_SEC * 1000);
+
+      // pane が消えていれば worker-gone 経路で抜ける
+      let workerAlivePauseChk: boolean = true;
+      if (!mockAlive && paneInfo) {
+        const q = await tmuxPaneExists(paneInfo);
+        if (q === false) {
+          try { if (existsSync(PANE_PATH)) unlinkSync(PANE_PATH); } catch {}
+          await notify("loop-tmux-worker-gone", `[STOP] watcher: worker pane '${targetPaneId}' が pause 中に消失`);
+          cleanup("worker-gone during pause");
+          return;
+        }
+        if (q === "unknown") workerAlivePauseChk = true; // tmux 一時障害、ベストエフォートで継続
+      }
+
+      const rc = await runShouldStop();
+      if (rc === 0) {
+        log(`pause exit: should-stop now RC=0 → /clear + /3ailoop で cycle 再開 (streak was ${pauseStreak})`);
+        await notify("loop-tmux-resume", `[RESUME] watcher: pause 解除 (streak=${pauseStreak}) — cycle 再開`);
+        await performRestart(targetPaneId, dryRun);
+        const currEndedAtRetry = extractLastEndedAt(readState());
+        if (currEndedAtRetry) writeLastObserved(currEndedAtRetry);
+        lastActivityAt = Date.now();
+        inPauseMode = false;
+        pauseStreak = 0;
+        continue;
+      }
+      if (rc === 2) {
+        await notify("loop-tmux-halt", `[HALT] watcher: should-stop RC=2 during pause (UI 期 / kill switch)`);
+        cleanup("halt from pause");
+        return;
+      }
+      // RC === 1 or その他 (error 系) は pause 維持。streak inc + halt 昇格判定。
+      pauseStreak++;
+      if (pauseStreak >= PAUSE_STREAK_HALT) {
+        await notify(
+          "loop-tmux-pause-streak",
+          `[HALT] watcher: ${pauseStreak} 連続 pause (>= ${PAUSE_STREAK_HALT} = ${(PAUSE_STREAK_HALT * PAUSE_SLEEP_SEC / 3600).toFixed(1)}h) — exit`,
+        );
+        cleanup(`pause streak ${pauseStreak} >= ${PAUSE_STREAK_HALT}`);
+        return;
+      }
+      continue;
+    }
+
     try {
       let workerAlive: boolean;
       if (mockAlive) {
@@ -595,6 +657,21 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
           break;
         case "stop":
           await notify("loop-tmux-stop", `[STOP] watcher: ${action.reason}`);
+          cleanup(action.reason);
+          return;
+        case "pause":
+          // #253: 不死身化。cycle 完了 + RC=1 → pause mode に入る。
+          //       worker pane は既に cycle 終了で待機しているので、currEndedAt を観測済みにしておく。
+          if (currEndedAt) writeLastObserved(currEndedAt);
+          await notify("loop-tmux-pause", `[PAUSE] watcher: ${action.reason} — sleep+retry mode へ`);
+          log(`entering pause mode: ${action.reason}`);
+          inPauseMode = true;
+          pauseStreak = 1;
+          continue;
+        case "halt":
+          // #253: 永遠停止。Phase 21 (UI 期) 到達 / kill switch ファイル等。
+          if (currEndedAt) writeLastObserved(currEndedAt);
+          await notify("loop-tmux-halt", `[HALT] watcher: ${action.reason}`);
           cleanup(action.reason);
           return;
         case "stuck":
