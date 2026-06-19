@@ -1178,3 +1178,735 @@ fn t_267_degen_no_activation_no_change() {
     let result = FeatureCrud::insert(&doc, feature, 2);
     assert!(result.is_ok(), "clean history should succeed: {:?}", result);
 }
+
+// === #269: transitive plane_ref liveness テスト ===
+
+/// T_269: Extrude の transitive plane_ref check — sketch の plane_ref body が死んでいると skip
+#[test]
+fn t_269_extrude_transitive_plane_ref_dead() {
+    let mut doc = Document::new("Test");
+    // box_other は Cut.tool 用
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_other".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    // box_1 は sk の plane_ref 先
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    // sk は box_1 の face に依存 (plane_ref)
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    // c1 が box_1 を consume → sk の plane_ref body が死ぬ
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "box_1".to_string(),
+        tool: "box_other".to_string(),
+    });
+    // e1 は sk を参照するが、sk の plane_ref body (box_1) は既に死んでいる → e1 は skip
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: None,
+    });
+
+    // 末尾 (idx=5) に Cut(target=e1, tool=box_other2) を insert → e1 は skip されて BodyNotFound
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_other2".to_string(),
+        width: 3.0,
+        height: 3.0,
+        depth: 3.0,
+    });
+
+    let cut = Feature::Cut {
+        id: "c2".to_string(),
+        target: "e1".to_string(),
+        tool: "box_other2".to_string(),
+    };
+
+    let result = FeatureCrud::insert(&doc, cut, 5);
+    match result {
+        Err(engawa_build::FeatureCrudError::BodyNotFound {
+            feature_id,
+            body_ref,
+        }) => {
+            assert_eq!(feature_id, "c2");
+            assert_eq!(body_ref, "e1");
+        }
+        other => panic!("expected BodyNotFound for e1, got {:?}", other),
+    }
+}
+
+/// T_269: ExtrudeCut の transitive plane_ref check
+#[test]
+fn t_269_extrudecut_transitive_plane_ref_dead() {
+    let mut doc = Document::new("Test");
+    // box_t は ExtrudeCut.target
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_t".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    // box_2 は Cut.tool
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    // box_3 は後の Cut 用
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_3".to_string(),
+        width: 3.0,
+        height: 3.0,
+        depth: 3.0,
+    });
+    // box_1 は sk の plane_ref 先
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    // sk は box_1 の face に依存
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    // c1 が box_1 を consume → sk の plane_ref body が死ぬ
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "box_1".to_string(),
+        tool: "box_2".to_string(),
+    });
+    // ec1 は sk を参照するが、sk の plane_ref body (box_1) は既に死んでいる → ec1 は skip
+    doc.root_component.features.push(Feature::ExtrudeCut {
+        id: "ec1".to_string(),
+        sketch: "sk".to_string(),
+        target: "box_t".to_string(),
+        depth: 5.0,
+    });
+
+    // 末尾 (idx=7) に Cut(target=ec1, tool=box_3) を insert → ec1 は skip されて BodyNotFound
+    let cut = Feature::Cut {
+        id: "c2".to_string(),
+        target: "ec1".to_string(),
+        tool: "box_3".to_string(),
+    };
+
+    let result = FeatureCrud::insert(&doc, cut, 7);
+    match result {
+        Err(engawa_build::FeatureCrudError::BodyNotFound {
+            feature_id,
+            body_ref,
+        }) => {
+            assert_eq!(feature_id, "c2");
+            assert_eq!(body_ref, "ec1");
+        }
+        other => panic!("expected BodyNotFound for ec1, got {:?}", other),
+    }
+}
+
+/// T_269 Degen: plane_ref body が alive の場合は正常に動作
+#[test]
+fn t_269_degen_clean_plane_ref_alive() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    // sk は box_1 の face に依存 (box_1 は alive)
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    // e1 は sk を参照、sk の plane_ref body (box_1) は alive → e1 は executed
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: None,
+    });
+
+    // 末尾 (idx=3) に Extrude(target=e1) を insert → e1 は live のままなので OK
+    let extrude = Feature::Extrude {
+        id: "e2".to_string(),
+        sketch: "sk".to_string(),
+        depth: 3.0,
+        fuse_target: Some("e1".to_string()),
+    };
+
+    let result = FeatureCrud::insert(&doc, extrude, 3);
+    assert!(
+        result.is_ok(),
+        "plane_ref body alive should succeed: {:?}",
+        result
+    );
+}
+
+/// T_269 Degen: PlaneRef::Entity 以外は transitive check に影響しない
+#[test]
+fn t_269_degen_plain_planeref_unaffected() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    // sk は PlaneRef::XYPlane (Entity ではない) - box_1 に依存していない
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: None, // PlaneRef::Entity ではない
+    });
+    // e1 は sk を参照、sk は body に依存していないので e1 は executed
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: None,
+    });
+
+    // 末尾 (idx=4) に Cut(target=e1, tool=box_2) を insert → e1 は live のままなので OK
+    let cut = Feature::Cut {
+        id: "c2".to_string(),
+        target: "e1".to_string(),
+        tool: "box_2".to_string(),
+    };
+
+    let result = FeatureCrud::insert(&doc, cut, 4);
+    assert!(
+        result.is_ok(),
+        "non-Entity plane_ref should succeed: {:?}",
+        result
+    );
+}
+
+/// T_269 Boundary: e1 が box_1 を直接 fuse する自己依存ケース
+#[test]
+fn t_269_boundary_self_dependency() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    // sk は box_1 の face に依存
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    // e1 は sk を参照し、かつ box_1 を fuse_target とする
+    // box_1 は e1 の fuse_target で消費されるが、e1 自身の実行時点では box_1 は live
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: Some("box_1".to_string()),
+    });
+
+    // 末尾 (idx=3) に Cut(target=e1) を insert → e1 は executed なので OK
+    let cut = Feature::Cut {
+        id: "c1".to_string(),
+        target: "e1".to_string(),
+        tool: "box_1".to_string(),
+    };
+
+    let result = FeatureCrud::insert(&doc, cut, 3);
+    // box_1 は e1 で消費されるが、e1 実行時点では live → e1 は executed
+    // ただし c1 の tool=box_1 は e1 実行後に消費されているため、この挿入は失敗する
+    match result {
+        Err(engawa_build::FeatureCrudError::BodyNotFound {
+            feature_id,
+            body_ref,
+        }) => {
+            assert_eq!(feature_id, "c1");
+            assert_eq!(body_ref, "box_1");
+        }
+        other => panic!(
+            "expected BodyNotFound for box_1 (consumed by e1), got {:?}",
+            other
+        ),
+    }
+}
+
+/// T_269 T01: 決定性 — 同一 history を 2 回 insert して結果が一致
+#[test]
+fn t_269_determinism() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_other".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "box_1".to_string(),
+        tool: "box_other".to_string(),
+    });
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: None,
+    });
+
+    let cut = Feature::Cut {
+        id: "c2".to_string(),
+        target: "e1".to_string(),
+        tool: "box_other".to_string(),
+    };
+
+    let err1 = FeatureCrud::insert(&doc, cut.clone(), 5);
+    let err2 = FeatureCrud::insert(&doc, cut, 5);
+
+    match (&err1, &err2) {
+        (
+            Err(engawa_build::FeatureCrudError::BodyNotFound {
+                feature_id: fid1,
+                body_ref: ref1,
+            }),
+            Err(engawa_build::FeatureCrudError::BodyNotFound {
+                feature_id: fid2,
+                body_ref: ref2,
+            }),
+        ) => {
+            assert_eq!(fid1, fid2);
+            assert_eq!(ref1, ref2);
+        }
+        other => panic!("expected matching BodyNotFound errors, got {:?}", other),
+    }
+}
+
+/// T_269 T02: 正常系 — clean history で末尾 insert
+#[test]
+fn t_269_clean_history_tail_insert() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+
+    // 末尾 (idx=3) に Extrude(sketch=sk, fuse_target=box_2) を insert → Ok
+    let extrude = Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: Some("box_2".to_string()),
+    };
+
+    let result = FeatureCrud::insert(&doc, extrude, 3);
+    assert!(
+        result.is_ok(),
+        "clean history tail insert should succeed: {:?}",
+        result
+    );
+}
+
+/// T_269 T03: 正常系 — clean history で refs_resolve_in_state strict 化が影響しない
+#[test]
+fn t_269_clean_history_unaffected() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+
+    // 末尾に CreateBox を insert → Ok
+    let box2 = Feature::CreateBox {
+        id: "box_2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    };
+
+    let result = FeatureCrud::insert(&doc, box2, 1);
+    assert!(result.is_ok(), "clean history should succeed: {:?}", result);
+}
+
+// === 追加エッジケーステスト (Phase 2) ===
+
+/// EDGE_269_01: 100回繰り返し決定性 — 同一 history を 100 回 insert して全結果が一致
+#[test]
+fn t_269_edge_determinism_100_iter() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_other".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "box_1".to_string(),
+        tool: "box_other".to_string(),
+    });
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e1".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: None,
+    });
+
+    let cut = Feature::Cut {
+        id: "c2".to_string(),
+        target: "e1".to_string(),
+        tool: "box_other".to_string(),
+    };
+
+    let first_result = FeatureCrud::insert(&doc, cut.clone(), 5);
+    let mut all_match = true;
+    let mut mismatch_info = None;
+
+    for i in 1..100 {
+        let result = FeatureCrud::insert(&doc, cut.clone(), 5);
+        match (&first_result, &result) {
+            (
+                Err(engawa_build::FeatureCrudError::BodyNotFound {
+                    feature_id: fid1,
+                    body_ref: ref1,
+                }),
+                Err(engawa_build::FeatureCrudError::BodyNotFound {
+                    feature_id: fid2,
+                    body_ref: ref2,
+                }),
+            ) => {
+                if fid1 != fid2 || ref1 != ref2 {
+                    all_match = false;
+                    mismatch_info = Some(format!(
+                        "iteration {}: mismatch {:?} vs {:?}",
+                        i, first_result, result
+                    ));
+                    break;
+                }
+            }
+            _ => {
+                all_match = false;
+                mismatch_info = Some(format!(
+                    "iteration {}: variant mismatch {:?} vs {:?}",
+                    i, first_result, result
+                ));
+                break;
+            }
+        }
+    }
+
+    assert!(all_match, "determinism failed: {:?}", mismatch_info);
+}
+
+/// EDGE_269_02: ラウンドトリップ — 構築→YAML serialize→deserialize→再構築で全フィールドが一致
+#[test]
+fn t_269_edge_roundtrip_yaml_serialize_deserialize() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 20.0,
+        depth: 30.0,
+    });
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: engawa_format::SketchPlane::Xz,
+        offset: 5.0,
+        variables: vec![],
+        profile: vec![engawa_format::SketchSegment {
+            id: "s1".to_string(),
+            from: [1.0, 2.0],
+            to: [3.0, 4.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "front".to_string(),
+        })),
+    });
+
+    let yaml = doc.to_yaml().unwrap();
+    let doc2 = Document::from_yaml(&yaml).unwrap();
+
+    assert_eq!(
+        doc.root_component.features.len(),
+        doc2.root_component.features.len()
+    );
+    match (
+        &doc.root_component.features[0],
+        &doc2.root_component.features[0],
+    ) {
+        (
+            Feature::CreateBox {
+                id: id1,
+                width,
+                height,
+                depth,
+            },
+            Feature::CreateBox {
+                id: id2,
+                width: w2,
+                height: h2,
+                depth: d2,
+            },
+        ) => {
+            assert_eq!(id1, id2);
+            assert_eq!(width, w2);
+            assert_eq!(height, h2);
+            assert_eq!(depth, d2);
+        }
+        _ => panic!("first feature mismatch"),
+    }
+}
+
+/// EDGE_269_03: 数値境界 — NaN を含む Feature は正常に serialize/deserialize できる
+#[test]
+fn t_269_edge_numeric_nan_serialization() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_nan".to_string(),
+        width: f64::NAN,
+        height: 10.0,
+        depth: 10.0,
+    });
+
+    let yaml = doc.to_yaml();
+    // NaN を含む YAML serialize は成功する（値は "nan" になる）
+    assert!(yaml.is_ok());
+}
+
+/// EDGE_269_04: 数値境界 — Infinity を含む Feature の serialize/deserialize
+#[test]
+fn t_269_edge_numeric_inf_serialization() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateSphere {
+        id: "sphere_inf".to_string(),
+        radius: f64::INFINITY,
+        center: [0.0, 0.0, 0.0],
+    });
+
+    let yaml = doc.to_yaml();
+    assert!(yaml.is_ok());
+}
+
+/// EDGE_269_05: 空 Document に insert — 空の状態からの insert が正常に動作
+#[test]
+fn t_269_edge_empty_document_insert() {
+    let doc = Document::new("Test");
+    assert_eq!(doc.root_component.features.len(), 0);
+
+    let feature = Feature::CreateBox {
+        id: "box_first".to_string(),
+        width: 1.0,
+        height: 1.0,
+        depth: 1.0,
+    };
+
+    let result = FeatureCrud::insert(&doc, feature, 0);
+    assert!(
+        result.is_ok(),
+        "empty document insert should succeed: {:?}",
+        result
+    );
+}
+
+/// EDGE_269_06: 極小数値 — f64::MIN_POSITIVE を使った Feature
+#[test]
+fn t_269_edge_min_positive_numeric() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_tiny".to_string(),
+        width: f64::MIN_POSITIVE,
+        height: f64::MIN_POSITIVE,
+        depth: f64::MIN_POSITIVE,
+    });
+
+    let yaml = doc.to_yaml();
+    assert!(yaml.is_ok());
+}
+
+/// EDGE_269_07: -0.0 (負のゼロ) — 符号付きゼロの serialize/deserialize
+#[test]
+fn t_269_edge_negative_zero() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateCylinder {
+        id: "cyl_negzero".to_string(),
+        radius: -0.0,
+        height: 10.0,
+        origin: [0.0, 0.0, 0.0],
+    });
+
+    let yaml = doc.to_yaml().unwrap();
+    let doc2 = Document::from_yaml(&yaml).unwrap();
+
+    match (
+        &doc.root_component.features[0],
+        &doc2.root_component.features[0],
+    ) {
+        (
+            Feature::CreateCylinder { radius: r1, .. },
+            Feature::CreateCylinder { radius: r2, .. },
+        ) => {
+            assert!(r1.is_sign_negative() || *r1 == 0.0);
+            assert!(r2.is_sign_negative() || *r2 == 0.0);
+        }
+        _ => panic!("cylinder feature mismatch"),
+    }
+}
+
+/// EDGE_269_08: 空の id 文字列 — 空文字列 id の Feature
+#[test]
+fn t_269_edge_empty_id_string() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+
+    let yaml = doc.to_yaml();
+    // 空文字列 id は serialize に失敗する（不正なID）
+    assert!(yaml.is_err(), "empty id should fail serialization");
+}

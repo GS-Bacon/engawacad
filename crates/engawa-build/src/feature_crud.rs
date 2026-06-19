@@ -157,9 +157,18 @@ fn feature_consumes(f: &Feature) -> Vec<&str> {
 /// inputs are not consumed and its output is not registered (atomic skip).
 fn refs_resolve_in_state(
     f: &Feature,
+    features: &[Feature],
     sketches_at: &HashMap<String, usize>,
     live_bodies_at: &HashMap<String, usize>,
 ) -> bool {
+    // 全 variant 共通の transitive implicit body refs check:
+    // Extrude/ExtrudeCut が参照する CreateSketch.plane_ref body が live でなければ skip
+    for implicit_ref in feature_transitive_implicit_body_refs(f, features) {
+        if !live_bodies_at.contains_key(&implicit_ref) {
+            return false;
+        }
+    }
+
     match f {
         Feature::Extrude {
             sketch,
@@ -179,18 +188,8 @@ fn refs_resolve_in_state(
         | Feature::Intersect { target, tool, .. } => {
             live_bodies_at.contains_key(target) && live_bodies_at.contains_key(tool)
         }
-        Feature::CreateSketch { plane_ref, .. } => {
-            if let Some(PlaneRef::Entity(eref)) = plane_ref {
-                // Check implicit body refs via EntityRef traversal
-                for named_id in collect_named_feature_ids(eref) {
-                    if !live_bodies_at.contains_key(&named_id) {
-                        return false;
-                    }
-                }
-            }
-            true
-        }
-        // CreateBox/Cylinder/Sphere have no refs
+        // CreateSketch の直接 plane_ref も上の transitive ループでカバーされる
+        // (feature_implicit_body_refs が CreateSketch 自身の plane_ref を返す)
         _ => true,
     }
 }
@@ -230,7 +229,7 @@ fn simulate_history(
 
         match f {
             Feature::CreateSketch { id, .. } => {
-                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
                 sketches_at.entry(id.clone()).or_insert(i);
@@ -245,7 +244,7 @@ fn simulate_history(
             Feature::Extrude {
                 id, fuse_target, ..
             } => {
-                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     // Broken ref in prefix — atomic skip: no consume, no register.
                     continue;
                 }
@@ -256,7 +255,7 @@ fn simulate_history(
                 executed_at.insert(i);
             }
             Feature::ExtrudeCut { id, target, .. } => {
-                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
                 live_bodies_at.remove(target);
@@ -266,7 +265,7 @@ fn simulate_history(
             Feature::Cut {
                 id, target, tool, ..
             } => {
-                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
                 live_bodies_at.remove(target);
@@ -277,7 +276,7 @@ fn simulate_history(
             Feature::Fuse {
                 id, target, tool, ..
             } => {
-                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
                 live_bodies_at.remove(target);
@@ -288,7 +287,7 @@ fn simulate_history(
             Feature::Intersect {
                 id, target, tool, ..
             } => {
-                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
                 live_bodies_at.remove(target);
