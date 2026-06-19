@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "既存 Feature への副作用 > #256 依存"
+    finding: "Plan は `FeatureCrudError::UnknownFeatureId` を「#256 で追加済み、再利用」と記載しているが、#256 が確定済みか前提検証が必要。#256 が未完了の場合、本 Issue は unknown_id エラー表現を自前で定義する必要がある。"
+    suggestion: "#256 の完了状態を確認し、未完了なら `FeatureCrudError::UnknownFeatureId` を本 Issue で追加する scope に含めること。ただし実害は低い (単一 variant 追加のみ)。"
+
+verdict: pass

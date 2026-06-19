@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 897
+    finding: "`rollback` は `truncate(idx)` の後に `Document::validate()` しか掛けておらず、残った prefix の feature 参照整合性を検証していない。`Document::from_path()` は forward ref や missing body を拒否しないため、不正な `.engawa` を `entry rollback` に通すと、surviving prefix が build 不能でも成功として書き戻してしまう。"
+    suggestion: "返却前に surviving prefix 全体を `simulate_history` か既存の参照検証ロジックで再検証し、未解決 ref が残る場合はエラーにする。あわせて「不正 history を rollback したら reject する」退化テストを追加する。"
+
+verdict: pass

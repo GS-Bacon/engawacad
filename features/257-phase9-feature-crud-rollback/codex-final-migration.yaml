@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-cli/tests/257_phase9_entry_rollback_cli.rs"
+    line_hint: 8
+    finding: "CLI の公開面で in-scope とされた `--dry-run` 分岐が未テスト。追加された受け入れテストは `--output` 経路しか検証しておらず、stdout への YAML 出力や入力ファイルを上書きしないことの回帰を捕捉できない。"
+    suggestion: "`t04_cli_rollback_dry_run` を追加し、`engawa entry rollback <input> <feature_id> --dry-run` の stdout が期待 YAML と byte-equal であること、および入力 `.engawa` が未変更であることを確認する。"
+
+verdict: pass

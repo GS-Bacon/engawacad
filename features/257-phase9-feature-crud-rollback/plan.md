@@ -1,0 +1,144 @@
+# Plan: feat(phase9): Feature CRUD Rollback (build + cli) — #257
+
+## 自律判断ログ (intent-check r2 反映 + semantics 確定)
+
+- intent-check r2 で `aligned: yes` 取得済み (Out-of-Scope / Non-Goals 追記後)
+- **rollback semantics の確定** (Issue body の曖昧性を本 plan で解消):
+  - Issue T_BOUNDARY_first_feature「先頭 feature まで rollback → 空 feature 列」を満たすには、`rollback(<id>)` は **<id> を含めて <id> 以降を破棄** (= <id> 自身も削除) という解釈が唯一整合
+  - Issue「ID-stable: rollback 前の feature_id は維持」は「rollback 後に残った feature の id は変わらない」の意味と確定 (削除されない feature の id は不変)
+  - 採用 semantics: `rollback(doc, feature_id) → features[..idx]` (idx 以降を truncate、`<feature_id>` 自身も削除)
+- ADR-014/015/016 (#207/#246/#245) の確定を待たない (#256 と同じ方針)
+- 数値モデル不要 (履歴 Document 純関数変換のみ)
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `FeatureCrud::rollback(&doc, feature_id) -> Result<Document>` build 実装 (`features[..idx]` を保持、`feature_id` 自身も削除) | 他 CRUD op (Edit は #256、Suppress/Reorder/Delete は #258-#260) |
+| `engawa entry rollback <input> <feature_id>` cli サブコマンド (`--output`, `--dry-run` 対応) | ADR-014 / ADR-015 / ADR-016 改訂 (別 Issue で進行中) |
+| `FeatureCrudError::UnknownFeatureId` を rollback でも再利用 (#256 merged commit 8ec1e37 で追加済み、本 Issue 開始時点で利用可能) | `engawa entry rollback` 以外の cli サブコマンド変更 |
+| T01-T05 を build + cli テストで担保 | `### 数値モデル` セクション (本 Issue は数値判断を伴わない) |
+
+## Non-Goals
+
+- Rollback の atomic transaction / undo stack (= 単一 op 粒度に閉じる、複数 rollback の連続 undo は呼び出し側責務)
+- Rollback 後の B-rep 再生成性能最適化 (= Phase 10+ ROADMAP)
+- CLI 名称 `rollback` の最終 ADR-016 整合 (本 Issue では `rollback` を採用、ADR-016 確定後の rename は別 Issue)
+- 削除された feature の id 再利用禁止 (= rollback 後に同 id で再 insert することは禁止しない、呼び出し側責務)
+
+## 実装対象
+
+- 影響クレート / ファイル:
+  - `crates/engawa-build/src/feature_crud.rs` (FeatureCrud::rollback メソッド追加。`UnknownFeatureId` は #256 で追加済み、再利用)
+  - `crates/engawa-cli/src/main.rs` (EntryOp::Rollback variant + run_entry 分岐)
+  - `crates/engawa-build/tests/257_phase9_feature_crud_rollback_acceptance.rs` (新規, T01/T02/T_DEG/T_BOUNDARY)
+  - `crates/engawa-cli/tests/257_phase9_entry_rollback_cli.rs` (新規, T03)
+- 変更する型・関数のシグネチャ:
+  - `FeatureCrud::rollback(doc: &Document, feature_id: &str) -> Result<Document, FeatureCrudError>`
+  - `EntryOp::Rollback { input: PathBuf, feature_id: String, output: Option<PathBuf>, dry_run: bool }`
+
+### 既存関数修正の before / after
+
+#### `impl FeatureCrud` (crates/engawa-build/src/feature_crud.rs)
+
+**before**: `insert` + `edit` の 2 メソッド (#255/#256 既存)
+
+**after**: 上記に `rollback` を追加:
+```rust
+impl FeatureCrud {
+    pub fn insert(/* 既存維持 */) -> Result<Document, FeatureCrudError> { /* 既存 */ }
+    pub fn edit(/* 既存維持 */) -> Result<Document, FeatureCrudError> { /* 既存 */ }
+
+    /// Truncate the feature history at `feature_id`, removing the feature itself
+    /// and all features after it.
+    pub fn rollback(
+        doc: &Document,
+        feature_id: &str,
+    ) -> Result<Document, FeatureCrudError> {
+        let idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        let mut next = doc.clone();
+        next.root_component.features.truncate(idx);
+        next.validate()?;
+        Ok(next)
+    }
+}
+```
+
+#### `EntryOp` enum (crates/engawa-cli/src/main.rs)
+
+**before**: `Add` + `Edit` (#255/#256 既存)
+
+**after**: `Rollback` を追加:
+```rust
+#[derive(Subcommand)]
+enum EntryOp {
+    Add { /* 既存 */ },
+    Edit { /* 既存 */ },
+    /// Truncate the feature history at <feature_id>, removing it and all later features.
+    Rollback {
+        input: PathBuf,
+        /// Feature id to roll back to (this feature and all later ones are removed)
+        feature_id: String,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+```
+
+#### `run_entry` 関数 (同ファイル)
+
+**before**: `match op { EntryOp::Add { .. } => { ... } EntryOp::Edit { .. } => { ... } }`
+
+**after**: `EntryOp::Rollback { .. }` 分岐を追加 (Add/Edit と同型):
+```rust
+EntryOp::Rollback { input, feature_id, output, dry_run } => {
+    let doc = Document::from_path(&input)
+        .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+    let updated = engawa_build::FeatureCrud::rollback(&doc, &feature_id)
+        .map_err(|e| format!("rollback failed: {e}"))?;
+    let yaml = updated.to_yaml()
+        .map_err(|e| format!("failed to serialize document: {e}"))?;
+    if dry_run {
+        print!("{yaml}");
+    } else {
+        let output_path = output.as_ref().unwrap_or(&input);
+        std::fs::write(output_path, yaml)
+            .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+    }
+    Ok(())
+}
+```
+
+## 設計方針
+
+- **決定性**: `Vec::truncate(idx)` は決定的 O(len-idx) 操作。clone も決定的。T01 で byte-equal を assert。
+- **semantic 確定**: `rollback(<id>)` は **`<id>` を含めて以降を破棄**。`<id>` 自身も削除。これにより T_BOUNDARY_first_feature (先頭まで rollback → 空) が成立する。
+- **検証**: 削除は consumer 連鎖を縮める方向 (新規参照を追加しない) なので `check_refs_resolve_before` / `check_no_downstream_break` / `check_self_reference` は不要。最終的に `next.validate()?` で Document schema 整合性のみ確認する。
+- **エラーハンドリング**: `UnknownFeatureId` を rollback でも再利用 (#256 で既に追加済み、新規 variant 不要)。CLI は `to_string()` で stderr に出して exit 1。
+- **derive 規約**: 既存どおり (追加 type なし)。
+- **workspace.dependencies**: 新規依存なし。
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 | 配置 |
+|----|------|------|----------|------|
+| T01 | 決定性 | 同一 (doc, feature_id) を 2 回 `rollback` → 結果 Document の `to_yaml()` byte-equal | `assert_eq!(r1.to_yaml()?, r2.to_yaml()?)` | `crates/engawa-build/tests/257_phase9_feature_crud_rollback_acceptance.rs` |
+| T02 | 正常系 (build) | 3 feature doc `[box_1, sphere_1, cyl_1]` → `rollback("sphere_1")` → 結果 `features == [box_1]` (sphere_1 + cyl_1 削除) | features.len() == 1 / features[0].id() == "box_1" | 同上 |
+| T03 | 正常系 (cli) | 一時 .engawa → `engawa entry rollback <input> sphere_1 --output out.engawa` → out.engawa が box_1 のみ含む | **テスト内で `initial_yaml` を `Document::from_yaml()` で parse → `features.truncate(1)` で truncate → `to_yaml()` を呼んで expected_yaml を組み、`read_to_string(out.engawa)` と byte-equal を assert** (外部 fixture 不要、AM01 r2 受容で具体化) | `crates/engawa-cli/tests/257_phase9_entry_rollback_cli.rs` |
+| T_DEG_unknown_id | 退化 (build) | 空 doc に対して `rollback("box_1")` → `UnknownFeatureId` エラー | `matches!(.., Err(UnknownFeatureId { .. }))` | acceptance.rs |
+| T_BOUNDARY_first_feature | 境界 (build) | 3 feature doc → `rollback("box_1")` (先頭) → 結果 features 列が空 (`len() == 0`) | features.len() == 0 | acceptance.rs |
+
+退化 + 境界ケース ID 2 件 (`T_DEG_unknown_id`, `T_BOUNDARY_first_feature`) で ADR-006 §1 要件を満たす。
+
+## 幾何的不変条件チェックリスト
+
+- N/A (履歴 Document 純関数変換のみ。B-rep 不変条件は build 段階で別途検証される本 Issue 範囲外)

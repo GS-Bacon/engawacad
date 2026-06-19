@@ -1,0 +1,9 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > T03"
+    finding: "T03 の期待結果が「input parse + truncate(idx) で expected を組んで byte-equal」と記述されているが、expected の構築方法が具体的でない（fixture から読むのか、コードで同値 Document を組むのか不明）"
+    suggestion: "「fixtures/rollback/sphere_1_expected.engawa を用意して byte-equal」など、expected データの入手方法を具体的化すること"
+
+verdict: pass
+# T03 は軽微な表現揺れ（コード読めば自明）であり、critical/high の実装判断を阻害するものではない。pass とする
