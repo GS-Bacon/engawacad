@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 487
+    finding: "consumer を 1 件の `last_consumer` に潰してから再登録判定を 1 回だけ行うため、`[consumer_a, re-register(body_id), consumer_b]` の suffix で `consumer_a` が壊れるケースを見逃します。後ろの consumer の前で同 ID が再登録されると `re_registered=true` になり、先行 consumer が未保護でも `FeatureCrud::insert` が `Ok` を返ります。"
+    suggestion: "suffix 全体で 1 件だけ保持せず、consumer ごとにその直前までの再登録有無を評価するか、再登録が出た時点で consumer 探索区間をリセットして最初の未保護 consumer を拒否してください。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 172
+    finding: "`refs_resolve_in_state` が `Extrude` / `ExtrudeCut` の direct ref しか見ないため、`sketch.plane_ref` の body が既に dead な pre-existing history でも `e1` / `ec1` を executed/live として扱います。#266 で追加した transitive 破損条件が `simulate_history` に反映されず、broken prefix の consumer / producer 判定が誤ります。"
+    suggestion: "simulate_history の実行判定にも sketch 経由の implicit body liveness を組み込み、`executed_at_full` と `live_bodies_at` から transitive に壊れた `Extrude` / `ExtrudeCut` を除外してください。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-build/tests/feature_crud_plane_ref_acceptance.rs"
+    line_hint: 1110
+    finding: "`t14_266_extrudecut_via_sketch_user` は `Cut.tool = box_other` を消費しているため、`ec1` は transitive sketch 依存でなく `ExtrudeCut.target == box_other` の direct consumer としても失敗します。`feature_transitive_implicit_body_refs` が `ExtrudeCut` で壊れていてもこのテストは通るので、plan.md の T14 を実際には検証していません。"
+    suggestion: "`tool` 用の別 body を用意して `ec1.target` と切り離し、`ec1` が sketch 経由の transitive ref でのみ hit する fixture にしてください。"
+
+verdict: fail

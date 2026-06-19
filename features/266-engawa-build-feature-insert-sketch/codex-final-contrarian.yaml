@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 487
+    finding: "downstream consumer を『最後に hit した 1 件』へ畳み込む変更で、#265 が扱う broken-prefix history の defensive semantics を壊しています。skip された feature の後で同 id を再登録する history では、先に壊れる consumer がいても、後ろの consumer の手前に再登録があれば `re_registered=true` になってしまい、本来ここで返すべき `InsertBeforeConsumer` を見落として後段の generic `Validation` に崩れます。"
+    suggestion: "transitive plane_ref 追跡だけを残し、consumer 判定は各 hit ごとにその consumer 手前までの re-register を評価する元の形に戻してください。あわせて `feature_crud_prefix_validate_acceptance.rs` に『early consumer + later valid re-register』の回帰テストを追加してください."
+
+verdict: fail

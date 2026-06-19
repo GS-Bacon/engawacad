@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 487
+    finding: "downstream consumer を 1 件の \"last consumer\" に畳み込んだため、先に壊れる consumer が後続の同 id 再登録で隠れてしまいます。`check_no_downstream_break` は最後の consumer 手前だけを見て `re_registered=true` を立てるので、broken-prefix 系 history では本来返すべき `InsertBeforeConsumer` を見落とし、typed error ではなく後段の `Validation` に崩れます。"
+    suggestion: "transitive `plane_ref` 追跡は維持しつつ、consumer ごとにその consumer 手前までの再登録有無を評価してください。少なくとも最初に未カバーの consumer を返す形に戻し、`feature_crud_prefix_validate_acceptance.rs` に early consumer と later valid re-register を併せた回帰テストを追加してください."
+
+verdict: fail

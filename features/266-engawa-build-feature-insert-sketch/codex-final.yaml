@@ -1,0 +1,36 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 487
+    finding: "downstream consumer を 1 件の \"last consumer\" に畳み込んだため、先に壊れる consumer が後続の同 id 再登録で隠れてしまいます。`check_no_downstream_break` は最後の consumer 手前だけを見て `re_registered=true` を立てるので、broken-prefix 系 history では本来返すべき `InsertBeforeConsumer` を見落とし、typed error ではなく後段の `Validation` に崩れます。"
+    suggestion: "transitive `plane_ref` 追跡は維持しつつ、consumer ごとにその consumer 手前までの再登録有無を評価してください。少なくとも最初に未カバーの consumer を返す形に戻し、`feature_crud_prefix_validate_acceptance.rs` に early consumer と later valid re-register を併せた回帰テストを追加してください."
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 487
+    finding: "downstream consumer を『最後に hit した 1 件』へ畳み込む変更で、#265 が扱う broken-prefix history の defensive semantics を壊しています。skip された feature の後で同 id を再登録する history では、先に壊れる consumer がいても、後ろの consumer の手前に再登録があれば `re_registered=true` になってしまい、本来ここで返すべき `InsertBeforeConsumer` を見落として後段の generic `Validation` に崩れます。"
+    suggestion: "transitive plane_ref 追跡だけを残し、consumer 判定は各 hit ごとにその consumer 手前までの re-register を評価する元の形に戻してください。あわせて `feature_crud_prefix_validate_acceptance.rs` に『early consumer + later valid re-register』の回帰テストを追加してください."
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 487
+    finding: "consumer を 1 件の `last_consumer` に潰してから再登録判定を 1 回だけ行うため、`[consumer_a, re-register(body_id), consumer_b]` の suffix で `consumer_a` が壊れるケースを見逃します。後ろの consumer の前で同 ID が再登録されると `re_registered=true` になり、先行 consumer が未保護でも `FeatureCrud::insert` が `Ok` を返ります。"
+    suggestion: "suffix 全体で 1 件だけ保持せず、consumer ごとにその直前までの再登録有無を評価するか、再登録が出た時点で consumer 探索区間をリセットして最初の未保護 consumer を拒否してください。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 172
+    finding: "`refs_resolve_in_state` が `Extrude` / `ExtrudeCut` の direct ref しか見ないため、`sketch.plane_ref` の body が既に dead な pre-existing history でも `e1` / `ec1` を executed/live として扱います。#266 で追加した transitive 破損条件が `simulate_history` に反映されず、broken prefix の consumer / producer 判定が誤ります。"
+    suggestion: "simulate_history の実行判定にも sketch 経由の implicit body liveness を組み込み、`executed_at_full` と `live_bodies_at` から transitive に壊れた `Extrude` / `ExtrudeCut` を除外してください。"
+  - id: M-F03
+    severity: medium
+    file: "crates/engawa-build/tests/feature_crud_plane_ref_acceptance.rs"
+    line_hint: 1110
+    finding: "`t14_266_extrudecut_via_sketch_user` は `Cut.tool = box_other` を消費しているため、`ec1` は transitive sketch 依存でなく `ExtrudeCut.target == box_other` の direct consumer としても失敗します。`feature_transitive_implicit_body_refs` が `ExtrudeCut` で壊れていてもこのテストは通るので、plan.md の T14 を実際には検証していません。"
+    suggestion: "`tool` 用の別 body を用意して `ec1.target` と切り離し、`ec1` が sketch 経由の transitive ref でのみ hit する fixture にしてください。"
+
+verdict: fail
+# severity_counts: critical=0, high=4, medium=1, low=0
+# blocking: 4
