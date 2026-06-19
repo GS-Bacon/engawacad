@@ -450,6 +450,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -465,6 +466,7 @@ dependencies = [
  "open",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "tokio",
  "tower",

@@ -1,0 +1,15 @@
+schema_version: 1
+version: 0.1.0
+root_component:
+  name: Test Part
+  features:
+  - type: create_box
+    id: box_1
+    width: 10.0
+    height: 20.0
+    depth: 30.0
+  - type: create_box
+    id: box_2
+    width: 5.0
+    height: 15.0
+    depth: 25.0

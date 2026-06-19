@@ -1,0 +1,5 @@
+type: create_box
+id: box_2
+width: 5.0
+height: 15.0
+depth: 25.0

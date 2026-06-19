@@ -20,6 +20,7 @@ tokio = { workspace = true }
 axum = { workspace = true }
 open = { workspace = true }
 urlencoding = { workspace = true }
+serde_yaml = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

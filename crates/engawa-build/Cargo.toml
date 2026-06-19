@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 engawa-format = { workspace = true }
 engawa-kernel = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 engawa-format = { workspace = true }

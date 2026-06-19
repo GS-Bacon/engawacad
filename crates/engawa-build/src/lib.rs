@@ -1,3 +1,7 @@
+pub mod feature_crud;
+
+pub use feature_crud::{FeatureCrud, FeatureCrudError};
+
 use engawa_format::{Feature, PlaneRef, RefPlane, SketchPlane};
 use engawa_kernel::booleans::boolean;
 use engawa_kernel::brep::topology::{IdGenerator, Solid};

@@ -1,0 +1,6 @@
+# Feature with empty id (invalid)
+type: create_box
+id: ""
+width: 10.0
+height: 20.0
+depth: 30.0
