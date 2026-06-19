@@ -16,6 +16,7 @@ fn fixture_path(name: &str) -> PathBuf {
 fn t01_determinism() {
     let doc = Document::new("Test");
     let feature = Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -55,6 +56,7 @@ fn t_boundary_at_zero() {
     let doc = Document::from_path(&input_path).expect("failed to load input");
 
     let feature: Feature = Feature::CreateSphere {
+        suppressed: false,
         id: "sphere_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
@@ -75,6 +77,7 @@ fn t_boundary_at_end() {
 
     let len = doc.root_component.features.len();
     let feature: Feature = Feature::CreateSphere {
+        suppressed: false,
         id: "sphere_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
@@ -92,6 +95,7 @@ fn t_boundary_at_end_empty_document() {
     let doc = Document::new("Empty");
 
     let feature: Feature = Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -112,6 +116,7 @@ fn t_deg_at_out_of_range() {
 
     let len = doc.root_component.features.len();
     let feature: Feature = Feature::CreateBox {
+        suppressed: false,
         id: "box_2".to_string(),
         width: 5.0,
         height: 15.0,
@@ -136,6 +141,7 @@ fn t_deg_duplicate_id() {
     let doc = Document::from_path(&input_path).expect("failed to load input");
 
     let feature: Feature = Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 5.0,
         height: 15.0,
@@ -157,6 +163,7 @@ fn t_deg_duplicate_id() {
 fn t06_insert_then_to_yaml_roundtrip() {
     let doc = Document::new("RoundtripTest");
     let feature = Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -186,12 +193,14 @@ fn t06_insert_then_to_yaml_roundtrip() {
     match (restored_feat, inserted_feat) {
         (
             Feature::CreateBox {
+                suppressed: _,
                 id: i1,
                 width: w1,
                 height: h1,
                 depth: d1,
             },
             Feature::CreateBox {
+                suppressed: _,
                 id: i2,
                 width: w2,
                 height: h2,

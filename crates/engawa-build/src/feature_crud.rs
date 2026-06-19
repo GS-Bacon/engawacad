@@ -268,22 +268,34 @@ fn simulate_history(
         }
 
         match f {
-            Feature::CreateSketch { id, .. } => {
+            Feature::CreateSketch { id, suppressed, .. } => {
+                if *suppressed {
+                    continue;
+                }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
                 sketches_at.entry(id.clone()).or_insert(i);
                 executed_at.insert(i);
             }
-            Feature::CreateBox { id, .. }
-            | Feature::CreateCylinder { id, .. }
-            | Feature::CreateSphere { id, .. } => {
+            Feature::CreateBox { id, suppressed, .. }
+            | Feature::CreateCylinder { id, suppressed, .. }
+            | Feature::CreateSphere { id, suppressed, .. } => {
+                if *suppressed {
+                    continue;
+                }
                 live_bodies_at.insert(id.clone(), i);
                 executed_at.insert(i);
             }
             Feature::Extrude {
-                id, fuse_target, ..
+                id,
+                suppressed,
+                fuse_target,
+                ..
             } => {
+                if *suppressed {
+                    continue;
+                }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     // Broken ref in prefix — atomic skip: no consume, no register.
                     continue;
@@ -294,7 +306,15 @@ fn simulate_history(
                 live_bodies_at.insert(id.clone(), i);
                 executed_at.insert(i);
             }
-            Feature::ExtrudeCut { id, target, .. } => {
+            Feature::ExtrudeCut {
+                id,
+                suppressed,
+                target,
+                ..
+            } => {
+                if *suppressed {
+                    continue;
+                }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
@@ -303,8 +323,15 @@ fn simulate_history(
                 executed_at.insert(i);
             }
             Feature::Cut {
-                id, target, tool, ..
+                id,
+                suppressed,
+                target,
+                tool,
+                ..
             } => {
+                if *suppressed {
+                    continue;
+                }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
@@ -314,8 +341,15 @@ fn simulate_history(
                 executed_at.insert(i);
             }
             Feature::Fuse {
-                id, target, tool, ..
+                id,
+                suppressed,
+                target,
+                tool,
+                ..
             } => {
+                if *suppressed {
+                    continue;
+                }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
@@ -325,8 +359,15 @@ fn simulate_history(
                 executed_at.insert(i);
             }
             Feature::Intersect {
-                id, target, tool, ..
+                id,
+                suppressed,
+                target,
+                tool,
+                ..
             } => {
+                if *suppressed {
+                    continue;
+                }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
@@ -778,6 +819,23 @@ fn check_edit_preserves_consumers(
     Ok(())
 }
 
+/// Helper: set the `suppressed` field on any Feature variant.
+fn set_feature_suppressed(f: &mut Feature, on: bool) {
+    match f {
+        Feature::CreateBox { suppressed, .. }
+        | Feature::CreateCylinder { suppressed, .. }
+        | Feature::CreateSphere { suppressed, .. }
+        | Feature::CreateSketch { suppressed, .. }
+        | Feature::Extrude { suppressed, .. }
+        | Feature::ExtrudeCut { suppressed, .. }
+        | Feature::Cut { suppressed, .. }
+        | Feature::Fuse { suppressed, .. }
+        | Feature::Intersect { suppressed, .. } => {
+            *suppressed = on;
+        }
+    }
+}
+
 impl FeatureCrud {
     /// Insert `feature` into `doc.root_component.features` at the given `at` index.
     ///
@@ -897,6 +955,48 @@ impl FeatureCrud {
         next.validate()?;
         Ok(next)
     }
+
+    /// Set or clear the `suppressed` flag on the feature identified by `feature_id`.
+    /// `on = true` → suppress, `on = false` → restore.
+    ///
+    /// If the feature is currently being depended on by a downstream consumer
+    /// (i.e. suppress would make a consumer's refs unresolvable), returns
+    /// `FeatureCrudError::EditBreaksConsumer` (= same semantic as edit).
+    ///
+    /// When restoring (`on = false`), the feature's own refs are validated
+    /// against the prefix (excluding the old suppressed instance) to catch
+    /// corrupted references that may have been introduced while suppressed.
+    pub fn suppress(
+        doc: &Document,
+        feature_id: &str,
+        on: bool,
+    ) -> Result<Document, FeatureCrudError> {
+        let idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        // Build new feature with toggled suppressed flag
+        let mut new_feature = doc.root_component.features[idx].clone();
+        set_feature_suppressed(&mut new_feature, on);
+        // Restore path: verify the feature's own refs resolve against the prefix.
+        // This catches cases where a suppressed feature was manually edited to
+        // have broken refs (e.g. sketch ref that no longer exists).
+        if !on {
+            check_self_reference(&new_feature)?;
+            check_refs_resolve_before_for_edit(&new_feature, &doc.root_component.features, idx)?;
+        }
+        // Reuse check_edit_preserves_consumers semantic: pre/post simulate compare
+        // (suppressed=true effectively removes feature from execution; downstream must remain valid)
+        check_edit_preserves_consumers(&new_feature, &doc.root_component.features, idx)?;
+        let mut next = doc.clone();
+        next.root_component.features[idx] = new_feature;
+        next.validate()?;
+        Ok(next)
+    }
 }
 
 #[cfg(test)]
@@ -912,6 +1012,7 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         };
         let result = FeatureCrud::insert(&doc, feature, 0).unwrap();
         assert_eq!(result.root_component.features.len(), 1);
@@ -926,6 +1027,7 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         };
         let result = FeatureCrud::insert(&doc, feature, 1);
         assert!(matches!(
@@ -942,11 +1044,13 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
         let feature = Feature::CreateSphere {
             id: "box_1".to_string(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         };
         let result = FeatureCrud::insert(&doc, feature, 1);
         assert!(matches!(
@@ -963,11 +1067,13 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
         let feature = Feature::CreateSphere {
             id: "sphere_1".to_string(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         };
         let result = FeatureCrud::insert(&doc, feature, 0).unwrap();
         assert_eq!(result.root_component.features.len(), 2);

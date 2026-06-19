@@ -63,6 +63,7 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
         assert!(hook.migrate(1, 2, &mut doc).is_ok());
     }

@@ -31,6 +31,7 @@ fn cuboid_doc(name: &str, id: &str, w: f64, h: f64, d: f64) -> Document {
         width: w,
         height: h,
         depth: d,
+        suppressed: false,
     });
     doc
 }
@@ -42,6 +43,7 @@ fn cylinder_doc(name: &str, id: &str, radius: f64, height: f64) -> Document {
         radius,
         height,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc
 }
@@ -212,6 +214,7 @@ fn t04_nested_transform_composition() {
         width: 1.0,
         height: 1.0,
         depth: 1.0,
+        suppressed: false,
     });
 
     parent.children.push(child);
@@ -265,6 +268,7 @@ fn t05_rotation_boolean_fuse_manifold() {
         width: 2.0,
         height: 2.0,
         depth: 2.0,
+        suppressed: false,
     });
 
     // 2つ目の cuboid (Fuse target)
@@ -273,6 +277,7 @@ fn t05_rotation_boolean_fuse_manifold() {
         width: 2.0,
         height: 2.0,
         depth: 2.0,
+        suppressed: false,
     });
 
     // Fuse
@@ -280,6 +285,7 @@ fn t05_rotation_boolean_fuse_manifold() {
         id: "fused".to_string(),
         target: "box1".to_string(),
         tool: "box2".to_string(),
+        suppressed: false,
     });
 
     // 回転
@@ -448,17 +454,20 @@ fn t10_blocked_rotation_cut_sphere() {
         id: "sphere".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box".to_string(),
         width: 6.0,
         height: 6.0,
         depth: 6.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Cut {
         id: "cut".to_string(),
         target: "sphere".to_string(),
         tool: "box".to_string(),
+        suppressed: false,
     });
     doc.root_component.transform.rotation = [45.0, 30.0, 60.0];
 

@@ -25,12 +25,14 @@ fn test_269_success_path_determinism_byte_equal() {
         width: 10.0,
         height: 10.0,
         depth: 10.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 5.0,
         depth: 5.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -47,6 +49,7 @@ fn test_269_success_path_determinism_byte_equal() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
 
     let extrude = Feature::Extrude {
@@ -54,6 +57,7 @@ fn test_269_success_path_determinism_byte_equal() {
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: Some("box_2".to_string()),
+        suppressed: false,
     };
 
     let doc1 = FeatureCrud::insert(&doc, extrude.clone(), 3).expect("first insert should succeed");
@@ -98,12 +102,14 @@ fn test_269_minimal_transitive_check() {
         width: 10.0,
         height: 10.0,
         depth: 10.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_other".to_string(),
         width: 5.0,
         height: 5.0,
         depth: 5.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -120,18 +126,21 @@ fn test_269_minimal_transitive_check() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     // c1 が box_1 を consume → sk の plane_ref body が dead
     doc.root_component.features.push(Feature::Cut {
         id: "c1".to_string(),
         target: "box_1".to_string(),
         tool: "box_other".to_string(),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     // 末尾に Cut(target=e1) → e1 は transitive plane_ref dead で skip 済 → BodyNotFound
@@ -139,6 +148,7 @@ fn test_269_minimal_transitive_check() {
         id: "c2".to_string(),
         target: "e1".to_string(),
         tool: "box_other".to_string(),
+        suppressed: false,
     };
 
     let err = FeatureCrud::insert(&doc, cut, 5);

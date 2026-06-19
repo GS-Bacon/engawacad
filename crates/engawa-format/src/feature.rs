@@ -281,6 +281,8 @@ pub enum Feature {
         width: f64,
         height: f64,
         depth: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Create a cylinder primitive.
@@ -291,6 +293,8 @@ pub enum Feature {
         height: f64,
         #[serde(default, skip_serializing_if = "is_origin")]
         origin: [f64; 3],
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Create a sphere primitive.
@@ -300,6 +304,8 @@ pub enum Feature {
         radius: f64,
         #[serde(default, skip_serializing_if = "is_origin")]
         center: [f64; 3],
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Create a sketch (2D closed profile on a plane).
@@ -314,6 +320,8 @@ pub enum Feature {
         profile: Vec<SketchSegment>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plane_ref: Option<PlaneRef>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Extrude a sketch profile.
@@ -324,6 +332,8 @@ pub enum Feature {
         depth: f64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fuse_target: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Extrude a sketch profile and cut (boolean subtract) it from a target body.
@@ -333,6 +343,8 @@ pub enum Feature {
         sketch: String,
         depth: f64,
         target: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Cut (boolean subtract) one body from another.
@@ -341,6 +353,8 @@ pub enum Feature {
         id: String,
         target: String,
         tool: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Fuse (boolean union) two bodies.
@@ -349,6 +363,8 @@ pub enum Feature {
         id: String,
         target: String,
         tool: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 
     /// Intersect two bodies.
@@ -357,6 +373,8 @@ pub enum Feature {
         id: String,
         target: String,
         tool: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
     },
 }
 
@@ -383,6 +401,21 @@ impl Feature {
             | Feature::Intersect { id, .. } => id,
         }
     }
+
+    /// Whether this feature is suppressed (inert in history simulation).
+    pub fn is_suppressed(&self) -> bool {
+        match self {
+            Feature::CreateBox { suppressed, .. }
+            | Feature::CreateCylinder { suppressed, .. }
+            | Feature::CreateSphere { suppressed, .. }
+            | Feature::CreateSketch { suppressed, .. }
+            | Feature::Extrude { suppressed, .. }
+            | Feature::ExtrudeCut { suppressed, .. }
+            | Feature::Cut { suppressed, .. }
+            | Feature::Fuse { suppressed, .. }
+            | Feature::Intersect { suppressed, .. } => *suppressed,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -396,6 +429,7 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         };
 
         let yaml = serde_yaml::to_string(&feature).unwrap();
@@ -412,6 +446,7 @@ mod tests {
             id: "sphere_1".to_string(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         };
         let yaml = serde_yaml::to_string(&feature).unwrap();
         // Byte-identical golden for schema drift detection
@@ -469,6 +504,7 @@ mod tests {
                 },
             ],
             plane_ref: None,
+            suppressed: false,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
         assert_eq!(
@@ -489,6 +525,7 @@ mod tests {
             variables: Vec::new(),
             profile: vec![],
             plane_ref: Some(PlaneRef::RefPlane("Front".to_string())),
+            suppressed: false,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
         // legacy string 形式: plane_ref: Front
@@ -513,6 +550,7 @@ mod tests {
                 kind: EntityKind::Face,
                 role: "f_z_pos".to_string(),
             })),
+            suppressed: false,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
         // Entity 形式: map で ref: named, feature_id, kind, role
@@ -534,6 +572,7 @@ mod tests {
             sketch: "sketch_0".to_string(),
             depth: 5.0,
             target: "box_1".to_string(),
+            suppressed: false,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
         assert!(yaml.contains("type: extrude_cut"), "tag missing: {yaml}");

@@ -11,6 +11,7 @@ fn t01_determinism() {
     let features = vec![
         // cuboid を生成
         Feature::CreateBox {
+            suppressed: false,
             id: "box_1".to_string(),
             width: 10.0,
             height: 10.0,
@@ -21,6 +22,7 @@ fn t01_determinism() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -53,6 +55,7 @@ fn t01_determinism() {
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
+            suppressed: false,
             depth: 5.0,
             fuse_target: None,
         },
@@ -137,6 +140,7 @@ fn t02_legacy_string_planeref_backward_compat() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -165,6 +169,7 @@ fn t02_legacy_string_planeref_backward_compat() {
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
+            suppressed: false,
             depth: 8.0,
             fuse_target: None,
         },
@@ -184,6 +189,7 @@ fn t02_legacy_string_planeref_backward_compat() {
 fn t03_plane_ref_entity_extrude() {
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box_1".to_string(),
             width: 10.0,
             height: 10.0,
@@ -193,6 +199,7 @@ fn t03_plane_ref_entity_extrude() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -225,6 +232,7 @@ fn t03_plane_ref_entity_extrude() {
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
+            suppressed: false,
             depth: 5.0,
             fuse_target: None,
         },
@@ -299,6 +307,7 @@ fn t03_plane_ref_entity_extrude() {
 fn t04_plane_ref_entity_extrude_cut() {
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box_target".to_string(),
             width: 10.0,
             height: 10.0,
@@ -308,6 +317,7 @@ fn t04_plane_ref_entity_extrude_cut() {
             id: "sketch_cut".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -340,6 +350,7 @@ fn t04_plane_ref_entity_extrude_cut() {
         Feature::ExtrudeCut {
             id: "cut_1".to_string(),
             sketch: "sketch_cut".to_string(),
+            suppressed: false,
             depth: 5.0,
             target: "box_target".to_string(),
         },
@@ -368,6 +379,7 @@ fn t04_plane_ref_entity_extrude_cut() {
 fn t07_degen_unknown_entity_ref() {
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box_1".to_string(),
             width: 10.0,
             height: 10.0,
@@ -377,6 +389,7 @@ fn t07_degen_unknown_entity_ref() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -409,6 +422,7 @@ fn t07_degen_unknown_entity_ref() {
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
+            suppressed: false,
             depth: 5.0,
             fuse_target: None,
         },
@@ -435,6 +449,7 @@ fn t08_degen_non_planar_face() {
     // これを plane_ref に使うと FaceNotPlanar エラーになる
     let features = vec![
         Feature::CreateCylinder {
+            suppressed: false,
             id: "cyl_1".to_string(),
             radius: 5.0,
             height: 10.0,
@@ -444,6 +459,7 @@ fn t08_degen_non_planar_face() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -476,6 +492,7 @@ fn t08_degen_non_planar_face() {
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
+            suppressed: false,
             depth: 5.0,
             fuse_target: None,
         },
@@ -499,6 +516,7 @@ fn t08_degen_non_planar_face() {
 fn t09_boundary_derived_ref() {
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box_1".to_string(),
             width: 10.0,
             height: 10.0,
@@ -508,6 +526,7 @@ fn t09_boundary_derived_ref() {
             id: "sketch_1".to_string(),
             plane: SketchPlane::Xy,
             offset: 0.0,
+            suppressed: false,
             variables: vec![],
             profile: vec![
                 SketchSegment {
@@ -541,6 +560,7 @@ fn t09_boundary_derived_ref() {
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
+            suppressed: false,
             depth: 5.0,
             fuse_target: None,
         },

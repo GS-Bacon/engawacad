@@ -15,17 +15,20 @@ fn t01_determinism() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSphere {
         id: "sphere_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateCylinder {
         id: "cyl_1".to_string(),
         radius: 3.0,
         height: 15.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
 
     let r1 = FeatureCrud::rollback(&doc, "sphere_1").unwrap();
@@ -43,17 +46,20 @@ fn t02_normal_rollback_middle() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSphere {
         id: "sphere_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateCylinder {
         id: "cyl_1".to_string(),
         radius: 3.0,
         height: 15.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
 
     let result = FeatureCrud::rollback(&doc, "sphere_1").unwrap();
@@ -82,17 +88,20 @@ fn t05_boundary_first_feature() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSphere {
         id: "sphere_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateCylinder {
         id: "cyl_1".to_string(),
         radius: 3.0,
         height: 15.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
 
     let result = FeatureCrud::rollback(&doc, "box_1").unwrap();
@@ -110,17 +119,20 @@ fn t06_rollback_tail() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSphere {
         id: "sphere_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateCylinder {
         id: "cyl_1".to_string(),
         radius: 3.0,
         height: 15.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
 
     let result = FeatureCrud::rollback(&doc, "cyl_1").unwrap();

@@ -19,6 +19,7 @@ fn t03_cli_rollback_normal() {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
     doc.root_component
         .features
@@ -26,6 +27,7 @@ fn t03_cli_rollback_normal() {
             id: "sphere_1".to_string(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         });
     doc.root_component
         .features
@@ -34,6 +36,7 @@ fn t03_cli_rollback_normal() {
             radius: 3.0,
             height: 15.0,
             origin: [0.0, 0.0, 0.0],
+            suppressed: false,
         });
 
     let input_path = tmp_dir.path().join("input.engawa");

@@ -46,12 +46,14 @@ fn t05_offset_zero_no_translate() {
             variables: vec![],
             plane_ref: None,
             profile: rect_profile(),
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_0".into(),
             sketch: "sketch_0".into(),
             depth: 3.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -95,6 +97,7 @@ fn t06_fuse_target_none_independent_body() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch_0".into(),
@@ -103,12 +106,14 @@ fn t06_fuse_target_none_independent_body() {
             variables: vec![],
             plane_ref: None,
             profile: rect_profile(),
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_0".into(),
             sketch: "sketch_0".into(),
             depth: 5.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -137,12 +142,14 @@ fn t07_fuse_target_not_found_returns_error() {
             variables: vec![],
             plane_ref: None,
             profile: rect_profile(),
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_0".into(),
             sketch: "sketch_0".into(),
             depth: 5.0,
             fuse_target: Some("nonexistent_body".into()),
+            suppressed: false,
         },
     ];
 
@@ -192,12 +199,14 @@ fn t04a_extrusion_is_manifold() {
                     to: [-2.0, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_0".into(),
             sketch: "sketch_0".into(),
             depth: 20.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -222,6 +231,7 @@ fn t04b_box_extrude_fuse_via_feature() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch_0".into(),
@@ -251,17 +261,20 @@ fn t04b_box_extrude_fuse_via_feature() {
                     to: [-2.0, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_0".into(),
             sketch: "sketch_0".into(),
             depth: 20.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Fuse {
             id: "fuse_0".into(),
             target: "box_1".into(),
             tool: "extrude_0".into(),
+            suppressed: false,
         },
     ];
 
@@ -284,6 +297,7 @@ fn t04_fuse_target_overlapping_box() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch_0".into(),
@@ -313,12 +327,14 @@ fn t04_fuse_target_overlapping_box() {
                     to: [-2.0, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_0".into(),
             sketch: "sketch_0".into(),
             depth: 20.0,
             fuse_target: Some("box_1".into()),
+            suppressed: false,
         },
     ];
 

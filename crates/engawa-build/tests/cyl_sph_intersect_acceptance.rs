@@ -100,16 +100,19 @@ fn cyl_sph_features() -> Vec<Feature> {
             radius: 3.0,
             height: 20.0,
             origin: [0.0, 0.0, -10.0],
+            suppressed: false,
         },
         Feature::CreateSphere {
             id: "sph1".into(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
         Feature::Intersect {
             id: "result".into(),
             target: "cyl1".into(),
             tool: "sph1".into(),
+            suppressed: false,
         },
     ]
 }
@@ -230,16 +233,19 @@ fn t06_non_coaxial_errors() {
             radius: 3.0,
             height: 20.0,
             origin: [0.0, 0.0, -10.0],
+            suppressed: false,
         },
         Feature::CreateSphere {
             id: "sph1".into(),
             radius: 5.0,
             center: [1.0, 0.0, 0.0], // offset — non-coaxial
+            suppressed: false,
         },
         Feature::Intersect {
             id: "result".into(),
             target: "cyl1".into(),
             tool: "sph1".into(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -259,16 +265,19 @@ fn t07_tangent_no_panic() {
             radius: 3.0,
             height: 20.0,
             origin: [0.0, 0.0, -10.0],
+            suppressed: false,
         },
         Feature::CreateSphere {
             id: "sph1".into(),
             radius: 3.0, // same as cyl radius — tangent
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
         Feature::Intersect {
             id: "result".into(),
             target: "cyl1".into(),
             tool: "sph1".into(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);

@@ -118,12 +118,14 @@ fn t06_plane_ref_priority_over_plane() {
                 },
             ],
             plane_ref: Some(PlaneRef::RefPlane("Front".to_string())), // plane_ref takes priority
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 8.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -175,12 +177,14 @@ fn t07_legacy_plane_offset_still_works() {
                 },
             ],
             plane_ref: None, // no plane_ref
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 8.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -229,12 +233,14 @@ fn t10_degen_unknown_plane_ref() {
                 },
             ],
             plane_ref: Some(PlaneRef::RefPlane("Nonexistent".to_string())),
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 8.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -282,12 +288,14 @@ fn t11_boundary_empty_plane_ref_string() {
                 },
             ],
             plane_ref: Some(PlaneRef::RefPlane("".to_string())),
+            suppressed: false,
         },
         Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 8.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -342,12 +350,14 @@ fn t15_child_component_uses_own_ref_planes() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ex".into(),
             sketch: "sk".into(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
     child.ref_planes = vec![custom_plane];
@@ -419,12 +429,14 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
                         to: [0.0, 0.0],
                     },
                 ],
+                suppressed: false,
             },
             Feature::Extrude {
                 id: "ex".into(),
                 sketch: "sk".into(),
                 depth: 1.0,
                 fuse_target: None,
+                suppressed: false,
             },
         ],
         children: vec![],
@@ -508,12 +520,14 @@ fn t17_degen_grandchild_canonical_fallback() {
                         to: [0.0, 0.0],
                     },
                 ],
+                suppressed: false,
             },
             Feature::Extrude {
                 id: "ex".into(),
                 sketch: "sk".into(),
                 depth: 1.0,
                 fuse_target: None,
+                suppressed: false,
             },
         ],
         children: vec![],
@@ -624,12 +638,14 @@ fn t18_degen_build_layer_refplane_offset_not_finite() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ex".into(),
             sketch: "sk".into(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
     let mut gen = IdGenerator::new(0);

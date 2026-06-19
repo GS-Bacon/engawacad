@@ -105,6 +105,7 @@ fn t_trait_migration_hook_signature() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     assert!(hook.migrate(1, 2, &mut doc).is_ok());
 }

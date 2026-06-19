@@ -13,6 +13,7 @@ fn t01_determinism() {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        suppressed: false,
         variables: vec![],
         profile: vec![
             SketchSegment {
@@ -39,6 +40,7 @@ fn t01_determinism() {
         plane_ref: None,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -47,6 +49,7 @@ fn t01_determinism() {
     let feature = Feature::Extrude {
         id: "extrude_1".to_string(),
         sketch: "sketch_1".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: None,
     };
@@ -68,6 +71,7 @@ fn t02_normal_insert_extrude_after_sketch() {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        suppressed: false,
         variables: vec![],
         profile: vec![SketchSegment {
             id: "s1".to_string(),
@@ -77,6 +81,7 @@ fn t02_normal_insert_extrude_after_sketch() {
         plane_ref: None,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -85,6 +90,7 @@ fn t02_normal_insert_extrude_after_sketch() {
     let feature = Feature::Extrude {
         id: "extrude_1".to_string(),
         sketch: "sketch_1".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: None,
     };
@@ -98,6 +104,7 @@ fn t03_sketch_not_found() {
     let feature = Feature::Extrude {
         id: "extrude_1".to_string(),
         sketch: "unknown".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: None,
     };
@@ -116,6 +123,7 @@ fn t04_body_not_found() {
     let doc = Document::new("Test");
     let feature = Feature::Cut {
         id: "cut_1".to_string(),
+        suppressed: false,
         target: "unknown".to_string(),
         tool: "box_1".to_string(),
     };
@@ -133,12 +141,14 @@ fn t04_body_not_found() {
 fn t05_insert_before_producer() {
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_2".to_string(),
         width: 5.0,
         height: 5.0,
@@ -146,6 +156,7 @@ fn t05_insert_before_producer() {
     });
     let feature = Feature::Cut {
         id: "cut_1".to_string(),
+        suppressed: false,
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
     };
@@ -165,12 +176,14 @@ fn t05_insert_before_producer() {
 fn t06_insert_before_consumer() {
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_2".to_string(),
         width: 5.0,
         height: 5.0,
@@ -178,11 +191,13 @@ fn t06_insert_before_consumer() {
     });
     doc.root_component.features.push(Feature::Cut {
         id: "cut_1".to_string(),
+        suppressed: false,
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
     });
     let feature = Feature::Cut {
         id: "cut_2".to_string(),
+        suppressed: false,
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
     };
@@ -205,6 +220,7 @@ fn t07_degen_self_reference() {
     let doc = Document::new("Test");
     let feature = Feature::Cut {
         id: "cut_self".to_string(),
+        suppressed: false,
         target: "cut_self".to_string(),
         tool: "anything".to_string(),
     };
@@ -222,6 +238,7 @@ fn t07_degen_self_reference() {
 fn t08_boundary_at_zero_no_ref() {
     let doc = Document::new("Test");
     let feature = Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -237,6 +254,7 @@ fn t10_extrude_cut_target_not_found() {
     let feature = Feature::ExtrudeCut {
         id: "ec1".to_string(),
         sketch: "unknown".to_string(),
+        suppressed: false,
         target: "unknown".to_string(),
         depth: 5.0,
     };
@@ -257,6 +275,7 @@ fn t11_extrude_cut_body_not_found() {
         id: "s1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        suppressed: false,
         variables: vec![],
         profile: vec![SketchSegment {
             id: "s1".to_string(),
@@ -268,6 +287,7 @@ fn t11_extrude_cut_body_not_found() {
     let feature = Feature::ExtrudeCut {
         id: "ec1".to_string(),
         sketch: "s1".to_string(),
+        suppressed: false,
         target: "unknown".to_string(),
         depth: 5.0,
     };
@@ -288,6 +308,7 @@ fn t12_extrude_fuse_target_not_found() {
         id: "s1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        suppressed: false,
         variables: vec![],
         profile: vec![SketchSegment {
             id: "s1".to_string(),
@@ -299,6 +320,7 @@ fn t12_extrude_fuse_target_not_found() {
     let feature = Feature::Extrude {
         id: "e1".to_string(),
         sketch: "s1".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: Some("unknown".to_string()),
     };
@@ -316,12 +338,14 @@ fn t12_extrude_fuse_target_not_found() {
 fn t13_fuse_both_refs_ok() {
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "b1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "b2".to_string(),
         width: 5.0,
         height: 5.0,
@@ -329,6 +353,7 @@ fn t13_fuse_both_refs_ok() {
     });
     let feature = Feature::Fuse {
         id: "f1".to_string(),
+        suppressed: false,
         target: "b1".to_string(),
         tool: "b2".to_string(),
     };
@@ -340,12 +365,14 @@ fn t13_fuse_both_refs_ok() {
 fn t14_intersect_ref_consumed() {
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "b1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "b2".to_string(),
         width: 5.0,
         height: 5.0,
@@ -353,11 +380,13 @@ fn t14_intersect_ref_consumed() {
     });
     doc.root_component.features.push(Feature::Cut {
         id: "c1".to_string(),
+        suppressed: false,
         target: "b1".to_string(),
         tool: "b2".to_string(),
     });
     let feature = Feature::Intersect {
         id: "i1".to_string(),
+        suppressed: false,
         target: "b1".to_string(),
         tool: "b2".to_string(),
     };
@@ -377,6 +406,7 @@ fn t15_self_reference_sketch() {
     let feature = Feature::Extrude {
         id: "x".to_string(),
         sketch: "x".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: None,
     };
@@ -397,6 +427,7 @@ fn t16_insert_at_tail_full_history() {
         id: "s1".to_string(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        suppressed: false,
         variables: vec![],
         profile: vec![SketchSegment {
             id: "s1".to_string(),
@@ -406,6 +437,7 @@ fn t16_insert_at_tail_full_history() {
         plane_ref: None,
     });
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "b1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -414,11 +446,13 @@ fn t16_insert_at_tail_full_history() {
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "s1".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: None,
     });
     let feature = Feature::Fuse {
         id: "f1".to_string(),
+        suppressed: false,
         target: "b1".to_string(),
         tool: "e1".to_string(),
     };
@@ -432,6 +466,7 @@ fn t17_sketch_back_search_excludes_non_sketch_producer() {
     // sketch 後方探索が CreateBox にマッチしてはならない。
     let mut doc = Document::new("Test");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "s1".to_string(),
         width: 10.0,
         height: 20.0,
@@ -440,6 +475,7 @@ fn t17_sketch_back_search_excludes_non_sketch_producer() {
     let feature = Feature::Extrude {
         id: "extrude_1".to_string(),
         sketch: "s1".to_string(),
+        suppressed: false,
         depth: 5.0,
         fuse_target: None,
     };

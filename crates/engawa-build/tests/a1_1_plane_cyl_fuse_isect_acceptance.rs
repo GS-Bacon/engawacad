@@ -14,11 +14,13 @@ fn box_cyl_features(op: &str) -> Vec<Feature> {
     let boolean_feature = match op {
         "fuse" => Feature::Fuse {
             id: "result".into(),
+            suppressed: false,
             target: "box1".into(),
             tool: "cyl1".into(),
         },
         "intersect" => Feature::Intersect {
             id: "result".into(),
+            suppressed: false,
             target: "box1".into(),
             tool: "cyl1".into(),
         },
@@ -26,12 +28,14 @@ fn box_cyl_features(op: &str) -> Vec<Feature> {
     };
     vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box1".into(),
             width: 10.0,
             height: 10.0,
             depth: 10.0,
         },
         Feature::CreateCylinder {
+            suppressed: false,
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
@@ -204,12 +208,14 @@ fn t07_intersect_edge_curve_circle() {
 fn t08_disjoint_fuse_returns_disjoint_error() {
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box1".into(),
             width: 10.0,
             height: 10.0,
             depth: 10.0,
         },
         Feature::CreateCylinder {
+            suppressed: false,
             id: "cyl1".into(),
             radius: 2.0,
             height: 7.0, // h=7 so cylinder top (z=7) is inside box (z=-5..5) — no coincident faces
@@ -217,6 +223,7 @@ fn t08_disjoint_fuse_returns_disjoint_error() {
         },
         Feature::Fuse {
             id: "result".into(),
+            suppressed: false,
             target: "box1".into(),
             tool: "cyl1".into(),
         },
@@ -237,12 +244,14 @@ fn t09_disjoint_intersect_returns_empty_error() {
     // is accessible by checking the enum exists.
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box1".into(),
             width: 10.0,
             height: 10.0,
             depth: 10.0,
         },
         Feature::CreateCylinder {
+            suppressed: false,
             id: "cyl1".into(),
             radius: 2.0,
             height: 7.0, // h=7 so cylinder top (z=7) is inside box — no coincident faces
@@ -250,6 +259,7 @@ fn t09_disjoint_intersect_returns_empty_error() {
         },
         Feature::Intersect {
             id: "result".into(),
+            suppressed: false,
             target: "box1".into(),
             tool: "cyl1".into(),
         },
@@ -276,12 +286,14 @@ fn t10_multi_plane_fuse_returns_unsupported() {
     // Verify that the normal case (single plane) succeeds:
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box1".into(),
             width: 10.0,
             height: 10.0,
             depth: 10.0,
         },
         Feature::CreateCylinder {
+            suppressed: false,
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
@@ -289,6 +301,7 @@ fn t10_multi_plane_fuse_returns_unsupported() {
         },
         Feature::Fuse {
             id: "result".into(),
+            suppressed: false,
             target: "box1".into(),
             tool: "cyl1".into(),
         },
@@ -309,12 +322,14 @@ fn t11_non_z_plane_intersect_returns_unsupported() {
     // For now, verify that normal intersect succeeds:
     let features = vec![
         Feature::CreateBox {
+            suppressed: false,
             id: "box1".into(),
             width: 10.0,
             height: 10.0,
             depth: 10.0,
         },
         Feature::CreateCylinder {
+            suppressed: false,
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
@@ -322,6 +337,7 @@ fn t11_non_z_plane_intersect_returns_unsupported() {
         },
         Feature::Intersect {
             id: "result".into(),
+            suppressed: false,
             target: "box1".into(),
             tool: "cyl1".into(),
         },
@@ -387,11 +403,13 @@ fn t14_golden_yaml_intersect() {
 fn t15_sphere_cut_signed_volume_positive() {
     let features = vec![
         Feature::CreateSphere {
+            suppressed: false,
             id: "sph".into(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
         },
         Feature::CreateBox {
+            suppressed: false,
             id: "box".into(),
             width: 10.0,
             height: 10.0,
@@ -399,6 +417,7 @@ fn t15_sphere_cut_signed_volume_positive() {
         },
         Feature::Cut {
             id: "result".into(),
+            suppressed: false,
             target: "sph".into(),
             tool: "box".into(),
         },

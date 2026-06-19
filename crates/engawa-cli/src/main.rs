@@ -87,6 +87,28 @@ enum EntryOp {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Suppress a feature (mark as inert, but keep in history).
+    Suppress {
+        /// Input .engawa file
+        input: PathBuf,
+        /// Feature id to suppress
+        feature_id: String,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Restore a suppressed feature.
+    Restore {
+        /// Input .engawa file
+        input: PathBuf,
+        /// Feature id to restore
+        feature_id: String,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() {
@@ -222,6 +244,50 @@ fn run_entry(op: EntryOp) -> Result<(), String> {
                 .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
             let updated = engawa_build::FeatureCrud::rollback(&doc, &feature_id)
                 .map_err(|e| format!("rollback failed: {e}"))?;
+            let yaml = updated
+                .to_yaml()
+                .map_err(|e| format!("failed to serialize document: {e}"))?;
+            if dry_run {
+                print!("{yaml}");
+            } else {
+                let output_path = output.as_ref().unwrap_or(&input);
+                std::fs::write(output_path, yaml)
+                    .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+            }
+            Ok(())
+        }
+        EntryOp::Suppress {
+            input,
+            feature_id,
+            output,
+            dry_run,
+        } => {
+            let doc = Document::from_path(&input)
+                .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+            let updated = engawa_build::FeatureCrud::suppress(&doc, &feature_id, true)
+                .map_err(|e| format!("suppress failed: {e}"))?;
+            let yaml = updated
+                .to_yaml()
+                .map_err(|e| format!("failed to serialize document: {e}"))?;
+            if dry_run {
+                print!("{yaml}");
+            } else {
+                let output_path = output.as_ref().unwrap_or(&input);
+                std::fs::write(output_path, yaml)
+                    .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+            }
+            Ok(())
+        }
+        EntryOp::Restore {
+            input,
+            feature_id,
+            output,
+            dry_run,
+        } => {
+            let doc = Document::from_path(&input)
+                .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+            let updated = engawa_build::FeatureCrud::suppress(&doc, &feature_id, false)
+                .map_err(|e| format!("restore failed: {e}"))?;
             let yaml = updated
                 .to_yaml()
                 .map_err(|e| format!("failed to serialize document: {e}"))?;

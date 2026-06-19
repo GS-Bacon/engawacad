@@ -122,12 +122,14 @@ fn t02_multi_create_box_cylinder() {
             width: 1.0,
             height: 2.0,
             depth: 3.0,
+            suppressed: false,
         },
         Feature::CreateCylinder {
             id: "cyl1".to_string(),
             radius: 5.0,
             height: 10.0,
             origin: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -261,11 +263,13 @@ fn t04_cut_missing_target() {
             width: 1.0,
             height: 1.0,
             depth: 1.0,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".to_string(),
             target: "missing".to_string(),
             tool: "box1".to_string(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -285,11 +289,13 @@ fn t04_cut_missing_tool() {
             width: 1.0,
             height: 1.0,
             depth: 1.0,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".to_string(),
             target: "box1".to_string(),
             tool: "nonexistent".to_string(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -311,17 +317,20 @@ fn t05_cut_now_supported() {
             width: 1.0,
             height: 1.0,
             depth: 1.0,
+            suppressed: false,
         },
         Feature::CreateBox {
             id: "box2".to_string(),
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".to_string(),
             target: "box1".to_string(),
             tool: "box2".to_string(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -370,12 +379,14 @@ fn t05_fuse_disjoint_boxes() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext1".to_string(),
             sketch: "sketch1".to_string(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch2".to_string(),
@@ -405,17 +416,20 @@ fn t05_fuse_disjoint_boxes() {
                     to: [10.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext2".to_string(),
             sketch: "sketch2".to_string(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Fuse {
             id: "fuse1".to_string(),
             target: "ext1".to_string(),
             tool: "ext2".to_string(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -463,12 +477,14 @@ fn t05_intersect_disjoint_boxes() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext1".to_string(),
             sketch: "sketch1".to_string(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch2".to_string(),
@@ -498,17 +514,20 @@ fn t05_intersect_disjoint_boxes() {
                     to: [10.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext2".to_string(),
             sketch: "sketch2".to_string(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Intersect {
             id: "int1".to_string(),
             target: "ext1".to_string(),
             tool: "ext2".to_string(),
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -534,11 +553,13 @@ fn t06_forward_reference_cut() {
             width: 1.0,
             height: 1.0,
             depth: 1.0,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".to_string(),
             target: "box1".to_string(),
             tool: "later_body".to_string(), // not yet created
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -573,6 +594,7 @@ fn t07_duplicate_feature_id() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch_1".to_string(),
@@ -592,6 +614,7 @@ fn t07_duplicate_feature_id() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -604,7 +627,10 @@ fn t07_duplicate_feature_id() {
     );
 }
 
-// --- T11: Zero bodies (sketch only) → EmptyFeatureList ---
+// --- T11: Zero bodies (sketch only) → empty bodies succeeds (post #258) ---
+//
+// After #258 M-F01 fix, sketch-only (no body producers) returns empty bodies successfully.
+// Previously this would return EmptyFeatureList, but that was incorrect semantics.
 
 #[test]
 fn t11_zero_bodies() {
@@ -627,13 +653,19 @@ fn t11_zero_bodies() {
                 to: [0.0, 0.0],
             },
         ],
+        suppressed: false,
     }];
     let mut g = IdGenerator::new(0);
     let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
-    assert!(matches!(
-        result,
-        Err(engawa_kernel::error::KernelError::EmptyFeatureList)
-    ));
+    // Sketch-only with no body producers → empty bodies (success, not error)
+    assert!(
+        result.is_ok(),
+        "sketch-only should succeed with empty bodies: {:?}",
+        result
+    );
+    let built = result.unwrap();
+    assert!(built.is_empty(), "should have 0 bodies");
+    assert_eq!(built.len(), 0, "len should be 0");
 }
 
 // --- Sketch not found (regression) ---
@@ -646,6 +678,7 @@ fn sketch_not_found() {
         sketch: "nonexistent".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     }];
     let mut g = IdGenerator::new(0);
     let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
@@ -668,6 +701,7 @@ fn forward_reference_prohibited() {
             sketch: "sketch_1".to_string(),
             depth: 5.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sketch_1".to_string(),
@@ -692,6 +726,7 @@ fn forward_reference_prohibited() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
     ];
     let mut g = IdGenerator::new(0);
@@ -732,6 +767,7 @@ fn duplicate_segment_id() {
                 to: [0.0, 0.0],
             },
         ],
+        suppressed: false,
     }];
     let mut g = IdGenerator::new(0);
     let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
@@ -829,12 +865,14 @@ fn t02_fuse_touching_boxes() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext1".into(),
             sketch: "sk1".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk2".into(),
@@ -864,17 +902,20 @@ fn t02_fuse_touching_boxes() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext2".into(),
             sketch: "sk2".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Fuse {
             id: "fuse1".into(),
             target: "ext1".into(),
             tool: "ext2".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("fuse touching should succeed");
@@ -917,17 +958,20 @@ fn t03_fuse_overlapping_boxes() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateBox {
             id: "box_b".into(),
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::Fuse {
             id: "fuse1".into(),
             target: "box_a".into(),
             tool: "box_b".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("fuse overlapping should succeed");
@@ -960,17 +1004,20 @@ fn t04_intersect_overlapping_boxes() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateBox {
             id: "box_b".into(),
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::Intersect {
             id: "int1".into(),
             target: "box_a".into(),
             tool: "box_b".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("intersect overlapping should succeed");
@@ -995,6 +1042,7 @@ fn t06_cut_partial_l_shape() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1024,17 +1072,20 @@ fn t06_cut_partial_l_shape() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("cut partial should succeed");
@@ -1057,17 +1108,20 @@ fn t08_cut_void_shell() {
             width: 4.0,
             height: 4.0,
             depth: 4.0,
+            suppressed: false,
         },
         Feature::CreateBox {
             id: "inner".into(),
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "outer".into(),
             tool: "inner".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("cut void should succeed");
@@ -1119,12 +1173,14 @@ fn t09_intersect_contact_only() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext1".into(),
             sketch: "sk1".into(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk2".into(),
@@ -1154,17 +1210,20 @@ fn t09_intersect_contact_only() {
                     to: [1.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext2".into(),
             sketch: "sk2".into(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Intersect {
             id: "int1".into(),
             target: "ext1".into(),
             tool: "ext2".into(),
+            suppressed: false,
         },
     ];
     let result = build_features(features);
@@ -1197,6 +1256,7 @@ fn t12_boolean_determinism() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1226,17 +1286,20 @@ fn t12_boolean_determinism() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
     let b1 = build_features(features.clone()).expect("build 1");
@@ -1259,6 +1322,7 @@ fn t17_boolean_stl_export() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1288,17 +1352,20 @@ fn t17_boolean_stl_export() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("build");
@@ -1323,6 +1390,7 @@ fn t20_build_live_bodies() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1352,17 +1420,20 @@ fn t20_build_live_bodies() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("build");
@@ -1391,17 +1462,20 @@ fn t21_nonplanar_input_cone_rejected() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateCylinder {
             id: "cyl1".into(),
             radius: 1.0,
             height: 2.0,
             origin: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "box1".into(),
             tool: "cyl1".into(),
+            suppressed: false,
         },
     ];
     let result = build_features(features);
@@ -1453,12 +1527,14 @@ fn t24_disjoint_fuse_boxes() {
                     to: [0.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext1".into(),
             sketch: "sk1".into(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk2".into(),
@@ -1488,17 +1564,20 @@ fn t24_disjoint_fuse_boxes() {
                     to: [10.0, 0.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "ext2".into(),
             sketch: "sk2".into(),
             depth: 1.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Fuse {
             id: "fuse1".into(),
             target: "ext1".into(),
             tool: "ext2".into(),
+            suppressed: false,
         },
     ];
     let result = build_features(features);
@@ -1523,6 +1602,7 @@ fn t18_intersection_edge_names() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1552,17 +1632,20 @@ fn t18_intersection_edge_names() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
     let bodies = build_features(features).expect("cut should succeed");
@@ -1604,6 +1687,7 @@ fn t19_boolean_determinism_with_names() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1633,17 +1717,20 @@ fn t19_boolean_determinism_with_names() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
 
@@ -1674,6 +1761,7 @@ fn t20_intersection_edge_name_golden() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_tool".into(),
@@ -1703,17 +1791,20 @@ fn t20_intersection_edge_name_golden() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::Extrude {
             id: "tool".into(),
             sketch: "sk_tool".into(),
             depth: 2.0,
             fuse_target: None,
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "target".into(),
             tool: "tool".into(),
+            suppressed: false,
         },
     ];
 
@@ -1762,16 +1853,19 @@ fn build_a3_input() -> Vec<engawa_format::Feature> {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSphere {
             id: "sphere".into(),
             radius: 3.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "box".into(),
             tool: "sphere".into(),
+            suppressed: false,
         },
     ]
 }
@@ -1877,17 +1971,20 @@ fn build_a1_input() -> Vec<engawa_format::Feature> {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateCylinder {
             id: "cyl1".into(),
             radius: 2.0,
             height: 6.0,
             origin: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
         Feature::Cut {
             id: "cut1".into(),
             target: "box1".into(),
             tool: "cyl1".into(),
+            suppressed: false,
         },
     ]
 }
@@ -2130,6 +2227,7 @@ fn u01_extrude_cut_determinism() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2159,12 +2257,14 @@ fn u01_extrude_cut_determinism() {
                     to: [-3.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: 3.0,
             target: "box".into(),
+            suppressed: false,
         },
     ];
 
@@ -2192,6 +2292,7 @@ fn u02_extrude_cut_void_shell() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2221,12 +2322,14 @@ fn u02_extrude_cut_void_shell() {
                     to: [-3.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: 3.0, // tool z ∈ [0, 3] — fully inside box z ∈ [-5, 5]
             target: "box".into(),
+            suppressed: false,
         },
     ];
 
@@ -2255,6 +2358,7 @@ fn u05_extrude_cut_degen_depth() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2284,12 +2388,14 @@ fn u05_extrude_cut_degen_depth() {
                     to: [-3.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: 0.0,
             target: "box".into(),
+            suppressed: false,
         },
     ];
     let result = build_features(features_depth_zero);
@@ -2307,6 +2413,7 @@ fn u05_extrude_cut_degen_depth() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2336,12 +2443,14 @@ fn u05_extrude_cut_degen_depth() {
                     to: [-3.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: -1.0,
             target: "box".into(),
+            suppressed: false,
         },
     ];
     let result = build_features(features_depth_neg);
@@ -2364,6 +2473,7 @@ fn u06a_extrude_cut_missing_target() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2393,12 +2503,14 @@ fn u06a_extrude_cut_missing_target() {
                     to: [-3.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: 3.0,
             target: "nonexistent".into(),
+            suppressed: false,
         },
     ];
     let result = build_features(features);
@@ -2430,6 +2542,7 @@ fn u06b_extrude_cut_nonintersecting() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2459,12 +2572,14 @@ fn u06b_extrude_cut_nonintersecting() {
                     to: [100.0, 100.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: 5.0,
             target: "box".into(),
+            suppressed: false,
         },
     ];
 
@@ -2474,6 +2589,7 @@ fn u06b_extrude_cut_nonintersecting() {
         width: 10.0,
         height: 10.0,
         depth: 10.0,
+        suppressed: false,
     }];
 
     let result = build_features(features);
@@ -2542,6 +2658,7 @@ fn u03_extrude_cut_partial_l() {
             width: 2.0,
             height: 2.0,
             depth: 2.0,
+            suppressed: false,
         },
         Feature::CreateSketch {
             id: "sk_cut".into(),
@@ -2571,12 +2688,14 @@ fn u03_extrude_cut_partial_l() {
                     to: [0.5, -2.0],
                 },
             ],
+            suppressed: false,
         },
         Feature::ExtrudeCut {
             id: "cut1".into(),
             sketch: "sk_cut".into(),
             depth: 2.0,
             target: "target".into(),
+            suppressed: false,
         },
     ];
 
@@ -2617,6 +2736,7 @@ fn t01_positive_extrude_centroid() {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         },
         // Sketch on yz plane at X=+5 (right face)
         Feature::CreateSketch {
@@ -2647,6 +2767,7 @@ fn t01_positive_extrude_centroid() {
                     to: [-2.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         // Extrude 3 units outward (expected: +X direction, body X ∈ [5, 8])
         Feature::Extrude {
@@ -2654,6 +2775,7 @@ fn t01_positive_extrude_centroid() {
             sketch: "sk_pos".into(),
             depth: 3.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -2687,6 +2809,7 @@ fn t02_reg_negative_extrude_centroid() {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         },
         // Sketch on yz plane at X=-5 (left face, negative offset)
         Feature::CreateSketch {
@@ -2717,6 +2840,7 @@ fn t02_reg_negative_extrude_centroid() {
                     to: [-2.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         // Extrude 3 units outward from left face (expected: -X direction, body X ∈ [-8, -5])
         Feature::Extrude {
@@ -2724,6 +2848,7 @@ fn t02_reg_negative_extrude_centroid() {
             sketch: "sk_neg".into(),
             depth: -3.0,
             fuse_target: None,
+            suppressed: false,
         },
     ];
 
@@ -2763,6 +2888,7 @@ fn t04_negative_extrude_fuse_integration() {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         },
         // Sketch on yz plane at X=-3 (inside box)
         Feature::CreateSketch {
@@ -2793,6 +2919,7 @@ fn t04_negative_extrude_fuse_integration() {
                     to: [-2.0, -3.0],
                 },
             ],
+            suppressed: false,
         },
         // Extrude with negative depth via fuse_target path
         Feature::Extrude {
@@ -2800,6 +2927,7 @@ fn t04_negative_extrude_fuse_integration() {
             sketch: "sk_neg".into(),
             depth: -4.0,
             fuse_target: Some("box_1".into()),
+            suppressed: false,
         },
     ];
 

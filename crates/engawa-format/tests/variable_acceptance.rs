@@ -199,6 +199,7 @@ fn t09_yaml_roundtrip() {
         id: "sketch_1".into(),
         plane: SketchPlane::Xy,
         offset: 0.0,
+        suppressed: false,
         variables: vec![Variable {
             name: "w_local".into(),
             expr: "${width} + 5".into(),
@@ -218,7 +219,11 @@ fn t09_yaml_roundtrip() {
 
     // Sketch.variables も byte-identical roundtrip
     match &doc2.root_component.features[0] {
-        Feature::CreateSketch { variables, .. } => {
+        Feature::CreateSketch {
+            suppressed: _,
+            variables,
+            ..
+        } => {
             assert_eq!(variables.len(), 1);
             assert_eq!(variables[0].name, "w_local");
             assert_eq!(variables[0].expr, "${width} + 5");
@@ -455,7 +460,11 @@ root_component:
 ";
     let doc = Document::from_yaml(yaml).expect("legacy sketch YAML must parse");
     match &doc.root_component.features[0] {
-        Feature::CreateSketch { variables, .. } => {
+        Feature::CreateSketch {
+            suppressed: _,
+            variables,
+            ..
+        } => {
             assert!(variables.is_empty());
         }
         _ => panic!("expected CreateSketch"),

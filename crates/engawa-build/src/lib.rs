@@ -96,8 +96,20 @@ pub fn build_bodies_from_features(
     ref_planes: &[RefPlane],
     gen: &mut IdGenerator,
 ) -> Result<BuiltBodies, KernelError> {
+    // Filter out suppressed features. All-suppressed is a valid state (returns empty bodies).
+    let active_features: Vec<_> = features
+        .iter()
+        .filter(|f| !f.is_suppressed())
+        .cloned()
+        .collect();
+
+    // Only error if there are no features at all (caller error).
     if features.is_empty() {
         return Err(KernelError::EmptyFeatureList);
+    }
+    if active_features.is_empty() {
+        // All features are suppressed — return empty bodies.
+        return Ok(BuiltBodies::default());
     }
 
     /// Sketch entry with optional ref_plane reference.
@@ -190,6 +202,9 @@ pub fn build_bodies_from_features(
     }
 
     for feature in features {
+        if feature.is_suppressed() {
+            continue;
+        }
         let id = feature.id();
         if !seen_ids.contains_key(id) {
             seen_ids.insert(id, ());
@@ -206,6 +221,7 @@ pub fn build_bodies_from_features(
                 variables: _,
                 profile,
                 plane_ref,
+                suppressed: _,
             } => {
                 validate_sketch_segment_ids(profile)?;
                 validate_profile_closed(profile)?;
@@ -229,6 +245,7 @@ pub fn build_bodies_from_features(
                 sketch,
                 depth,
                 fuse_target,
+                suppressed: _,
             } => {
                 let entry =
                     sketches
@@ -265,6 +282,7 @@ pub fn build_bodies_from_features(
                 sketch,
                 depth,
                 target,
+                suppressed: _,
             } => {
                 if *depth <= 0.0 {
                     return Err(KernelError::InvalidParameter { kind: "depth" });
@@ -349,6 +367,7 @@ pub fn build_bodies_from_features(
                 width,
                 height,
                 depth,
+                suppressed: _,
             } => {
                 let solid = make_cuboid(*width, *height, *depth, id, gen)?;
                 built.register(id.to_string(), solid);
@@ -358,6 +377,7 @@ pub fn build_bodies_from_features(
                 radius,
                 height,
                 origin,
+                suppressed: _,
             } => {
                 let solid = make_cylinder(
                     *radius,
@@ -371,6 +391,7 @@ pub fn build_bodies_from_features(
                 id: _,
                 radius,
                 center,
+                suppressed: _,
             } => {
                 let solid = make_sphere(*radius, Point::new(center[0], center[1], center[2]), gen)?;
                 built.register(id.to_string(), solid);
@@ -379,6 +400,7 @@ pub fn build_bodies_from_features(
                 id: _,
                 target,
                 tool,
+                suppressed: _,
             } => {
                 let t_solid = built
                     .get(target)
@@ -395,6 +417,7 @@ pub fn build_bodies_from_features(
                 id: _,
                 target,
                 tool,
+                suppressed: _,
             } => {
                 let t_solid = built
                     .get(target)
@@ -411,6 +434,7 @@ pub fn build_bodies_from_features(
                 id: _,
                 target,
                 tool,
+                suppressed: _,
             } => {
                 let t_solid = built
                     .get(target)
@@ -426,11 +450,33 @@ pub fn build_bodies_from_features(
         }
     }
 
-    if built.is_empty() {
+    // Only error if there are active body producers but produced nothing.
+    // Sketch-only or all-suppressed components are valid (empty bodies).
+    let active_body_producers = features
+        .iter()
+        .filter(|f| !f.is_suppressed() && is_body_producer(f))
+        .count();
+    if built.is_empty() && active_body_producers > 0 {
         return Err(KernelError::EmptyFeatureList);
     }
 
     Ok(built)
+}
+
+/// Returns true if the feature can produce a Body (Solid).
+/// CreateSketch is NOT a body producer; it only defines a profile.
+fn is_body_producer(f: &Feature) -> bool {
+    matches!(
+        f,
+        Feature::CreateBox { .. }
+            | Feature::CreateCylinder { .. }
+            | Feature::CreateSphere { .. }
+            | Feature::Extrude { .. }
+            | Feature::ExtrudeCut { .. }
+            | Feature::Cut { .. }
+            | Feature::Fuse { .. }
+            | Feature::Intersect { .. }
+    )
 }
 
 fn validate_feature_id(id: &str) -> Result<(), KernelError> {

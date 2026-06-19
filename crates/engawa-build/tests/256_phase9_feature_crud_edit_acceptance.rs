@@ -14,6 +14,7 @@ fn t01_edit_determinism() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     let new_feature = Feature::CreateBox {
@@ -21,6 +22,7 @@ fn t01_edit_determinism() {
         width: 100.0,
         height: 200.0,
         depth: 300.0,
+        suppressed: false,
     };
 
     let r1 = FeatureCrud::edit(&doc, "box_1", new_feature.clone()).unwrap();
@@ -38,6 +40,7 @@ fn t02_edit_creates_box_params_updated() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     let new_feature = Feature::CreateBox {
@@ -45,6 +48,7 @@ fn t02_edit_creates_box_params_updated() {
         width: 100.0,
         height: 200.0,
         depth: 300.0,
+        suppressed: false,
     };
 
     let updated = FeatureCrud::edit(&doc, "box_1", new_feature).unwrap();
@@ -56,6 +60,7 @@ fn t02_edit_creates_box_params_updated() {
             width,
             height,
             depth,
+            suppressed: _,
         } => {
             assert_eq!(id, "box_1");
             assert_eq!(*width, 100.0);
@@ -75,6 +80,7 @@ fn t03_deg_unknown_id() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     };
 
     let result = FeatureCrud::edit(&doc, "box_1", new_feature);
@@ -93,6 +99,7 @@ fn t04_deg_invalid_spec_id_mismatch() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     let new_feature = Feature::CreateBox {
@@ -100,6 +107,7 @@ fn t04_deg_invalid_spec_id_mismatch() {
         width: 100.0,
         height: 200.0,
         depth: 300.0,
+        suppressed: false,
     };
 
     let result = FeatureCrud::edit(&doc, "box_1", new_feature);
@@ -118,17 +126,20 @@ fn t05_edit_preserves_idx_in_multi_feature_doc() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSphere {
         id: "sphere_1".to_string(),
         radius: 15.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateCylinder {
         id: "cylinder_1".to_string(),
         radius: 8.0,
         height: 40.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     });
 
     // Edit sphere_1 (idx=1) with new radius
@@ -136,6 +147,7 @@ fn t05_edit_preserves_idx_in_multi_feature_doc() {
         id: "sphere_1".to_string(),
         radius: 25.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     };
 
     let updated = FeatureCrud::edit(&doc, "sphere_1", new_sphere).unwrap();
@@ -152,6 +164,7 @@ fn t05_edit_preserves_idx_in_multi_feature_doc() {
             id,
             radius,
             center: _,
+            suppressed: _,
         } => {
             assert_eq!(id, "sphere_1");
             assert_eq!(*radius, 25.0);
@@ -169,6 +182,7 @@ fn t06_deg_variant_mismatch() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     // 同 ID で variant を CreateBox → CreateSphere に変更
@@ -176,6 +190,7 @@ fn t06_deg_variant_mismatch() {
         id: "box_1".to_string(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     };
 
     let result = FeatureCrud::edit(&doc, "box_1", new_feature);
@@ -198,12 +213,14 @@ fn t07_deg_edit_steals_body_from_downstream() {
         width: 10.0,
         height: 10.0,
         depth: 10.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_b".to_string(),
         width: 5.0,
         height: 5.0,
         depth: 5.0,
+        suppressed: false,
     });
     // CreateSketch for Extrude
     doc.root_component.features.push(Feature::CreateSketch {
@@ -234,17 +251,20 @@ fn t07_deg_edit_steals_body_from_downstream() {
             },
         ],
         plane_ref: None,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk1".to_string(),
         depth: 10.0,
         fuse_target: None, // Initially not consuming box_b
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Cut {
         id: "c1".to_string(),
         target: "box_a".to_string(),
         tool: "box_b".to_string(),
+        suppressed: false,
     });
 
     // Edit e1 to consume box_b via fuse_target — this should break c1
@@ -253,6 +273,7 @@ fn t07_deg_edit_steals_body_from_downstream() {
         sketch: "sk1".to_string(),
         depth: 10.0,
         fuse_target: Some("box_b".to_string()), // Now consumes box_b
+        suppressed: false,
     };
 
     let result = FeatureCrud::edit(&doc, "e1", new_e1);

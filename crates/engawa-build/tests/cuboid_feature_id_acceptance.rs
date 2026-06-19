@@ -16,6 +16,7 @@ fn t02_create_box_propagates_feature_id_to_face_names() {
         width: 2.0,
         height: 3.0,
         depth: 4.0,
+        suppressed: false,
     }];
     let mut gen = IdGenerator::new(0);
     let built = build_bodies_from_features(&features, &[], &mut gen).expect("build");

@@ -14,6 +14,7 @@ fn t01_determinism() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     let sketch = Feature::CreateSketch {
@@ -31,6 +32,7 @@ fn t01_determinism() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     };
 
     let result1 = FeatureCrud::insert(&doc, sketch.clone(), 1).unwrap();
@@ -52,12 +54,14 @@ fn t02_downstream_sketch_blocks_cut() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -70,12 +74,14 @@ fn t02_downstream_sketch_blocks_cut() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     // Cut(target=box_1, tool=box_2) を idx 2 で insert → downstream sketch を破壊
@@ -84,6 +90,7 @@ fn t02_downstream_sketch_blocks_cut() {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, cut, 2);
@@ -110,12 +117,14 @@ fn t03_downstream_sketch_blocks_fuse() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -128,6 +137,7 @@ fn t03_downstream_sketch_blocks_fuse() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
 
     // Fuse(target=box_1, tool=box_2) を idx 2 で insert
@@ -135,6 +145,7 @@ fn t03_downstream_sketch_blocks_fuse() {
         id: "f1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, fuse, 2);
@@ -167,12 +178,14 @@ fn t04_downstream_sketch_blocks_extrude_fuse_target() {
             to: [10.0, 0.0],
         }],
         plane_ref: None,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk_face".to_string(),
@@ -185,6 +198,7 @@ fn t04_downstream_sketch_blocks_extrude_fuse_target() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
 
     // Extrude with fuse_target=box_1 を idx 2 で insert
@@ -193,6 +207,7 @@ fn t04_downstream_sketch_blocks_extrude_fuse_target() {
         sketch: "sk_extr".to_string(),
         depth: 5.0,
         fuse_target: Some("box_1".to_string()),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, extrude, 2);
@@ -225,6 +240,7 @@ fn t05_sketch_self_plane_ref_unknown_body() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, sketch, 0);
@@ -250,23 +266,27 @@ fn t06_derived_chain_traversal_and_consumer_break() {
         width: 3.0,
         height: 6.0,
         depth: 9.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Fuse {
         id: "fused".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     });
 
     // Derived chain を含む sketch を idx 4 で insert → 成功
@@ -286,6 +306,7 @@ fn t06_derived_chain_traversal_and_consumer_break() {
             }],
             selector: "s0".to_string(),
         })),
+        suppressed: false,
     };
 
     let doc_with_sk = FeatureCrud::insert(&doc, sketch.clone(), 4).unwrap();
@@ -295,6 +316,7 @@ fn t06_derived_chain_traversal_and_consumer_break() {
         id: "cut1".to_string(),
         target: "fused".to_string(),
         tool: "box_3".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc_with_sk, cut, 4);
@@ -326,6 +348,7 @@ fn t07_named_feature_id_not_present() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
 
     // 同じ sketch を idx 0 で再度 insert (box_late は未登場)
@@ -340,6 +363,7 @@ fn t07_named_feature_id_not_present() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, sketch, 0);
@@ -367,6 +391,7 @@ fn t_degen_no_plane_ref() {
         variables: vec![],
         profile: vec![],
         plane_ref: None,
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, sketch, 0);
@@ -389,6 +414,7 @@ fn t_degen_legacy_plane_string() {
         variables: vec![],
         profile: vec![],
         plane_ref: Some(PlaneRef::RefPlane("Front".to_string())),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, sketch, 0);
@@ -408,12 +434,14 @@ fn t_boundary_no_downstream_sketch() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
 
     // Cut(target=box_1, tool=box_2) を idx 2 で insert → downstream に sketch なし
@@ -421,6 +449,7 @@ fn t_boundary_no_downstream_sketch() {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, cut, 2);
@@ -444,6 +473,7 @@ fn diff01_downstream_extrude_fuse_target_implicit_ref_duplicate() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk_extr".to_string(),
@@ -456,12 +486,14 @@ fn diff01_downstream_extrude_fuse_target_implicit_ref_duplicate() {
             to: [10.0, 0.0],
         }],
         plane_ref: None,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk_face".to_string(),
@@ -474,6 +506,7 @@ fn diff01_downstream_extrude_fuse_target_implicit_ref_duplicate() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     // Extrude: direct ref (fuse_target=box_1) + implicit ref (sketch は box_1 非依存)
     doc.root_component.features.push(Feature::Extrude {
@@ -481,6 +514,7 @@ fn diff01_downstream_extrude_fuse_target_implicit_ref_duplicate() {
         sketch: "sk_extr".to_string(),
         depth: 5.0,
         fuse_target: Some("box_1".to_string()),
+        suppressed: false,
     });
 
     // Cut(target=box_1, tool=box_2) を idx 3 で insert
@@ -490,6 +524,7 @@ fn diff01_downstream_extrude_fuse_target_implicit_ref_duplicate() {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, cut, 3);
@@ -524,12 +559,14 @@ fn diff02_derived_chain_multiple_named_ids() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
 
     // Derived chain に 2 つの Named を含む sketch
@@ -556,6 +593,7 @@ fn diff02_derived_chain_multiple_named_ids() {
             ],
             selector: "s0".to_string(),
         })),
+        suppressed: false,
     };
 
     // 両方の body が存在する → 成功
@@ -569,6 +607,7 @@ fn diff02_derived_chain_multiple_named_ids() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     // box_2 は作成しない
 
@@ -598,6 +637,7 @@ fn edge01_deep_derived_chain_single_named_leaf() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     // 2 段ネストの Derived chain
@@ -622,6 +662,7 @@ fn edge01_deep_derived_chain_single_named_leaf() {
             }],
             selector: "outer".to_string(),
         })),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, sketch, 1);
@@ -644,6 +685,7 @@ fn edge02_duplicate_feature_id_in_derived() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
 
     // 同じ feature_id を 2 回含む Derived
@@ -670,6 +712,7 @@ fn edge02_duplicate_feature_id_in_derived() {
             ],
             selector: "s0".to_string(),
         })),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, sketch.clone(), 1);
@@ -701,12 +744,14 @@ fn t01b_determinism_with_derived_chain() {
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
 
     let sketch = Feature::CreateSketch {
@@ -732,6 +777,7 @@ fn t01b_determinism_with_derived_chain() {
             ],
             selector: "s0".to_string(),
         })),
+        suppressed: false,
     };
 
     let result1 = FeatureCrud::insert(&doc, sketch.clone(), 2).unwrap();
@@ -749,23 +795,27 @@ fn t01b_determinism_with_derived_chain() {
         width: 3.0,
         height: 6.0,
         depth: 9.0,
+        suppressed: false,
     });
     doc2.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc2.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc2.root_component.features.push(Feature::Fuse {
         id: "fused".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     });
 
     let sketch_err = Feature::CreateSketch {
@@ -791,6 +841,7 @@ fn t01b_determinism_with_derived_chain() {
             ],
             selector: "s0".to_string(),
         })),
+        suppressed: false,
     };
 
     let err1 = FeatureCrud::insert(&doc2, sketch_err.clone(), 4);
@@ -828,12 +879,14 @@ fn t10_266_determinism() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -850,12 +903,14 @@ fn t10_266_determinism() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     // Cut(target=box_1, tool=box_2) を idx 2 に 2 回 insert
@@ -863,6 +918,7 @@ fn t10_266_determinism() {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let err1 = FeatureCrud::insert(&doc, cut.clone(), 2);
@@ -910,12 +966,14 @@ fn t11_266_cut_blocked_via_sketch_user() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -932,18 +990,21 @@ fn t11_266_cut_blocked_via_sketch_user() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     let cut = Feature::Cut {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, cut, 2);
@@ -975,12 +1036,14 @@ fn t12_266_fuse_blocked_via_sketch_user() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -997,18 +1060,21 @@ fn t12_266_fuse_blocked_via_sketch_user() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     let fuse = Feature::Fuse {
         id: "f1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, fuse, 2);
@@ -1039,12 +1105,14 @@ fn t13_266_intersect_blocked_via_sketch_user() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -1061,18 +1129,21 @@ fn t13_266_intersect_blocked_via_sketch_user() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     let intersect = Feature::Intersect {
         id: "i1".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, intersect, 2);
@@ -1106,6 +1177,7 @@ fn t14_266_extrudecut_via_sketch_user() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     // Cut.tool 専用の別の body
     doc.root_component.features.push(Feature::CreateBox {
@@ -1113,12 +1185,14 @@ fn t14_266_extrudecut_via_sketch_user() {
         width: 4.0,
         height: 8.0,
         depth: 12.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -1135,6 +1209,7 @@ fn t14_266_extrudecut_via_sketch_user() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
     // ec1.target は box_for_ec1 (box_1 を含まない) — transitive 経路のみで依存
     doc.root_component.features.push(Feature::ExtrudeCut {
@@ -1142,12 +1217,14 @@ fn t14_266_extrudecut_via_sketch_user() {
         sketch: "sk".to_string(),
         depth: 5.0,
         target: "box_for_ec1".to_string(),
+        suppressed: false,
     });
 
     let cut = Feature::Cut {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_other".to_string(),
+        suppressed: false,
     };
 
     // idx 3 で insert (sk の直前、box_1 の後)
@@ -1181,23 +1258,27 @@ fn t15_266_derived_chain_resolves_transitively() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_2".to_string(),
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Fuse {
         id: "fused".to_string(),
         target: "box_1".to_string(),
         tool: "box_2".to_string(),
+        suppressed: false,
     });
     // Derived chain を含む sketch (plane_ref は fused 経由で box_1/b ox_2 を参照)
     doc.root_component.features.push(Feature::CreateSketch {
@@ -1220,12 +1301,14 @@ fn t15_266_derived_chain_resolves_transitively() {
             }],
             selector: "s0".to_string(),
         })),
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     });
 
     // Cut(target=fused, tool=box_other) を idx 4 に insert → e1 が transitive 経路で hit
@@ -1233,6 +1316,7 @@ fn t15_266_derived_chain_resolves_transitively() {
         id: "cut1".to_string(),
         target: "fused".to_string(),
         tool: "box_other".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, cut, 4);
@@ -1266,12 +1350,14 @@ fn t16_266_degen_no_sketch_user_unblocks() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
@@ -1288,12 +1374,14 @@ fn t16_266_degen_no_sketch_user_unblocks() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
 
     let cut = Feature::Cut {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_other".to_string(),
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, cut, 2);
@@ -1320,18 +1408,21 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
         width: 5.0,
         height: 10.0,
         depth: 15.0,
+        suppressed: false,
     });
     doc.root_component.features.push(Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
         height: 20.0,
         depth: 30.0,
+        suppressed: false,
     });
     // Cut で box_1 を消費
     doc.root_component.features.push(Feature::Cut {
         id: "cut1".to_string(),
         target: "box_1".to_string(),
         tool: "box_other".to_string(),
+        suppressed: false,
     });
     // sk の plane_ref は consumed 後の box_1 を参照 → sk 自体が skip される
     doc.root_component.features.push(Feature::CreateSketch {
@@ -1349,6 +1440,7 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
             kind: EntityKind::Face,
             role: "top".to_string(),
         })),
+        suppressed: false,
     });
 
     // Extrude(sketch=sk) を末尾に insert → sk が skip されているため SketchNotFound
@@ -1357,6 +1449,7 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
         sketch: "sk".to_string(),
         depth: 5.0,
         fuse_target: None,
+        suppressed: false,
     };
 
     let result = FeatureCrud::insert(&doc, extrude, 4);

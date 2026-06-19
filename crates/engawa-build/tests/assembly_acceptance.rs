@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 fn write_box_engawa(dir: &Path, filename: &str, box_id: &str, size: f64) -> PathBuf {
     let mut doc = Document::new(filename.trim_end_matches(".engawa"));
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: box_id.to_string(),
         width: size,
         height: size,
@@ -69,6 +70,7 @@ fn t01_determinism() {
 
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_root".to_string(),
         width: 10.0,
         height: 10.0,
@@ -167,6 +169,7 @@ fn t04_features_and_children_aggregated() {
         width: 1.0,
         height: 2.0,
         depth: 3.0,
+        suppressed: false,
     });
 
     let mut child_a = Component::new("ChildA");
@@ -175,6 +178,7 @@ fn t04_features_and_children_aggregated() {
         width: 4.0,
         height: 5.0,
         depth: 6.0,
+        suppressed: false,
     });
     let mut child_b = Component::new("ChildB");
     child_b.features.push(Feature::CreateBox {
@@ -182,6 +186,7 @@ fn t04_features_and_children_aggregated() {
         width: 7.0,
         height: 8.0,
         depth: 9.0,
+        suppressed: false,
     });
 
     doc.root_component.children.push(child_a);
@@ -340,6 +345,7 @@ fn t09_determinism_100_runs() {
 
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_root".to_string(),
         width: 10.0,
         height: 10.0,
@@ -404,6 +410,7 @@ fn t10_roundtrip_yaml_build() {
         width: 10.0,
         height: 10.0,
         depth: 10.0,
+        suppressed: false,
     });
     let mut ref_child = Component::new("RefChild");
     ref_child.reference = Some(ComponentRef::File("child.engawa".to_string()));
@@ -479,6 +486,7 @@ fn t12_features_and_reference_combined() {
     // Root has its own features AND a reference
     let mut doc = Document::new("Parent");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_root".to_string(),
         width: 10.0,
         height: 10.0,
@@ -537,6 +545,7 @@ fn t14_deep_children_nesting() {
     // Each has a unique box feature. No references, so depth stays 0.
     let mut doc = Document::new("Root");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_root".to_string(),
         width: 1.0,
         height: 1.0,
@@ -547,6 +556,7 @@ fn t14_deep_children_nesting() {
     for i in 0..10 {
         let mut child = Component::new(&format!("child_{i}"));
         child.features.push(Feature::CreateBox {
+            suppressed: false,
             id: format!("box_child_{i}"),
             width: 2.0,
             height: 2.0,
@@ -587,6 +597,7 @@ fn t15_mixed_tree_features_ref_children() {
 
     let mut doc = Document::new("Root");
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_root".to_string(),
         width: 1.0,
         height: 2.0,
@@ -596,6 +607,7 @@ fn t15_mixed_tree_features_ref_children() {
     // Child A: has features + a file reference
     let mut child_a = Component::new("ChildA");
     child_a.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_a".to_string(),
         width: 4.0,
         height: 5.0,
@@ -606,6 +618,7 @@ fn t15_mixed_tree_features_ref_children() {
     // Child B: features only
     let mut child_b = Component::new("ChildB");
     child_b.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_b".to_string(),
         width: 8.0,
         height: 9.0,
@@ -637,6 +650,7 @@ fn t16_container_component_with_children() {
 
     let mut child_a = Component::new("ChildA");
     child_a.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_a".to_string(),
         width: 1.0,
         height: 1.0,
@@ -644,6 +658,7 @@ fn t16_container_component_with_children() {
     });
     let mut child_b = Component::new("ChildB");
     child_b.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_b".to_string(),
         width: 2.0,
         height: 2.0,

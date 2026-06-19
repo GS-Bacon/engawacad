@@ -183,6 +183,7 @@ fn t02_origin_reflected_in_cylinder() {
         radius: 5.0,
         height: 20.0,
         origin: [0.0, 0.0, -10.0],
+        suppressed: false,
     }];
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
@@ -229,6 +230,7 @@ fn t03_backward_compatible_cylinder() {
         radius: 3.0,
         height: 5.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     };
     let yaml = serde_yaml::to_string(&f).unwrap();
     assert!(
@@ -267,6 +269,7 @@ fn t04_center_reflected_in_sphere() {
         id: "s".into(),
         radius: 5.0,
         center: [2.0, 0.0, 0.0],
+        suppressed: false,
     }];
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
@@ -325,12 +328,14 @@ fn t05_derived_names_invariant() {
         radius: 3.0,
         height: 5.0,
         origin: [0.0, 0.0, 0.0],
+        suppressed: false,
     }];
     let f_offset = vec![Feature::CreateCylinder {
         id: "c".into(),
         radius: 3.0,
         height: 5.0,
         origin: [1.0, 2.0, -3.0],
+        suppressed: false,
     }];
     let s1 = build_one(&f_origin);
     let s2 = build_one(&f_offset);
@@ -341,11 +346,13 @@ fn t05_derived_names_invariant() {
         id: "s".into(),
         radius: 5.0,
         center: [0.0, 0.0, 0.0],
+        suppressed: false,
     }];
     let f_offset_s = vec![Feature::CreateSphere {
         id: "s".into(),
         radius: 5.0,
         center: [10.0, -20.0, 30.0],
+        suppressed: false,
     }];
     let s3 = build_one(&f_origin_s);
     let s4 = build_one(&f_offset_s);
@@ -382,6 +389,7 @@ fn ec01_large_finite_origin_cylinder() {
         radius: 1.0,
         height: 2.0,
         origin: [1e15, -1e15, 0.0],
+        suppressed: false,
     }];
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
@@ -407,6 +415,7 @@ fn ec02_large_finite_center_sphere() {
         id: "s".into(),
         radius: 1.0,
         center: [-1e15, 1e15, 0.0],
+        suppressed: false,
     }];
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
@@ -434,6 +443,7 @@ fn ec03_negative_origin_cylinder() {
         radius: 5.0,
         height: 10.0,
         origin: [-100.0, -50.0, -200.0],
+        suppressed: false,
     }];
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(&features, &Vec::new(), &mut gen).unwrap();
@@ -474,6 +484,7 @@ fn ec04_mixed_zero_center_appears_in_yaml() {
         id: "s".into(),
         radius: 5.0,
         center: [0.0, 0.0, 5.0],
+        suppressed: false,
     };
     let yaml = serde_yaml::to_string(&f).unwrap();
     assert!(
@@ -486,6 +497,7 @@ fn ec04_mixed_zero_center_appears_in_yaml() {
         radius: 3.0,
         height: 5.0,
         origin: [0.0, 0.0, 1.0],
+        suppressed: false,
     };
     let yaml_cyl = serde_yaml::to_string(&f_cyl).unwrap();
     assert!(
@@ -503,6 +515,7 @@ fn ec05_determinism_100_runs_cylinder_offset() {
         radius: 5.0,
         height: 20.0,
         origin: [3.0, -7.0, 11.0],
+        suppressed: false,
     }];
 
     let mut first: Option<engawa_kernel::brep::topology::Solid> = None;
@@ -525,6 +538,7 @@ fn ec06_determinism_100_runs_sphere_offset() {
         id: "s".into(),
         radius: 5.0,
         center: [4.0, -3.0, 2.0],
+        suppressed: false,
     }];
 
     let mut first: Option<engawa_kernel::brep::topology::Solid> = None;
@@ -550,6 +564,7 @@ fn ec07_roundtrip_cylinder_offset() {
         radius: 5.0,
         height: 20.0,
         origin: [0.0, 0.0, -10.0],
+        suppressed: false,
     };
     let yaml = serde_yaml::to_string(&f).unwrap();
     let back: Feature = serde_yaml::from_str(&yaml).unwrap();
@@ -559,6 +574,7 @@ fn ec07_roundtrip_cylinder_offset() {
             radius,
             height,
             origin,
+            ..
         } => {
             assert_eq!(id, "cyl_1");
             assert!((radius - 5.0).abs() < 1e-12);
@@ -575,11 +591,14 @@ fn ec08_roundtrip_sphere_offset() {
         id: "sphere_1".into(),
         radius: 5.0,
         center: [2.0, 0.0, 0.0],
+        suppressed: false,
     };
     let yaml = serde_yaml::to_string(&f).unwrap();
     let back: Feature = serde_yaml::from_str(&yaml).unwrap();
     match back {
-        Feature::CreateSphere { id, radius, center } => {
+        Feature::CreateSphere {
+            id, radius, center, ..
+        } => {
             assert_eq!(id, "sphere_1");
             assert!((radius - 5.0).abs() < 1e-12);
             assert_eq!(center, [2.0, 0.0, 0.0]);

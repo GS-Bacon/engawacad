@@ -18,6 +18,7 @@ fn t02_shaft_cylinder_params() {
             radius,
             height,
             origin: _,
+            suppressed: _,
         } => {
             assert_eq!(id, "shaft");
             assert_eq!(*radius, 2.5);
@@ -37,6 +38,7 @@ fn t03_boundary_head_origin() {
             radius,
             height,
             origin,
+            suppressed: _,
         } => {
             assert_eq!(id, "head");
             assert_eq!(*radius, 4.5);

@@ -208,17 +208,20 @@ fn t06_single_pierce_fuse_manifold() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateCylinder {
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
             origin: [0.0, 0.0, 0.0],
+            suppressed: false,
         },
         Feature::Fuse {
             id: "result".into(),
             target: "box1".into(),
             tool: "cyl1".into(),
+            suppressed: false,
         },
     ];
     let solid = build_fuse_from_features(&features);
@@ -240,17 +243,20 @@ fn t07_numerical_eps_boundary() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateCylinder {
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
             origin: [0.0, 0.0, -7.5 + 1e-8],
+            suppressed: false,
         },
         Feature::Fuse {
             id: "result".into(),
             target: "box1".into(),
             tool: "cyl1".into(),
+            suppressed: false,
         },
     ];
     let solid = build_fuse_from_features(&features);
@@ -265,17 +271,20 @@ fn t07_numerical_eps_boundary() {
             width: 10.0,
             height: 10.0,
             depth: 10.0,
+            suppressed: false,
         },
         Feature::CreateCylinder {
             id: "cyl1".into(),
             radius: 2.0,
             height: 15.0,
             origin: [0.0, 0.0, -7.5 - 1e-8],
+            suppressed: false,
         },
         Feature::Fuse {
             id: "result".into(),
             target: "box1".into(),
             tool: "cyl1".into(),
+            suppressed: false,
         },
     ];
     let solid_neg = build_fuse_from_features(&features_neg);

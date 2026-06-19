@@ -21,6 +21,7 @@ fn single_box_doc(transform: Transform) -> Document {
     let mut doc = Document::new("Part");
     doc.root_component.transform = transform;
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 10.0,
@@ -131,6 +132,7 @@ fn t03_nested_two_level_transform_composition() {
         rotation: [0.0; 3],
     };
     child.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_child".to_string(),
         width: 10.0,
         height: 10.0,
@@ -203,6 +205,7 @@ fn t05_empty_features_component_skipped() {
 
     let mut child = Component::new("ChildWithBox");
     child.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 10.0,
@@ -307,6 +310,7 @@ fn ec02_yaml_roundtrip_preserves_transform() {
         rotation: [0.0; 3],
     };
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_1".to_string(),
         width: 10.0,
         height: 10.0,
@@ -426,6 +430,7 @@ fn ec07_three_level_nesting() {
         rotation: [0.0; 3],
     };
     l2.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_l2".to_string(),
         width: 10.0,
         height: 10.0,
@@ -467,6 +472,7 @@ fn ec08_multiple_siblings_independent_offsets() {
         rotation: [0.0; 3],
     };
     child_a.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_a".to_string(),
         width: 10.0,
         height: 10.0,
@@ -479,6 +485,7 @@ fn ec08_multiple_siblings_independent_offsets() {
         rotation: [0.0; 3],
     };
     child_b.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_b".to_string(),
         width: 10.0,
         height: 10.0,
@@ -522,6 +529,7 @@ fn ec09_parent_and_child_both_have_features() {
         rotation: [0.0; 3],
     };
     doc.root_component.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_parent".to_string(),
         width: 10.0,
         height: 10.0,
@@ -529,6 +537,7 @@ fn ec09_parent_and_child_both_have_features() {
     });
     let mut child = Component::new("Child");
     child.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_child".to_string(),
         width: 10.0,
         height: 10.0,
@@ -661,6 +670,7 @@ fn ec13_opposite_offsets_cancel() {
         rotation: [0.0; 3],
     };
     child.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_child".to_string(),
         width: 10.0,
         height: 10.0,
@@ -702,6 +712,7 @@ fn ec14_deep_nesting_5_levels() {
         rotation: [0.0; 3],
     };
     inner.features.push(Feature::CreateBox {
+        suppressed: false,
         id: "box_inner".to_string(),
         width: 10.0,
         height: 10.0,

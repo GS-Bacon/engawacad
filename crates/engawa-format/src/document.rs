@@ -292,6 +292,7 @@ mod tests {
             sketch: "sketch_1".to_string(),
             depth: 10.0,
             fuse_target: None,
+            suppressed: false,
         });
 
         let yaml = doc.to_yaml().unwrap();
@@ -313,6 +314,7 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
 
         let yaml1 = doc.to_yaml().unwrap();
@@ -483,12 +485,14 @@ mod tests {
                 },
             ],
             plane_ref: None,
+            suppressed: false,
         });
         doc2.root_component.features.push(Feature::Extrude {
             id: "extrude_1".to_string(),
             sketch: "sketch_1".to_string(),
             depth: 8.0,
             fuse_target: None,
+            suppressed: false,
         });
         assert_eq!(
             doc2.to_yaml().unwrap(),
@@ -550,6 +554,7 @@ mod tests {
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
         let reference = doc.to_yaml().unwrap();
         for i in 0..100 {
@@ -729,6 +734,7 @@ root_component:
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
         let result = doc.to_yaml();
         assert!(matches!(result, Err(FormatError::InvalidName { .. })));
@@ -743,11 +749,13 @@ root_component:
             width: 10.0,
             height: 20.0,
             depth: 30.0,
+            suppressed: false,
         });
         doc.root_component.features.push(Feature::CreateSphere {
             id: "box_1".to_string(),
             radius: 5.0,
             center: [0.0, 0.0, 0.0],
+            suppressed: false,
         });
         let result = doc.to_yaml();
         assert!(matches!(
@@ -914,6 +922,7 @@ root_component:
             width: 1.0,
             height: 2.0,
             depth: 3.0,
+            suppressed: false,
         });
         assert!(doc.validate().is_ok());
     }
@@ -1234,6 +1243,7 @@ root_component:
                 radius: 5.0,
                 height: 10.0,
                 origin: [f64::NAN, 0.0, 0.0],
+                suppressed: false,
             });
             assert!(matches!(
                 doc.to_yaml().unwrap_err(),
@@ -1457,6 +1467,7 @@ root_component:
             ],
             profile: vec![],
             plane_ref: None,
+            suppressed: false,
         });
         match doc.validate() {
             Err(FormatError::DuplicateVariableName { scope, name, .. }) => {
@@ -1485,6 +1496,7 @@ root_component:
             }],
             profile: vec![],
             plane_ref: None,
+            suppressed: false,
         });
         assert!(
             doc.validate().is_ok(),
