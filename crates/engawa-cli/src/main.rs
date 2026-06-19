@@ -76,6 +76,17 @@ enum EntryOp {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Truncate the feature history at <feature_id>, removing it and all later features.
+    Rollback {
+        /// Input .engawa file
+        input: PathBuf,
+        /// Feature id to roll back to (this feature and all later ones are removed)
+        feature_id: String,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() {
@@ -189,6 +200,28 @@ fn run_entry(op: EntryOp) -> Result<(), String> {
                 .map_err(|e| format!("failed to parse feature YAML: {e}"))?;
             let updated = engawa_build::FeatureCrud::edit(&doc, &feature_id, new_feature)
                 .map_err(|e| format!("edit failed: {e}"))?;
+            let yaml = updated
+                .to_yaml()
+                .map_err(|e| format!("failed to serialize document: {e}"))?;
+            if dry_run {
+                print!("{yaml}");
+            } else {
+                let output_path = output.as_ref().unwrap_or(&input);
+                std::fs::write(output_path, yaml)
+                    .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+            }
+            Ok(())
+        }
+        EntryOp::Rollback {
+            input,
+            feature_id,
+            output,
+            dry_run,
+        } => {
+            let doc = Document::from_path(&input)
+                .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+            let updated = engawa_build::FeatureCrud::rollback(&doc, &feature_id)
+                .map_err(|e| format!("rollback failed: {e}"))?;
             let yaml = updated
                 .to_yaml()
                 .map_err(|e| format!("failed to serialize document: {e}"))?;

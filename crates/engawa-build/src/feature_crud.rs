@@ -871,6 +871,32 @@ impl FeatureCrud {
         next.validate()?;
         Ok(next)
     }
+
+    /// Truncate the feature history at `feature_id`, removing the feature itself
+    /// and all features after it.
+    ///
+    /// Semantics: `rollback(doc, feature_id)` keeps features[..idx] where idx is
+    /// the position of `feature_id`. The feature at idx and all later features are
+    /// removed. This means rolling back to the first feature results in an empty
+    /// feature list.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnknownFeatureId` if `feature_id` does not exist in the document.
+    pub fn rollback(doc: &Document, feature_id: &str) -> Result<Document, FeatureCrudError> {
+        let idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        let mut next = doc.clone();
+        next.root_component.features.truncate(idx);
+        next.validate()?;
+        Ok(next)
+    }
 }
 
 #[cfg(test)]
