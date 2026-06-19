@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 105
+    finding: "`feature_implicit_body_refs` が `PlaneRef::Entity` を無条件に provenance 展開しており、`EntityRef::Derived` や `Named { kind: Edge/Vertex, .. }` まで `FeatureCrud::insert` の成功経路に載せています。これは既存の build 契約と食い違います。`build_assembly` / `find_face_by_entity_ref` は `EntityRef::Named { kind: Face, .. }` しか解決せず、実際に `crates/engawa-build/tests/face_entity_ref_planeref.rs:499` でも `Derived` は `FaceEntityRefNotFound` 扱いです。今回の差分だと `CreateSketch.plane_ref=Entity(Derived(...))` を `Ok` とする新規テストまで追加されており、semantic gate が build 不可能な履歴を受理する状態を固定化しています。"
+    suggestion: "`FeatureCrud::insert` 側で `PlaneRef::Entity` を先に shape-validate し、現行 build が解決できる `EntityRef::Named { kind: Face, .. }` 以外は明示的に reject してください。`Derived` を本当に通すなら、先に build 側の face 解決を対応させたうえで acceptance test を揃えるべきです。"
+
+verdict: fail

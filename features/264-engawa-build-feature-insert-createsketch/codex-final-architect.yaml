@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 383
+    finding: "downstream 判定が `consumer_feat` 自身の direct/implicit body ref しか見ないため、挿入位置より前に作られた `CreateSketch` を後続 `Extrude`/`ExtrudeCut` が使う経路を見落としている。たとえば `[CreateBox box_1, CreateSketch sk(plane_ref=Entity(box_1)), Extrude e1(sk)]` に `Cut(target=box_1, ...)` を `e1` の直前へ insert するとこのチェックは通るが、build では `e1` 実行時に `sk` の plane_ref 解決先が既に消えて失敗する。"
+    suggestion: "downstream 走査で `feature_sketch_refs(consumer_feat)` を辿り、参照先 `CreateSketch` の `feature_implicit_body_refs` も consumer 依存として合算する。少なくとも「sketch は挿入位置より前、sketch の利用者は後」という回帰テストを追加する。"
+
+verdict: fail

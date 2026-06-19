@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 382
+    finding: "`check_no_downstream_break` only looks at features at/after the insertion point, so it misses the transitive dependency `body -> CreateSketch.plane_ref -> Extrude/ExtrudeCut`. Inserting `Cut`/`Fuse`/`Extrude{fuse_target}` between an existing face-attached sketch and its downstream sketch consumer is still accepted, but the later extrusion resolves `plane_ref` after the body has been consumed and will fail at build time."
+    suggestion: "Propagate `CreateSketch.plane_ref` dependencies through sketch users: when validating a body-consuming insert, inspect downstream `Extrude`/`ExtrudeCut` and the implicit body refs of the sketches they reference; likewise reject an `Extrude`/`ExtrudeCut` whose referenced sketch's `plane_ref` body is no longer live."
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 107
+    finding: "`feature_implicit_body_refs` treats every `PlaneRef::Entity` as supported and recursively accepts `EntityRef::Derived` plus non-`Face` refs as soon as their leaf body IDs are live. The builder still resolves `plane_ref` via `Solid::find_face_by_entity_ref`, which only matches `EntityRef::Named { kind: Face, .. }`, so `FeatureCrud::insert` can now return `Ok` for sketches that are guaranteed to fail during build."
+    suggestion: "Restrict this semantic-gate path to `EntityRef::Named { kind: Face, .. }` until builder support exists for other shapes, and replace the new Derived-success cases with rejection/regression tests that match current runtime behavior."
+verdict: fail
