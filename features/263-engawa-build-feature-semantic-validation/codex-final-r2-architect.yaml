@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 102
+    finding: "`simulate_history` が `Extrude` / `ExtrudeCut` / `Cut` / `Fuse` / `Intersect` を、その feature 自身の `sketch` / `target` / `tool` が prefix で解決できるか見ずに常に live body として登録している。既存履歴に未解決 ref を含むと、insert は build 時に生成されない body を有効と誤判定しうる。例えば `[CreateBox(b1), CreateBox(b2), Cut(c1,target=b1,tool=missing)]` の末尾に `Cut(f1,target=c1,tool=b2)` を挿入すると、`c1` を live とみなして `Ok` を返せてしまう。"
+    suggestion: "prefix シミュレーションでも direct ref を逐次検証し、未解決 ref を持つ boolean / extrude の結果は live body に登録しないこと。あわせて「壊れた prefix の生成物を target/tool にできない」回帰テストを追加する。"
+
+verdict: fail

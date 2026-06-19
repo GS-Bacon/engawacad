@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 368
+    finding: "semantic validation が `next.validate()` より先に走るため、構造自体が不正な ref 付き feature が semantic エラーで上書きされる。たとえば `Extrude { id: \"\", sketch: \"unknown\", .. }` は invalid feature_id ではなく `SketchNotFound` を返し、`Cut { id: \"\", target: \"\", .. }` は `SelfReference` を返す。CLI/API の診断が入力の妥当性ではなく ref 値に依存してぶれる。"
+    suggestion: "候補 Document を一度 format-level に `validate()` してから semantic check を行うか、少なくとも invalid id を先に弾く前処理を入れ、空/不正 id かつ ref を持つ feature の回帰テストを追加する。"
+
+verdict: pass

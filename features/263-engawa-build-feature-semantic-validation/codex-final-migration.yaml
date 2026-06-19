@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "新規 acceptance test ファイルが untracked (`git status` で `??`) のままで `git diff` に含まれておらず、Issue #263 で合意した T01〜T09 と追加の T10〜T16 が提出パッチに実際には載っていない。production code だけが変更され、`coverage_hints.total_added=0` と整合している。"
+    suggestion: "このテストファイルを tracked change としてパッチに含め、少なくとも合意済みの acceptance coverage を一緒に提出する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 209
+    finding: "sketch ref の後方探索が `feat.id() == sketch_ref` だけで `CreateSketch` かどうかを確認していないため、後続に同名の `CreateBox`/`Cut`/`Fuse` などがあるだけで `SketchNotFound` ではなく `InsertBeforeProducer` を返す。例えば `[CreateBox { id: \"s1\", .. }]` に `Extrude { sketch: \"s1\", .. }` を at=0 で挿入すると、実際には存在しない sketch producer を指して『後ろへずらせば解決する』という誤判定になる。"
+    suggestion: "後方探索を `Feature::CreateSketch` に限定し、この mixed-type ID collision を回帰テストで固定する。"
+
+verdict: fail

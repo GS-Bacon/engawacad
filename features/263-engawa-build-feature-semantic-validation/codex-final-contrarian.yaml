@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "`git diff` for this change does not include any tracked test additions: the new acceptance suite is still an untracked working-tree file, so the shipped diff adds semantic-validation logic with `total_added=0` coverage."
+    suggestion: "Add and commit/stage `crates/engawa-build/tests/feature_crud_acceptance.rs` (or equivalent tracked tests) in the same diff as `feature_crud.rs`."
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 297
+    finding: "`check_no_downstream_break` only treats direct body refs as downstream consumers. It ignores `CreateSketch.plane_ref = PlaneRef::Entity(...)`, so inserting a consuming feature before a face-attached sketch can return `Ok` even though `build_assembly` will later fail with `FaceEntityRefNotFound` after that body has been consumed."
+    suggestion: "Include `CreateSketch.plane_ref` entity provenance in downstream body-lifetime checks (at least `EntityRef::Named.feature_id`, ideally recursive `Derived.from` too) and add a regression test covering a face-attached sketch after an inserted Cut/Fuse/Extrude(fuse_target)."
+
+verdict: fail

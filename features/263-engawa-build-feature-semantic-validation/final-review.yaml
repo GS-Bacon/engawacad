@@ -1,0 +1,20 @@
+issues:
+  - id: FN01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 36
+    finding: "Issue #263 は「設計のみ、実装は後続」と明記されているが、この diff は実装コードを含んでいる（FeatureCrudError variants + validation 関数 + insert への統合）。スコープ違反。"
+    suggestion: "Issue を更新して「実装包含」に明記するか、実装を別 Issue #265 等に分割する。"
+  - id: FN02
+    severity: high
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "Issue スコープで言及されている「circular ref」テストが実装されていない。t01-t16 に circular reference テストは含まれていない。"
+    suggestion: "circular reference パターン（A→B→A）のテストを追加する。"
+  - id: FN03
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 143
+    finding: "check_refs_resolve_before の producer_at 計算で .skip(at).position() の戻り値を at + せずに代入している。.skip(n).position() は n バイトスキップ後の相対位置を返すため、at + position が必要。"
+    suggestion: "producer_at: at + features.iter().enumerate().skip(at).position(...).unwrap() に修正する。"
+verdict: fail

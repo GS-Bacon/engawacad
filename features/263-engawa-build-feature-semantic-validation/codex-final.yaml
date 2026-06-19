@@ -1,0 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "新規 acceptance test ファイルが untracked のままで `git diff` に載っておらず、Issue #263 で合意した semantic validation の追加テストが提出差分に実際には含まれていない。`coverage_hints.total_added=0` とも整合しており、production code だけが先行している。"
+    suggestion: "このテストファイルを tracked change としてパッチに含めるか、少なくとも T01〜T16 相当のケースを tracked なテストへ移してから提出する。"
+  - id: A-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 209
+    finding: "sketch ref の後方探索が `feat.id() == sketch_ref` だけで `CreateSketch` に限定されていないため、後続に同名の `CreateBox` などがあるだけで `SketchNotFound` ではなく `InsertBeforeProducer` を返す。valid な mixed-type ID collision で semantic validation の理由分類が壊れる。"
+    suggestion: "後方探索は `Feature::CreateSketch` だけを sketch producer と見なすよう修正し、`[CreateBox { id: \"s1\", .. }]` に `Extrude { sketch: \"s1\", .. }` を at=0 で挿入する回帰テストを追加する。"
+  - id: C-F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "`git diff` for this change does not include any tracked test additions: the new acceptance suite is still an untracked working-tree file, so the shipped diff adds semantic-validation logic with `total_added=0` coverage."
+    suggestion: "Add and commit/stage `crates/engawa-build/tests/feature_crud_acceptance.rs` (or equivalent tracked tests) in the same diff as `feature_crud.rs`."
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 297
+    finding: "`check_no_downstream_break` only treats direct body refs as downstream consumers. It ignores `CreateSketch.plane_ref = PlaneRef::Entity(...)`, so inserting a consuming feature before a face-attached sketch can return `Ok` even though `build_assembly` will later fail with `FaceEntityRefNotFound` after that body has been consumed."
+    suggestion: "Include `CreateSketch.plane_ref` entity provenance in downstream body-lifetime checks (at least `EntityRef::Named.feature_id`, ideally recursive `Derived.from` too) and add a regression test covering a face-attached sketch after an inserted Cut/Fuse/Extrude(fuse_target)."
+  - id: M-F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "新規 acceptance test ファイルが untracked (`git status` で `??`) のままで `git diff` に含まれておらず、Issue #263 で合意した T01〜T09 と追加の T10〜T16 が提出パッチに実際には載っていない。production code だけが変更され、`coverage_hints.total_added=0` と整合している。"
+    suggestion: "このテストファイルを tracked change としてパッチに含め、少なくとも合意済みの acceptance coverage を一緒に提出する。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 209
+    finding: "sketch ref の後方探索が `feat.id() == sketch_ref` だけで `CreateSketch` かどうかを確認していないため、後続に同名の `CreateBox`/`Cut`/`Fuse` などがあるだけで `SketchNotFound` ではなく `InsertBeforeProducer` を返す。例えば `[CreateBox { id: \"s1\", .. }]` に `Extrude { sketch: \"s1\", .. }` を at=0 で挿入すると、実際には存在しない sketch producer を指して『後ろへずらせば解決する』という誤判定になる。"
+    suggestion: "後方探索を `Feature::CreateSketch` に限定し、この mixed-type ID collision を回帰テストで固定する。"
+
+verdict: fail
+# severity_counts: critical=3, high=3, medium=0, low=0
+# blocking: 6

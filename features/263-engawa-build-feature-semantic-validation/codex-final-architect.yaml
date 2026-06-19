@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_acceptance.rs"
+    line_hint: 1
+    finding: "新規 acceptance test ファイルが untracked のままで `git diff` に載っておらず、Issue #263 で合意した semantic validation の追加テストが提出差分に実際には含まれていない。`coverage_hints.total_added=0` とも整合しており、production code だけが先行している。"
+    suggestion: "このテストファイルを tracked change としてパッチに含めるか、少なくとも T01〜T16 相当のケースを tracked なテストへ移してから提出する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 209
+    finding: "sketch ref の後方探索が `feat.id() == sketch_ref` だけで `CreateSketch` に限定されていないため、後続に同名の `CreateBox` などがあるだけで `SketchNotFound` ではなく `InsertBeforeProducer` を返す。valid な mixed-type ID collision で semantic validation の理由分類が壊れる。"
+    suggestion: "後方探索は `Feature::CreateSketch` だけを sketch producer と見なすよう修正し、`[CreateBox { id: \"s1\", .. }]` に `Extrude { sketch: \"s1\", .. }` を at=0 で挿入する回帰テストを追加する。"
+
+verdict: fail
