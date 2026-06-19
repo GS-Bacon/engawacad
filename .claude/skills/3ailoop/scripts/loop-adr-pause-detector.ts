@@ -33,6 +33,70 @@ async function runGh(args: string[]): Promise<{ stdout: string; exit: number }> 
   return { stdout: out.trim(), exit: proc.exitCode ?? 0 };
 }
 
+/** #252: open gate:adr-review Issue の title から ADR path を抽出する。
+ *  起票 title 形式: "[gate:adr-review] ADR-XXX: タイトル (docs/decisions/XXX.md)" */
+export function extractAdrPathFromTitle(title: string): string | null {
+  const m = title.match(/\((docs\/decisions\/[^)]+\.md)\)\s*$/);
+  return m ? m[1] : null;
+}
+
+export type RescanRecord = {
+  issue: number;
+  adr: string | null;
+  outcome: string;
+};
+
+/** #252: 既存の open gate:adr-review Issue を rescan して autoAccept に再投入する。
+ *  両 LLM 不在 / regen 中断 / 過去サイクル取り残しで滞留した gate Issue を救済する。 */
+export async function rescanStaleGateIssues(
+  opts: { dryRun?: boolean; autoAcceptFn?: typeof autoAccept; ghFn?: typeof runGh } = {},
+): Promise<RescanRecord[]> {
+  const gh = opts.ghFn ?? runGh;
+  const aa = opts.autoAcceptFn ?? autoAccept;
+  const r = await gh([
+    "issue", "list",
+    "--label", "gate:adr-review",
+    "--state", "open",
+    "--json", "number,title",
+    "--limit", "50",
+  ]);
+  if (r.exit !== 0) {
+    process.stderr.write(`WARN: rescan: gh issue list failed (exit=${r.exit})\n`);
+    return [];
+  }
+  let issues: Array<{ number: number; title: string }>;
+  try {
+    issues = JSON.parse(r.stdout);
+  } catch {
+    process.stderr.write(`WARN: rescan: gh output not JSON\n`);
+    return [];
+  }
+
+  const records: RescanRecord[] = [];
+  for (const i of issues) {
+    const adrPath = extractAdrPathFromTitle(i.title);
+    if (!adrPath) {
+      records.push({ issue: i.number, adr: null, outcome: "skip: no ADR path in title" });
+      continue;
+    }
+    if (!existsSync(adrPath)) {
+      records.push({ issue: i.number, adr: adrPath, outcome: "skip: ADR file missing" });
+      continue;
+    }
+    if (opts.dryRun) {
+      records.push({ issue: i.number, adr: adrPath, outcome: "dry-run" });
+      continue;
+    }
+    try {
+      const outcome = await aa({ adrPath, issueNum: i.number });
+      records.push({ issue: i.number, adr: adrPath, outcome: outcome.kind });
+    } catch (e) {
+      records.push({ issue: i.number, adr: adrPath, outcome: `error:${(e as Error).message}` });
+    }
+  }
+  return records;
+}
+
 async function existingGateIssueFor(adrPath: string): Promise<number | null> {
   // タイトル一致で既存 gate Issue を検出 (重複起票防止)
   const r = await runGh([
@@ -153,7 +217,7 @@ if (import.meta.main) {
   function flag(name: string): boolean { return rest.includes(name); }
 
   if (cmd !== "scan") {
-    console.error("Usage: loop-adr-pause-detector.ts scan [--depth N] [--since-sha SHA] [--cycle-marker PATH] [--auto-accept] [--dry-run]");
+    console.error("Usage: loop-adr-pause-detector.ts scan [--depth N] [--since-sha SHA] [--cycle-marker PATH] [--auto-accept] [--no-rescan-stale] [--dry-run]");
     process.exit(2);
   }
   const depth = parseInt(arg("--depth") ?? "5");
@@ -161,9 +225,18 @@ if (import.meta.main) {
   const markerPath = arg("--cycle-marker") ?? DEFAULT_MARKER_PATH;
   const dryRun = flag("--dry-run");
   const autoAcceptMode = flag("--auto-accept");
+  // #252: --auto-accept 時はデフォルトで滞留 gate Issue も rescan する。
+  //       明示的に無効化したい場合のみ --no-rescan-stale を渡す。
+  const rescanStale = autoAcceptMode && !flag("--no-rescan-stale");
   // sinceSha は引数 → marker → depth fallback の順 (#177 指摘 7)
   const sinceSha = sinceShaArg ?? readMarker(markerPath) ?? undefined;
   const adrs = await findNewAdrs(depth, sinceSha);
+
+  // #252: 先に滞留 gate Issue を rescan (新規 scan の前に走らせ、両 LLM 復帰直後の救済優先)
+  let rescanRecords: RescanRecord[] = [];
+  if (rescanStale) {
+    rescanRecords = await rescanStaleGateIssues({ dryRun });
+  }
 
   if (adrs.length === 0) {
     // 検出ゼロでも marker は進める (次回スコープを狭めるため、これは安全)
@@ -171,7 +244,11 @@ if (import.meta.main) {
       const head = (await runGit(["rev-parse", "HEAD"])).trim();
       if (head) writeMarker(markerPath, head);
     }
-    console.log(`no new ADRs (since=${sinceSha ?? `depth=${depth}`})`);
+    if (rescanStale && rescanRecords.length > 0) {
+      console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: 0, rescan: rescanRecords }, null, 2));
+    } else {
+      console.log(`no new ADRs (since=${sinceSha ?? `depth=${depth}`})`);
+    }
     process.exit(0);
   }
 
@@ -199,7 +276,14 @@ if (import.meta.main) {
     if (head) writeMarker(markerPath, head);
   }
 
-  console.log(JSON.stringify({ since: sinceSha ?? `depth=${depth}`, new_adrs: adrs.length, ok: allOk, auto_accept: autoAcceptMode, created }, null, 2));
+  console.log(JSON.stringify({
+    since: sinceSha ?? `depth=${depth}`,
+    new_adrs: adrs.length,
+    ok: allOk,
+    auto_accept: autoAcceptMode,
+    created,
+    rescan: rescanRecords,
+  }, null, 2));
   if (!allOk) {
     process.stderr.write(`ERROR: some ADR gate issues failed to create; marker NOT updated for retry\n`);
     process.exit(1);
