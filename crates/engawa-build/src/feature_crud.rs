@@ -1071,6 +1071,57 @@ impl FeatureCrud {
         next.validate()?;
         Ok(next)
     }
+
+    /// Remove the feature identified by `feature_id` from the history.
+    ///
+    /// Returns Err if the feature is unknown, or if removing it would break
+    /// a downstream consumer (caught by pre/post simulate compare).
+    pub fn delete(doc: &Document, feature_id: &str) -> Result<Document, FeatureCrudError> {
+        let idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        // Build post-delete history (feature removed)
+        let mut post: Vec<Feature> = doc.root_component.features.clone();
+        post.remove(idx);
+        // pre/post simulate: previously executing consumer must still execute
+        let (_, _, executed_at_pre) = simulate_history(
+            &doc.root_component.features,
+            doc.root_component.features.len(),
+        );
+        let (_, _, executed_at_post) = simulate_history(&post, post.len());
+        for (orig_idx, _) in doc.root_component.features.iter().enumerate() {
+            if orig_idx == idx {
+                continue;
+            } // deleted feature itself — not a consumer to preserve
+            if !executed_at_pre.contains(&orig_idx) {
+                continue;
+            }
+            let orig_id = doc.root_component.features[orig_idx].id();
+            let post_idx_opt = post.iter().position(|f| f.id() == orig_id);
+            let post_idx = match post_idx_opt {
+                Some(i) => i,
+                None => continue, // shouldn't happen but defensive
+            };
+            if !executed_at_post.contains(&post_idx) {
+                return Err(FeatureCrudError::EditBreaksConsumer {
+                    edit_feature_id: feature_id.to_string(),
+                    broken_consumer_id: orig_id.to_string(),
+                    broken_consumer_at: orig_idx,
+                    broken_ref: "delete broke this consumer (still referencing deleted feature)"
+                        .to_string(),
+                });
+            }
+        }
+        let mut next = doc.clone();
+        next.root_component.features = post;
+        next.validate()?;
+        Ok(next)
+    }
 }
 
 #[cfg(test)]

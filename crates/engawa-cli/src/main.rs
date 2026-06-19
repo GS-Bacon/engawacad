@@ -123,6 +123,17 @@ enum EntryOp {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Remove a feature from the history (complete removal, not suppress).
+    Remove {
+        /// Input .engawa file
+        input: PathBuf,
+        /// Feature id to remove
+        feature_id: String,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() {
@@ -325,6 +336,28 @@ fn run_entry(op: EntryOp) -> Result<(), String> {
                 .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
             let updated = engawa_build::FeatureCrud::reorder(&doc, &feature_id, &before)
                 .map_err(|e| format!("reorder failed: {e}"))?;
+            let yaml = updated
+                .to_yaml()
+                .map_err(|e| format!("failed to serialize document: {e}"))?;
+            if dry_run {
+                print!("{yaml}");
+            } else {
+                let output_path = output.as_ref().unwrap_or(&input);
+                std::fs::write(output_path, yaml)
+                    .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+            }
+            Ok(())
+        }
+        EntryOp::Remove {
+            input,
+            feature_id,
+            output,
+            dry_run,
+        } => {
+            let doc = Document::from_path(&input)
+                .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+            let updated = engawa_build::FeatureCrud::delete(&doc, &feature_id)
+                .map_err(|e| format!("remove failed: {e}"))?;
             let yaml = updated
                 .to_yaml()
                 .map_err(|e| format!("failed to serialize document: {e}"))?;
