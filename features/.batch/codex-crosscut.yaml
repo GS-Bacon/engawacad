@@ -1,15 +1,9 @@
 issues:
   - id: F01
-    severity: high
-    file: ".claude/skills/3ailoop/scripts/loop-split-detector.ts"
-    line_hint: 140
-    finding: "親 milestone を `createChild` 内で子ごとに再取得しているため、同一 split 実行中でも `gh issue view` の一時失敗や親 milestone の更新タイミング次第で兄弟 Issue の一部だけが milestone なしで作成される。今回の修正対象だった Phase 子 Issue の actionable 化不全が部分的に再発しうる。"
-    suggestion: "親 milestone は子作成ループの前に 1 回だけ取得して全 `createChild` に渡し、split 全体で同一値を使うようにする。"
-  - id: F02
     severity: medium
-    file: ".claude/skills/3ailoop/scripts/loop-split-detector.test.ts"
-    line_hint: 5
-    finding: "追加テストは `fetchParentMilestone` の 6 ケースしか見ておらず、実際に子 Issue 作成引数へ `--milestone` が付与されることと、計画にあった T01 の『同一入力を 2 回実行して結果一致』が未検証です。`fetchParentMilestone` が通っても、`createChild` 側の回帰で milestone 継承が壊れても検出できません。"
-    suggestion: "`gh` 呼び出しを差し替えられる形にして `createChild` または引数組み立てヘルパーを単体テストし、`--milestone <title>` の付与と同一入力 2 回で同一 args になることを明示的に検証する。"
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 267
+    finding: "`check_self_reference` が `feature_sketch_refs` と direct な `feature_body_refs` しか見ておらず、今回追加した `CreateSketch.plane_ref = PlaneRef::Entity(...)` の implicit body ref を自己参照判定に含めていない。そのため `plane_ref` の `Named`/`Derived` leaf が自分自身の `id` を指す sketch は `SelfReference` ではなく後段で `BodyNotFound` として落ち、既存の自己退化エラー契約と新しい implicit ref 経路の意味論がずれる。"
+    suggestion: "`check_self_reference` に `feature_implicit_body_refs(f)` も通し、`plane_ref` 経由で自分自身を参照する `CreateSketch` を `ref_kind: \"body\"` の `SelfReference` で拒否する回帰テストを追加する。"
 
-verdict: fail
+verdict: pass

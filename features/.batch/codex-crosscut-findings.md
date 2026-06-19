@@ -1,5 +1,23 @@
 # Batch B-6 Codex 横断レビュー findings (non-blocking)
 
+## 2026-06-19 cycle (#264 + #265)
+
+**batch_start_sha**: f745d85164cbe340b94efac3e02780be5e86d4c3
+**verdict**: pass (blocking=0, medium=1, low=0)
+**scope**: #264 (CreateSketch.plane_ref=Entity body-lifetime tracking) + #265 (pre-existing history broken ref defensive validate)
+
+### F01 (medium, non-blocking) — self-reference check が implicit body refs を見ない
+
+- 場所: `crates/engawa-build/src/feature_crud.rs:267` (check_self_reference)
+- 指摘: `check_self_reference` が `feature_sketch_refs` + direct `feature_body_refs` のみ。#264 で追加した `CreateSketch.plane_ref=PlaneRef::Entity(Named/Derived → self.id)` の implicit body ref を自己参照判定に含めていない。
+- 影響: plane_ref で自分自身を参照する CreateSketch は `SelfReference` ではなく後段で `BodyNotFound` として落ちる。既存の自己退化エラー契約 (`SelfReference { ref_kind: "body" }`) と新 implicit ref 経路の意味論がずれる。
+- 推奨: `check_self_reference` に `feature_implicit_body_refs(f)` も通し、`plane_ref` 経由で self を参照する CreateSketch を `SelfReference` で拒否する回帰テストを追加。
+- **判定**: non-blocking (medium) のため B-6 では記録のみ。#264/#266/#267 の implicit ref 系 follow-up と束ねて将来対応。
+
+---
+
+## post-#241 / #243 cycle
+
 **Cycle**: post-#241 / #243
 **batch_start_sha**: c5995cb8da46bee83ab79b3442f00471f0295696
 **verdict**: pass (blocking=0)
