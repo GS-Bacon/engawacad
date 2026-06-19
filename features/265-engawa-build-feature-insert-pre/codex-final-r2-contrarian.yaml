@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: low
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 412
+    finding: "`t_boundary_existing_acceptance_passes` は `assert!(true)` だけで常に成功し、コメントで主張している「既存 acceptance 回帰」を実際には検証していない。ここが壊れてもこの追加テストでは検出できず、回帰カバレッジがあるように見えてしまう。"
+    suggestion: "この枠は削除するか、`FeatureCrud::insert` を通した具体的な non-regression ケースに置き換えて、実際に失敗し得る assertion を追加する。"
+
+verdict: pass

@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 302
+    finding: "forward scan が `simulate_history(features, features.len())` の元履歴だけを前提にしており、insert 自体が missing ref を供給して previously skipped feature を実行可能にするケースを見落とします。たとえば `[box_b1, box_b2, Cut(c1,target=new_box,tool=box_b1), Cut(c2,target=box_b1,tool=box_b2)]` に `CreateBox(new_box)` を `c1` の前へ挿入すると、`c1` が有効化されて `box_b1` を consume し `c2` を壊しますが、現実装は downstream break を検出できず `Ok` を返します。"
+    suggestion: "future producer/consumer 判定は pre-insert の `executed_at_full` ではなく、候補 feature を差し込んだ後の履歴を再シミュレートして行ってください。少なくとも「broken future becomes live after insert」の回帰テストを追加してください。"
+
+verdict: fail

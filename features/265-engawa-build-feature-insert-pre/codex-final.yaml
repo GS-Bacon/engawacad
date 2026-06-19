@@ -1,0 +1,36 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1
+    finding: "broken prefix defensive validation の acceptance test は作成されていますが untracked のままで、実際の diff にはテスト追加が 1 件も含まれていません。`coverage_hints.total_added = 0` の状態では、最重要要件の決定性/degenerate history 回帰がコミットで担保されません。"
+    suggestion: "`crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs` を追跡対象に含め、broken-prefix と決定性の回帰テストをこの変更と一緒にコミットする。"
+  - id: A-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 438
+    finding: "`simulate_history` は broken body-producer を atomic skip するようになりましたが、`check_no_downstream_break` は後続 feature が実際に実行可能かを見ず、参照だけで consumer 扱いしています。そのため broken consumer でも `InsertBeforeConsumer` を返し、`[CreateBox(b1), Extrude(sketch=missing, fuse_target=b1)]` の `Extrude` 直前に `Cut(target=b1, ...)` を挿入するような本来 `Ok` であるケースを不正に拒否します。"
+    suggestion: "downstream consumer 判定でも各 feature の実行可能性を prefix state で再評価し、`refs_resolve_in_state` を満たす consumer だけを `InsertBeforeConsumer` の対象にする。broken consumer の直前挿入を許可する回帰テストも追加する。"
+  - id: C-F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1
+    finding: "新規 acceptance test ファイルがまだ未追跡 (`git status` で `??`) のままで、`git diff` に含まれていない。このままの提出差分では #265 の T01〜T08 / DIFF / EDGE 回帰が丸ごと欠落し、stdin の `coverage_hints.total_added=0` どおりテスト追加が成果物に反映されない。"
+    suggestion: "`crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs` を追跡対象に追加し、差分に test coverage が含まれる状態でレビュー/提出し直す。"
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 342
+    finding: "broken feature を inert とみなす新仕様が `simulate_history` にしか入っておらず、`check_refs_resolve_before` の `producer_after` 探索と `check_no_downstream_break` の downstream 走査は依然として壊れた `Cut`/`Fuse`/`Intersect`/`Extrude*` を有効な producer/consumer と見なす。結果として、実際には skip される future feature に対して `InsertBeforeProducer` / `InsertBeforeConsumer` を返して有効な insert を誤拒否する。"
+    suggestion: "`features[at..]` を見る forward 判定でも `refs_resolve_in_state` 相当の実行可能性チェックを通し、broken feature は producer/consumer 候補から除外する。あわせて『broken future producer の前に insert』『broken downstream consumer の前に insert』の回帰テストを追加する。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 342
+    finding: "atomic skip is only applied while building the prefix state. The later `producer_after` scan and `check_no_downstream_break` still treat any matching `Extrude`/`ExtrudeCut`/`Cut`/`Fuse`/`Intersect` variant as a real producer or consumer without checking whether that feature would itself be skipped. This leaves middle insertions into malformed histories semantically wrong: a broken later feature can still force `InsertBeforeProducer`/`InsertBeforeConsumer` instead of being ignored as inert."
+    suggestion: "Apply the same `refs_resolve_in_state` semantics when scanning features after `at`: ignore broken future producers/consumers in both `check_refs_resolve_before` and `check_no_downstream_break`, and add non-tail acceptance tests that insert before broken later features."
+
+verdict: fail
+# severity_counts: critical=2, high=3, medium=0, low=0
+# blocking: 5

@@ -1,0 +1,14 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1
+    finding: "新規 acceptance test ファイルがまだ未追跡 (`git status` で `??`) のままで、`git diff` に含まれていない。このままの提出差分では #265 の T01〜T08 / DIFF / EDGE 回帰が丸ごと欠落し、stdin の `coverage_hints.total_added=0` どおりテスト追加が成果物に反映されない。"
+    suggestion: "`crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs` を追跡対象に追加し、差分に test coverage が含まれる状態でレビュー/提出し直す。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 342
+    finding: "broken feature を inert とみなす新仕様が `simulate_history` にしか入っておらず、`check_refs_resolve_before` の `producer_after` 探索と `check_no_downstream_break` の downstream 走査は依然として壊れた `Cut`/`Fuse`/`Intersect`/`Extrude*` を有効な producer/consumer と見なす。結果として、実際には skip される future feature に対して `InsertBeforeProducer` / `InsertBeforeConsumer` を返して有効な insert を誤拒否する。"
+    suggestion: "`features[at..]` を見る forward 判定でも `refs_resolve_in_state` 相当の実行可能性チェックを通し、broken feature は producer/consumer 候補から除外する。あわせて『broken future producer の前に insert』『broken downstream consumer の前に insert』の回帰テストを追加する。"
+verdict: fail

@@ -1,0 +1,8 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 342
+    finding: "atomic skip is only applied while building the prefix state. The later `producer_after` scan and `check_no_downstream_break` still treat any matching `Extrude`/`ExtrudeCut`/`Cut`/`Fuse`/`Intersect` variant as a real producer or consumer without checking whether that feature would itself be skipped. This leaves middle insertions into malformed histories semantically wrong: a broken later feature can still force `InsertBeforeProducer`/`InsertBeforeConsumer` instead of being ignored as inert."
+    suggestion: "Apply the same `refs_resolve_in_state` semantics when scanning features after `at`: ignore broken future producers/consumers in both `check_refs_resolve_before` and `check_no_downstream_break`, and add non-tail acceptance tests that insert before broken later features."
+verdict: fail

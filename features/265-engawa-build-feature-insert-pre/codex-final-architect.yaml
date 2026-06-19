@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1
+    finding: "broken prefix defensive validation の acceptance test は作成されていますが untracked のままで、実際の diff にはテスト追加が 1 件も含まれていません。`coverage_hints.total_added = 0` の状態では、最重要要件の決定性/degenerate history 回帰がコミットで担保されません。"
+    suggestion: "`crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs` を追跡対象に含め、broken-prefix と決定性の回帰テストをこの変更と一緒にコミットする。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 438
+    finding: "`simulate_history` は broken body-producer を atomic skip するようになりましたが、`check_no_downstream_break` は後続 feature が実際に実行可能かを見ず、参照だけで consumer 扱いしています。そのため broken consumer でも `InsertBeforeConsumer` を返し、`[CreateBox(b1), Extrude(sketch=missing, fuse_target=b1)]` の `Extrude` 直前に `Cut(target=b1, ...)` を挿入するような本来 `Ok` であるケースを不正に拒否します。"
+    suggestion: "downstream consumer 判定でも各 feature の実行可能性を prefix state で再評価し、`refs_resolve_in_state` を満たす consumer だけを `InsertBeforeConsumer` の対象にする。broken consumer の直前挿入を許可する回帰テストも追加する。"
+
+verdict: fail

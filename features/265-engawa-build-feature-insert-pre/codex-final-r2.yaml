@@ -1,0 +1,24 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 171
+    finding: "simulate_history が CreateSketch を無条件に executed_at/sketches_at へ載せており、plane_ref=Entity の参照先 body が既に dead/missing な sketch まで『実行済み』として扱われます。これにより executed_at_full を使う forward/downstream scan が broken sketch を real consumer/producer と誤認し、#264 で入れた implicit body lifetime 追跡と今回の inert-skip 意味論が食い違います。"
+    suggestion: "CreateSketch も feature_implicit_body_refs() を live_bodies_at に対して検証してから executed_at/sketches_at へ登録し、解決できない plane_ref sketch は inert 扱いにしてください。合わせて broken plane_ref sketch が future scan から除外される acceptance を追加すると安全です。"
+  - id: C-F01
+    severity: low
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 412
+    finding: "`t_boundary_existing_acceptance_passes` は `assert!(true)` だけで常に成功し、コメントで主張している「既存 acceptance 回帰」を実際には検証していない。ここが壊れてもこの追加テストでは検出できず、回帰カバレッジがあるように見えてしまう。"
+    suggestion: "この枠は削除するか、`FeatureCrud::insert` を通した具体的な non-regression ケースに置き換えて、実際に失敗し得る assertion を追加する。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 302
+    finding: "forward scan が `simulate_history(features, features.len())` の元履歴だけを前提にしており、insert 自体が missing ref を供給して previously skipped feature を実行可能にするケースを見落とします。たとえば `[box_b1, box_b2, Cut(c1,target=new_box,tool=box_b1), Cut(c2,target=box_b1,tool=box_b2)]` に `CreateBox(new_box)` を `c1` の前へ挿入すると、`c1` が有効化されて `box_b1` を consume し `c2` を壊しますが、現実装は downstream break を検出できず `Ok` を返します。"
+    suggestion: "future producer/consumer 判定は pre-insert の `executed_at_full` ではなく、候補 feature を差し込んだ後の履歴を再シミュレートして行ってください。少なくとも「broken future becomes live after insert」の回帰テストを追加してください。"
+
+verdict: fail
+# severity_counts: critical=0, high=2, medium=0, low=1
+# blocking: 2
