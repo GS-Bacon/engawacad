@@ -44,7 +44,7 @@ Phase 8-20 で想定される ADR は約 10-12 件 (Phase 8 ref_planes 継承 / 
 
 #### 2. Multi-LLM Adversarial Review
 
-Decision Matrix Lint を通った draft を **GLM 3 ペルソナで adversarial verify**:
+Decision Matrix Lint を通った draft を **Codex 3 ペルソナで adversarial verify** (primary):
 
 - **architect**: 過去 ADR との整合性、設計階層の安定性
 - **contrarian**: 採用 option を refute、却下 option の利点を強調
@@ -55,9 +55,24 @@ Decision Matrix Lint を通った draft を **GLM 3 ペルソナで adversarial 
 > 本 ADR draft の採用 option を refute せよ。refute できなければ approved を返せ。理由が浅ければ refute 失敗と判定し approved とせよ。
 
 3 ペルソナ全員が `approved` を返した場合のみ **auto-accept** (`gate:adr-review` 削除 + Issue close)。
-1 ペルソナでも `refute_succeeded` を返したら draft 再生成 (Codex に refute 内容を feed して書き直させる)。
+1 ペルソナでも `refute_succeeded` を返したら draft 再生成 (refute 内容を feed して書き直させる)。
 
-`dispatch-glm.ts` に `--mode adr-review` を追加し、3 ペルソナ並列実行する。
+実装は `loop-adr-auto-accept.ts` 内で `codex exec` を 3 ペルソナ並列実行する。
+
+##### 2-bis. Codex usage limit 時の GLM 3 persona fallback (#251)
+
+Codex CLI が **usage / rate limit に到達した場合** (= 3 ペルソナ全員が verdict 不能で返る)、loop 自身が外部 API 制約で停止してしまう問題があった (cycle 30-32 実観測)。これを解消するため fallback を導入:
+
+1. Codex 3 persona dispatch を実行 (現状通り)
+2. **all-failed sentinel** 検知: 3 verdict すべてが以下のいずれかなら fallback 発動
+   - `raw_excerpt` が `[codex exit=...]` で始まる (crash)
+   - `detectCodexUsageLimit(raw_excerpt)` が true (usage/rate limit シグナル `usage limit | rate limit | 429` etc)
+3. **GLM 3 persona に再 dispatch**: 同じ persona prompt をそのまま GLM (Z.AI 経由 `claude -p`) に渡し verdict を集める
+4. 結果集計は同じ (refute 1 以上で regen_required、全 approved で auto-accept)
+
+GLM 自身もコケた (Z.AI outage 等) 場合は 3 persona 全 fail で refute 扱い → regen 経路に乗り、最終的に cap 越えで `needs-human` 退避 → 手動 review に戻る (= 設計通り)。
+
+これにより「Codex 残量切れだけで loop 全体が止まる」状態を回避しつつ、両 LLM 同時不在は手動 fallback に戻すという二段構成になる。
 
 #### 3. 暴走防止 cap
 
@@ -103,7 +118,7 @@ trigger 発火時は loop 一時停止 + 本 ADR の見直し Issue を起票。
 
 ### 既存 ADR との関係
 
-- **ADR-002 (ロードマップ・ラベル運用)**: `gate:adr-review` ラベル自体は廃止せず残す。auto-accept フローが何らかの理由で動かなくなった fallback として使う (例: GLM API outage 時は手動 accept)。
+- **ADR-002 (ロードマップ・ラベル運用)**: `gate:adr-review` ラベル自体は廃止せず残す。auto-accept フローが何らかの理由で動かなくなった fallback として使う (Codex + GLM 両方が同時に不在の場合は手動 accept)。
 - **ADR-006 (Issue 粒度)**: 「1 ADR = 1 cycle で扱える粒度」は維持。再生成 cap 3 と token 上限 200k はこれを担保する。
 - **ADR-012 (tmux ランタイム)**: L-5.6 の挙動を本 ADR が上書きする。SKILL.md を併せて更新する。
 
@@ -134,7 +149,7 @@ ADR 品質は最高。しかし完全自律方針と矛盾。Phase 8-20 で 10+ 
 | `loop-adr-pause-detector.ts` | 改修 (gate 起票 → 自動 review chain → pass で gate 削除 / fail で再生成 or needs-human) |
 | `loop-adr-decision-matrix-lint.ts` | 新規 |
 | `loop-phase-close-check.ts` | Phase 11/14/17/20 完了時の Fable 5 監査 Issue 自動起票を追加 |
-| `dispatch-glm.ts` | `--mode adr-review` 追加 (3 ペルソナ並列・adversarial refute プロンプト) |
+| `loop-adr-auto-accept.ts` | Codex 3 ペルソナ primary + Codex usage limit 時の GLM 3 persona fallback (#251) |
 | `features/.loop/adr-regen-count/` | 新規状態ディレクトリ (1 ADR 1 json) |
 | `.claude/skills/3ailoop/SKILL.md` | L-5.6 の挙動説明書き換え |
 | `docs/3ailoop-runbook.md` (存在すれば) | ADR 自動 accept フロー §追加 |
@@ -145,7 +160,7 @@ ADR 品質は最高。しかし完全自律方針と矛盾。Phase 8-20 で 10+ 
 - **Multi-LLM Review の判定基準ずれ**: 3 ペルソナが「approved」と全員返したのに実装段階で問題発生するケース → trigger で検知して人間介入に戻す
 - **Fable 5 監査コスト**: Phase 11/14/17/20 で計 4 回の Fable 5 起動、各 ~500k token 想定 = 約 $30-50 × 4 ≈ $150 程度 (Phase 8-20 全体コストの数% 程度)
 - **再生成 cap 3 の妥当性**: 実運用で 3 回 retry の中で accept されるのが大半か、それとも頻繁に needs-human 退避するか観測が必要 → 最初の 5 ADR で再評価
-- **GLM API outage 時の挙動**: dispatch-glm が fail したら auto-accept フロー全体が止まり、loop が pause する。fallback として gate:adr-review ラベルを残し、手動 accept 経路を維持
+- **両 LLM 同時不在時の挙動**: Codex usage limit 時は GLM 3 persona fallback で凌ぐ (#251)。GLM もコケた場合のみ 3 persona 全 fail → regen → cap 越えで `needs-human` 退避。`gate:adr-review` ラベルは残し、手動 accept 経路を維持
 
 ### コスト試算
 

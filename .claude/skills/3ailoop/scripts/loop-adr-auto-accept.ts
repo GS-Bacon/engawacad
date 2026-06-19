@@ -26,6 +26,7 @@ import { dirname, basename } from "path";
 import { lintAdr } from "./loop-adr-decision-matrix-lint";
 import { addTokens, incRegen, retire } from "./loop-adr-regen-tracker";
 import { runChecked } from "./loop-spawn-checked.ts";
+import { detectCodexUsageLimit } from "../../3ai/scripts/dispatch-codex.ts";
 
 const PERSONAS = [
   {
@@ -47,6 +48,32 @@ export type PersonaVerdict = {
   approved: boolean;
   raw_excerpt: string;
 };
+
+/** #251: 3 verdict すべてが Codex 起因の fail (crash or usage limit) なら true。
+ *  GLM fallback の発動条件。raw_excerpt の prefix と detectCodexUsageLimit で判定する。 */
+export function isAllCodexFailed(verdicts: PersonaVerdict[]): boolean {
+  if (verdicts.length === 0) return false;
+  return verdicts.every(v =>
+    !v.approved && (v.raw_excerpt.startsWith("[codex exit=") || detectCodexUsageLimit(v.raw_excerpt))
+  );
+}
+
+function parseEnvFile(path: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of readFileSync(path, "utf-8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    result[key] = val;
+  }
+  return result;
+}
 
 async function runGh(args: string[]): Promise<{ stdout: string; exit: number }> {
   const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
@@ -94,6 +121,10 @@ async function runPersonaReview(
   if (mock === "refute") {
     return { persona: persona.key, approved: false, raw_excerpt: "[mock:refute]" };
   }
+  // #251: Codex usage limit fallback テスト用。GLM fallback を発火させる。
+  if (process.env.ADR_AUTOACCEPT_MOCK_CODEX === "fail") {
+    return { persona: persona.key, approved: false, raw_excerpt: "[codex exit=1] hit your usage limit (mock)" };
+  }
   if (process.env.CODEX_DRY_RUN === "1") {
     return { persona: persona.key, approved: true, raw_excerpt: "[CODEX_DRY_RUN]" };
   }
@@ -126,6 +157,87 @@ async function runPersonaReview(
 
   let text = "";
   try { text = readFileSync(resultFile, "utf-8"); } catch { text = r.stdout; }
+  const verdictMatch = text.match(/verdict:\s*(approved|refuted)/i);
+  const verdict = verdictMatch?.[1].toLowerCase() ?? "unknown";
+  return {
+    persona: persona.key,
+    approved: verdict === "approved",
+    raw_excerpt: text.slice(0, 200),
+  };
+}
+
+/** #251: GLM (Z.AI 経由 claude -p) で persona review を実行する fallback ルート。
+ *  Codex usage limit 時に runPersonaReview の代わりに呼ばれる。 */
+async function runPersonaReviewViaGlm(
+  persona: typeof PERSONAS[number],
+  adrText: string,
+  outDir: string,
+): Promise<PersonaVerdict> {
+  if (process.env.ADR_AUTOACCEPT_MOCK === "glm-pass") {
+    return { persona: persona.key, approved: true, raw_excerpt: "[mock:glm-pass]" };
+  }
+  if (process.env.ADR_AUTOACCEPT_MOCK === "glm-refute") {
+    return { persona: persona.key, approved: false, raw_excerpt: "[mock:glm-refute]" };
+  }
+
+  const zaiEnv = process.env.ZAI_ENV ?? `${process.env.HOME}/AutoClaudeKMP/.env`;
+  if (!existsSync(zaiEnv)) {
+    return { persona: persona.key, approved: false, raw_excerpt: `[glm: Z.AI env not found at ${zaiEnv}]` };
+  }
+  const envVars = parseEnvFile(zaiEnv);
+  if (!envVars.Z_AI_API_KEY) {
+    return { persona: persona.key, approved: false, raw_excerpt: `[glm: Z_AI_API_KEY missing in ${zaiEnv}]` };
+  }
+
+  const instructionFile = `${outDir}/persona-${persona.key}.glm-instruction.md`;
+  const resultFile = `${outDir}/persona-${persona.key}.glm-result.md`;
+  const prompt = buildPersonaPrompt(persona, adrText);
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(instructionFile, prompt, "utf-8");
+
+  const glmEnv: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
+    ANTHROPIC_AUTH_TOKEN: envVars.Z_AI_API_KEY,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-4.6",
+    ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-4.6",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.6",
+    API_TIMEOUT_MS: "600000",
+  };
+  delete glmEnv.CLAUDECODE;
+
+  const r = await runChecked(
+    ["claude", "-p", prompt, "--max-turns", "3", "--output-format", "json"],
+    { allowFailure: true, env: glmEnv },
+  );
+  writeFileSync(`${resultFile}.raw`, r.stdout + r.stderr, "utf-8");
+
+  if (r.exitCode !== 0) {
+    const errSnippet = r.stderr.trim().slice(-300) || "(no stderr)";
+    process.stderr.write(`WARN: glm exec exit=${r.exitCode} for persona=${persona.key}: ${errSnippet}\n`);
+    return {
+      persona: persona.key,
+      approved: false,
+      raw_excerpt: `[glm exit=${r.exitCode}] ${errSnippet}`,
+    };
+  }
+
+  let text = "";
+  try {
+    const lines = r.stdout.trim().split("\n").reverse();
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (typeof obj === "object" && obj !== null && "result" in obj) {
+          text = String(obj.result);
+          break;
+        }
+      } catch {}
+    }
+  } catch {}
+  if (!text) text = r.stdout;
+  writeFileSync(resultFile, text, "utf-8");
+
   const verdictMatch = text.match(/verdict:\s*(approved|refuted)/i);
   const verdict = verdictMatch?.[1].toLowerCase() ?? "unknown";
   return {
@@ -181,9 +293,24 @@ export async function autoAccept(opts: AutoAcceptOpts): Promise<AutoAcceptOutcom
   if (opts.dryRun) {
     return { kind: "accepted", verdicts: PERSONAS.map(p => ({ persona: p.key, approved: true, raw_excerpt: "[dry-run]" })) };
   }
-  const verdicts = await Promise.all(PERSONAS.map(p => runPersonaReview(p, adrText, outDir)));
+  const codexVerdicts = await Promise.all(PERSONAS.map(p => runPersonaReview(p, adrText, outDir)));
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(`${outDir}/verdicts.json`, JSON.stringify(verdicts, null, 2), "utf-8");
+  writeFileSync(`${outDir}/verdicts.codex.json`, JSON.stringify(codexVerdicts, null, 2), "utf-8");
+
+  // #251: Codex 3 persona すべて usage limit / crash で fail なら GLM 3 persona に fallback
+  let verdicts = codexVerdicts;
+  let fallbackUsed = false;
+  if (isAllCodexFailed(codexVerdicts)) {
+    process.stderr.write(`WARN: Codex 3 personas all failed (usage limit likely) — falling back to GLM (#251)\n`);
+    const glmVerdicts = await Promise.all(PERSONAS.map(p => runPersonaReviewViaGlm(p, adrText, outDir)));
+    writeFileSync(`${outDir}/verdicts.glm.json`, JSON.stringify(glmVerdicts, null, 2), "utf-8");
+    verdicts = glmVerdicts;
+    fallbackUsed = true;
+  }
+  writeFileSync(`${outDir}/verdicts.json`, JSON.stringify({
+    fallback_used: fallbackUsed,
+    verdicts,
+  }, null, 2), "utf-8");
 
   const refuted = verdicts.filter(v => !v.approved);
   if (refuted.length > 0) {
@@ -202,7 +329,8 @@ export async function autoAccept(opts: AutoAcceptOpts): Promise<AutoAcceptOutcom
 
   // Step 4: auto-accept (gate ラベル削除 + Issue close)
   await runGh(["issue", "edit", String(opts.issueNum), "--remove-label", "gate:adr-review"]);
-  await runGh(["issue", "close", String(opts.issueNum), "--comment", `auto-accepted by ADR-013 flow (3 personas approved)`]);
+  const reviewer = fallbackUsed ? "GLM (Codex usage limit fallback, #251)" : "Codex";
+  await runGh(["issue", "close", String(opts.issueNum), "--comment", `auto-accepted by ADR-013 flow (3 ${reviewer} personas approved)`]);
   return { kind: "accepted", verdicts };
 }
 

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { autoAccept } from "./loop-adr-auto-accept";
+import { autoAccept, isAllCodexFailed, type PersonaVerdict } from "./loop-adr-auto-accept";
 
 let workDir: string;
 let originalCwd: string;
@@ -44,6 +44,7 @@ afterEach(() => {
   process.chdir(originalCwd);
   rmSync(workDir, { recursive: true, force: true });
   delete process.env.ADR_AUTOACCEPT_MOCK;
+  delete process.env.ADR_AUTOACCEPT_MOCK_CODEX;
 });
 
 describe("loop-adr-auto-accept", () => {
@@ -98,5 +99,74 @@ describe("loop-adr-auto-accept", () => {
     });
     expect(r.kind).toBe("retired");
     if (r.kind === "retired") expect(r.reason).toBe("token_cap");
+  });
+
+  // #251: Codex usage limit fallback (GLM 3 persona)
+  test("#251: Codex 全員 fail で GLM fallback ルートに乗り、glm-refute なら regen_required", async () => {
+    const path = join(adrDir, "994-glm-fb.md");
+    writeFileSync(path, GOOD_ADR, "utf-8");
+    process.env.ADR_AUTOACCEPT_MOCK_CODEX = "fail";  // Codex 全 persona を usage limit fail に
+    process.env.ADR_AUTOACCEPT_MOCK = "glm-refute"; // GLM fallback 側は refute
+    const r = await autoAccept({ adrPath: path, issueNum: 99994, dryRun: false });
+    expect(r.kind).toBe("regen_required");
+    if (r.kind === "regen_required") expect(r.reason).toBe("review");
+
+    // outDir に Codex / GLM 両方の verdicts が記録されている
+    const slug = "994-glm-fb";
+    const outDir = join(workDir, `features/.loop/adr-review/${slug}`);
+    const codexVer = JSON.parse(readFileSync(join(outDir, "verdicts.codex.json"), "utf-8"));
+    const glmVer = JSON.parse(readFileSync(join(outDir, "verdicts.glm.json"), "utf-8"));
+    const combined = JSON.parse(readFileSync(join(outDir, "verdicts.json"), "utf-8"));
+    expect(codexVer.length).toBe(3);
+    expect(glmVer.length).toBe(3);
+    expect(combined.fallback_used).toBe(true);
+  });
+});
+
+describe("isAllCodexFailed (#251)", () => {
+  const v = (approved: boolean, raw: string): PersonaVerdict => ({ persona: "x", approved, raw_excerpt: raw });
+
+  test("空配列 → false", () => {
+    expect(isAllCodexFailed([])).toBe(false);
+  });
+
+  test("3 個とも [codex exit=...] crash → true", () => {
+    expect(isAllCodexFailed([
+      v(false, "[codex exit=1] no stderr"),
+      v(false, "[codex exit=137] killed"),
+      v(false, "[codex exit=2] panic"),
+    ])).toBe(true);
+  });
+
+  test("3 個とも usage limit シグナル → true", () => {
+    expect(isAllCodexFailed([
+      v(false, "you've hit your usage limit"),
+      v(false, "rate limit reached"),
+      v(false, "HTTP 429 too many requests"),
+    ])).toBe(true);
+  });
+
+  test("crash + usage limit mix → true", () => {
+    expect(isAllCodexFailed([
+      v(false, "[codex exit=1] hit your usage limit"),
+      v(false, "rate limit"),
+      v(false, "[codex exit=137]"),
+    ])).toBe(true);
+  });
+
+  test("1 個でも approved があれば false (= refute 経路に乗る)", () => {
+    expect(isAllCodexFailed([
+      v(true, "verdict: approved"),
+      v(false, "[codex exit=1] usage limit"),
+      v(false, "[codex exit=1] usage limit"),
+    ])).toBe(false);
+  });
+
+  test("通常 refute (Codex 動作) → false (= fallback 不発)", () => {
+    expect(isAllCodexFailed([
+      v(false, "verdict: refuted — 採用 option は X で破綻する"),
+      v(false, "verdict: refuted — 既存 ADR-002 と矛盾"),
+      v(false, "verdict: refuted — 後方互換性が壊れる"),
+    ])).toBe(false);
   });
 });
