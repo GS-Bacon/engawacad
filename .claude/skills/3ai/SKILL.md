@@ -565,7 +565,23 @@ bun .claude/skills/3ai/scripts/dispatch-glm-review.ts \
 bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review passed
 ```
 
-Critical/High があれば GLM 修正 dispatch → GLM final 再レビュー（ループ +1、上限 2）。
+**dispatch_error 分岐 (#262)**: verdict.json が `dispatch_error: true` または `verdict: "error"` の場合は GLM がレビュー出力を生成できなかった (max-turns 到達 / claude CLI 非ゼロ終了 / verdict 行不在) ことを意味する。**fix-dispatch ループに入らない** (再 dispatch しても同様に失敗するため):
+
+```bash
+bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
+  --step "STEP 7 GLM final review dispatch_error" \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --error-summary "GLM final review が dispatch_error で終了 (reason: <verdict.json の reason>)"
+
+# STEP 7.5 gate (final_review assert) を通すため、Claude 裁量で final_review を passed に倒す。
+# Codex 独立 gate (STEP 7.5) が真の最終判定を担う前提。
+bun .claude/skills/3ai/scripts/state.ts set \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review passed
+```
+
+起票・state 更新後は **STEP 7.5 (Codex 独立技術ゲート) に進める**。STEP 7.5 で blocking=0 なら次へ、critical/high が出たらそちらの通常エスカレーション経路に従う。`needs-human` 退避は行わない (STEP 7.5 が独立 review 軸を担うため)。
+
+Critical/High があれば (= `blocking >= 1` かつ `verdict != "error"`) GLM 修正 dispatch → GLM final 再レビュー（ループ +1、上限 2）。
 
 **ループ上限超過フォールバック** (`final_loops` が 2 を超えた場合):
 ```bash

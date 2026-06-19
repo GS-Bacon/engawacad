@@ -1,0 +1,30 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が top-level の `issues:` と `verdict:` 行の存在だけで transport success とみなすため、`issues` が配列でない壊れた YAML や issue 要素が `severity` など必須項目を欠く不完全出力でも `detectDispatchFailure()` を通過しうる。すると `parseVerdict()` が `verdict: pass` / `blocking: 0` を書けてしまい、#262 で防ぎたかった malformed review の vacuous pass を再導入する。"
+    suggestion: "成功判定は正規表現ではなく root YAML を実際に parse して、`issues` が配列で各 item が期待スキーマを満たすことまで検証してください。少なくとも malformed `issues` と必須フィールド欠落が `dispatch_error` になる回帰テストを追加する。"
+  - id: C-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が top-level の `issues:` / `verdict:` の行存在だけで transport success にしているため、`issues:\\nnot yaml\\nverdict: pass` のような壊れた出力でも正規レビューとして通ります。この場合 `parseVerdict()` は `{verdict:\"pass\", blocking:0}` を書けてしまい、#262 の目的だった fail-closed を再び破ります。"
+    suggestion: "regex ではなく root を実際に YAML parse し、`issues` が配列で各 item が期待フィールドを持つことまで検証してから success 扱いにしてください。併せて malformed `issues` 構造を `dispatch_error` に倒す回帰テストを追加してください。"
+  - id: C-F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 226
+    finding: "`Unknown arg` と必須引数不足の経路は依然として `process.exit(1)` で即終了しており、直後に追加した stale artifact 削除 / `makeErrorVerdict(...)` の fail-closed 処理を通りません。呼び出し側が誤って余計な flag を渡すと、前回の `*.verdict.json` が残ったままになり、新しい `dispatch_error` 分岐を素通りできます。"
+    suggestion: "arg parse 失敗も `failClosed` に寄せるか、少なくとも `--result` が分かる場合は cleanup と error verdict 書き込みを行ってから終了してください。"
+  - id: M-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` は top-level の `verdict:` と `issues:` を正規表現で見るだけなので、`issues:` が `null`/非配列/壊れた本文でも transport success 扱いになります。続く `parseVerdict()` も YAML を構造化せず生テキスト中の `severity:` を数えるため、要求フォーマットを満たしていない出力や diff 由来の引用文字列を正規レビューとして通し、`blocking=0` の偽 pass/誤集計を再発させます。"
+    suggestion: "抽出した `yamlText` を実際に YAML として parse し、root に `verdict: pass|fail` と `issues: [] | issue[]` があることを検証してください。`blocking`/`severity_counts` も `issues[].severity` から算出し、`issues:` null・非配列・壊れた list・quoted `severity:` を含む回帰テストを追加してください。"
+
+verdict: fail
+# severity_counts: critical=0, high=3, medium=1, low=0
+# blocking: 3

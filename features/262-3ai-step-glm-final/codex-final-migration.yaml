@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: ".claude/skills/3ai/SKILL.md"
+    line_hint: 597
+    finding: "STEP 7 で `dispatch_error` 時は STEP 7.5 に進むと追記されていますが、STEP 7.5 のゲートが依然として `state.ts assert ... final_review` を要求しています。`dispatch_error` 分岐では `final_review` を passed にしていないため、この新フォールバック経路は即座に gate failure で停止し、#262 の主目的である Codex 独立ゲートへの退避が実行できません。"
+    suggestion: "STEP 7.5 のゲートを `dispatch_error` 許容に変更するか、7.5 へ進む前に別状態値を立てて `final_review` 依存を外してください。併せて dispatch_error→7.5 到達の回帰テストを追加してください。"
+  - id: F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: "`detectDispatchFailure()` が `rawOut` 全体に対して `/Error:\\s*Reached\\s+max\\s+turns/` を先に当てているため、正常な YAML レビュー本文の `finding`/`suggestion` がこの文字列を引用しただけで `dispatch_error=true` に誤分類されます。今回の issue 自体がその文言を扱っており、妥当なレビュー結果を偽陽性で破棄して `verdict:error` に落とす回帰になります。"
+    suggestion: "max-turns 判定は『有効な `verdict:` 行が存在しない場合』に限定するか、stdout 全文一致/先頭一致など transport error だけを拾う条件に絞ってください。正常 YAML 内で当該文字列を引用しても fail しない回帰テストも追加してください。"
+
+verdict: fail

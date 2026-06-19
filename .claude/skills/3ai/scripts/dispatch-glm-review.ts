@@ -23,7 +23,7 @@
 //     --result features/N-SLUG/review-final.yaml \
 //     [--test-summary features/N-SLUG/test-summary.json]
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 
 const PERSONA_AGENT: Record<string, string> = {
   scope:     ".claude/skills/3ai/agents/glm-reviewer-scope.md",
@@ -51,7 +51,7 @@ function parseEnvFile(path: string): Record<string, string> {
   return result;
 }
 
-function parseVerdict(text: string): {
+export function parseVerdict(text: string): {
   verdict: string;
   severity_counts: Record<string, number>;
   blocking: number;
@@ -62,6 +62,75 @@ function parseVerdict(text: string): {
   const counts = { critical: 0, high: 0, medium: 0, low: 0 };
   for (const s of sevs) counts[s as keyof typeof counts]++;
   return { verdict, severity_counts: counts, blocking: counts.critical + counts.high };
+}
+
+// #262 r3: 有効レビュー YAML の最低限のスキーマ判定。
+// 引数 `yamlText` (= ```yaml 抽出後の本文) が top-level に `verdict:` と
+// `issues:` の両方を持つ場合のみ「transport 成功」とみなす。
+// Codex r2 F01 (3 persona 一致) の指摘: `verdict:` だけで成功扱いだと
+// (a) diff に含まれる verdict 行を GLM が引用しただけ、(b) `verdict: pass` 単独で
+// `issues:` が欠落、(c) `verdict: fail` 単独で blocking=0 になり「pass でも error
+// でもない」宙ぶらりん状態が再発する。
+export function isValidReviewYaml(yamlText: string): boolean {
+  return (
+    /^verdict:\s*(pass|fail)\b/m.test(yamlText) &&
+    /^issues:\s*(\[\]|$)/m.test(yamlText)
+  );
+}
+
+// #262: dispatch 失敗 (claude CLI 非ゼロ終了 / max-turns / verdict 行不在 /
+// 契約違反) を明示的に検出する。`*.verdict.json` を "vacuous pass" にせず
+// error verdict として書き出すための判定。
+//
+// #262 r2 F01 (Codex 3 persona 一致): 有効な YAML レビュー本文が
+// "Error: Reached max turns" 等の文字列を引用しているだけで失敗扱いになる
+// 偽陽性を避けるため、有効 YAML 形状 (verdict + issues 両方 top-level) が
+// 揃っている場合のみ transport 成功と判定する。
+//
+// #262 r3 F01 (Codex 3 persona 一致): 形状だけでは contract 違反
+// (verdict: fail なのに blocking=0 / verdict: pass なのに blocking>=1) を
+// 検出できず STEP 7 の pass/blocking>=1 分岐どちらにも乗らない宙ぶらりん状態が
+// 再発する。verdict-blocking 整合性も検証する。
+export function detectDispatchFailure(
+  rawOut: string,
+  exitCode: number,
+  yamlText: string,
+): { failed: boolean; reason: string } {
+  if (exitCode !== 0) return { failed: true, reason: `claude-exit-${exitCode}` };
+  // 有効 YAML スキーマが揃っていれば transport 成功 — その後 contract 検証へ。
+  if (isValidReviewYaml(yamlText)) {
+    // verdict-blocking 整合性: pass ⇔ blocking=0, fail ⇒ blocking≥1。
+    // ここを破る出力は GLM の自己矛盾なので dispatch_error に倒し、
+    // STEP 7 の orphan 分岐 (no branch matches) を防ぐ (#262 r3 F01)。
+    const { verdict, blocking } = parseVerdict(yamlText);
+    if (verdict === "fail" && blocking === 0) return { failed: true, reason: "fail-without-blockers" };
+    if (verdict === "pass" && blocking > 0) return { failed: true, reason: "pass-with-blockers" };
+    return { failed: false, reason: "" };
+  }
+  // verdict / issues のいずれかが欠落 → 失敗モードを分類。
+  if (/Error:\s*Reached\s+max\s+turns/i.test(rawOut)) return { failed: true, reason: "max-turns" };
+  if (/^\s*Error:/m.test(yamlText)) return { failed: true, reason: "claude-error" };
+  if (!/^verdict:\s*(pass|fail)\b/m.test(yamlText)) return { failed: true, reason: "no-verdict-line" };
+  // verdict はあるが issues 欠落 → 部分的 / 構造不正
+  return { failed: true, reason: "missing-issues" };
+}
+
+// #262: dispatch 失敗時に書き出す verdict.json 形状。
+// blocking=-1 で "no findings (=0)" と明確に区別する (dispatch-codex.ts と同じ慣用)。
+export function makeErrorVerdict(reason: string): {
+  verdict: "error";
+  dispatch_error: true;
+  reason: string;
+  severity_counts: Record<string, number>;
+  blocking: number;
+} {
+  return {
+    verdict: "error",
+    dispatch_error: true,
+    reason,
+    severity_counts: { critical: 0, high: 0, medium: 0, low: 0 },
+    blocking: -1,
+  };
 }
 
 async function buildDesignContext(opts: {
@@ -141,6 +210,9 @@ async function main() {
   let planSnapshotDir: string | undefined;
   let testSummaryFile: string | undefined;
 
+  // #262 r4 (contrarian F02): arg parse 失敗も fail-closed に倒す。
+  // emergencyFailClosed は --result を再パースして verdict.json を書く。
+  let unknownArg: string | null = null;
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case "--persona":          persona = args[++i]; break;
@@ -154,36 +226,56 @@ async function main() {
       case "--judgment-summary": judgmentSummaryFile = args[++i]; break;
       case "--plan-snapshot-dir": planSnapshotDir = args[++i]; break;
       case "--test-summary":     testSummaryFile = args[++i]; break;
-      default: console.error(`Unknown arg: ${args[i]}`); process.exit(1);
+      default: unknownArg = args[i];
     }
+    if (unknownArg) break;
+  }
+
+  if (unknownArg !== null) {
+    // emergencyFailClosed が argv から --result を再パースして fail-closed する。
+    throw new Error(`Unknown arg: ${unknownArg}`);
   }
 
   if (!persona || !issueNum || !featureDir || !resultFile) {
-    console.error("Usage: dispatch-glm-review.ts --persona <name> --issue <N> --feature-dir <dir> --result <file> [--input <plan>] ...");
-    process.exit(1);
+    throw new Error("Usage: dispatch-glm-review.ts --persona <name> --issue <N> --feature-dir <dir> --result <file> [--input <plan>] ...");
   }
+
+  const verdictPath = resultFile.replace(/\.yaml$/, ".verdict.json");
+  const logPath = `${resultFile}.log`;
+
+  // #262 r2 (migration F01): 前回 run の stale result/verdict が残らないように
+  // dispatch 開始時に削除する。preflight 失敗時もエラー verdict を書いて
+  // fail-closed にする (stale な pass/fail が読まれて分岐をすり抜ける問題の防止)。
+  mkdirSync(featureDir, { recursive: true });
+  for (const p of [resultFile, verdictPath, logPath]) {
+    try { if (existsSync(p)) unlinkSync(p); } catch {}
+  }
+
+  const failClosed = (reason: string, detail: string): never => {
+    const errVerdict = makeErrorVerdict(reason);
+    try { writeFileSync(resultFile, detail, "utf-8"); } catch {}
+    try { writeFileSync(verdictPath, JSON.stringify(errVerdict, null, 2), "utf-8"); } catch {}
+    process.stderr.write(`[GLM dispatch preflight failed] reason=${reason}: ${detail}\n`);
+    process.exit(2);
+  };
 
   const agentFile = PERSONA_AGENT[persona];
   if (!agentFile) {
-    console.error(`Unknown persona: ${persona}. Valid: ${Object.keys(PERSONA_AGENT).join(", ")}`);
-    process.exit(1);
+    failClosed("preflight-unknown-persona", `Unknown persona: ${persona}. Valid: ${Object.keys(PERSONA_AGENT).join(", ")}`);
   }
 
   if (!existsSync(agentFile)) {
-    console.error(`Agent file not found: ${agentFile}`);
-    process.exit(1);
+    failClosed("preflight-agent-missing", `Agent file not found: ${agentFile}`);
   }
 
   // Z.AI env
   const zaiEnv = process.env.ZAI_ENV ?? `${process.env.HOME}/AutoClaudeKMP/.env`;
   if (!existsSync(zaiEnv)) {
-    console.error(`ERROR: ZAI_ENV file not found at ${zaiEnv}`);
-    process.exit(1);
+    failClosed("preflight-env-file-missing", `ZAI_ENV file not found at ${zaiEnv}`);
   }
   const envVars = parseEnvFile(zaiEnv);
   if (!envVars.Z_AI_API_KEY) {
-    console.error(`ERROR: Z_AI_API_KEY not set in ${zaiEnv}`);
-    process.exit(1);
+    failClosed("preflight-api-key-missing", `Z_AI_API_KEY not set in ${zaiEnv}`);
   }
 
   const model = process.env.GLM_MODEL ?? "claude-opus-4-5-20251101";
@@ -198,8 +290,6 @@ async function main() {
     CAD_WORKER: "1",
   };
   delete glmEnv.CLAUDECODE;
-
-  mkdirSync(featureDir, { recursive: true });
 
   let prompt: string;
 
@@ -230,8 +320,7 @@ async function main() {
   } else {
     // 設計レビュー: plan + context blocks を渡す
     if (!inputFile) {
-      console.error("--input is required for non-final personas");
-      process.exit(1);
+      failClosed("preflight-input-missing", "--input is required for non-final personas");
     }
 
     const ctx = await buildDesignContext({
@@ -247,7 +336,10 @@ async function main() {
   process.stderr.write(`  agent:  ${agentFile}\n`);
   process.stderr.write(`  result: ${resultFile}\n`);
 
-  const maxTurns = process.env.GLM_MAX_TURNS ?? "5";
+  // #262: final persona は diff 全文を読むため default 5 turn では足りない (Issue #255 で実測)。
+  // design review は plan.md のみで小さいため従来の 5 turn を維持。
+  const defaultMaxTurns = persona === "final" ? "30" : "5";
+  const maxTurns = process.env.GLM_MAX_TURNS ?? defaultMaxTurns;
   const proc = Bun.spawn(
     [
       "claude", "-p", prompt,
@@ -259,26 +351,77 @@ async function main() {
     { env: glmEnv, stdout: "pipe", stderr: "pipe" }
   );
 
-  const [rawOut, rawErr] = await Promise.all([
+  const [rawOut, rawErr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
+    proc.exited,
   ]);
-  await proc.exited;
 
+  // #262 r2 (contrarian F02): rawErr を log file に永続化 — 非ゼロ終了系の
+  // 障害は stderr 側にしか情報が出ないことが多く、diagnosis に必要。
+  try {
+    writeFileSync(
+      logPath,
+      `=== stderr ===\n${rawErr}\n=== stdout ===\n${rawOut}\n`,
+      "utf-8",
+    );
+  } catch {}
   if (rawErr.trim()) process.stderr.write(`[GLM stderr] ${rawErr.slice(0, 500)}\n`);
 
   // YAML ブロック抽出 (```yaml ... ``` を優先)
   const yamlBlock = rawOut.match(/```yaml\r?\n([\s\S]*?)```/)?.[1] ?? rawOut;
   const yamlText = yamlBlock.trim();
 
+  // #262: dispatch 失敗を明示的に検出して vacuous pass を防ぐ。
+  const failure = detectDispatchFailure(rawOut, exitCode, yamlText);
+  if (failure.failed) {
+    // 生の rawOut を result file に残して人間がデバッグ可能にする。
+    writeFileSync(resultFile, rawOut, "utf-8");
+    const errVerdict = makeErrorVerdict(failure.reason);
+    writeFileSync(verdictPath, JSON.stringify(errVerdict, null, 2), "utf-8");
+    process.stderr.write(
+      `  verdict=error dispatch_error=true reason=${failure.reason} exit=${exitCode}\n`,
+    );
+    process.exit(2);
+  }
+
   writeFileSync(resultFile, yamlText, "utf-8");
 
   const verdict = parseVerdict(yamlText);
-  const verdictPath = resultFile.replace(/\.yaml$/, ".verdict.json");
   writeFileSync(verdictPath, JSON.stringify(verdict, null, 2), "utf-8");
 
   process.stderr.write(`  verdict=${verdict.verdict} blocking=${verdict.blocking} (C=${verdict.severity_counts.critical} H=${verdict.severity_counts.high})\n`);
   process.exit(0);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+// #262 r3 F02 (Codex 3 persona 一致): top-level catch でも `*.verdict.json` を
+// 書かないと、Bun.spawn / git diff / writeFileSync の例外 (stale 削除後に発生)
+// で verdict ファイルが残らず、STEP 7 の dispatch_error 分岐に乗れない。
+// args の resultFile を可能な限り推定して fail-closed に倒す。
+function emergencyFailClosed(err: unknown): void {
+  let resultFile = "";
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--result") { resultFile = args[i + 1] ?? ""; break; }
+  }
+  const detail = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
+  console.error(`[unhandled-exception] ${detail}`);
+  if (resultFile) {
+    const verdictPath = resultFile.replace(/\.yaml$/, ".verdict.json");
+    try { writeFileSync(resultFile, detail, "utf-8"); } catch {}
+    try {
+      writeFileSync(
+        verdictPath,
+        JSON.stringify(makeErrorVerdict("unhandled-exception"), null, 2),
+        "utf-8",
+      );
+    } catch {}
+  }
+}
+
+if (import.meta.main) {
+  main().catch((e) => {
+    emergencyFailClosed(e);
+    process.exit(2);
+  });
+}

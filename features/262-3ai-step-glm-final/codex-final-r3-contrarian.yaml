@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: '`isValidReviewYaml` / `detectDispatchFailure` は top-level の `issues:` と `verdict:` があるだけで成功扱いするため、`verdict: fail` + `issues: []` や medium/low しかないレビューも通してしまう。その後 `parseVerdict()` は `blocking=0` を返すので、STEP 7 は `pass` 条件にも `blocking>=1` 条件にも入れず、#255 と同じ宙ぶらりん状態を再発させる。'
+    suggestion: '`parseVerdict()` 後にレビュー契約を検証し、`verdict == "fail"` なのに `blocking == 0` の出力は `makeErrorVerdict(...)` に倒す。`verdict: fail` + empty issues / medium-only issues の回帰テストも追加する。'
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 385
+    finding: '`main().catch(...)` は依然として `console.error` + `process.exit(1)` だけで、`verdict:error` を書かない。`Bun.spawn` の例外や I/O 例外が stale-file 削除後に起きると `*.verdict.json` 自体が残らず、今回追加した `dispatch_error` 分岐で STEP 7.5 に退避する経路を使えない。'
+    suggestion: 'preflight と同じ fatal handler を共有し、top-level catch でも必ず `makeErrorVerdict(...)` を永続化してから終了するようにする。'
+
+verdict: fail

@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` は top-level の `verdict:` と `issues:` を正規表現で見るだけなので、`issues:` が `null`/非配列/壊れた本文でも transport success 扱いになります。続く `parseVerdict()` も YAML を構造化せず生テキスト中の `severity:` を数えるため、要求フォーマットを満たしていない出力や diff 由来の引用文字列を正規レビューとして通し、`blocking=0` の偽 pass/誤集計を再発させます。"
+    suggestion: "抽出した `yamlText` を実際に YAML として parse し、root に `verdict: pass|fail` と `issues: [] | issue[]` があることを検証してください。`blocking`/`severity_counts` も `issues[].severity` から算出し、`issues:` null・非配列・壊れた list・quoted `severity:` を含む回帰テストを追加してください。"
+
+verdict: fail

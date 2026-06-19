@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が `issues:` と `verdict:` の存在だけで transport 成功にしているため、`issues: []` や medium/low のみを含む `verdict: fail` も通ってしまう。`parseVerdict()` はその出力を `{verdict:\"fail\", blocking:0}` に落とすが、STEP 7 側は `pass` / `dispatch_error` / `blocking >= 1` しか分岐していないため、#255 と同じ『どの経路にも乗らない』状態が別形で再発する。"
+    suggestion: "`detectDispatchFailure()` で `parseVerdict(yamlText)` の結果まで見て、`verdict == \"fail\" && blocking == 0` を `dispatch_error` に倒すようにする。`issues: [] + verdict: fail` と medium/low のみ + `verdict: fail` の回帰テストも追加する。"
+  - id: F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 376
+    finding: "top-level の `main().catch(...)` が例外時に `console.error` して exit 1 するだけで、`*.verdict.json` を書かない。先頭で stale artifact を削除した後に `Bun.spawn()`、`git diff`、`writeFileSync()` などが throw すると verdict ファイル自体が消えたままになり、今回追加した `dispatch_error` フォールバックで STEP 7.5 へ退避できない。"
+    suggestion: "`main` 全体を fail-closed にし、top-level catch でも `makeErrorVerdict(\"unhandled-exception\")` と診断ログを書いて exit 2 を返すようにする。"
+
+verdict: fail

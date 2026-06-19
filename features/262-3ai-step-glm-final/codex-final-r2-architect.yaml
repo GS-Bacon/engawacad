@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 82
+    finding: "`detectDispatchFailure` は top-level `verdict:` 行の存在だけで成功扱いするため、`verdict: pass` だけの不完全出力を `blocking=0` の pass として通し、`verdict: fail` だけの出力も `blocking=0` / `verdict=fail` で STEP 7 のどの分岐にも入らない。『YAML 構造が成立していない出力を dispatch_error に倒す』という今回の契約をまだ満たしていない。"
+    suggestion: "成功判定は `verdict:` だけでなく top-level `issues:` を含む完全なレビュー形状の検証に変え、少なくとも `issues` 欠落、および `verdict: fail` なのに issue 0 件の出力を `dispatch_error` に倒す回帰テストを追加する。"
+
+verdict: fail

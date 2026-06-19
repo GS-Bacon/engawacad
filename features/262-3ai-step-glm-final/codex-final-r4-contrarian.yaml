@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が top-level の `issues:` / `verdict:` の行存在だけで transport success にしているため、`issues:\\nnot yaml\\nverdict: pass` のような壊れた出力でも正規レビューとして通ります。この場合 `parseVerdict()` は `{verdict:\"pass\", blocking:0}` を書けてしまい、#262 の目的だった fail-closed を再び破ります。"
+    suggestion: "regex ではなく root を実際に YAML parse し、`issues` が配列で各 item が期待フィールドを持つことまで検証してから success 扱いにしてください。併せて malformed `issues` 構造を `dispatch_error` に倒す回帰テストを追加してください。"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 226
+    finding: "`Unknown arg` と必須引数不足の経路は依然として `process.exit(1)` で即終了しており、直後に追加した stale artifact 削除 / `makeErrorVerdict(...)` の fail-closed 処理を通りません。呼び出し側が誤って余計な flag を渡すと、前回の `*.verdict.json` が残ったままになり、新しい `dispatch_error` 分岐を素通りできます。"
+    suggestion: "arg parse 失敗も `failClosed` に寄せるか、少なくとも `--result` が分かる場合は cleanup と error verdict 書き込みを行ってから終了してください。"
+
+verdict: fail

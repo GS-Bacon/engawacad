@@ -920,6 +920,8 @@ fn ci() -> ExitCode {
         .args([
             "test",
             "./.claude/skills/3ailoop/scripts/loop-split-detector.test.ts",
+            // #262: dispatch-glm-review.ts の dispatch-failure 検出回帰スイート。
+            "./.claude/skills/3ai/scripts/__tests__/dispatch-glm-review.test.ts",
         ])
         .current_dir(workspace_root())
         .status()

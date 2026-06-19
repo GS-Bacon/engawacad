@@ -1,0 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が top-level の `issues:` と `verdict:` の存在だけで成功扱いするため、`issues:\\nnot yaml\\nverdict: pass` のような壊れた出力でも transport success になり、`parseVerdict()` が `{verdict:\"pass\", blocking:0}` を書いて STEP 7 をそのまま通せてしまう。逆に `issues: []\\nverdict: fail` も成功扱いになり `{verdict:\"fail\", blocking:0}` となるため、#262 で解消したかった no-branch 状態を再発させる。"
+    suggestion: "root を実際に YAML として parse し、`issues` が配列で各 item に必須フィールドがあること、および `verdict` と `blocking` が整合すること（`pass` iff critical/high=0, `fail` iff critical/high>=1）を検証し、崩れていれば `dispatch_error` に倒してください。"
+  - id: A-F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 376
+    finding: "最外周の `main().catch(...)` は error verdict を書かずに `exit(1)` するだけです。stale artifact を先に削除した後で `Bun.spawn([\"claude\", ...])` や I/O が throw すると、feature 配下に `*.verdict.json` が残らず、今回追加した `dispatch_error` 分岐と起票フローが起動できない。"
+    suggestion: "`failClosed` を `main` の外に出すか、`main` 全体を fail-closed な catch で包んで、未捕捉例外でも `makeErrorVerdict(...)` と診断ログを書いてから終了してください。"
+  - id: C-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: '`isValidReviewYaml` / `detectDispatchFailure` は top-level の `issues:` と `verdict:` があるだけで成功扱いするため、`verdict: fail` + `issues: []` や medium/low しかないレビューも通してしまう。その後 `parseVerdict()` は `blocking=0` を返すので、STEP 7 は `pass` 条件にも `blocking>=1` 条件にも入れず、#255 と同じ宙ぶらりん状態を再発させる。'
+    suggestion: '`parseVerdict()` 後にレビュー契約を検証し、`verdict == "fail"` なのに `blocking == 0` の出力は `makeErrorVerdict(...)` に倒す。`verdict: fail` + empty issues / medium-only issues の回帰テストも追加する。'
+  - id: C-F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 385
+    finding: '`main().catch(...)` は依然として `console.error` + `process.exit(1)` だけで、`verdict:error` を書かない。`Bun.spawn` の例外や I/O 例外が stale-file 削除後に起きると `*.verdict.json` 自体が残らず、今回追加した `dispatch_error` 分岐で STEP 7.5 に退避する経路を使えない。'
+    suggestion: 'preflight と同じ fatal handler を共有し、top-level catch でも必ず `makeErrorVerdict(...)` を永続化してから終了するようにする。'
+  - id: M-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が `issues:` と `verdict:` の存在だけで transport 成功にしているため、`issues: []` や medium/low のみを含む `verdict: fail` も通ってしまう。`parseVerdict()` はその出力を `{verdict:\"fail\", blocking:0}` に落とすが、STEP 7 側は `pass` / `dispatch_error` / `blocking >= 1` しか分岐していないため、#255 と同じ『どの経路にも乗らない』状態が別形で再発する。"
+    suggestion: "`detectDispatchFailure()` で `parseVerdict(yamlText)` の結果まで見て、`verdict == \"fail\" && blocking == 0` を `dispatch_error` に倒すようにする。`issues: [] + verdict: fail` と medium/low のみ + `verdict: fail` の回帰テストも追加する。"
+  - id: M-F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 376
+    finding: "top-level の `main().catch(...)` が例外時に `console.error` して exit 1 するだけで、`*.verdict.json` を書かない。先頭で stale artifact を削除した後に `Bun.spawn()`、`git diff`、`writeFileSync()` などが throw すると verdict ファイル自体が消えたままになり、今回追加した `dispatch_error` フォールバックで STEP 7.5 へ退避できない。"
+    suggestion: "`main` 全体を fail-closed にし、top-level catch でも `makeErrorVerdict(\"unhandled-exception\")` と診断ログを書いて exit 2 を返すようにする。"
+
+verdict: fail
+# severity_counts: critical=0, high=4, medium=2, low=0
+# blocking: 4

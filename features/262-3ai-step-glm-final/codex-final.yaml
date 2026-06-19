@@ -1,0 +1,42 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: "`detectDispatchFailure` が `rawOut` 全体に対して `Error: Reached max turns` を部分一致検索しているため、有効な YAML レビュー本文が元事象の文字列を引用しただけで `dispatch_error=max-turns` に誤分類される。今回の Issue 自体がその文字列を diff/plan に含むため、レビュー内容しだいで成功/失敗判定が揺れ、正しい `verdict` を捨てる。"
+    suggestion: "max-turns 判定は `rawOut.trim()` がエラー文そのものに一致する場合、または `verdict` 行不在と組み合わせた場合だけに限定し、YAML 本文中の引用文字列では発火しないようにする。"
+  - id: A-F02
+    severity: high
+    file: ".claude/skills/3ai/SKILL.md"
+    line_hint: 575
+    finding: "`dispatch_error` 分岐で『STEP 7.5 に進める』としていますが、STEP 7.5 側のゲートはそのまま `state.ts assert ... final_review` を要求しています。`dispatch_error` 経路では `final_review passed` をセットしないため、記述どおりに進むと 7.5 開始時点で必ずゲート失敗し、今回追加したフォールバック経路が実行不能です。"
+    suggestion: "`dispatch_error` で 7.5 に進む前に `final_review` を明示的に通すか、7.5 のゲート条件を `dispatch_error` を許容する形に変更して分岐と整合させる。"
+  - id: C-F01
+    severity: critical
+    file: ".claude/skills/3ai/SKILL.md"
+    line_hint: 575
+    finding: "`dispatch_error` 時に \"STEP 7.5 に進める\" と追記した一方で、STEP 7.5 のゲートは引き続き `state.json.final_review == passed` を要求している。dispatch_error 分岐では `final_review` をセットしないため、新設したフォールバック経路が最初の dispatch_error で必ずゲート失敗して停止する。"
+    suggestion: "dispatch_error 分岐で 7.5 に入る前に `final_review` を明示的に通すか、STEP 7.5 のゲートを `final_review` 依存から外して dispatch_error 経路でも入れるようにする。"
+  - id: C-F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: "`detectDispatchFailure` が `rawOut` 全体に対して `/Error:\\s*Reached\\s+max\\s+turns/` を最優先で当てているため、正常な YAML レビューが finding/suggestion 内でこの文字列を引用しただけで `dispatch_error` 扱いになる。今回の diff 自体がその文言を複数含むので、#262 のような自己言及レビューで成功出力を誤検出しうる。"
+    suggestion: "`max-turns` 判定は `verdict:` 行が存在しない場合に限定するか、抽出済み YAML 本文ではなく YAML 外の CLI エラー断片だけを検査する。"
+  - id: M-F01
+    severity: critical
+    file: ".claude/skills/3ai/SKILL.md"
+    line_hint: 597
+    finding: "STEP 7 で `dispatch_error` 時は STEP 7.5 に進むと追記されていますが、STEP 7.5 のゲートが依然として `state.ts assert ... final_review` を要求しています。`dispatch_error` 分岐では `final_review` を passed にしていないため、この新フォールバック経路は即座に gate failure で停止し、#262 の主目的である Codex 独立ゲートへの退避が実行できません。"
+    suggestion: "STEP 7.5 のゲートを `dispatch_error` 許容に変更するか、7.5 へ進む前に別状態値を立てて `final_review` 依存を外してください。併せて dispatch_error→7.5 到達の回帰テストを追加してください。"
+  - id: M-F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: "`detectDispatchFailure()` が `rawOut` 全体に対して `/Error:\\s*Reached\\s+max\\s+turns/` を先に当てているため、正常な YAML レビュー本文の `finding`/`suggestion` がこの文字列を引用しただけで `dispatch_error=true` に誤分類されます。今回の issue 自体がその文言を扱っており、妥当なレビュー結果を偽陽性で破棄して `verdict:error` に落とす回帰になります。"
+    suggestion: "max-turns 判定は『有効な `verdict:` 行が存在しない場合』に限定するか、stdout 全文一致/先頭一致など transport error だけを拾う条件に絞ってください。正常 YAML 内で当該文字列を引用しても fail しない回帰テストも追加してください。"
+
+verdict: fail
+# severity_counts: critical=2, high=4, medium=0, low=0
+# blocking: 6

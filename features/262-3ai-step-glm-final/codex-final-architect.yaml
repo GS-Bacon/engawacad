@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: "`detectDispatchFailure` が `rawOut` 全体に対して `Error: Reached max turns` を部分一致検索しているため、有効な YAML レビュー本文が元事象の文字列を引用しただけで `dispatch_error=max-turns` に誤分類される。今回の Issue 自体がその文字列を diff/plan に含むため、レビュー内容しだいで成功/失敗判定が揺れ、正しい `verdict` を捨てる。"
+    suggestion: "max-turns 判定は `rawOut.trim()` がエラー文そのものに一致する場合、または `verdict` 行不在と組み合わせた場合だけに限定し、YAML 本文中の引用文字列では発火しないようにする。"
+  - id: F02
+    severity: high
+    file: ".claude/skills/3ai/SKILL.md"
+    line_hint: 575
+    finding: "`dispatch_error` 分岐で『STEP 7.5 に進める』としていますが、STEP 7.5 側のゲートはそのまま `state.ts assert ... final_review` を要求しています。`dispatch_error` 経路では `final_review passed` をセットしないため、記述どおりに進むと 7.5 開始時点で必ずゲート失敗し、今回追加したフォールバック経路が実行不能です。"
+    suggestion: "`dispatch_error` で 7.5 に進む前に `final_review` を明示的に通すか、7.5 のゲート条件を `dispatch_error` を許容する形に変更して分岐と整合させる。"
+
+verdict: fail

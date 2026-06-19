@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 74
+    finding: "`isValidReviewYaml()` が top-level の `issues:` と `verdict:` の存在だけで成功扱いするため、`issues:\\nnot yaml\\nverdict: pass` のような壊れた出力でも transport success になり、`parseVerdict()` が `{verdict:\"pass\", blocking:0}` を書いて STEP 7 をそのまま通せてしまう。逆に `issues: []\\nverdict: fail` も成功扱いになり `{verdict:\"fail\", blocking:0}` となるため、#262 で解消したかった no-branch 状態を再発させる。"
+    suggestion: "root を実際に YAML として parse し、`issues` が配列で各 item に必須フィールドがあること、および `verdict` と `blocking` が整合すること（`pass` iff critical/high=0, `fail` iff critical/high>=1）を検証し、崩れていれば `dispatch_error` に倒してください。"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 376
+    finding: "最外周の `main().catch(...)` は error verdict を書かずに `exit(1)` するだけです。stale artifact を先に削除した後で `Bun.spawn([\"claude\", ...])` や I/O が throw すると、feature 配下に `*.verdict.json` が残らず、今回追加した `dispatch_error` 分岐と起票フローが起動できない。"
+    suggestion: "`failClosed` を `main` の外に出すか、`main` 全体を fail-closed な catch で包んで、未捕捉例外でも `makeErrorVerdict(...)` と診断ログを書いてから終了してください。"
+
+verdict: fail

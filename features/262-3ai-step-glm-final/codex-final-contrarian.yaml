@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: ".claude/skills/3ai/SKILL.md"
+    line_hint: 575
+    finding: "`dispatch_error` 時に \"STEP 7.5 に進める\" と追記した一方で、STEP 7.5 のゲートは引き続き `state.json.final_review == passed` を要求している。dispatch_error 分岐では `final_review` をセットしないため、新設したフォールバック経路が最初の dispatch_error で必ずゲート失敗して停止する。"
+    suggestion: "dispatch_error 分岐で 7.5 に入る前に `final_review` を明示的に通すか、STEP 7.5 のゲートを `final_review` 依存から外して dispatch_error 経路でも入れるようにする。"
+  - id: F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 75
+    finding: "`detectDispatchFailure` が `rawOut` 全体に対して `/Error:\\s*Reached\\s+max\\s+turns/` を最優先で当てているため、正常な YAML レビューが finding/suggestion 内でこの文字列を引用しただけで `dispatch_error` 扱いになる。今回の diff 自体がその文言を複数含むので、#262 のような自己言及レビューで成功出力を誤検出しうる。"
+    suggestion: "`max-turns` 判定は `verdict:` 行が存在しない場合に限定するか、抽出済み YAML 本文ではなく YAML 外の CLI エラー断片だけを検査する。"
+
+verdict: fail

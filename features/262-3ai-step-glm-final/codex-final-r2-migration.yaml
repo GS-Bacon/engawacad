@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 302
+    finding: "`dispatch-glm-review.ts` は `dispatch-codex.ts` と違って旧 `resultFile` / `*.verdict.json` を事前削除せず、preflight の `process.exit(1)` や `main().catch(...)` でも error verdict を書きません。`final-review.yaml` を同じパスで再実行する運用では、`claude` spawn 例外や env/CLI 不備のときに前回の `final-review.verdict.json` が残り、STEP 7 が stale pass/fail を読んで今回追加した `dispatch_error` 分岐を素通りできます。"
+    suggestion: "dispatch 開始前に `resultFile` と verdict.json を削除し、少なくとも top-level catch / preflight failure では `makeErrorVerdict(...)` を書いて fail-closed にしてください。"
+  - id: F02
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 82
+    finding: "`detectDispatchFailure()` は `^verdict:\\s*(pass|fail)` が 1 行でもあれば成功扱いにするため、トップレベル YAML を返せていない出力でも diff 由来の `verdict:` 行を引用しただけで `dispatch_error` を回避できます。今回の diff 自体に `codex-final*.yaml` の `verdict:` 行が多数含まれており、malformed 出力が `{verdict:\"pass\"|\"fail\", blocking:0}` に化けると #255 と同じ『blocking 0 だが正常でも error でもない』宙ぶらりん状態を再発させます。"
+    suggestion: "成功条件を『抽出した本文が期待する YAML 形状を満たすこと』まで引き上げてください。少なくとも top-level `issues:` と `verdict:` の両方を確認するか YAML を実際にパースし、`non-YAML + quoted verdict line` の回帰テストを追加してください。"
+
+verdict: fail

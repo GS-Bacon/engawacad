@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 82
+    finding: "`detectDispatchFailure` は `^verdict: pass|fail` の1行があるだけで transport 成功とみなしますが、その `verdict:` が本当にトップレベルのレビュー出力かを検証していません。final review の入力 diff 自体に `verdict:` 断片が含まれるため、モデルが入力片をそのまま引用しただけの壊れた出力でも `dispatch_error` を素通りし、`parseVerdict` がその断片を正規の判定として拾って再び偽 `pass` / `blocking=0` を作れます。"
+    suggestion: "成功条件を「`verdict:` 行があること」ではなく「期待する YAML スキーマを正しく parse できること」に引き上げ、少なくとも root の `issues` と `verdict` を検証してください。あわせて、引用された `verdict:` 断片だけでは `dispatch_error` になる回帰テストを追加してください。"
+  - id: F02
+    severity: medium
+    file: ".claude/skills/3ai/scripts/dispatch-glm-review.ts"
+    line_hint: 322
+    finding: "failure 分岐で保存しているのは `rawOut` だけで、`rawErr` は stderr に最大 500 文字流すだけです。非ゼロ終了系の障害は stderr 側にしか実情報が出ないことが多いため、保存された `final-review.yaml` が空のままになり、後続の dispatch_error 起票で真因を feature 配下の成果物から追えません。"
+    suggestion: "`rawErr` も feature 配下に永続化してください。`resultFile` へ追記するか、隣に `.log` を書いて dispatch_error 起票時に参照させる形が安全です。"
+
+verdict: fail
