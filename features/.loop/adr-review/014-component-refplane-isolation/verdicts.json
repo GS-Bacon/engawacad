@@ -1,17 +1,20 @@
-[
-  {
-    "persona": "architect",
-    "approved": false,
-    "raw_excerpt": "1. [ADR-014](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:41) と [ADR-014](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:59) は「親 datum が必要なら将来 `fa"
-  },
-  {
-    "persona": "contrarian",
-    "approved": false,
-    "raw_excerpt": "**Findings**\n1. `Option B` は誤った意味付けで正当化されています。[ADR 本文](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:32) は A を「親 datum 共有」、B を「独立 coordinate frame 維持」と対比していますが、実装では `effecti"
-  },
-  {
-    "persona": "migration",
-    "approved": false,
-    "raw_excerpt": "1. `[ADR-014](/home/bacon/engawacad/docs/decisions/014-component-refplane-isolation.md:55)` の「parser-level 不変との整合」は成立していません。実装で canonical three を自動補完しているのは root だけで、`Document::new` / `from_yaml` / `De"
-  }
-]
+{
+  "fallback_used": false,
+  "verdicts": [
+    {
+      "persona": "architect",
+      "approved": false,
+      "raw_excerpt": "ADR-005 は `EntityRef` の参照スコープを「現在の文書の単一 Component 内」に限定しており、component/occurrence path は将来拡張の予告に留まります (`docs/decisions/005-topological-naming.md`)。実装もそれに従っていて、`EntityRef` には component path がなく、`feature"
+    },
+    {
+      "persona": "contrarian",
+      "approved": false,
+      "raw_excerpt": "- High: `採用理由 2/5` は、`coordinate frame` の独立性と `ref_plane` 名解決スコープを混同しています。child が自前の transform / local sketch 座標を持つことと、親の datum を参照できることは両立可能です。Option B はその両立可能性を切り捨て、assembly 全体で共有したい datum を child ご"
+    },
+    {
+      "persona": "migration",
+      "approved": false,
+      "raw_excerpt": "1. `schema_version` を上げず、移行導線もないまま child の空 `ref_planes` の意味を固定しているのは後方互換性違反です。`Component.ref_planes` は省略可能で、空配列でも canonical three でも YAML では省略されます ([component.rs](/home/bacon/engawacad/crates/engawa-"
+    }
+  ]
+}
