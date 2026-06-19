@@ -1,0 +1,23 @@
+issues:
+  - id: FN01
+    severity: medium
+    file: "N/A"
+    line_hint: N/A
+    finding: "TEST SUMMARY の coverage_hints.total_added = 0 と実際のテスト追加 (6 test) が不一致"
+    suggestion: "coverage_hints JSON を更新するか、この不一致が CI 集計ロジックの既知バグである場合はスコープ防御に明記すること"
+
+  - id: FN02
+    severity: low
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1047-1051
+    finding: "t_267_determinism テストは consumed_ref/displaced_feature_id/consumer_at の一致のみ検証し、requested_at (insert 位置) を検証していない"
+    suggestion: "assert_eq!(at1, at2); の下に assert_eq!(at1, 2); 等を追加して insert 位置の決定性も明示的に検証すること"
+
+  - id: FN03
+    severity: low
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 476-544
+    finding: "check_no_downstream_break の post_idx 計算 (orig_idx + 1) が features.len() == at の時に範囲外アクセスしないか考慮が必要"
+    suggestion: "末尾 insert (at == features.len()) の場合は features.iter().enumerate().skip(at) が空を返すため安全だが、コメントで明示すると読みやすさ向上"
+
+verdict: pass
