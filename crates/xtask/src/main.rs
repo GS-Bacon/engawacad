@@ -909,6 +909,26 @@ fn ci() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // #261 F01 (Codex r2 high): .claude/ 配下の bun:test は repo root の `bun test`
+    // 自動探索に乗らないため、ここで明示実行して回帰スイートに組み込む。
+    println!("\n=== Running 3ailoop bun tests ===");
+    let Some(bun) = which("bun") else {
+        eprintln!("FAILED: 'bun' not found. Install: https://bun.sh/");
+        return ExitCode::FAILURE;
+    };
+    let bun_status = Command::new(&bun)
+        .args([
+            "test",
+            "./.claude/skills/3ailoop/scripts/loop-split-detector.test.ts",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("failed to execute bun test");
+    if !bun_status.success() {
+        eprintln!("FAILED: 3ailoop bun tests");
+        return ExitCode::FAILURE;
+    }
+
     println!("\n=== All CI checks passed ===");
     ExitCode::SUCCESS
 }

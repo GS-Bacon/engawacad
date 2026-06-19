@@ -35,6 +35,12 @@ describe("fetchParentMilestone (#261)", () => {
     const ghFn = async () => ({ stdout: JSON.stringify({ milestone: {} }), exit: 0 });
     expect(await fetchParentMilestone(244, ghFn)).toBeNull();
   });
+
+  // #261 F02 r2 (Codex r2 medium): ghFn 自身が throw した場合も null
+  test("ghFn が throw → null (silent skip 契約)", async () => {
+    const ghFn = async () => { throw new Error("spawn failed"); };
+    expect(await fetchParentMilestone(244, ghFn)).toBeNull();
+  });
 });
 
 // #261 F02 (Codex medium): createChild の引数組み立てを単体テスト。

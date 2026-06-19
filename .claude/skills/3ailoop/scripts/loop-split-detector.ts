@@ -118,14 +118,16 @@ async function addParentLabel(parent: number): Promise<void> {
 }
 
 /** #261: 親 Issue の milestone title を取得する。
- *  null = milestone なし or 取得失敗 (どちらも継承スキップ)。 */
+ *  null = milestone なし or 取得失敗 (どちらも継承スキップ)。
+ *  #261 F02 (Codex r2 medium): ghFn 自体が throw した場合 (spawn 失敗・network 例外
+ *  など) も silent skip 契約を守るため、await ごと try/catch で包む。 */
 export async function fetchParentMilestone(
   parent: number,
   ghFn: typeof runGh = runGh,
 ): Promise<string | null> {
-  const r = await ghFn(["issue", "view", String(parent), "--json", "milestone"]);
-  if (r.exit !== 0) return null;
   try {
+    const r = await ghFn(["issue", "view", String(parent), "--json", "milestone"]);
+    if (r.exit !== 0) return null;
     const obj = JSON.parse(r.stdout) as { milestone?: { title?: string } | null };
     return obj.milestone?.title ?? null;
   } catch {
