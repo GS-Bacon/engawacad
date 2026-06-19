@@ -114,6 +114,31 @@ fn feature_implicit_body_refs(f: &Feature) -> Vec<String> {
     refs
 }
 
+/// Extract implicit body refs **transitively** reachable from a consumer feature.
+///
+/// Includes:
+/// - `feature_implicit_body_refs(f)` (direct: CreateSketch.plane_ref=Entity)
+/// - For each sketch_id in `feature_sketch_refs(f)`, look up the matching
+///   `CreateSketch` in `features` (full history) and add its `feature_implicit_body_refs`.
+///
+/// This captures the transitive lifetime dependency where e.g.
+/// `Extrude { sketch: sk }` indirectly depends on the body that sk's plane is
+/// attached to, even though Extrude itself carries no implicit body ref.
+fn feature_transitive_implicit_body_refs(f: &Feature, features: &[Feature]) -> Vec<String> {
+    let mut refs = feature_implicit_body_refs(f);
+    for sketch_id in feature_sketch_refs(f) {
+        for feat in features {
+            if let Feature::CreateSketch { id, .. } = feat {
+                if id == sketch_id {
+                    refs.extend(feature_implicit_body_refs(feat));
+                    break;
+                }
+            }
+        }
+    }
+    refs
+}
+
 /// Walk an `EntityRef` provenance tree and collect every `Named.feature_id`.
 ///
 /// `EntityRef::Named` is a leaf → push its `feature_id`.
@@ -395,7 +420,7 @@ fn check_refs_resolve_before(
     // Check implicit body refs (e.g. CreateSketch.plane_ref entity provenance).
     // Same semantics as body refs but resolved against live_bodies_at: the face must
     // belong to a body that is live at `at` (i.e. created earlier and not yet consumed).
-    for implicit_ref in feature_implicit_body_refs(f) {
+    for implicit_ref in feature_transitive_implicit_body_refs(f, features) {
         if let Some(&idx) = live_bodies_at.get(&implicit_ref) {
             if idx >= at {
                 return Err(FeatureCrudError::InsertBeforeProducer {
@@ -458,7 +483,8 @@ fn check_no_downstream_break(
     let consumed_bodies = feature_consumes(f);
 
     for body_id in consumed_bodies {
-        // Find downstream features that reference this body
+        // Find the FIRST unprotected consumer (pre-#266 semantics).
+        // Return immediately when found — do not continue to later consumers.
         for (consumer_idx, consumer_feat) in features.iter().enumerate().skip(at) {
             // broken な future consumer は real consumer ではないので skip
             if !executed_at_full.contains(&consumer_idx) {
@@ -466,12 +492,13 @@ fn check_no_downstream_break(
             }
 
             let consumer_refs: Vec<&str> = feature_consumes(consumer_feat);
-            let implicit_consumer_refs = feature_implicit_body_refs(consumer_feat);
+            let implicit_consumer_refs =
+                feature_transitive_implicit_body_refs(consumer_feat, features);
 
             let direct_match = consumer_refs.contains(&body_id);
             let implicit_match = implicit_consumer_refs.iter().any(|r| r == body_id);
             if direct_match || implicit_match {
-                // Check if body is re-registered before consumer
+                // Check re_registered only up to THIS consumer (not all consumers)
                 let mut re_registered = false;
                 for (reg_idx, reg_feat) in features.iter().enumerate().skip(at + 1) {
                     if reg_idx >= consumer_idx {
@@ -508,6 +535,7 @@ fn check_no_downstream_break(
                         requested_at: at,
                     });
                 }
+                // この consumer は保護されたので次の consumer に進む
             }
         }
     }

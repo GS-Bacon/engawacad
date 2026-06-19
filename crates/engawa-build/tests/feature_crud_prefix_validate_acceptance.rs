@@ -1,7 +1,9 @@
 //! Acceptance tests for #265: pre-existing history の broken ref を defensive validate.
 
 use engawa_build::FeatureCrud;
-use engawa_format::{Document, Feature};
+use engawa_format::{
+    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchPlane, SketchSegment,
+};
 
 /// T01: 決定性 — broken prefix history + 同 insert を 2 回 → エラー variant 同一 + Document YAML byte-equal
 #[test]
@@ -852,4 +854,87 @@ fn t01b_determinism_yaml_byteequal() {
         yaml1, yaml2,
         "two inserts with same input should produce byte-identical YAML"
     );
+}
+
+/// R2 (#266): early consumer + later valid re-register → first-unprotected consumer
+/// が返ることを確認 (last-consumer 畳み込み回帰の防止)
+///
+/// History pattern:
+///   [box_2, box_1, sk(plane=Entity(box_1)), CreateBox box_1 (re-register), e2(Extrude sketch=sk)]
+///
+/// - sk (idx 2) は box_1 の early consumer (implicit ref via plane_ref)
+/// - CreateBox box_1 (idx 3) で re-register
+/// - e2 (idx 4) は re-register 後の consumer (transitive ref via sketch)
+///
+/// Cut(target=box_1, tool=box_2) を idx 2 に insert → first-unprotected consumer (sk) が返る。
+#[test]
+fn t_266_r2_early_consumer_with_later_reregister_returns_first() {
+    let mut doc = Document::new("Test");
+    // box_2 は Cut.tool 用
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_2".to_string(),
+        width: 5.0,
+        height: 10.0,
+        depth: 15.0,
+    });
+    // box_1 は対象の body
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 20.0,
+        depth: 30.0,
+    });
+    // sk は box_1 の early consumer (implicit ref via plane_ref)
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: vec![SketchSegment {
+            id: "seg_a".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: Some(PlaneRef::Entity(EntityRef::Named {
+            feature_id: "box_1".to_string(),
+            kind: EntityKind::Face,
+            role: "top".to_string(),
+        })),
+    });
+    // box_1 を re-register
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 20.0,
+        depth: 30.0,
+    });
+    // e2 は re-register 後の consumer (transitive ref via sketch)
+    doc.root_component.features.push(Feature::Extrude {
+        id: "e2".to_string(),
+        sketch: "sk".to_string(),
+        depth: 5.0,
+        fuse_target: None,
+    });
+
+    // idx 2 で Cut(target=box_1, tool=box_2) を insert
+    let cut = Feature::Cut {
+        id: "cut1".to_string(),
+        target: "box_1".to_string(),
+        tool: "box_2".to_string(),
+    };
+
+    let result = FeatureCrud::insert(&doc, cut, 2);
+    match result {
+        Err(engawa_build::FeatureCrudError::InsertBeforeConsumer {
+            consumed_ref,
+            displaced_feature_id,
+            ..
+        }) => {
+            assert_eq!(consumed_ref, "box_1");
+            // first-unprotected semantics で sk (early consumer) が返る。
+            // re-register 後の e2 は保護されるが、sk は re-register 前なので未保護。
+            assert_eq!(displaced_feature_id, "sk");
+        }
+        other => panic!("expected InsertBeforeConsumer with sk, got {:?}", other),
+    }
 }
