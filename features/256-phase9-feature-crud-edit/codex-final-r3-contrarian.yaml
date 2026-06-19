@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs"
+    line_hint: 193
+    finding: "`t07_deg_edit_steals_body_from_downstream` で `use engawa_format::{SketchPlane, SketchSegment};` と import している `SketchPlane` が未使用です。`cargo clippy --tests -- -D warnings` では `unused_imports` が error になり、この差分の品質ゲートを通せません。"
+    suggestion: "未使用の `SketchPlane` import を削除するか、`engawa_format::SketchPlane::Xy` の完全修飾をやめて import 済みの `SketchPlane::Xy` を使ってください。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 827
+    finding: "`edit` は `without_old` に対して `check_refs_resolve_before` を流用しているため、将来 producer が edited slot より後ろにある場合の `InsertBeforeProducer.producer_at` が短縮後 index で返ります。たとえば元 history の index 3 にある producer が、`idx=1` を remove した後は 2 と報告され、さらにエラーメッセージ自体も『insertion requested』のままです。編集失敗時の診断位置が実 history とずれるので、CLI から原因を追うときに誤誘導になります。"
+    suggestion: "`edit` 用の ref-resolve check を用意して original history の index に戻して報告するか、少なくとも `without_old` 上の index を original index に remap してから `InsertBeforeProducer` を返してください。"
+
+verdict: fail

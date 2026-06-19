@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 703
+    finding: "`edit` が旧 feature を削除した `without_old` に対して validator を回しているため、編集対象 ID を参照する後続 feature が事前比較から消えます。結果として `CreateSketch(\"sk1\")` を `CreateBox(\"sk1\")` に差し替えるような edit でも `Ok` になり得て、後続の `Extrude { sketch: \"sk1\" }` は解決不能のまま silently inert になります。これは plan の「params 差し替え専用」契約を外れ、既存 feature chain を壊します。"
+    suggestion: "edit の検証は旧 feature を含む元履歴を基準に downstream 互換性まで確認し、少なくとも同一 variant / 同一 producer kind を強制してください。合わせて、編集対象を参照する downstream consumer を持つケースの acceptance test を追加してください."
+
+verdict: fail

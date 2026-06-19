@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 740
+    finding: "`edit` が validator の基準履歴として `without_old` を使っているため、編集対象が producer の場合に downstream consumer が pre-state から消えます。variant 一致を強制しても、この穴は残っており、たとえば `CreateSketch.plane_ref` を別 body に差し替えてその body が後続 feature で先に消費されるケースは `Ok` になり、更新後 Document は build 時に `FaceEntityRefNotFound` などで壊れます。"
+    suggestion: "edit 専用に、旧履歴そのものと `features[idx]` だけ差し替えた新履歴を比較して downstream の実行可否を検証すること。少なくとも `CreateSketch.plane_ref` を retarget して後続 `Extrude` が壊れる回帰テストを追加する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-cli/tests/256_phase9_entry_edit_cli.rs"
+    line_hint: 79
+    finding: "CLI の byte-equal golden が `Document::new(\"Test\")` から組み立てられているため、期待値が入力 `.engawa` のヘッダではなく現在の `CURRENT_SCHEMA_VERSION` / crate `version` に依存しています。workspace version や schema_version を上げた時、`entry edit` が旧ファイルの `version`/`schema_version` を正しく保持していてもこのテストだけ偽陽性で落ちます。"
+    suggestion: "期待 YAML は `initial_yaml` を parse した Document を元に feature だけ差し替えて作るか、少なくとも入力ヘッダを固定した exact golden にする。`Document::new()` のデフォルト値を golden 源に使わない。"
+
+verdict: fail

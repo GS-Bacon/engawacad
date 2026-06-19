@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 827
+    finding: "`edit` は `PlaneRef::Entity` を所有 body の `feature_id` 生存性でしか再検証していません。`CreateSketch.plane_ref` を同じ body 上の存在しない face role や非平面 face に編集しても `check_refs_resolve_before` / `check_edit_preserves_consumers` は通って `Ok(Document)` を返し、その後の build で `FaceEntityRefNotFound` / `FaceNotPlanar` に落ちます。"
+    suggestion: "`PlaneRef::Entity` を含む edit では `Named.feature_id` 収集だけで済ませず、post-edit 状態で EntityRef 全体を実際に解決できることを検証する。最低でも `plane_ref.role` を無効値へ編集したとき `FeatureCrud::edit` が reject する回帰テストを追加する。"
+
+verdict: fail

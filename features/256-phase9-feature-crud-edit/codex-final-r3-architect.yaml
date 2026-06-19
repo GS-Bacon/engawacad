@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 167
+    finding: "`PlaneRef::Entity` を owning body の `feature_id` 生存判定に縮約しているため、same-variant edit で face role/topology が変わっても downstream 破壊を検出できません。たとえば `Extrude` の `sketch` を別 profile に差し替えて `f_side_0003` が消えても、ここでは body `e1` が live という理由だけで `FeatureCrud::edit` が `Ok` を返し、後段 build で `FaceEntityRefNotFound` になります。"
+    suggestion: "edit 後の履歴で `PlaneRef::Entity` の実解決まで再検証し、edited feature 自身と downstream consumer の `EntityRef` が引き続き face へ解決できることを必須にしてください。body ID の生存判定だけで互換性を判断しないでください。"
+
+verdict: fail

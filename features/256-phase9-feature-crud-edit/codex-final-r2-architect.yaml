@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 741
+    finding: "`edit` が validator の pre-state に `without_old` を使っているため、旧 feature の出力を使っていた downstream consumer が事前シミュレーションでは最初から inert 扱いになります。その結果、variant 一致後でも `Extrude { fuse_target: None -> Some(\"box_1\") }` や `CreateSketch.plane_ref` の差し替えのような edit が後続 feature を壊したまま `Ok` を返せます。`next.validate()` は履歴参照や EntityRef 解決を検証しないので、壊れた `.engawa` が保存され、後段 build で `BodyNotFound` / `SketchNotFound` / `FaceEntityRefNotFound` まで遅延します。"
+    suggestion: "edit 専用に「元の `doc.root_component.features` を pre-state、置換後の history を post-state」として比較する validator を追加し、元の履歴で実行できていた downstream consumer が置換後も実行可能であることを必須にしてください。少なくとも `without_old` ベースの `check_no_downstream_break` 再利用はやめ、同 variant で downstream を壊す回帰テストを追加してください."
+
+verdict: fail

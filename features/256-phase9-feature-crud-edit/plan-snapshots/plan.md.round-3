@@ -1,0 +1,203 @@
+# Plan: feat(phase9): Feature CRUD Edit (build + cli) — #256
+
+## 自律判断ログ (intent-check round 1 反映)
+
+- intent-check r1 で `aligned: no` (Out-of-Scope 欠如)。Issue body に Out-of-Scope / Non-Goals を追記し r2 で `aligned: yes` 取得。
+- ADR ナンバリング再確認:
+  - ADR-014 (Component RefPlane 独立 coordinate frame) は #207 needs-human
+  - ADR-015 (Phase 9 設計基盤) は #246 needs-human
+  - ADR-016 (engawa CLI 命名規約) は #245 needs-human
+  - 本 Issue はこれら ADR の確定を**待たない**: 各 ADR 確定後に rename / 構造調整が必要なら別 Issue で扱う前提。
+- 数値モデル: 本 Issue は履歴 Document の純関数変換のみで数値判断を伴わない → `### 数値モデル` セクションは作らない。
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `FeatureCrud::edit(&doc, feature_id, new_feature) -> Result<Document>` build 実装 (ID-stable / 純関数 / 既存 validation 再利用) | 他 CRUD op (Insert は #255 既存、Rollback/Suppress/Reorder/Delete は #257-#260) |
+| `engawa entry edit <input> <feature_id> <feature.yaml>` cli サブコマンド (`--output`, `--dry-run` 対応) | ADR-014 / ADR-015 / ADR-016 改訂 (別 Issue #207 / #246 / #245 needs-human で進行中) |
+| `FeatureCrudError` に `UnknownFeatureId` / `IdMismatch` variant 追加 | `engawa entry edit` 以外の cli サブコマンド変更 |
+| T01-T05 を `crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs` + cli 統合テストで担保 | `### 数値モデル` セクション (本 Issue は数値判断を伴わない) |
+
+## Non-Goals
+
+- Edit の atomic transaction / undo semantics (= #257 Rollback の責務)
+- Edit 後の B-rep 再生成性能最適化 (= Phase 10+ ROADMAP)
+- 編集履歴の audit log 機能 (= ROADMAP 範囲外)
+- ID 変更を伴う Edit (= 呼び出し側で `delete + insert` を組み立てる方針、#260 + #255)
+
+## 実装対象
+
+- 影響クレート / ファイル:
+  - `crates/engawa-build/src/feature_crud.rs` (FeatureCrud::edit メソッド + Error variant 追加)
+  - `crates/engawa-cli/src/main.rs` (EntryOp::Edit variant + run_entry 分岐)
+  - `crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs` (新規, T01/T02/T_DEG_*)
+  - `crates/engawa-cli/tests/256_phase9_entry_edit_cli.rs` (新規, T03)
+- 変更する型・関数のシグネチャ:
+  - `FeatureCrud::edit(doc: &Document, feature_id: &str, new_feature: Feature) -> Result<Document, FeatureCrudError>`
+  - `FeatureCrudError::UnknownFeatureId { feature_id: String }`
+  - `FeatureCrudError::IdMismatch { expected: String, actual: String }`
+  - `EntryOp::Edit { input: PathBuf, feature_id: String, feature: PathBuf, output: Option<PathBuf>, dry_run: bool }`
+
+### 既存関数修正の before / after
+
+#### `impl FeatureCrud` (crates/engawa-build/src/feature_crud.rs)
+
+**before** (現状: insert のみ):
+```rust
+impl FeatureCrud {
+    pub fn insert(
+        doc: &Document,
+        feature: Feature,
+        at: usize,
+    ) -> Result<Document, FeatureCrudError> { /* 既存実装 */ }
+}
+```
+
+**after** (edit を追加):
+```rust
+impl FeatureCrud {
+    pub fn insert(/* 既存維持 */) -> Result<Document, FeatureCrudError> { /* 既存 */ }
+
+    /// Replace the feature identified by `feature_id` with `new_feature` (ID-stable).
+    ///
+    /// `new_feature.id()` must equal `feature_id`. The replacement is performed
+    /// in-place at the original index, preserving order. All existing validators
+    /// (self-reference, refs_resolve_before, no_downstream_break) are re-applied
+    /// against the prefix without the old feature.
+    pub fn edit(
+        doc: &Document,
+        feature_id: &str,
+        new_feature: Feature,
+    ) -> Result<Document, FeatureCrudError> {
+        let idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        if new_feature.id() != feature_id {
+            return Err(FeatureCrudError::IdMismatch {
+                expected: feature_id.to_string(),
+                actual: new_feature.id().to_string(),
+            });
+        }
+        // Build prefix without the old feature, then re-use insert-time validators.
+        let mut without_old: Vec<Feature> = doc.root_component.features.clone();
+        without_old.remove(idx);
+        check_self_reference(&new_feature)?;
+        check_refs_resolve_before(&new_feature, &without_old, idx)?;
+        check_no_downstream_break(&new_feature, &without_old, idx)?;
+        let mut next = doc.clone();
+        next.root_component.features[idx] = new_feature;
+        next.validate()?;
+        Ok(next)
+    }
+}
+```
+
+#### `FeatureCrudError` enum (同ファイル)
+
+**before**: 既存 7 variants (`OutOfRange` / `DuplicateFeatureId` / `Validation` / `SketchNotFound` / `BodyNotFound` / `InsertBeforeProducer` / `InsertBeforeConsumer` / `SelfReference`).
+
+**after**: 上記に 2 variant 追記:
+```rust
+/// Feature ID does not exist in root_component.
+#[error("feature id {feature_id:?} not found in root_component")]
+UnknownFeatureId { feature_id: String },
+
+/// new_feature.id() does not match feature_id (Edit is ID-stable).
+#[error("edit feature_id {expected:?} does not match new_feature.id() {actual:?}")]
+IdMismatch { expected: String, actual: String },
+```
+
+#### `EntryOp` enum (crates/engawa-cli/src/main.rs)
+
+**before**:
+```rust
+#[derive(Subcommand)]
+enum EntryOp {
+    Add { /* 既存 */ },
+}
+```
+
+**after**:
+```rust
+#[derive(Subcommand)]
+enum EntryOp {
+    Add { /* 既存維持 */ },
+    /// Replace an existing feature's params (ID-stable).
+    Edit {
+        input: PathBuf,
+        /// Existing feature id to replace
+        feature_id: String,
+        /// Path to a YAML file containing the new Feature (must share id)
+        feature: PathBuf,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+```
+
+#### `run_entry` 関数 (同ファイル)
+
+**before**: `match op { EntryOp::Add { .. } => { /* ... */ } }`
+
+**after** (Edit 分岐追加):
+```rust
+fn run_entry(op: EntryOp) -> Result<(), String> {
+    match op {
+        EntryOp::Add { /* 既存維持 */ } => { /* 既存 */ }
+        EntryOp::Edit { input, feature_id, feature, output, dry_run } => {
+            let doc = Document::from_path(&input)
+                .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+            let feature_yaml = std::fs::read_to_string(&feature)
+                .map_err(|e| format!("failed to read feature file {}: {e}", feature.display()))?;
+            let new_feature: Feature = serde_yaml::from_str(&feature_yaml)
+                .map_err(|e| format!("failed to parse feature YAML: {e}"))?;
+            let updated = engawa_build::FeatureCrud::edit(&doc, &feature_id, new_feature)
+                .map_err(|e| format!("edit failed: {e}"))?;
+            let yaml = updated
+                .to_yaml()
+                .map_err(|e| format!("failed to serialize document: {e}"))?;
+            if dry_run {
+                print!("{yaml}");
+            } else {
+                let output_path = output.as_ref().unwrap_or(&input);
+                std::fs::write(output_path, yaml)
+                    .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+            }
+            Ok(())
+        }
+    }
+}
+```
+
+## 設計方針
+
+- **決定性**: `FeatureCrud::edit` は input doc を clone した後、特定 index の Feature を差し替えるのみ。HashMap iteration を出力に伝播させない (既存 `simulate_history` の利用方法は insert と同じで、存在判定のみで順序を出力に持ち込まない)。
+- **ID-stable 制約**: `new_feature.id() == feature_id` を assert することで「Edit は params 差し替え専用」を型レベルで保証 (`IdMismatch` で早期失敗)。ID 変更が必要な場合は呼び出し側で `delete + insert` を組み立てる方針 (Out-of-Scope に明記)。
+- **validation 再利用**: 既存 `check_self_reference` / `check_refs_resolve_before` / `check_no_downstream_break` を「元 features から該当 idx を削除した prefix に対して new_feature を idx 位置に挿入する」前提で呼ぶ。これにより insert と同じ意味的不変条件を Edit にも自動的に適用できる (refs の生存性 / consumer 連鎖の保存)。
+- **derive 規約**: `FeatureCrudError` は既存どおり `#[derive(Debug, Error)] #[non_exhaustive]`。新 variant も同じ規約。
+- **エラーハンドリング**: 全エラーは `FeatureCrudError` 経由。CLI は `to_string()` で stderr に出して exit 1 (既存 `Add` と同じパターン)。
+- **workspace.dependencies**: 新規依存なし (既存 `thiserror`, `serde_yaml`, `engawa-format`, `engawa-build`, `clap` を使用)。
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 | 配置 |
+|----|------|------|----------|------|
+| T01 | 決定性 | 同一 (doc, feature_id, new_feature) を 2 回 `edit` → 結果 Document の `to_yaml()` byte-equal | `assert_eq!(r1.to_yaml()?, r2.to_yaml()?)` | `crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs` |
+| T02 | 正常系 (build) | 1 feature (CreateBox{ id: "box_1", w:10, h:20, d:30 }) を持つ doc → edit で w:100/h:200/d:300 に差し替え → ID 維持・新 params が反映 | features[0] == CreateBox{ id:"box_1", w:100, h:200, d:300 } | 同上 |
+| T03 | 正常系 (cli) | 一時 .engawa + 一時 feature.yaml → `engawa entry edit ... --output out.engawa` → out.engawa の box_1 params が更新 | **テスト内で `Document::to_yaml()` を呼んで期待 YAML 文字列を組み立て、`std::fs::read_to_string(out.engawa)` と byte-equal を assert** (外部 golden ファイル不要、AM01 round 2 受容で具体化) | `crates/engawa-cli/tests/256_phase9_entry_edit_cli.rs` |
+| T_DEG_unknown_id | 退化 (build) | 空 doc に対して edit("box_1", ...) → `UnknownFeatureId` エラー | matches Err(UnknownFeatureId) | acceptance.rs |
+| T_DEG_invalid_spec | 退化 (build) | edit("box_1", CreateBox{ id:"box_2", ... }) → `IdMismatch` エラー | matches Err(IdMismatch) | acceptance.rs |
+
+退化ケース ID は `T_DEG_unknown_id` / `T_DEG_invalid_spec` の 2 件で ADR-006 §1 の「退化/境界ケース ID ≥1」を満たす。
+
+## 幾何的不変条件チェックリスト
+
+- N/A (履歴 Document の純関数変換のみ。B-rep 不変条件は build 段階で別途検証される本 Issue 範囲外)

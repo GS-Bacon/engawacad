@@ -1,0 +1,8 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 741
+    finding: "`edit` validates against `without_old`, so `check_no_downstream_break` computes `executed_at_pre` after removing the very producer that downstream features still reference. That hides real regressions: a same-variant edit that starts consuming an extra body can return `Ok` even when a later consumer now loses that body (for example, `Extrude{id:e1,fuse_target=None}` edited to `Extrude{id:e1,fuse_target=Some(box_b)}` before `Cut{target:e1, tool:box_b}`)."
+    suggestion: "Run the downstream-break check against the original history with the old feature logically replaced, or otherwise keep consumers of `feature_id` visible in the pre/post simulation. Add a regression test for an edit that newly consumes a body also required by a later feature."
+verdict: fail

@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > T03"
+    finding: "「golden compare (YAML serialize 結果)」とあるが、golden ファイルの具体的な期待値内容（更新後の YAML 全体）が記載されていない"
+    suggestion: "「期待値: out.engawa の features[0] が CreateBox{ id:box_1, w:100, h:200, d:300 } を含む完全な YAML ドキュメント」等の具体的な assert 条件を記述すること、または「テストコード内で golden ファイルを別途 fixtures/ に配置し byte-equal を assert する」と明記すること"
+
+verdict: pass

@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 145
+    finding: "`PlaneRef::Entity` の検証が `Named.feature_id` の生存判定に縮約されているため、same-variant edit で body は live のままでも face role や surface type が変わるケースを検出できません。結果として `FeatureCrud::edit` は `Ok(Document)` を返せますが、post-edit build では `find_face_by_entity_ref` が失敗して `FaceEntityRefNotFound` / `FaceNotPlanar` に落ちます。"
+    suggestion: "`check_refs_resolve_before_for_edit` / `check_edit_preserves_consumers` の implicit ref 判定を body ID 生存性だけで済ませず、post-edit history で `PlaneRef::Entity` 全体を face 解決まで再検証してください。follow-up #270 で保留中の `t08_deg_edit_retargets_plane_ref` を実テスト化して固定するのが妥当です。"
+
+verdict: pass

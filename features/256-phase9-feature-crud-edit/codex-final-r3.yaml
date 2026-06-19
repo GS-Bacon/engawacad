@@ -1,0 +1,30 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 167
+    finding: "`PlaneRef::Entity` を owning body の `feature_id` 生存判定に縮約しているため、same-variant edit で face role/topology が変わっても downstream 破壊を検出できません。たとえば `Extrude` の `sketch` を別 profile に差し替えて `f_side_0003` が消えても、ここでは body `e1` が live という理由だけで `FeatureCrud::edit` が `Ok` を返し、後段 build で `FaceEntityRefNotFound` になります。"
+    suggestion: "edit 後の履歴で `PlaneRef::Entity` の実解決まで再検証し、edited feature 自身と downstream consumer の `EntityRef` が引き続き face へ解決できることを必須にしてください。body ID の生存判定だけで互換性を判断しないでください。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs"
+    line_hint: 193
+    finding: "`t07_deg_edit_steals_body_from_downstream` で `use engawa_format::{SketchPlane, SketchSegment};` と import している `SketchPlane` が未使用です。`cargo clippy --tests -- -D warnings` では `unused_imports` が error になり、この差分の品質ゲートを通せません。"
+    suggestion: "未使用の `SketchPlane` import を削除するか、`engawa_format::SketchPlane::Xy` の完全修飾をやめて import 済みの `SketchPlane::Xy` を使ってください。"
+  - id: C-F02
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 827
+    finding: "`edit` は `without_old` に対して `check_refs_resolve_before` を流用しているため、将来 producer が edited slot より後ろにある場合の `InsertBeforeProducer.producer_at` が短縮後 index で返ります。たとえば元 history の index 3 にある producer が、`idx=1` を remove した後は 2 と報告され、さらにエラーメッセージ自体も『insertion requested』のままです。編集失敗時の診断位置が実 history とずれるので、CLI から原因を追うときに誤誘導になります。"
+    suggestion: "`edit` 用の ref-resolve check を用意して original history の index に戻して報告するか、少なくとも `without_old` 上の index を original index に remap してから `InsertBeforeProducer` を返してください。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 827
+    finding: "`edit` は `PlaneRef::Entity` を所有 body の `feature_id` 生存性でしか再検証していません。`CreateSketch.plane_ref` を同じ body 上の存在しない face role や非平面 face に編集しても `check_refs_resolve_before` / `check_edit_preserves_consumers` は通って `Ok(Document)` を返し、その後の build で `FaceEntityRefNotFound` / `FaceNotPlanar` に落ちます。"
+    suggestion: "`PlaneRef::Entity` を含む edit では `Named.feature_id` 収集だけで済ませず、post-edit 状態で EntityRef 全体を実際に解決できることを検証する。最低でも `plane_ref.role` を無効値へ編集したとき `FeatureCrud::edit` が reject する回帰テストを追加する。"
+
+verdict: fail
+# severity_counts: critical=0, high=3, medium=1, low=0
+# blocking: 3

@@ -1,0 +1,36 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 703
+    finding: '`edit` は置換前ベースラインとして `without_old` を使っているため、元の feature を参照していた downstream が synthetic pre-state では既に inert 扱いになります。結果として `CreateSketch(sk_1)` を別 variant に差し替えても、その後段の `Extrude { sketch: "sk_1" }` や `Cut { target: "box_1" }` が壊れるケースを検出できず、`next.validate()` も履歴参照を検査しないため壊れた Document を返します。'
+    suggestion: 'edit 用に「元の履歴を pre-state、置換後の履歴を post-state」として比較する validator を用意し、元の doc で実行できていた downstream consumer が置換後も実行できることを必須にしてください。'
+  - id: A-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 697
+    finding: '`edit` は ID 一致しか見ていないので、`CreateBox(box_1)` を `CreateSphere(box_1)` のような別 topology contract の feature に差し替えられます。この場合、downstream の `PlaneRef::Entity(EntityRef::Named { feature_id: "box_1", role: "f_z_pos" })` は body が live でも role 解決に失敗し、後段 build で `FaceEntityRefNotFound` になります。'
+    suggestion: '「params 差し替え」を守るなら同一 feature variant 以外を reject するか、少なくとも置換後の doc を一度 build して downstream の `EntityRef`/`plane_ref` 解決まで検証してから成功にしてください。'
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 703
+    finding: "`edit` が旧 feature を削除した `without_old` に対して validator を回しているため、編集対象 ID を参照する後続 feature が事前比較から消えます。結果として `CreateSketch(\"sk1\")` を `CreateBox(\"sk1\")` に差し替えるような edit でも `Ok` になり得て、後続の `Extrude { sketch: \"sk1\" }` は解決不能のまま silently inert になります。これは plan の「params 差し替え専用」契約を外れ、既存 feature chain を壊します。"
+    suggestion: "edit の検証は旧 feature を含む元履歴を基準に downstream 互換性まで確認し、少なくとも同一 variant / 同一 producer kind を強制してください。合わせて、編集対象を参照する downstream consumer を持つケースの acceptance test を追加してください."
+  - id: M-F01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 704
+    finding: "`edit` は旧 feature を `without_old` から外した状態で `check_refs_resolve_before` / `check_no_downstream_break` を回しているため、元 feature の出力 ID を使う downstream consumer が事前シミュレーションでは「最初から壊れていた」扱いになる。結果として `CreateBox -> CreateSketch` や `CreateSketch -> CreateBox` のような置換が通り、更新後の `.engawa` が build 時に `BodyNotFound` / `SketchNotFound` で落ちうる。"
+    suggestion: "edit 用 validation は元の履歴を基準に downstream の解決可否を比較するか、少なくとも params-only 契約として feature variant 一致を強制すること。併せて body/sketch producer を別 kind に置換したとき失敗する回帰テストを追加する。"
+  - id: M-F02
+    severity: critical
+    file: "crates/engawa-cli/src/main.rs"
+    line_hint: 177
+    finding: "レビュー対象の tracked diff には `entry edit` / `FeatureCrud::edit` の実装しか入っておらず、合意済みの T01-T05・golden YAML テストは diff に 1 件も含まれていない。`coverage_hints.total_added=0` は extractor の取りこぼしではなく、この patch のままだとテスト追加が着地しない。"
+    suggestion: "`crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs` と `crates/engawa-cli/tests/256_phase9_entry_edit_cli.rs` を tracked change として含め、T01/T03 の byte-equal YAML と退化ケースが実際の diff に入る状態で出し直す。"
+
+verdict: fail
+# severity_counts: critical=3, high=2, medium=0, low=0
+# blocking: 5

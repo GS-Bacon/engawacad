@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "実装コードの clone & remove パターンに決定性の脆弱性。`without_old.remove(idx)` は `idx` をシフトさせるが、その後 `without_old` を `check_refs_resolve_before` / `check_no_downstream_break` に渡す際、これら関数が内部的に `features` の HashMap/非決定的探索に依頼していると不特定順序伝播が発生する。また `next.root_component.features[idx] = new_feature` は `clone()` 時点の順序に依存しており、`features` が非順序保証構造体の場合、clone 前後で順序が変わりうる。"
+    suggestion: "1) `root_component.features` が `Vec<Feature>` (順序保証) であることを契約として明記する、または 2) `features.iter().position()` の代わりに順序非依存の `HashMap` 検索を行い、index 取得から代入までを atomic に行う関数に抽出して決定性を分離し、かつ既存 `check_*` 関数が内部で `features` の順序に依存していないことを単体テストで担保すること。T01 決定性テストは存在するが、clone/remove/代入の 3 段階それぞれに対する結合テストが不足。"
+
+verdict: fail

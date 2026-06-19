@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 704
+    finding: "`edit` は旧 feature を `without_old` から外した状態で `check_refs_resolve_before` / `check_no_downstream_break` を回しているため、元 feature の出力 ID を使う downstream consumer が事前シミュレーションでは「最初から壊れていた」扱いになる。結果として `CreateBox -> CreateSketch` や `CreateSketch -> CreateBox` のような置換が通り、更新後の `.engawa` が build 時に `BodyNotFound` / `SketchNotFound` で落ちうる。"
+    suggestion: "edit 用 validation は元の履歴を基準に downstream の解決可否を比較するか、少なくとも params-only 契約として feature variant 一致を強制すること。併せて body/sketch producer を別 kind に置換したとき失敗する回帰テストを追加する。"
+  - id: F02
+    severity: critical
+    file: "crates/engawa-cli/src/main.rs"
+    line_hint: 177
+    finding: "レビュー対象の tracked diff には `entry edit` / `FeatureCrud::edit` の実装しか入っておらず、合意済みの T01-T05・golden YAML テストは diff に 1 件も含まれていない。`coverage_hints.total_added=0` は extractor の取りこぼしではなく、この patch のままだとテスト追加が着地しない。"
+    suggestion: "`crates/engawa-build/tests/256_phase9_feature_crud_edit_acceptance.rs` と `crates/engawa-cli/tests/256_phase9_entry_edit_cli.rs` を tracked change として含め、T01/T03 の byte-equal YAML と退化ケースが実際の diff に入る状態で出し直す。"
+
+verdict: fail

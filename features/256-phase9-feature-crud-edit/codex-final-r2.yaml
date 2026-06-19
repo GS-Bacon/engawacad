@@ -1,0 +1,30 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: critical
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 741
+    finding: "`edit` が validator の pre-state に `without_old` を使っているため、旧 feature の出力を使っていた downstream consumer が事前シミュレーションでは最初から inert 扱いになります。その結果、variant 一致後でも `Extrude { fuse_target: None -> Some(\"box_1\") }` や `CreateSketch.plane_ref` の差し替えのような edit が後続 feature を壊したまま `Ok` を返せます。`next.validate()` は履歴参照や EntityRef 解決を検証しないので、壊れた `.engawa` が保存され、後段 build で `BodyNotFound` / `SketchNotFound` / `FaceEntityRefNotFound` まで遅延します。"
+    suggestion: "edit 専用に「元の `doc.root_component.features` を pre-state、置換後の history を post-state」として比較する validator を追加し、元の履歴で実行できていた downstream consumer が置換後も実行可能であることを必須にしてください。少なくとも `without_old` ベースの `check_no_downstream_break` 再利用はやめ、同 variant で downstream を壊す回帰テストを追加してください."
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 741
+    finding: "`edit` validates against `without_old`, so `check_no_downstream_break` computes `executed_at_pre` after removing the very producer that downstream features still reference. That hides real regressions: a same-variant edit that starts consuming an extra body can return `Ok` even when a later consumer now loses that body (for example, `Extrude{id:e1,fuse_target=None}` edited to `Extrude{id:e1,fuse_target=Some(box_b)}` before `Cut{target:e1, tool:box_b}`)."
+    suggestion: "Run the downstream-break check against the original history with the old feature logically replaced, or otherwise keep consumers of `feature_id` visible in the pre/post simulation. Add a regression test for an edit that newly consumes a body also required by a later feature."
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 740
+    finding: "`edit` が validator の基準履歴として `without_old` を使っているため、編集対象が producer の場合に downstream consumer が pre-state から消えます。variant 一致を強制しても、この穴は残っており、たとえば `CreateSketch.plane_ref` を別 body に差し替えてその body が後続 feature で先に消費されるケースは `Ok` になり、更新後 Document は build 時に `FaceEntityRefNotFound` などで壊れます。"
+    suggestion: "edit 専用に、旧履歴そのものと `features[idx]` だけ差し替えた新履歴を比較して downstream の実行可否を検証すること。少なくとも `CreateSketch.plane_ref` を retarget して後続 `Extrude` が壊れる回帰テストを追加する。"
+  - id: M-F02
+    severity: medium
+    file: "crates/engawa-cli/tests/256_phase9_entry_edit_cli.rs"
+    line_hint: 79
+    finding: "CLI の byte-equal golden が `Document::new(\"Test\")` から組み立てられているため、期待値が入力 `.engawa` のヘッダではなく現在の `CURRENT_SCHEMA_VERSION` / crate `version` に依存しています。workspace version や schema_version を上げた時、`entry edit` が旧ファイルの `version`/`schema_version` を正しく保持していてもこのテストだけ偽陽性で落ちます。"
+    suggestion: "期待 YAML は `initial_yaml` を parse した Document を元に feature だけ差し替えて作るか、少なくとも入力ヘッダを固定した exact golden にする。`Document::new()` のデフォルト値を golden 源に使わない。"
+
+verdict: fail
+# severity_counts: critical=1, high=2, medium=1, low=0
+# blocking: 3
