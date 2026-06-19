@@ -63,6 +63,25 @@ bun .claude/skills/3ailoop/scripts/loop-context-bootstrap.ts
 stdout に Current Phase / MEMORY index / dashboard / 直近 cycle / open Issue 内訳が出る。
 **Claude は出力を確認して** 直近の運用ルール (memory) を再認識すること。
 
+### L-1.5: ADR auto-accept rescan (#252)
+
+L-2 (should-stop) の前に滞留中の `gate:adr-review` Issue を rescan する。これがないと
+両 LLM 不在 / regen 中断で滞留した gate Issue が永遠に解消されず、L-2 で `batch-select 0`
+→ pause → 次サイクル冒頭でまた同じ判定…という構造的デッドロックに陥る (cycle 32-34 実観測)。
+
+```bash
+bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan --auto-accept --depth 1
+```
+
+`--auto-accept` 指定時は新規 ADR scan に加えて **既存 gate:adr-review Issue の rescan** が
+自動で走る (`--no-rescan-stale` で無効化可)。各滞留 Issue は #251 GLM fallback を含む
+auto-accept チェーンに再投入され、3 persona 全 approved なら gate 削除 + close、refute
+1 件以上なら regen_required (`adr-regen-count/<adr>.json` の regen_count を inc)、
+cap 越え (3 回) で `needs-human` 退避。
+
+これにより滞留 gate が毎サイクル進行する: approve なら解消、refute 連続なら確定的に
+needs-human に移行 (= 人間判断待ち、ただし他の actionable Issue を block しない)。
+
 ### L-2: 停止条件チェック
 
 ```bash
@@ -144,7 +163,8 @@ ADR_JSON=$(bun .claude/skills/3ailoop/scripts/loop-adr-pause-detector.ts scan --
 echo "$ADR_JSON"
 ```
 
-(`features/.loop/last-adr-scan-sha` の marker を使って前回 scan 以降のみ検出)
+(`features/.loop/last-adr-scan-sha` の marker を使って前回 scan 以降のみ検出。
+滞留 gate Issue の rescan は L-1.5 で先行実行されるため、ここでは主に新規 ADR draft の処理)
 
 `--auto-accept` モードでは各 ADR について `loop-adr-auto-accept.ts` を呼び出し、以下を実施:
 
