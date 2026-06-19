@@ -5,6 +5,7 @@
 //! and preserves input Document immutability (ID-stable).
 
 use engawa_format::{Document, Feature};
+use std::collections::HashMap;
 use thiserror::Error;
 
 /// Zero-sized namespace for feature CRUD operations.
@@ -29,6 +30,311 @@ pub enum FeatureCrudError {
         #[from]
         source: engawa_format::FormatError,
     },
+
+    /// Referenced sketch does not exist or is not yet created at insertion point.
+    #[error("feature {feature_id} references sketch {sketch_ref:?} that does not exist or is created after this feature")]
+    SketchNotFound {
+        feature_id: String,
+        sketch_ref: String,
+    },
+
+    /// Referenced body does not exist, is not yet created, or was already consumed.
+    #[error("feature {feature_id} references body {body_ref:?} that does not exist, is created after this feature, or was already consumed")]
+    BodyNotFound {
+        feature_id: String,
+        body_ref: String,
+    },
+
+    /// Insertion would place this feature before the producer of a referenced entity.
+    #[error("feature {feature_id} references {ref_id:?} which is produced at index {producer_at}, but insertion requested at {requested_at}")]
+    InsertBeforeProducer {
+        feature_id: String,
+        ref_id: String,
+        producer_at: usize,
+        requested_at: usize,
+    },
+
+    /// Insertion would place this feature before a consumer of a body it consumes.
+    #[error("feature {consumed_ref:?} is consumed by {displaced_feature_id} at index {consumer_at}, but insertion at {requested_at} would remove that body before it can be consumed")]
+    InsertBeforeConsumer {
+        consumed_ref: String,
+        displaced_feature_id: String,
+        consumer_at: usize,
+        requested_at: usize,
+    },
+
+    /// Feature references itself (logical degeneracy).
+    #[error("feature {feature_id} contains a {ref_kind:?} reference to itself")]
+    SelfReference {
+        feature_id: String,
+        ref_kind: &'static str,
+    },
+}
+
+/// Extract sketch IDs referenced by a feature.
+fn feature_sketch_refs(f: &Feature) -> Vec<&str> {
+    match f {
+        Feature::Extrude { sketch, .. } => vec![sketch.as_str()],
+        Feature::ExtrudeCut { sketch, .. } => vec![sketch.as_str()],
+        _ => vec![],
+    }
+}
+
+/// Extract body IDs referenced by a feature.
+fn feature_body_refs(f: &Feature) -> Vec<&str> {
+    match f {
+        Feature::Extrude { fuse_target, .. } => fuse_target.iter().map(|s| s.as_str()).collect(),
+        Feature::ExtrudeCut { target, .. } => vec![target.as_str()],
+        Feature::Cut { target, tool, .. } => vec![target.as_str(), tool.as_str()],
+        Feature::Fuse { target, tool, .. } => vec![target.as_str(), tool.as_str()],
+        Feature::Intersect { target, tool, .. } => vec![target.as_str(), tool.as_str()],
+        _ => vec![],
+    }
+}
+
+/// Extract body IDs consumed by a feature (same as body_refs in current spec).
+fn feature_consumes(f: &Feature) -> Vec<&str> {
+    feature_body_refs(f)
+}
+
+/// Simulate feature history up to `up_to` index.
+/// Returns (sketches_at: first occurrence index, live_bodies_at: last registered index).
+fn simulate_history(
+    features: &[Feature],
+    up_to: usize,
+) -> (HashMap<String, usize>, HashMap<String, usize>) {
+    let mut sketches_at: HashMap<String, usize> = HashMap::new();
+    let mut live_bodies_at: HashMap<String, usize> = HashMap::new();
+
+    for (i, f) in features.iter().enumerate() {
+        if i >= up_to {
+            break;
+        }
+
+        match f {
+            Feature::CreateSketch { id, .. } => {
+                sketches_at.entry(id.clone()).or_insert(i);
+            }
+            Feature::CreateBox { id, .. }
+            | Feature::CreateCylinder { id, .. }
+            | Feature::CreateSphere { id, .. } => {
+                live_bodies_at.insert(id.clone(), i);
+            }
+            Feature::Extrude {
+                id, fuse_target, ..
+            } => {
+                if let Some(target) = fuse_target {
+                    live_bodies_at.remove(target);
+                }
+                live_bodies_at.insert(id.clone(), i);
+            }
+            Feature::ExtrudeCut { id, target, .. } => {
+                live_bodies_at.remove(target);
+                live_bodies_at.insert(id.clone(), i);
+            }
+            Feature::Cut {
+                id, target, tool, ..
+            } => {
+                live_bodies_at.remove(target);
+                live_bodies_at.remove(tool);
+                live_bodies_at.insert(id.clone(), i);
+            }
+            Feature::Fuse {
+                id, target, tool, ..
+            } => {
+                live_bodies_at.remove(target);
+                live_bodies_at.remove(tool);
+                live_bodies_at.insert(id.clone(), i);
+            }
+            Feature::Intersect {
+                id, target, tool, ..
+            } => {
+                live_bodies_at.remove(target);
+                live_bodies_at.remove(tool);
+                live_bodies_at.insert(id.clone(), i);
+            }
+        }
+    }
+
+    (sketches_at, live_bodies_at)
+}
+
+/// Check for self-reference degeneracy.
+fn check_self_reference(f: &Feature) -> Result<(), FeatureCrudError> {
+    let id = f.id();
+
+    for sketch_ref in feature_sketch_refs(f) {
+        if sketch_ref == id {
+            return Err(FeatureCrudError::SelfReference {
+                feature_id: id.to_string(),
+                ref_kind: "sketch",
+            });
+        }
+    }
+
+    for body_ref in feature_body_refs(f) {
+        if body_ref == id {
+            return Err(FeatureCrudError::SelfReference {
+                feature_id: id.to_string(),
+                ref_kind: "body",
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// Check that all refs resolve before insertion point.
+fn check_refs_resolve_before(
+    f: &Feature,
+    features: &[Feature],
+    at: usize,
+) -> Result<(), FeatureCrudError> {
+    let (sketches_at, live_bodies_at) = simulate_history(features, at);
+    let fid = f.id();
+
+    // Check sketch refs
+    for sketch_ref in feature_sketch_refs(f) {
+        if let Some(&idx) = sketches_at.get(sketch_ref) {
+            if idx >= at {
+                return Err(FeatureCrudError::InsertBeforeProducer {
+                    feature_id: fid.to_string(),
+                    ref_id: sketch_ref.to_string(),
+                    producer_at: idx,
+                    requested_at: at,
+                });
+            }
+        } else {
+            // Check if a CreateSketch with this id exists after insertion point.
+            // (body refs と同様に variant 限定で誤分類を防ぐ — Codex A-F02/M-F02)
+            let producer_after =
+                features
+                    .iter()
+                    .enumerate()
+                    .skip(at)
+                    .find_map(|(i, feat)| match feat {
+                        Feature::CreateSketch { id, .. } if id == sketch_ref => Some(i),
+                        _ => None,
+                    });
+
+            if let Some(producer_idx) = producer_after {
+                return Err(FeatureCrudError::InsertBeforeProducer {
+                    feature_id: fid.to_string(),
+                    ref_id: sketch_ref.to_string(),
+                    producer_at: producer_idx,
+                    requested_at: at,
+                });
+            } else {
+                return Err(FeatureCrudError::SketchNotFound {
+                    feature_id: fid.to_string(),
+                    sketch_ref: sketch_ref.to_string(),
+                });
+            }
+        }
+    }
+
+    // Check body refs
+    for body_ref in feature_body_refs(f) {
+        if let Some(&idx) = live_bodies_at.get(body_ref) {
+            if idx >= at {
+                return Err(FeatureCrudError::InsertBeforeProducer {
+                    feature_id: fid.to_string(),
+                    ref_id: body_ref.to_string(),
+                    producer_at: idx,
+                    requested_at: at,
+                });
+            }
+        } else {
+            // Check if body exists after insertion point or was consumed
+            let producer_after = features.iter().enumerate().skip(at).find_map(|(i, feat)| {
+                if feat.id() == body_ref {
+                    // Verify this is a body producer
+                    match feat {
+                        Feature::CreateBox { .. }
+                        | Feature::CreateCylinder { .. }
+                        | Feature::CreateSphere { .. }
+                        | Feature::Extrude { .. }
+                        | Feature::ExtrudeCut { .. }
+                        | Feature::Cut { .. }
+                        | Feature::Fuse { .. }
+                        | Feature::Intersect { .. } => Some(i),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            });
+
+            if let Some(producer_idx) = producer_after {
+                return Err(FeatureCrudError::InsertBeforeProducer {
+                    feature_id: fid.to_string(),
+                    ref_id: body_ref.to_string(),
+                    producer_at: producer_idx,
+                    requested_at: at,
+                });
+            } else {
+                return Err(FeatureCrudError::BodyNotFound {
+                    feature_id: fid.to_string(),
+                    body_ref: body_ref.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Check that insertion doesn't break downstream consumers.
+fn check_no_downstream_break(
+    f: &Feature,
+    features: &[Feature],
+    at: usize,
+) -> Result<(), FeatureCrudError> {
+    let consumed_bodies = feature_consumes(f);
+
+    for body_id in consumed_bodies {
+        // Find downstream features that reference this body
+        for (consumer_idx, consumer_feat) in features.iter().enumerate().skip(at) {
+            let consumer_refs = feature_consumes(consumer_feat);
+            if consumer_refs.contains(&body_id) {
+                // Check if body is re-registered before consumer
+                let mut re_registered = false;
+                for (reg_idx, reg_feat) in features.iter().enumerate().skip(at + 1) {
+                    if reg_idx >= consumer_idx {
+                        break;
+                    }
+                    if reg_feat.id() == body_id {
+                        // Verify this is a body producer
+                        match reg_feat {
+                            Feature::CreateBox { .. }
+                            | Feature::CreateCylinder { .. }
+                            | Feature::CreateSphere { .. }
+                            | Feature::Extrude { .. }
+                            | Feature::ExtrudeCut { .. }
+                            | Feature::Cut { .. }
+                            | Feature::Fuse { .. }
+                            | Feature::Intersect { .. } => {
+                                re_registered = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                if !re_registered {
+                    return Err(FeatureCrudError::InsertBeforeConsumer {
+                        consumed_ref: body_id.to_string(),
+                        displaced_feature_id: consumer_feat.id().to_string(),
+                        consumer_at: consumer_idx,
+                        requested_at: at,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 impl FeatureCrud {
@@ -58,6 +364,11 @@ impl FeatureCrud {
         if doc.root_component.features.iter().any(|f| f.id() == new_id) {
             return Err(FeatureCrudError::DuplicateFeatureId { id: new_id });
         }
+
+        // Semantic validation
+        check_self_reference(&feature)?;
+        check_refs_resolve_before(&feature, &doc.root_component.features, at)?;
+        check_no_downstream_break(&feature, &doc.root_component.features, at)?;
 
         let mut next = doc.clone();
         next.root_component.features.insert(at, feature);
