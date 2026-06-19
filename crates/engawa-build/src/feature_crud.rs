@@ -4,7 +4,7 @@
 //! the feature history of a Document. Each operation returns a new Document
 //! and preserves input Document immutability (ID-stable).
 
-use engawa_format::{Document, Feature};
+use engawa_format::{Document, EntityRef, Feature, PlaneRef};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -89,6 +89,43 @@ fn feature_body_refs(f: &Feature) -> Vec<&str> {
         Feature::Fuse { target, tool, .. } => vec![target.as_str(), tool.as_str()],
         Feature::Intersect { target, tool, .. } => vec![target.as_str(), tool.as_str()],
         _ => vec![],
+    }
+}
+
+/// Extract body IDs implicitly referenced by a feature via topological entity refs.
+///
+/// Currently only `CreateSketch.plane_ref = PlaneRef::Entity(EntityRef)` is tracked:
+/// face-attached sketches carry an implicit lifetime dependency on the body that owns
+/// the referenced face. The provenance tree is walked recursively so `EntityRef::Derived`
+/// chains resolve back to their `Named.feature_id` leaves.
+///
+/// Returns owned `String` (vs `&str`) because `Derived` traversal may produce values
+/// not directly borrowable from `f` in the future (current impl only borrows, but the
+/// owned shape keeps the API stable if Derived ever materialises new strings).
+fn feature_implicit_body_refs(f: &Feature) -> Vec<String> {
+    let mut refs = Vec::new();
+    if let Feature::CreateSketch {
+        plane_ref: Some(PlaneRef::Entity(eref)),
+        ..
+    } = f
+    {
+        collect_named_feature_ids(eref, &mut refs);
+    }
+    refs
+}
+
+/// Walk an `EntityRef` provenance tree and collect every `Named.feature_id`.
+///
+/// `EntityRef::Named` is a leaf → push its `feature_id`.
+/// `EntityRef::Derived { from, .. }` recurses into each provenance child.
+fn collect_named_feature_ids(eref: &EntityRef, acc: &mut Vec<String>) {
+    match eref {
+        EntityRef::Named { feature_id, .. } => acc.push(feature_id.clone()),
+        EntityRef::Derived { from, .. } => {
+            for child in from {
+                collect_named_feature_ids(child, acc);
+            }
+        }
     }
 }
 
@@ -281,6 +318,54 @@ fn check_refs_resolve_before(
         }
     }
 
+    // Check implicit body refs (e.g. CreateSketch.plane_ref entity provenance).
+    // Same semantics as body refs but resolved against live_bodies_at: the face must
+    // belong to a body that is live at `at` (i.e. created earlier and not yet consumed).
+    for implicit_ref in feature_implicit_body_refs(f) {
+        if let Some(&idx) = live_bodies_at.get(&implicit_ref) {
+            if idx >= at {
+                return Err(FeatureCrudError::InsertBeforeProducer {
+                    feature_id: fid.to_string(),
+                    ref_id: implicit_ref,
+                    producer_at: idx,
+                    requested_at: at,
+                });
+            }
+        } else {
+            let producer_after = features.iter().enumerate().skip(at).find_map(|(i, feat)| {
+                if feat.id() == implicit_ref {
+                    match feat {
+                        Feature::CreateBox { .. }
+                        | Feature::CreateCylinder { .. }
+                        | Feature::CreateSphere { .. }
+                        | Feature::Extrude { .. }
+                        | Feature::ExtrudeCut { .. }
+                        | Feature::Cut { .. }
+                        | Feature::Fuse { .. }
+                        | Feature::Intersect { .. } => Some(i),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            });
+
+            if let Some(producer_idx) = producer_after {
+                return Err(FeatureCrudError::InsertBeforeProducer {
+                    feature_id: fid.to_string(),
+                    ref_id: implicit_ref,
+                    producer_at: producer_idx,
+                    requested_at: at,
+                });
+            } else {
+                return Err(FeatureCrudError::BodyNotFound {
+                    feature_id: fid.to_string(),
+                    body_ref: implicit_ref,
+                });
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -295,8 +380,12 @@ fn check_no_downstream_break(
     for body_id in consumed_bodies {
         // Find downstream features that reference this body
         for (consumer_idx, consumer_feat) in features.iter().enumerate().skip(at) {
-            let consumer_refs = feature_consumes(consumer_feat);
-            if consumer_refs.contains(&body_id) {
+            let consumer_refs: Vec<&str> = feature_consumes(consumer_feat);
+            let implicit_consumer_refs = feature_implicit_body_refs(consumer_feat);
+
+            let direct_match = consumer_refs.contains(&body_id);
+            let implicit_match = implicit_consumer_refs.iter().any(|r| r == body_id);
+            if direct_match || implicit_match {
                 // Check if body is re-registered before consumer
                 let mut re_registered = false;
                 for (reg_idx, reg_feat) in features.iter().enumerate().skip(at + 1) {
