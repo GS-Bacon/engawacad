@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 453
+    finding: "空成功判定が `all features suppressed` にしか対応しておらず、`CreateSketch` を残したまま `Extrude` だけ suppress した履歴では `built.is_empty()` に落ちて `EmptyFeatureList` になる。典型的な `CreateSketch -> Extrude` モデルで body 生成 feature を suppress しただけで build/export が失敗する。"
+    suggestion: "空成功条件を『active feature が 0』ではなく『active な body producer が 0』まで広げるか、少なくとも suppress を含む履歴で body が 1 つも生成されない場合は empty success として扱ってください。`[CreateSketch, Extrude(suppressed)]` の回帰テストも追加してください。"
+
+verdict: fail

@@ -1,0 +1,25 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  # [architect] issues: [] (verdict=pass)
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 441
+    finding: "suppressed な feature を全て skip した後でも `built.is_empty()` を `EmptyFeatureList` 扱いするため、ローカル feature が全 suppress の component が empty component として扱われず build 全体を落とす。`build_component_tree` はこの後で children/reference をたどるので、親の feature を suppress しただけで子 component の body まで失われる。"
+    suggestion: "`all suppressed` を empty component 相当に扱う分岐を入れ、少なくともローカル feature が全 suppress の場合は `build_bodies_from_features` が空成功を返すようにする。親 feature 全 suppress + child/reference 継続 build の回帰テストも追加する。"
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 965
+    finding: "`restore` 経路は flag を戻した後に `check_edit_preserves_consumers` しか通しておらず、復帰させる feature 自身の sketch/body 参照が prefix でまだ解決できるかを再検証していない。`suppressed` は永続化 schema に載ったので、API/手編集で入った suppressed `Extrude/Cut/...` を restore すると成功扱いのまま unbuildable な document を書けてしまう。"
+    suggestion: "`on == false` のときは `edit` と同じ prefix 検証 (`check_self_reference` と `check_refs_resolve_before_for_edit`) を再実行してから commit する。producer 不在の suppressed feature を restore するとエラーになる回帰テストを追加する。"
+  - id: M-F01
+    severity: critical
+    file: "web/src/generated/Feature.ts"
+    line_hint: 10
+    finding: "`Feature` の公開 wire-format に `suppressed` を追加していますが、この差分で変更されているのは生成済み `Feature.ts` だけです。source-of-truth 側の定義更新や exact golden / YAML roundtrip 互換テストが同梱されていないため、`cargo xtask gen-ts` で上書きされる可能性があり、既存 YAML（`suppressed` 省略）および `suppressed: true/false` の後方互換回帰も検出できません。TEST SUMMARY でも追加テストは 0 件です。"
+    suggestion: "`engawa-format`/API 側の `Feature` 定義を同一変更で更新し、`Feature.ts` drift を固定する exact golden と、legacy 文書・`suppressed: true`・`suppressed: false` を含む byte-identical YAML roundtrip テストを追加してください。"
+
+verdict: fail
+# severity_counts: critical=1, high=2, medium=0, low=0
+# blocking: 3

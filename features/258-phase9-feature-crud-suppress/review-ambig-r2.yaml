@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "simulate_history 修正 > after"
+    finding: "全 9 variant に `if *suppressed { continue; }` を追加すると記述されているが、Extrude/ExtrudeCut 等の refs_resolve check 前に suppressed check を入れるという順序依存が本文中に記述されている一方、after コード例には continue の位置が明示されていない"
+    suggestion: "after コード例に continue を refs_resolve check より前に配置する形で明示すること"
+
+verdict: pass

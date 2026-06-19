@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": true,
+  "failed_reason": "cargo xtask ci failed — see features/258-phase9-feature-crud-suppress/ci.log",
+  "error_pattern": "error[E0063]: missing field `suppressed` in initializer of `Feature` --> crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs:LINE:COL",
+  "error_pattern_kind": "compile"
+}

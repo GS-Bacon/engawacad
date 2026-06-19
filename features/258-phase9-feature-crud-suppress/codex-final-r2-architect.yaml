@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 990
+    finding: "restore 経路は `check_refs_resolve_before_for_edit` だけで `CreateSketch.plane_ref = PlaneRef::Entity(...)` を検証しており、実際には Named/Derived から抽出した producer の `feature_id` が live かしか見ていません。face role 不一致や非平面 face に壊れた suppressed sketch でも restore が成功し、その直後の `Document` は validate を通る一方で、後続の `build_assembly` で `FaceEntityRefNotFound` / `FaceNotPlanar` になって unbuildable な履歴を確定してしまいます。"
+    suggestion: "restore 時に `PlaneRef::Entity` を feature_id の存在確認で済ませず、prefix を使って実際に face 解決と平面性チェックまで行ってください。`check_refs_resolve_before_for_edit` に EntityRef 実解決を追加するか、対象 feature までの prefix を一度 build して `find_face_by_entity_ref` と `surface_to_plane` を再利用するのが安全です。"
+
+verdict: fail

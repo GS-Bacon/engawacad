@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "web/src/generated/Feature.ts"
+    line_hint: 10
+    finding: "`Feature` の公開 wire-format に `suppressed` を追加していますが、この差分で変更されているのは生成済み `Feature.ts` だけです。source-of-truth 側の定義更新や exact golden / YAML roundtrip 互換テストが同梱されていないため、`cargo xtask gen-ts` で上書きされる可能性があり、既存 YAML（`suppressed` 省略）および `suppressed: true/false` の後方互換回帰も検出できません。TEST SUMMARY でも追加テストは 0 件です。"
+    suggestion: "`engawa-format`/API 側の `Feature` 定義を同一変更で更新し、`Feature.ts` drift を固定する exact golden と、legacy 文書・`suppressed: true`・`suppressed: false` を含む byte-identical YAML roundtrip テストを追加してください。"
+
+verdict: fail
