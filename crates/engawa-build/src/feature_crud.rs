@@ -5,7 +5,7 @@
 //! and preserves input Document immutability (ID-stable).
 
 use engawa_format::{Document, EntityRef, Feature, PlaneRef};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// Zero-sized namespace for feature CRUD operations.
@@ -134,14 +134,59 @@ fn feature_consumes(f: &Feature) -> Vec<&str> {
     feature_body_refs(f)
 }
 
+/// Check whether all direct refs of a body-producer feature resolve against the
+/// running prefix state (`sketches_at` / `live_bodies_at`).
+///
+/// Returns `true` for features that have no refs to validate (CreateBox/Cylinder/Sphere/CreateSketch).
+/// Returns `false` if any sketch ref is missing from `sketches_at`, or any body ref
+/// (target/tool/fuse_target) is missing from `live_bodies_at`.
+///
+/// This is the gate used by `simulate_history` to decide whether a prefix feature
+/// "really executed". A feature that fails this check is treated as inert — its
+/// inputs are not consumed and its output is not registered (atomic skip).
+fn refs_resolve_in_state(
+    f: &Feature,
+    sketches_at: &HashMap<String, usize>,
+    live_bodies_at: &HashMap<String, usize>,
+) -> bool {
+    match f {
+        Feature::Extrude {
+            sketch,
+            fuse_target,
+            ..
+        } => {
+            sketches_at.contains_key(sketch)
+                && fuse_target
+                    .as_ref()
+                    .is_none_or(|t| live_bodies_at.contains_key(t))
+        }
+        Feature::ExtrudeCut { sketch, target, .. } => {
+            sketches_at.contains_key(sketch) && live_bodies_at.contains_key(target)
+        }
+        Feature::Cut { target, tool, .. }
+        | Feature::Fuse { target, tool, .. }
+        | Feature::Intersect { target, tool, .. } => {
+            live_bodies_at.contains_key(target) && live_bodies_at.contains_key(tool)
+        }
+        // CreateBox/Cylinder/Sphere have no refs; CreateSketch's plane_ref is handled by
+        // #264 lifetime tracking and is orthogonal to prefix body-producer atomicity.
+        _ => true,
+    }
+}
+
 /// Simulate feature history up to `up_to` index.
-/// Returns (sketches_at: first occurrence index, live_bodies_at: last registered index).
+/// Returns (sketches_at: first occurrence index, live_bodies_at: last registered index, executed_at: indices where refs resolved).
 fn simulate_history(
     features: &[Feature],
     up_to: usize,
-) -> (HashMap<String, usize>, HashMap<String, usize>) {
+) -> (
+    HashMap<String, usize>,
+    HashMap<String, usize>,
+    HashSet<usize>,
+) {
     let mut sketches_at: HashMap<String, usize> = HashMap::new();
     let mut live_bodies_at: HashMap<String, usize> = HashMap::new();
+    let mut executed_at: HashSet<usize> = HashSet::new();
 
     for (i, f) in features.iter().enumerate() {
         if i >= up_to {
@@ -151,49 +196,72 @@ fn simulate_history(
         match f {
             Feature::CreateSketch { id, .. } => {
                 sketches_at.entry(id.clone()).or_insert(i);
+                executed_at.insert(i);
             }
             Feature::CreateBox { id, .. }
             | Feature::CreateCylinder { id, .. }
             | Feature::CreateSphere { id, .. } => {
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
             }
             Feature::Extrude {
                 id, fuse_target, ..
             } => {
+                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                    // Broken ref in prefix — atomic skip: no consume, no register.
+                    continue;
+                }
                 if let Some(target) = fuse_target {
                     live_bodies_at.remove(target);
                 }
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
             }
             Feature::ExtrudeCut { id, target, .. } => {
+                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
                 live_bodies_at.remove(target);
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
             }
             Feature::Cut {
                 id, target, tool, ..
             } => {
+                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
                 live_bodies_at.remove(target);
                 live_bodies_at.remove(tool);
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
             }
             Feature::Fuse {
                 id, target, tool, ..
             } => {
+                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
                 live_bodies_at.remove(target);
                 live_bodies_at.remove(tool);
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
             }
             Feature::Intersect {
                 id, target, tool, ..
             } => {
+                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
                 live_bodies_at.remove(target);
                 live_bodies_at.remove(tool);
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
             }
         }
     }
 
-    (sketches_at, live_bodies_at)
+    (sketches_at, live_bodies_at, executed_at)
 }
 
 /// Check for self-reference degeneracy.
@@ -227,8 +295,11 @@ fn check_refs_resolve_before(
     features: &[Feature],
     at: usize,
 ) -> Result<(), FeatureCrudError> {
-    let (sketches_at, live_bodies_at) = simulate_history(features, at);
+    let (sketches_at, live_bodies_at, _) = simulate_history(features, at);
     let fid = f.id();
+
+    // Full simulation for forward scan executed_at
+    let (_, _, executed_at_full) = simulate_history(features, features.len());
 
     // Check sketch refs
     for sketch_ref in feature_sketch_refs(f) {
@@ -244,15 +315,15 @@ fn check_refs_resolve_before(
         } else {
             // Check if a CreateSketch with this id exists after insertion point.
             // (body refs と同様に variant 限定で誤分類を防ぐ — Codex A-F02/M-F02)
-            let producer_after =
-                features
-                    .iter()
-                    .enumerate()
-                    .skip(at)
-                    .find_map(|(i, feat)| match feat {
-                        Feature::CreateSketch { id, .. } if id == sketch_ref => Some(i),
-                        _ => None,
-                    });
+            let producer_after = features.iter().enumerate().skip(at).find_map(|(i, feat)| {
+                if !executed_at_full.contains(&i) {
+                    return None;
+                }
+                match feat {
+                    Feature::CreateSketch { id, .. } if id == sketch_ref => Some(i),
+                    _ => None,
+                }
+            });
 
             if let Some(producer_idx) = producer_after {
                 return Err(FeatureCrudError::InsertBeforeProducer {
@@ -284,6 +355,9 @@ fn check_refs_resolve_before(
         } else {
             // Check if body exists after insertion point or was consumed
             let producer_after = features.iter().enumerate().skip(at).find_map(|(i, feat)| {
+                if !executed_at_full.contains(&i) {
+                    return None;
+                }
                 if feat.id() == body_ref {
                     // Verify this is a body producer
                     match feat {
@@ -333,6 +407,9 @@ fn check_refs_resolve_before(
             }
         } else {
             let producer_after = features.iter().enumerate().skip(at).find_map(|(i, feat)| {
+                if !executed_at_full.contains(&i) {
+                    return None;
+                }
                 if feat.id() == implicit_ref {
                     match feat {
                         Feature::CreateBox { .. }
@@ -375,11 +452,19 @@ fn check_no_downstream_break(
     features: &[Feature],
     at: usize,
 ) -> Result<(), FeatureCrudError> {
+    // Full simulation for forward scan executed_at
+    let (_, _, executed_at_full) = simulate_history(features, features.len());
+
     let consumed_bodies = feature_consumes(f);
 
     for body_id in consumed_bodies {
         // Find downstream features that reference this body
         for (consumer_idx, consumer_feat) in features.iter().enumerate().skip(at) {
+            // broken な future consumer は real consumer ではないので skip
+            if !executed_at_full.contains(&consumer_idx) {
+                continue;
+            }
+
             let consumer_refs: Vec<&str> = feature_consumes(consumer_feat);
             let implicit_consumer_refs = feature_implicit_body_refs(consumer_feat);
 
@@ -391,6 +476,10 @@ fn check_no_downstream_break(
                 for (reg_idx, reg_feat) in features.iter().enumerate().skip(at + 1) {
                     if reg_idx >= consumer_idx {
                         break;
+                    }
+                    // broken な future producer は real producer ではないので skip
+                    if !executed_at_full.contains(&reg_idx) {
+                        continue;
                     }
                     if reg_feat.id() == body_id {
                         // Verify this is a body producer
