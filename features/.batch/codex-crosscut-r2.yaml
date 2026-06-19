@@ -1,42 +1,15 @@
-# Merged Codex review (3 persona parallel, #231)
 issues:
-  - id: A-F01
+  - id: F01
     severity: high
-    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
-    line_hint: 257
-    finding: "`dispatchCodex3Persona()` は `exitCode == 0` の persona を無条件で受理し、その後 `readVerdictJson()` が `unknown / blocking: 0` を返しても aggregate をそのまま通します。`codex exec` 自体は成功したが YAML/sidecar が欠落・破損していたケースで、その persona のレビューだけ静かに脱落し、3 persona gate が 2 人分以下に縮退しても `pass` になりえます。"
-    suggestion: "`exitCode == 0` の persona については `verdict != unknown` と必須キーの存在を検証し、満たさない場合は aggregate を fail に倒すか、少なくとも blocking 扱いにしてください。transport failure を許容する方針があるなら、それと successful-but-unreadable output は分離して扱うべきです。"
-  - id: A-F02
-    severity: high
-    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
-    line_hint: 162
-    finding: "統合 YAML の生成が `extractIssueBlocks()` による行ベース抽出と `trim()` での再整形に依存しており、persona 出力が有効な YAML でも block scalar (`finding: | ...`) や少し異なる整形を使うと issue を欠落させるか、`codex-final.yaml` 自体を不正 YAML にします。宣言された成果物である統合 review artifact を壊します。"
-    suggestion: "per-persona YAML を文字列処理で切り貼りせず、一度パースして `issues` 配列を構造的にマージし、serializer で再出力してください。少なくとも `- id:` 先頭固定と `trim()` 前提の再整形は避けるべきです。"
-  - id: C-F01
-    severity: high
-    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
-    line_hint: 104
-    finding: "`mergePersonaResults()` は全 persona `unknown` を `verdict: fail` に倒しつつ、`blocking` と `severity_counts` を 0 のまま返す。これで `codex-final.yaml.verdict.json` の既存契約が壊れ、更新後の STEP 7.5-C (`blocking == 0` なら pass) や `state.ts assert-critical-zero` 系の消費側では、レビュー全損を成功扱いできてしまう。wrapper の process exit だけに依存しない経路が残っている以上、3 persona gate が fail-open になる。"
-    suggestion: "all-unknown の失敗は artifact 上でも block されるよう `blocking >= 1` にするか、少なくとも全消費側を `blocking == 0 && verdict == pass` 判定に揃える。"
-  - id: C-F02
+    file: ".claude/skills/3ailoop/scripts/loop-split-detector.test.ts"
+    line_hint: 1
+    finding: "追加した bun:test が hidden `.claude/` 配下にあるため、repo root の `bun test` では検出されず、計画上の T01-T07 が通常の回帰スイートに入っていない。テスト追加がこの Issue の成果物なのに、自動実行されないままだと回帰防止にならない。"
+    suggestion: "テストを `tests/` など通常探索される場所へ移すか、package script / CI にこのファイルを明示的に実行するコマンドを追加する。"
+  - id: F02
     severity: medium
-    file: ".claude/skills/3ai/scripts/dispatch-codex-auto.ts"
-    line_hint: 189
-    finding: "`dispatchCodex()` を exit code 返却 API に変えた後、この wrapper だけは `codexExit` をそのまま返さず generic `Error` を throw している。`dispatch-codex-intent.ts` は `process.exit(codexExit)` に更新済みなので、こちらだけ CLI の終了コード契約が後方非互換になり、Codex 実行失敗が常に Bun の一般エラー扱いになる。"
-    suggestion: "`import.meta.main` 経路では `process.exit(codexExit)` を返すか、numeric code を持つ例外を main 側で捕まえて元の exit code を維持する。"
-  - id: C-F03
-    severity: low
-    file: ".claude/skills/3ai/scripts/dispatch-codex.ts"
-    line_hint: 89
-    finding: "`--persona` の注入が `review` 専用ではなく `design` 経路にも常時かかる実装になっており、さらに新規テストでその挙動を固定している。#231 の plan では design path への persona 適用は out-of-scope だったので、使っていない公開面を先に広げてしまっている。"
-    suggestion: "`mode === \"review\"` のときだけ persona scope を有効化するか、design では `single` 以外を拒否して表面積を増やさない。"
-  - id: M-F01
-    severity: high
-    file: ".claude/skills/3ai/scripts/dispatch-codex-3persona.ts"
-    line_hint: 149
-    finding: "統合 `codex-final.yaml` を行ベースで再構成しており、`extractIssueBlocks()` は `- id:` 開始を前提にし、続き行は `trim()` して 4 space で再インデントしています。このため persona 側が有効な YAML として `finding: |` / `suggestion: |` の複数行スカラーや、`id` が先頭でない issue object を返すと、統合後の YAML が壊れるか内容を落とします。single-persona 時代は reviewer 出力をそのまま保存していたため、この差分で `codex-final.yaml` の後方互換性が落ちています。"
-    suggestion: "文字列連結ではなく YAML を構造化して parse/serialize するか、少なくとも issue block の元インデントと field 順を保持してコピーする。併せて複数行 `finding` / `suggestion` を含む golden YAML roundtrip テストを追加する。"
+    file: ".claude/skills/3ailoop/scripts/loop-split-detector.ts"
+    line_hint: 126
+    finding: "`fetchParentMilestone` は `ghFn(...)` を try/catch の外で呼んでいるため、`runGh` の spawn 失敗や injected `ghFn` の throw では `null` 返却ではなく例外で全処理が中断する。コメント/plan の『取得失敗は silent skip』という契約を満たしていない。"
+    suggestion: "`await ghFn(...)` を catch 節に含め、例外時は `null` を返す。必要なら `--dry-run` 時は milestone fetch 自体をスキップする。"
 
 verdict: fail
-# severity_counts: critical=0, high=4, medium=1, low=1
-# blocking: 4

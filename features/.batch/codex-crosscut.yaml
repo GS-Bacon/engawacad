@@ -1,15 +1,15 @@
 issues:
   - id: F01
-    severity: medium
-    file: "docs/QUALITY_TOOLS.md"
-    line_hint: 43
-    finding: "`cd crates/engawa-format/fuzz` の直後に `cargo fuzz run from_yaml fuzz/corpus/from_yaml/` を案内しており、実際には `crates/engawa-format/fuzz/fuzz/corpus/from_yaml/` を参照して失敗する。manual corpus 実行手順が壊れている。"
-    suggestion: "`cd` 後は `cargo fuzz run from_yaml corpus/from_yaml/` に修正するか、repo ルートから実行する前提の記述に統一する。"
+    severity: high
+    file: ".claude/skills/3ailoop/scripts/loop-split-detector.ts"
+    line_hint: 140
+    finding: "親 milestone を `createChild` 内で子ごとに再取得しているため、同一 split 実行中でも `gh issue view` の一時失敗や親 milestone の更新タイミング次第で兄弟 Issue の一部だけが milestone なしで作成される。今回の修正対象だった Phase 子 Issue の actionable 化不全が部分的に再発しうる。"
+    suggestion: "親 milestone は子作成ループの前に 1 回だけ取得して全 `createChild` に渡し、split 全体で同一値を使うようにする。"
   - id: F02
     severity: medium
-    file: "crates/xtask/src/main.rs"
-    line_hint: 1000
-    finding: "ts-rs の回帰テスト更新が `Document.ts` と `Feature.ts` の golden 比較だけに留まっており、新規公開 DTO `web/src/generated/Variable.ts` を一度も検証していない。今回追加した生成ファイルが未生成・署名ドリフトしても CI で検出できない。"
-    suggestion: "`Variable.ts` 用の golden 文字列と比較テストを `xtask` の既存生成物テストへ追加する。"
+    file: ".claude/skills/3ailoop/scripts/loop-split-detector.test.ts"
+    line_hint: 5
+    finding: "追加テストは `fetchParentMilestone` の 6 ケースしか見ておらず、実際に子 Issue 作成引数へ `--milestone` が付与されることと、計画にあった T01 の『同一入力を 2 回実行して結果一致』が未検証です。`fetchParentMilestone` が通っても、`createChild` 側の回帰で milestone 継承が壊れても検出できません。"
+    suggestion: "`gh` 呼び出しを差し替えられる形にして `createChild` または引数組み立てヘルパーを単体テストし、`--milestone <title>` の付与と同一入力 2 回で同一 args になることを明示的に検証する。"
 
-verdict: pass
+verdict: fail
