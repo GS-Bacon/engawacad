@@ -41,3 +41,25 @@
 ## アクション
 
 両件とも medium / 非 blocking で本バッチの merge を妨げない。本サイクルでは記録のみとし、後続 Issue (#249 などとあわせて) で集約処理する。
+
+---
+
+## 2026-06-19 cycle 44 (#266 + #267)
+
+**batch_start_sha**: 2228c3479e605d04b27429d682fc4241953bcffa
+**batch commits**: 8621b54 (#266 feat), 78be9aa (#266 sweep), c3d04b1 (#267 feat), 9d75961 (#267 sweep)
+**verdict**: fail (blocking=1, high=1, medium=1, low=0)
+
+### F01 (high — defer to #269)
+
+**指摘**: `refs_resolve_in_state` は CreateSketch の `plane_ref` だけを見ており、Extrude/ExtrudeCut は sketch ID が残っている限り executed 扱いのまま。`[box_1, sk(plane=box_1), Cut(box_1,...), e1(sketch=sk)]` のように sketch 作成後に plane_ref の body が dead になる history でも e1 が executed_at_* に残る。
+
+**判断**: #267 で実装した CreateSketch self check (plane_ref body が live なら sk 実行) と、Extrude/ExtrudeCut が **使う側** での transitive 反映は独立した修正。#268 spec の残り半分。**#269 で起票して next cycle で消化**。
+
+**autonomous mode 規約適合性**: B-6 spec 「2 回ループ後も critical ≥ 1 が残る場合のみユーザーにエスカレーション; critical = 0 なら Claude 裁量で受け切る」に従う。本 batch では critical=0 / high=1 のため受け切り可。loop policy `project-3ailoop-policy` の "他 Issue を block しない" 方針とも整合。
+
+### F02 (medium — findings only)
+
+**指摘**: T11-T15 (#266) の `assert!(["sk", "e1"].contains(&displaced_feature_id))` で sk と e1 のどちらでも通るため、transitive sketch-user 検出 (e1 hit) を強制できていない。T14 も同様。
+
+**判断**: 改善余地はあるが medium / non-blocking。fix-it Issue として next cycle 以降に起票するかどうかは F01 修正 (#269) の副作用で T14 fixture が変わる可能性もあるため、#269 完了後に再判断する。本 batch では受容。
