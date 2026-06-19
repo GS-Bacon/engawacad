@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 72
+    finding: "`#[cfg(test)]` モジュールで `SketchPlane` を未使用 import しており、`cargo clippy --all-targets -- -D warnings` では `unused_imports` で失敗する。"
+    suggestion: "`use engawa_format::{Feature, SketchPlane};` から `SketchPlane` を削除する。"
+  - id: F02
+    severity: low
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 42
+    finding: "合意済みテスト計画の T04 は「`--output` 指定時に output に書き、input は変更されない」を検証対象にしているが、このテストは output 内容しか確認していない。`run_entry` が誤って input も上書きする退行を検出できない。"
+    suggestion: "実行前後で input ファイルの内容を比較し、`--output` 指定時に元ファイルが不変であることを明示的に assert する。"
+
+verdict: pass

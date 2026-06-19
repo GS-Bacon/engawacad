@@ -1,0 +1,6 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使わず Uuid::new_v4() を使用する設計になっている"
+    suggestion: "IdGenerator::next() に置き換えること"

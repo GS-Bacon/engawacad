@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "テスト計画 > T03"
+    finding: "golden `.engawa` 一致とあるが、golden file の配置先パスが未定義"
+    suggestion: "「`crates/engawa-build/tests/fixtures/insert_golden.engawa` 等の fixtures 下に配置する」のように配置先を明示すること"
+
+verdict: pass

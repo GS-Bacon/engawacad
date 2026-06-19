@@ -1,0 +1,54 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: medium
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 72
+    finding: "`#[cfg(test)]` モジュールで `SketchPlane` を未使用 import しており、`cargo clippy --all-targets -- -D warnings` では `unused_imports` で失敗する。"
+    suggestion: "`use engawa_format::{Feature, SketchPlane};` から `SketchPlane` を削除する。"
+  - id: A-F02
+    severity: low
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 42
+    finding: "合意済みテスト計画の T04 は「`--output` 指定時に output に書き、input は変更されない」を検証対象にしているが、このテストは output 内容しか確認していない。`run_entry` が誤って input も上書きする退行を検出できない。"
+    suggestion: "実行前後で input ファイルの内容を比較し、`--output` 指定時に元ファイルが不変であることを明示的に assert する。"
+  - id: C-F01
+    severity: medium
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 14
+    finding: "T03 (`--dry-run`) と T04 (`--output`) は stdout/出力ファイルしか検証しておらず、input `.engawa` が不変であることを確認していない。どちらも仕様上は非破壊モードなので、`run_entry` が誤って input も上書きする退行をこのテスト群では検出できない。"
+    suggestion: "各ケースで input を一時ファイルにコピーして実行し、`--dry-run` と `--output` の両方で実行前後の input 内容が一致することを assert する。"
+  - id: C-F02
+    severity: medium
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 108
+    finding: "T07 は validate 側のエラー伝播を確認したいテスト名と説明になっているが、使っている fixture は `type: CreateBox` で `Feature` にデシリアライズできず、assert も `error:` prefix の有無しか見ていない。結果として空 id の `FormatError::InvalidName` 経路は未検証で、任意の parse error でもこのテストは通ってしまう。"
+    suggestion: "fixture の tag を `type: create_box` に修正し、stderr に `feature_id must not be empty` など validate 起因の文言が含まれることまで確認する。"
+  - id: C-F03
+    severity: low
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 1
+    finding: "合意済み plan では `engawa_build::feature_crud` を公開 namespace にする前提だったが、実装は `mod feature_crud;` の private module + top-level re-export に変わっている。設計文書どおりのモジュールパスで呼ぶ downstream はコンパイルできず、受け入れた API surface と差分が出ている。"
+    suggestion: "`pub mod feature_crud;` にして namespace を公開し、必要なら現行の `pub use` も併用する。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 64
+    finding: "`next.validate()` only rechecks format-level invariants, so `FeatureCrud::insert` can return `Ok` for history-dependent features whose `sketch`/`target`/`tool` references are not valid at the chosen `at`, or that consume bodies still needed by later features. That lets `engawa entry add` write a `.engawa` file that later fails in `build_assembly` with `SketchNotFound`/`BodyNotFound`."
+    suggestion: "After insertion, semantically validate the full ordered feature history against build rules before returning success, and add acceptance tests for insert-before-producer / insert-before-consumer cases."
+  - id: M-F02
+    severity: medium
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 44
+    finding: "`t04_entry_add_output_flag_writes_separate_file` checks only the output file bytes. It never verifies that the input file stayed unchanged, so the agreed `--output` non-overwrite contract is not actually regression-tested."
+    suggestion: "Run T04 against a temp copy of the input and assert the input bytes are unchanged after `engawa entry add ... -o ...`."
+  - id: M-F03
+    severity: medium
+    file: "crates/engawa-build/tests/fixtures/insert/invalid_empty_id.yaml"
+    line_hint: 2
+    finding: "The fixture uses `type: CreateBox`, which makes `serde_yaml::from_str::<Feature>` fail before `FeatureCrud::insert` runs. `t07_input_validation_propagates` therefore does not exercise the empty-id validation/error-propagation path it claims to cover."
+    suggestion: "Change the fixture to a valid tag (`type: create_box`) and assert stderr contains the insert-time validation failure, not just any non-zero exit."
+
+verdict: fail
+# severity_counts: critical=0, high=1, medium=5, low=2
+# blocking: 1

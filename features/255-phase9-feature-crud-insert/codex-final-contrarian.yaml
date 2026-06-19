@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 14
+    finding: "T03 (`--dry-run`) と T04 (`--output`) は stdout/出力ファイルしか検証しておらず、input `.engawa` が不変であることを確認していない。どちらも仕様上は非破壊モードなので、`run_entry` が誤って input も上書きする退行をこのテスト群では検出できない。"
+    suggestion: "各ケースで input を一時ファイルにコピーして実行し、`--dry-run` と `--output` の両方で実行前後の input 内容が一致することを assert する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-cli/tests/entry_add.rs"
+    line_hint: 108
+    finding: "T07 は validate 側のエラー伝播を確認したいテスト名と説明になっているが、使っている fixture は `type: CreateBox` で `Feature` にデシリアライズできず、assert も `error:` prefix の有無しか見ていない。結果として空 id の `FormatError::InvalidName` 経路は未検証で、任意の parse error でもこのテストは通ってしまう。"
+    suggestion: "fixture の tag を `type: create_box` に修正し、stderr に `feature_id must not be empty` など validate 起因の文言が含まれることまで確認する。"
+  - id: F03
+    severity: low
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 1
+    finding: "合意済み plan では `engawa_build::feature_crud` を公開 namespace にする前提だったが、実装は `mod feature_crud;` の private module + top-level re-export に変わっている。設計文書どおりのモジュールパスで呼ぶ downstream はコンパイルできず、受け入れた API surface と差分が出ている。"
+    suggestion: "`pub mod feature_crud;` にして namespace を公開し、必要なら現行の `pub use` も併用する。"
+
+verdict: pass

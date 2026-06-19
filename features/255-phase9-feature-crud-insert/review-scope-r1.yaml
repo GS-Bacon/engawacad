@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: low
+    section: "クレート層境界"
+    finding: "plan.md で engawa-format の `validate()` メソッドを呼ぶ記述があるが、engawa-format の公開 API に `validate()` が存在するか確認が必要（CLAUDE.md の公開型一覧に記載なし）"
+    suggestion: "engawa-format の `validate()` が公開 API であることを確認するか、存在しない場合は適切な検証方法（Document::from_yaml 等の既存 validation）に置き換えること"
+
+verdict: pass
