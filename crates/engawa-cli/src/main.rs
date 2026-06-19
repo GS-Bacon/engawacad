@@ -63,6 +63,19 @@ enum EntryOp {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Replace an existing feature's params (ID-stable).
+    Edit {
+        /// Input .engawa file
+        input: PathBuf,
+        /// Existing feature id to replace
+        feature_id: String,
+        /// Path to a YAML file containing the new Feature (must share id)
+        feature: PathBuf,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() {
@@ -152,6 +165,33 @@ fn run_entry(op: EntryOp) -> Result<(), String> {
                 .to_yaml()
                 .map_err(|e| format!("failed to serialize document: {e}"))?;
 
+            if dry_run {
+                print!("{yaml}");
+            } else {
+                let output_path = output.as_ref().unwrap_or(&input);
+                std::fs::write(output_path, yaml)
+                    .map_err(|e| format!("failed to write {}: {e}", output_path.display()))?;
+            }
+            Ok(())
+        }
+        EntryOp::Edit {
+            input,
+            feature_id,
+            feature,
+            output,
+            dry_run,
+        } => {
+            let doc = Document::from_path(&input)
+                .map_err(|e| format!("failed to read {}: {e}", input.display()))?;
+            let feature_yaml = std::fs::read_to_string(&feature)
+                .map_err(|e| format!("failed to read feature file {}: {e}", feature.display()))?;
+            let new_feature: Feature = serde_yaml::from_str(&feature_yaml)
+                .map_err(|e| format!("failed to parse feature YAML: {e}"))?;
+            let updated = engawa_build::FeatureCrud::edit(&doc, &feature_id, new_feature)
+                .map_err(|e| format!("edit failed: {e}"))?;
+            let yaml = updated
+                .to_yaml()
+                .map_err(|e| format!("failed to serialize document: {e}"))?;
             if dry_run {
                 print!("{yaml}");
             } else {

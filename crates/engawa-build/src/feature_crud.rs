@@ -69,6 +69,31 @@ pub enum FeatureCrudError {
         feature_id: String,
         ref_kind: &'static str,
     },
+
+    /// Feature ID does not exist in root_component.
+    #[error("feature id {feature_id:?} not found in root_component")]
+    UnknownFeatureId { feature_id: String },
+
+    /// new_feature.id() does not match feature_id (Edit is ID-stable).
+    #[error("edit feature_id {expected:?} does not match new_feature.id() {actual:?}")]
+    IdMismatch { expected: String, actual: String },
+
+    /// new_feature has a different enum variant than the existing feature (Edit is variant-stable).
+    #[error("edit feature {feature_id:?} variant changed from {old_variant} to {new_variant} (Edit requires same variant)")]
+    VariantMismatch {
+        feature_id: String,
+        old_variant: &'static str,
+        new_variant: &'static str,
+    },
+
+    /// Edit operation would break a previously executing downstream consumer.
+    #[error("edit of feature {edit_feature_id:?} would break consumer {broken_consumer_id:?} at index {broken_consumer_at} (lost ref {broken_ref:?})")]
+    EditBreaksConsumer {
+        edit_feature_id: String,
+        broken_consumer_id: String,
+        broken_consumer_at: usize,
+        broken_ref: String,
+    },
 }
 
 /// Extract sketch IDs referenced by a feature.
@@ -89,6 +114,21 @@ fn feature_body_refs(f: &Feature) -> Vec<&str> {
         Feature::Fuse { target, tool, .. } => vec![target.as_str(), tool.as_str()],
         Feature::Intersect { target, tool, .. } => vec![target.as_str(), tool.as_str()],
         _ => vec![],
+    }
+}
+
+/// Return the variant name of a Feature (for variant-stable edit validation).
+fn feature_variant_name(f: &Feature) -> &'static str {
+    match f {
+        Feature::CreateSketch { .. } => "CreateSketch",
+        Feature::CreateBox { .. } => "CreateBox",
+        Feature::CreateCylinder { .. } => "CreateCylinder",
+        Feature::CreateSphere { .. } => "CreateSphere",
+        Feature::Extrude { .. } => "Extrude",
+        Feature::ExtrudeCut { .. } => "ExtrudeCut",
+        Feature::Cut { .. } => "Cut",
+        Feature::Fuse { .. } => "Fuse",
+        Feature::Intersect { .. } => "Intersect",
     }
 }
 
@@ -628,6 +668,116 @@ fn check_no_downstream_break(
     Ok(())
 }
 
+/// Check refs resolve for edit with proper index remapping.
+///
+/// Wraps `check_refs_resolve_before` to work in edit context:
+/// - Builds `without_old` by removing feature at `idx` from `original_features`
+/// - Calls `check_refs_resolve_before` against the reduced prefix
+/// - Remaps `InsertBeforeProducer.producer_at` from short index (without_old space)
+///   back to original index for accurate error reporting
+fn check_refs_resolve_before_for_edit(
+    new_feature: &Feature,
+    original_features: &[Feature],
+    idx: usize,
+) -> Result<(), FeatureCrudError> {
+    let mut without_old: Vec<Feature> = original_features.to_vec();
+    without_old.remove(idx);
+    match check_refs_resolve_before(new_feature, &without_old, idx) {
+        Ok(()) => Ok(()),
+        Err(FeatureCrudError::InsertBeforeProducer {
+            feature_id,
+            ref_id,
+            producer_at,
+            requested_at,
+        }) => {
+            // producer_at is an index in without_old. Convert back to original index:
+            // since we removed original[idx], any short index >= idx needs +1.
+            let original_producer_at = if producer_at >= idx {
+                producer_at + 1
+            } else {
+                producer_at
+            };
+            Err(FeatureCrudError::InsertBeforeProducer {
+                feature_id,
+                ref_id,
+                producer_at: original_producer_at,
+                requested_at,
+            })
+        }
+        Err(other) => Err(other),
+    }
+}
+
+/// Check that replacing features[idx] with new_feature does not break any consumer
+/// that was previously executing.
+///
+/// pre-state = original features (with old feature at idx).
+/// post-state = features with [idx] replaced by new_feature.
+/// For each consumer at index > idx that was in pre executed_at,
+/// require it to remain in post executed_at; otherwise reject.
+fn check_edit_preserves_consumers(
+    new_feature: &Feature,
+    features: &[Feature],
+    idx: usize,
+) -> Result<(), FeatureCrudError> {
+    // pre: original history
+    let (_, _, executed_at_pre) = simulate_history(features, features.len());
+
+    // post: features with [idx] replaced
+    let mut post: Vec<Feature> = features.to_vec();
+    post[idx] = new_feature.clone();
+    let (_, _, executed_at_post) = simulate_history(&post, post.len());
+
+    // For each downstream consumer (idx+1..) that worked pre, must work post.
+    for (consumer_idx, consumer_feat) in features.iter().enumerate().skip(idx + 1) {
+        if !executed_at_pre.contains(&consumer_idx) {
+            continue; // wasn't working before — not our regression
+        }
+        if executed_at_post.contains(&consumer_idx) {
+            continue; // still works
+        }
+        // Was working, now broken. Identify which ref of consumer_feat is no longer live in post.
+        let consumer_direct_refs: Vec<&str> = feature_consumes(consumer_feat);
+        let consumer_implicit_refs = feature_transitive_implicit_body_refs(consumer_feat, &post);
+        // Combine all refs and find one that is no longer satisfied in post simulation.
+        // For error reporting use the first ref found; ordering is not critical for correctness.
+        let mut broken_ref: Option<String> = None;
+        let (sketches_post, live_bodies_post, _) = simulate_history(&post, consumer_idx);
+        // Direct refs (body or sketch)
+        for r in &consumer_direct_refs {
+            if !live_bodies_post.contains_key(*r) {
+                broken_ref = Some(r.to_string());
+                break;
+            }
+        }
+        if broken_ref.is_none() {
+            for r in &consumer_implicit_refs {
+                if !live_bodies_post.contains_key(r) {
+                    broken_ref = Some(r.clone());
+                    break;
+                }
+            }
+        }
+        // sketch refs (Extrude/ExtrudeCut)
+        if broken_ref.is_none() {
+            for sketch_ref in feature_sketch_refs(consumer_feat) {
+                if !sketches_post.contains_key(sketch_ref) {
+                    broken_ref = Some(sketch_ref.to_string());
+                    break;
+                }
+            }
+        }
+        let broken_ref = broken_ref.unwrap_or_else(|| "<unknown>".to_string());
+        return Err(FeatureCrudError::EditBreaksConsumer {
+            edit_feature_id: new_feature.id().to_string(),
+            broken_consumer_id: consumer_feat.id().to_string(),
+            broken_consumer_at: consumer_idx,
+            broken_ref,
+        });
+    }
+    Ok(())
+}
+
 impl FeatureCrud {
     /// Insert `feature` into `doc.root_component.features` at the given `at` index.
     ///
@@ -663,6 +813,61 @@ impl FeatureCrud {
 
         let mut next = doc.clone();
         next.root_component.features.insert(at, feature);
+        next.validate()?;
+        Ok(next)
+    }
+
+    /// Replace the feature identified by `feature_id` with `new_feature` (ID-stable).
+    ///
+    /// `new_feature.id()` must equal `feature_id`. The replacement is performed
+    /// in-place at the original index, preserving order. All existing validators
+    /// (self-reference, refs_resolve_before, no_downstream_break) are re-applied
+    /// against the prefix without the old feature.
+    ///
+    /// Edit is variant-stable: `new_feature` must have the same enum variant
+    /// as the existing feature (e.g. CreateBox → CreateBox is allowed,
+    /// CreateBox → CreateSphere is rejected).
+    pub fn edit(
+        doc: &Document,
+        feature_id: &str,
+        new_feature: Feature,
+    ) -> Result<Document, FeatureCrudError> {
+        let idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        if new_feature.id() != feature_id {
+            return Err(FeatureCrudError::IdMismatch {
+                expected: feature_id.to_string(),
+                actual: new_feature.id().to_string(),
+            });
+        }
+        // Variant-stable: new_feature must have the same enum variant.
+        let old_variant = feature_variant_name(&doc.root_component.features[idx]);
+        let new_variant = feature_variant_name(&new_feature);
+        if old_variant != new_variant {
+            return Err(FeatureCrudError::VariantMismatch {
+                feature_id: feature_id.to_string(),
+                old_variant,
+                new_variant,
+            });
+        }
+        // 1. self-reference check (new_feature 自身の整合性)
+        check_self_reference(&new_feature)?;
+
+        // 2. refs_resolve check with index remapping for accurate error reporting
+        check_refs_resolve_before_for_edit(&new_feature, &doc.root_component.features, idx)?;
+
+        // 3. NEW: pre/post 比較で downstream consumer の preservation を保証
+        check_edit_preserves_consumers(&new_feature, &doc.root_component.features, idx)?;
+
+        // 4. build result + validate
+        let mut next = doc.clone();
+        next.root_component.features[idx] = new_feature;
         next.validate()?;
         Ok(next)
     }
