@@ -103,15 +103,15 @@ fn feature_body_refs(f: &Feature) -> Vec<&str> {
 /// not directly borrowable from `f` in the future (current impl only borrows, but the
 /// owned shape keeps the API stable if Derived ever materialises new strings).
 fn feature_implicit_body_refs(f: &Feature) -> Vec<String> {
-    let mut refs = Vec::new();
     if let Feature::CreateSketch {
         plane_ref: Some(PlaneRef::Entity(eref)),
         ..
     } = f
     {
-        collect_named_feature_ids(eref, &mut refs);
+        collect_named_feature_ids(eref)
+    } else {
+        Vec::new()
     }
-    refs
 }
 
 /// Extract implicit body refs **transitively** reachable from a consumer feature.
@@ -139,21 +139,6 @@ fn feature_transitive_implicit_body_refs(f: &Feature, features: &[Feature]) -> V
     refs
 }
 
-/// Walk an `EntityRef` provenance tree and collect every `Named.feature_id`.
-///
-/// `EntityRef::Named` is a leaf → push its `feature_id`.
-/// `EntityRef::Derived { from, .. }` recurses into each provenance child.
-fn collect_named_feature_ids(eref: &EntityRef, acc: &mut Vec<String>) {
-    match eref {
-        EntityRef::Named { feature_id, .. } => acc.push(feature_id.clone()),
-        EntityRef::Derived { from, .. } => {
-            for child in from {
-                collect_named_feature_ids(child, acc);
-            }
-        }
-    }
-}
-
 /// Extract body IDs consumed by a feature (same as body_refs in current spec).
 fn feature_consumes(f: &Feature) -> Vec<&str> {
     feature_body_refs(f)
@@ -162,9 +147,10 @@ fn feature_consumes(f: &Feature) -> Vec<&str> {
 /// Check whether all direct refs of a body-producer feature resolve against the
 /// running prefix state (`sketches_at` / `live_bodies_at`).
 ///
-/// Returns `true` for features that have no refs to validate (CreateBox/Cylinder/Sphere/CreateSketch).
-/// Returns `false` if any sketch ref is missing from `sketches_at`, or any body ref
-/// (target/tool/fuse_target) is missing from `live_bodies_at`.
+/// Returns `true` for features that have no refs to validate (CreateBox/Cylinder/Sphere).
+/// Returns `false` if any sketch ref is missing from `sketches_at`, any body ref
+/// (target/tool/fuse_target) is missing from `live_bodies_at`, or any implicit body ref
+/// (e.g. CreateSketch.plane_ref=Entity) is missing from `live_bodies_at`.
 ///
 /// This is the gate used by `simulate_history` to decide whether a prefix feature
 /// "really executed". A feature that fails this check is treated as inert — its
@@ -193,10 +179,34 @@ fn refs_resolve_in_state(
         | Feature::Intersect { target, tool, .. } => {
             live_bodies_at.contains_key(target) && live_bodies_at.contains_key(tool)
         }
-        // CreateBox/Cylinder/Sphere have no refs; CreateSketch's plane_ref is handled by
-        // #264 lifetime tracking and is orthogonal to prefix body-producer atomicity.
+        Feature::CreateSketch { plane_ref, .. } => {
+            if let Some(PlaneRef::Entity(eref)) = plane_ref {
+                // Check implicit body refs via EntityRef traversal
+                for named_id in collect_named_feature_ids(eref) {
+                    if !live_bodies_at.contains_key(&named_id) {
+                        return false;
+                    }
+                }
+            }
+            true
+        }
+        // CreateBox/Cylinder/Sphere have no refs
         _ => true,
     }
+}
+
+/// Helper: collect all Named.feature_id from an EntityRef tree.
+fn collect_named_feature_ids(eref: &EntityRef) -> Vec<String> {
+    let mut ids = Vec::new();
+    match eref {
+        EntityRef::Named { feature_id, .. } => ids.push(feature_id.clone()),
+        EntityRef::Derived { from, .. } => {
+            for child in from {
+                ids.extend(collect_named_feature_ids(child));
+            }
+        }
+    }
+    ids
 }
 
 /// Simulate feature history up to `up_to` index.
@@ -220,6 +230,9 @@ fn simulate_history(
 
         match f {
             Feature::CreateSketch { id, .. } => {
+                if !refs_resolve_in_state(f, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
                 sketches_at.entry(id.clone()).or_insert(i);
                 executed_at.insert(i);
             }
@@ -472,44 +485,53 @@ fn check_refs_resolve_before(
 }
 
 /// Check that insertion doesn't break downstream consumers.
+///
+/// Uses post-insert hypothetical history to detect two cases:
+/// 1. Inserted feature directly consumes a body still needed by a downstream consumer
+///    (original pre-#267 semantics).
+/// 2. Inserted feature activates a previously broken consumer, which then consumes
+///    bodies needed by other consumers (#267 scope).
 fn check_no_downstream_break(
     f: &Feature,
     features: &[Feature],
     at: usize,
 ) -> Result<(), FeatureCrudError> {
-    // Full simulation for forward scan executed_at
-    let (_, _, executed_at_full) = simulate_history(features, features.len());
+    // 1. Pre-insert simulation
+    let (_, _, executed_at_pre) = simulate_history(features, features.len());
 
-    let consumed_bodies = feature_consumes(f);
+    // 2. Post-insert hypothetical
+    let mut post_insert: Vec<Feature> = Vec::with_capacity(features.len() + 1);
+    post_insert.extend_from_slice(&features[..at]);
+    post_insert.push(f.clone());
+    post_insert.extend_from_slice(&features[at..]);
+    let (_, _, executed_at_post) = simulate_history(&post_insert, post_insert.len());
 
-    for body_id in consumed_bodies {
-        // Find the FIRST unprotected consumer (pre-#266 semantics).
-        // Return immediately when found — do not continue to later consumers.
+    let consumed_bodies_by_f = feature_consumes(f);
+
+    // 3a. Cases where the inserted f directly consumes a body still needed by some
+    //     downstream consumer (= original semantics, pre-insert view).
+    //     This was the existing pre-#267 behavior — keep it for direct-conflict detection.
+    for body_id in &consumed_bodies_by_f {
         for (consumer_idx, consumer_feat) in features.iter().enumerate().skip(at) {
-            // broken な future consumer は real consumer ではないので skip
-            if !executed_at_full.contains(&consumer_idx) {
+            if !executed_at_pre.contains(&consumer_idx) {
                 continue;
             }
-
             let consumer_refs: Vec<&str> = feature_consumes(consumer_feat);
             let implicit_consumer_refs =
                 feature_transitive_implicit_body_refs(consumer_feat, features);
-
-            let direct_match = consumer_refs.contains(&body_id);
+            let direct_match = consumer_refs.contains(body_id);
             let implicit_match = implicit_consumer_refs.iter().any(|r| r == body_id);
             if direct_match || implicit_match {
-                // Check re_registered only up to THIS consumer (not all consumers)
+                // re_registered check (pre-insert space, between at+1 and consumer_idx)
                 let mut re_registered = false;
                 for (reg_idx, reg_feat) in features.iter().enumerate().skip(at + 1) {
                     if reg_idx >= consumer_idx {
                         break;
                     }
-                    // broken な future producer は real producer ではないので skip
-                    if !executed_at_full.contains(&reg_idx) {
+                    if !executed_at_pre.contains(&reg_idx) {
                         continue;
                     }
-                    if reg_feat.id() == body_id {
-                        // Verify this is a body producer
+                    if reg_feat.id() == *body_id {
                         match reg_feat {
                             Feature::CreateBox { .. }
                             | Feature::CreateCylinder { .. }
@@ -526,7 +548,6 @@ fn check_no_downstream_break(
                         }
                     }
                 }
-
                 if !re_registered {
                     return Err(FeatureCrudError::InsertBeforeConsumer {
                         consumed_ref: body_id.to_string(),
@@ -535,7 +556,72 @@ fn check_no_downstream_break(
                         requested_at: at,
                     });
                 }
-                // この consumer は保護されたので次の consumer に進む
+            }
+        }
+    }
+
+    // 3b. Post-insert activation case (#267 scope):
+    //     Some consumer that was executing in pre-insert sim becomes inert in post-insert sim,
+    //     because newly-activated features consumed the bodies it depends on.
+    //     This catches the "[box_b1, box_b2, Cut(c1, target=new_box, tool=box_b1), Cut(c2, target=box_b1, tool=box_b2)]
+    //     + insert CreateBox(new_box) @ idx 2" scenario.
+    for (orig_idx, consumer_feat) in features.iter().enumerate().skip(at) {
+        let post_idx = orig_idx + 1; // shift by inserted feature
+        if !executed_at_pre.contains(&orig_idx) {
+            // wasn't working before
+            continue;
+        }
+        if executed_at_post.contains(&post_idx) {
+            // still works after
+            continue;
+        }
+        // Was working pre, broken post — identify which body of consumer_feat is no longer live post.
+        let consumer_refs: Vec<&str> = feature_consumes(consumer_feat);
+        let implicit_consumer_refs =
+            feature_transitive_implicit_body_refs(consumer_feat, &post_insert);
+
+        // Combine direct + implicit refs into a single ordered list (direct first).
+        let mut all_refs: Vec<String> = Vec::new();
+        for r in &consumer_refs {
+            all_refs.push(r.to_string());
+        }
+        for r in &implicit_consumer_refs {
+            all_refs.push(r.clone());
+        }
+
+        // For each ref the consumer uses: was it consumed by an activator?
+        // An activator is a feature at index in (at..post_idx) in post-insert space that
+        // wasn't in executed_at_pre (at original idx, i.e. post_idx-1) but is in executed_at_post.
+        // The inserted feature itself counts (executed_at_post contains `at`).
+        for body_id in &all_refs {
+            // Find activator that consumes body_id within post-insert prefix up to post_idx-1.
+            let activator_consumed =
+                post_insert
+                    .iter()
+                    .enumerate()
+                    .take(post_idx)
+                    .skip(at)
+                    .any(|(pi, pf)| {
+                        // pi == at: inserted feature. pi > at: shifted from original idx pi-1.
+                        let executed_now = executed_at_post.contains(&pi);
+                        let executed_before = if pi == at {
+                            false
+                        } else {
+                            executed_at_pre.contains(&(pi - 1))
+                        };
+                        let is_activator_or_inserted = executed_now && !executed_before;
+                        if !is_activator_or_inserted {
+                            return false;
+                        }
+                        feature_consumes(pf).contains(&body_id.as_str())
+                    });
+            if activator_consumed {
+                return Err(FeatureCrudError::InsertBeforeConsumer {
+                    consumed_ref: body_id.to_string(),
+                    displaced_feature_id: consumer_feat.id().to_string(),
+                    consumer_at: orig_idx,
+                    requested_at: at,
+                });
             }
         }
     }

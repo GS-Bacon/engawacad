@@ -938,3 +938,243 @@ fn t_266_r2_early_consumer_with_later_reregister_returns_first() {
         other => panic!("expected InsertBeforeConsumer with sk, got {:?}", other),
     }
 }
+
+/// T_degen_no_activation_no_change: Degen — broken-future が無い clean history で既存挙動を維持 (回帰防止)
+#[test]
+fn t_267_determinism() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "new_box".to_string(),
+        tool: "box_b1".to_string(),
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c2".to_string(),
+        target: "box_b1".to_string(),
+        tool: "box_b2".to_string(),
+    });
+
+    let feature = Feature::CreateBox {
+        id: "new_box".to_string(),
+        width: 3.0,
+        height: 3.0,
+        depth: 3.0,
+    };
+
+    let err1 = FeatureCrud::insert(&doc, feature.clone(), 2);
+    let err2 = FeatureCrud::insert(&doc, feature, 2);
+
+    match (&err1, &err2) {
+        (
+            Err(engawa_build::FeatureCrudError::InsertBeforeConsumer {
+                consumed_ref: ref1,
+                displaced_feature_id: id1,
+                consumer_at: at1,
+                ..
+            }),
+            Err(engawa_build::FeatureCrudError::InsertBeforeConsumer {
+                consumed_ref: ref2,
+                displaced_feature_id: id2,
+                consumer_at: at2,
+                ..
+            }),
+        ) => {
+            assert_eq!(ref1, ref2);
+            assert_eq!(id1, id2);
+            assert_eq!(at1, at2);
+        }
+        other => panic!(
+            "expected matching InsertBeforeConsumer errors, got {:?}",
+            other
+        ),
+    }
+}
+
+/// T_267 (#267): Normal — `[box_b1, box_b2, Cut(c1, target=new_box, tool=box_b1), Cut(c2, target=box_b1, tool=box_b2)]` に
+/// `CreateBox(new_box)` を idx 2 insert → c1 が活性化 → c2 が壊れる
+#[test]
+fn t_267_cut_activates_broken_consumer() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "new_box".to_string(),
+        tool: "box_b1".to_string(),
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c2".to_string(),
+        target: "box_b1".to_string(),
+        tool: "box_b2".to_string(),
+    });
+
+    let feature = Feature::CreateBox {
+        id: "new_box".to_string(),
+        width: 3.0,
+        height: 3.0,
+        depth: 3.0,
+    };
+
+    let result = FeatureCrud::insert(&doc, feature, 2);
+    match result {
+        Err(engawa_build::FeatureCrudError::InsertBeforeConsumer {
+            consumed_ref,
+            displaced_feature_id,
+            ..
+        }) => {
+            assert_eq!(consumed_ref, "box_b1");
+            assert_eq!(displaced_feature_id, "c2");
+        }
+        other => panic!("expected InsertBeforeConsumer, got {:?}", other),
+    }
+}
+
+/// T_267 (#267): Normal — Fuse 同パターン
+#[test]
+fn t_267_fuse_activates_broken_consumer() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::Fuse {
+        id: "f1".to_string(),
+        target: "new_box".to_string(),
+        tool: "box_b1".to_string(),
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c2".to_string(),
+        target: "box_b1".to_string(),
+        tool: "box_b2".to_string(),
+    });
+
+    let feature = Feature::CreateBox {
+        id: "new_box".to_string(),
+        width: 3.0,
+        height: 3.0,
+        depth: 3.0,
+    };
+
+    let result = FeatureCrud::insert(&doc, feature, 2);
+    match result {
+        Err(engawa_build::FeatureCrudError::InsertBeforeConsumer {
+            consumed_ref,
+            displaced_feature_id,
+            ..
+        }) => {
+            assert_eq!(consumed_ref, "box_b1");
+            assert_eq!(displaced_feature_id, "c2");
+        }
+        other => panic!("expected InsertBeforeConsumer, got {:?}", other),
+    }
+}
+
+/// T_267 (#267): Normal — Intersect 同パターン
+#[test]
+fn t_267_intersect_activates_broken_consumer() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_b2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::Intersect {
+        id: "i1".to_string(),
+        target: "new_box".to_string(),
+        tool: "box_b1".to_string(),
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c2".to_string(),
+        target: "box_b1".to_string(),
+        tool: "box_b2".to_string(),
+    });
+
+    let feature = Feature::CreateBox {
+        id: "new_box".to_string(),
+        width: 3.0,
+        height: 3.0,
+        depth: 3.0,
+    };
+
+    let result = FeatureCrud::insert(&doc, feature, 2);
+    match result {
+        Err(engawa_build::FeatureCrudError::InsertBeforeConsumer {
+            consumed_ref,
+            displaced_feature_id,
+            ..
+        }) => {
+            assert_eq!(consumed_ref, "box_b1");
+            assert_eq!(displaced_feature_id, "c2");
+        }
+        other => panic!("expected InsertBeforeConsumer, got {:?}", other),
+    }
+}
+
+/// T_267 (#267): Degen — broken-future が無い clean history で従来挙動を維持 (回帰防止)
+#[test]
+fn t_267_degen_no_activation_no_change() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_1".to_string(),
+        width: 10.0,
+        height: 10.0,
+        depth: 10.0,
+    });
+    doc.root_component.features.push(Feature::CreateBox {
+        id: "box_2".to_string(),
+        width: 5.0,
+        height: 5.0,
+        depth: 5.0,
+    });
+    doc.root_component.features.push(Feature::Cut {
+        id: "c1".to_string(),
+        target: "box_1".to_string(),
+        tool: "box_2".to_string(),
+    });
+
+    let feature = Feature::CreateSphere {
+        id: "sp".to_string(),
+        radius: 3.0,
+        center: [0.0, 0.0, 0.0],
+    };
+
+    let result = FeatureCrud::insert(&doc, feature, 2);
+    assert!(result.is_ok(), "clean history should succeed: {:?}", result);
+}

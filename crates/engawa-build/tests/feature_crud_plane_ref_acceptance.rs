@@ -1311,7 +1311,7 @@ fn t16_266_degen_no_sketch_user_unblocks() {
 }
 
 /// T17 (#266): Boundary — Extrude(sketch=sk) を末尾に insert したとき、sk の plane_ref が
-/// 既に consumed 後を参照していたら transitive resolve_before check が live でないことを検出
+/// 既に consumed 後を参照していたら sk 自体が skip される → SketchNotFound
 #[test]
 fn t17_266_boundary_extrude_insert_with_consumed_plane() {
     let mut doc = Document::new("Test");
@@ -1333,7 +1333,7 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
         target: "box_1".to_string(),
         tool: "box_other".to_string(),
     });
-    // sk の plane_ref は consumed 後の box_1 を参照
+    // sk の plane_ref は consumed 後の box_1 を参照 → sk 自体が skip される
     doc.root_component.features.push(Feature::CreateSketch {
         id: "sk".to_string(),
         plane: SketchPlane::Xy,
@@ -1351,7 +1351,7 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
         })),
     });
 
-    // Extrude(sketch=sk) を末尾に insert → transitive check が box_1 が live でないことを検出
+    // Extrude(sketch=sk) を末尾に insert → sk が skip されているため SketchNotFound
     let extrude = Feature::Extrude {
         id: "e1".to_string(),
         sketch: "sk".to_string(),
@@ -1361,13 +1361,13 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
 
     let result = FeatureCrud::insert(&doc, extrude, 4);
     match result {
-        Err(engawa_build::FeatureCrudError::BodyNotFound {
+        Err(engawa_build::FeatureCrudError::SketchNotFound {
             feature_id,
-            body_ref,
+            sketch_ref,
         }) => {
             assert_eq!(feature_id, "e1");
-            assert_eq!(body_ref, "box_1");
+            assert_eq!(sketch_ref, "sk");
         }
-        other => panic!("expected BodyNotFound, got {:?}", other),
+        other => panic!("expected SketchNotFound, got {:?}", other),
     }
 }
