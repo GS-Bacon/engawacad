@@ -117,21 +117,42 @@ async function addParentLabel(parent: number): Promise<void> {
   await runGh(["issue", "edit", String(parent), "--add-label", "blocked-by-split"]);
 }
 
+/** #261: 親 Issue の milestone title を取得する。
+ *  null = milestone なし or 取得失敗 (どちらも継承スキップ)。 */
+export async function fetchParentMilestone(
+  parent: number,
+  ghFn: typeof runGh = runGh,
+): Promise<string | null> {
+  const r = await ghFn(["issue", "view", String(parent), "--json", "milestone"]);
+  if (r.exit !== 0) return null;
+  try {
+    const obj = JSON.parse(r.stdout) as { milestone?: { title?: string } | null };
+    return obj.milestone?.title ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function createChild(entry: SplitEntry, parent: number, dryRun: boolean): Promise<number | null> {
   const labels = [...(entry.labels ?? []), `parent-blocked-by-split:${parent}`];
+  // #261: 親 Issue の milestone を継承する (batch-select の phase-feature tier で
+  //       pick されるために必須。継承漏れだと Phase N 子が永遠に actionable 化しない)
+  const parentMilestone = await fetchParentMilestone(parent);
   if (dryRun) {
-    console.log(`[dry-run] would create child: ${entry.title} labels=${labels.join(",")}`);
+    console.log(`[dry-run] would create child: ${entry.title} labels=${labels.join(",")} milestone=${parentMilestone ?? "(none)"}`);
     return null;
   }
   const body = entry.body ?? `分割元: #${parent}`;
   const tmp = `/tmp/split-child-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.md`;
   Bun.write(tmp, body);
-  const r = await runGh([
+  const args = [
     "issue", "create",
     "--title", entry.title,
     "--body-file", tmp,
     "--label", labels.join(","),
-  ]);
+  ];
+  if (parentMilestone) args.push("--milestone", parentMilestone);
+  const r = await runGh(args);
   if (r.exit !== 0) {
     process.stderr.write(`ERROR: gh issue create failed for ${entry.title}\n`);
     return null;

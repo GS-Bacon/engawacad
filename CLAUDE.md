@@ -31,9 +31,12 @@
    - **batch 軸**: `type: feature` 以外なら `batch:kernel` / `batch:data` / `batch:viewer` / `batch:skill` のいずれかを**必ず**追加
    - `enhancement` は ADR-002 type 軸の正規ラベルではない (機能拡張系は `type: foundation` を使う)
 4. `gh issue create --label "<type>,<batch>"` で起票。起票直後に必ず `bun .claude/skills/3ai/scripts/lint-issue-labels.ts --issue <N>` で検証 (exit 0 を確認)
-5. Phase 着手時は当 Phase の ADR にペルソナ構成を記載する (Common 3 + Phase オプション)
+5. **親 Issue から派生する子 Issue を起票する場合は、親 milestone を必ず継承する** (#261 — `--milestone "Phase N: ..."` を必ず渡す)。継承漏れだと batch-select の phase-feature tier で弾かれて永遠に actionable 化しない
+6. Phase 着手時は当 Phase の ADR にペルソナ構成を記載する (Common 3 + Phase オプション)
 
-⚠️ **ラベル抜けの代償**: `batch:*` または type 軸のいずれかが欠けた Issue は、`/3ai` auto 選定 (`batch-select.ts` の bug-batch / enh-batch / foundation-batch ラダー) から漏れて取り残される
+⚠️ **ラベル抜けの代償**: `batch:*` または type 軸のいずれかが欠けた Issue は、`/3ai` auto 選定 (`batch-select.ts` の bug-batch / enh-batch / foundation-batch / refactor-batch ラダー) から漏れて取り残される
+
+⚠️ **milestone 抜けの代償**: Phase N 子 Issue (`type: feature`) に milestone が無いと phase-feature tier に乗らない (#261 で観測、#244 子の #255-#260 が手動付与待ちになった)
 
 ## Project Overview
 
