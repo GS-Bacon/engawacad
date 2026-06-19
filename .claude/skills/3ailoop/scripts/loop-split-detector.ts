@@ -133,25 +133,41 @@ export async function fetchParentMilestone(
   }
 }
 
-async function createChild(entry: SplitEntry, parent: number, dryRun: boolean): Promise<number | null> {
+/** #261 F01 (Codex high): 親 milestone は split 全体で 1 回だけ fetch した値を使う。
+ *  子ごとに再 fetch すると gh 一時失敗や親 milestone 更新で兄弟の一部だけ
+ *  継承漏れになるため、`process` 入口で取得して全 createChild に渡す。 */
+export function buildCreateChildArgs(
+  entry: SplitEntry,
+  parent: number,
+  parentMilestone: string | null,
+  bodyFile: string,
+): string[] {
   const labels = [...(entry.labels ?? []), `parent-blocked-by-split:${parent}`];
-  // #261: 親 Issue の milestone を継承する (batch-select の phase-feature tier で
-  //       pick されるために必須。継承漏れだと Phase N 子が永遠に actionable 化しない)
-  const parentMilestone = await fetchParentMilestone(parent);
+  const args = [
+    "issue", "create",
+    "--title", entry.title,
+    "--body-file", bodyFile,
+    "--label", labels.join(","),
+  ];
+  if (parentMilestone) args.push("--milestone", parentMilestone);
+  return args;
+}
+
+async function createChild(
+  entry: SplitEntry,
+  parent: number,
+  parentMilestone: string | null,
+  dryRun: boolean,
+): Promise<number | null> {
   if (dryRun) {
+    const labels = [...(entry.labels ?? []), `parent-blocked-by-split:${parent}`];
     console.log(`[dry-run] would create child: ${entry.title} labels=${labels.join(",")} milestone=${parentMilestone ?? "(none)"}`);
     return null;
   }
   const body = entry.body ?? `分割元: #${parent}`;
   const tmp = `/tmp/split-child-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.md`;
   Bun.write(tmp, body);
-  const args = [
-    "issue", "create",
-    "--title", entry.title,
-    "--body-file", tmp,
-    "--label", labels.join(","),
-  ];
-  if (parentMilestone) args.push("--milestone", parentMilestone);
+  const args = buildCreateChildArgs(entry, parent, parentMilestone, tmp);
   const r = await runGh(args);
   if (r.exit !== 0) {
     process.stderr.write(`ERROR: gh issue create failed for ${entry.title}\n`);
@@ -208,10 +224,15 @@ if (import.meta.main) {
     }
   }
 
+  // #261 F01 (Codex high): 親 milestone は子作成ループの前に 1 回だけ fetch
+  // し、全 createChild に同一値を渡す。子ごとに再 fetch すると gh 一時失敗や
+  // 親 milestone の更新タイミングで兄弟の一部だけ継承漏れになる。
+  const parentMilestone = await fetchParentMilestone(parent);
+
   // フェーズ 2: 全子作成を試行 (途中失敗で親 label せず終了)
   const created: { title: string; child: number | null }[] = [];
   for (const e of entries) {
-    const child = await createChild(e, parent, dryRun);
+    const child = await createChild(e, parent, parentMilestone, dryRun);
     if (!dryRun && child === null) {
       console.error(`child creation FAILED for "${e.title}"; parent #${parent} left untouched`);
       console.log(JSON.stringify({

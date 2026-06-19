@@ -1,6 +1,6 @@
 // #261: loop-split-detector の milestone 継承を単体テスト
 import { describe, expect, test } from "bun:test";
-import { fetchParentMilestone } from "./loop-split-detector";
+import { buildCreateChildArgs, fetchParentMilestone } from "./loop-split-detector";
 
 describe("fetchParentMilestone (#261)", () => {
   test("親に milestone が紐付いている → title を返す", async () => {
@@ -34,5 +34,38 @@ describe("fetchParentMilestone (#261)", () => {
   test("milestone.title が undefined → null", async () => {
     const ghFn = async () => ({ stdout: JSON.stringify({ milestone: {} }), exit: 0 });
     expect(await fetchParentMilestone(244, ghFn)).toBeNull();
+  });
+});
+
+// #261 F02 (Codex medium): createChild の引数組み立てを単体テスト。
+// 実 gh は呼ばず、buildCreateChildArgs だけで --milestone 付与と決定性を検証。
+describe("buildCreateChildArgs (#261 F02)", () => {
+  const entry = { title: "child A", body: "body A", labels: ["type: feature", "batch:kernel"] };
+
+  test("parentMilestone あり → --milestone <title> が含まれる", () => {
+    const args = buildCreateChildArgs(entry, 244, "Phase 9: 履歴編集", "/tmp/x.md");
+    expect(args).toContain("--milestone");
+    expect(args[args.indexOf("--milestone") + 1]).toBe("Phase 9: 履歴編集");
+    expect(args).toContain("--title");
+    expect(args[args.indexOf("--title") + 1]).toBe("child A");
+    expect(args).toContain("--label");
+    expect(args[args.indexOf("--label") + 1]).toBe("type: feature,batch:kernel,parent-blocked-by-split:244");
+  });
+
+  test("parentMilestone なし (null) → --milestone は含まれない", () => {
+    const args = buildCreateChildArgs(entry, 244, null, "/tmp/x.md");
+    expect(args).not.toContain("--milestone");
+    expect(args).toContain("--title");
+  });
+
+  test("T01 決定性: 同一入力 2 回で同一 args", () => {
+    const args1 = buildCreateChildArgs(entry, 244, "Phase 9: X", "/tmp/x.md");
+    const args2 = buildCreateChildArgs(entry, 244, "Phase 9: X", "/tmp/x.md");
+    expect(args1).toEqual(args2);
+  });
+
+  test("labels が undefined でも parent-blocked-by-split は付与", () => {
+    const args = buildCreateChildArgs({ title: "c" }, 99, null, "/tmp/x.md");
+    expect(args[args.indexOf("--label") + 1]).toBe("parent-blocked-by-split:99");
   });
 });
