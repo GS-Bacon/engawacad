@@ -997,6 +997,80 @@ impl FeatureCrud {
         next.validate()?;
         Ok(next)
     }
+
+    /// Move `feature_id` to immediately before `before_id` in the feature history.
+    ///
+    /// Returns a NEW Document with the feature reordered. IDs are preserved.
+    ///
+    /// If `feature_id == before_id`, returns the original document unchanged (no-op).
+    ///
+    /// # Errors
+    ///
+    /// - `UnknownFeatureId`: either `feature_id` or `before_id` does not exist
+    /// - `EditBreaksConsumer`: reorder would break a previously executing consumer
+    ///   (e.g. moving a producer after its consumer, or creating a dependency cycle)
+    pub fn reorder(
+        doc: &Document,
+        feature_id: &str,
+        before_id: &str,
+    ) -> Result<Document, FeatureCrudError> {
+        if feature_id == before_id {
+            return Ok(doc.clone());
+        }
+        let from_idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == feature_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: feature_id.to_string(),
+            })?;
+        let before_idx = doc
+            .root_component
+            .features
+            .iter()
+            .position(|f| f.id() == before_id)
+            .ok_or_else(|| FeatureCrudError::UnknownFeatureId {
+                feature_id: before_id.to_string(),
+            })?;
+        let mut post: Vec<Feature> = doc.root_component.features.clone();
+        let moved = post.remove(from_idx);
+        let insert_at = if before_idx > from_idx {
+            before_idx - 1
+        } else {
+            before_idx
+        };
+        post.insert(insert_at, moved);
+        let (_, _, executed_at_pre) = simulate_history(
+            &doc.root_component.features,
+            doc.root_component.features.len(),
+        );
+        let (_, _, executed_at_post) = simulate_history(&post, post.len());
+        for (orig_idx, _) in doc.root_component.features.iter().enumerate() {
+            if !executed_at_pre.contains(&orig_idx) {
+                continue;
+            }
+            let orig_id = doc.root_component.features[orig_idx].id();
+            let post_idx = post
+                .iter()
+                .position(|f| f.id() == orig_id)
+                .expect("feature ID disappeared after reorder");
+            if !executed_at_post.contains(&post_idx) {
+                return Err(FeatureCrudError::EditBreaksConsumer {
+                    edit_feature_id: feature_id.to_string(),
+                    broken_consumer_id: orig_id.to_string(),
+                    broken_consumer_at: orig_idx,
+                    broken_ref:
+                        "reorder broke this consumer (cycle or producer moved past consumer)"
+                            .to_string(),
+                });
+            }
+        }
+        let mut next = doc.clone();
+        next.root_component.features = post;
+        next.validate()?;
+        Ok(next)
+    }
 }
 
 #[cfg(test)]
