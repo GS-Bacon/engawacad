@@ -63,3 +63,40 @@
 **指摘**: T11-T15 (#266) の `assert!(["sk", "e1"].contains(&displaced_feature_id))` で sk と e1 のどちらでも通るため、transitive sketch-user 検出 (e1 hit) を強制できていない。T14 も同様。
 
 **判断**: 改善余地はあるが medium / non-blocking。fix-it Issue として next cycle 以降に起票するかどうかは F01 修正 (#269) の副作用で T14 fixture が変わる可能性もあるため、#269 完了後に再判断する。本 batch では受容。
+
+---
+
+## 2026-06-19 cycle 45 (#269)
+
+**batch_start_sha**: af5c5c88ec9342953d70a6a71f369956eb8b454a
+**batch commits**: 6fa7eef (#269 feat squash), a6ac470 (finalize), bc2912c (B-6 r1 fix: success-path determinism + minimal transitive check), 4e85f03 (B-6 r2 fix: rename to test_269_*)
+**rounds**: r1 verdict=fail (critical=1, high=1), r2 verdict=fail (critical=1), r3 verdict=pass (blocking=0, medium=2, low=1)
+
+### r3 残 medium/low (記録のみ、non-blocking)
+
+#### F01 (medium) — test-summary.json が stale で committed
+
+- 指摘: feature folder の `test-summary.json` (committed snapshot) が `total_added: 0` / `determinism: 0` のまま。実際には r2 fix 後の再生成では `total_added=2, determinism=1, boundary=1` になっている。
+- 判断: B-7 reconciliation で sweep 時に最新版が commit される予定。記録のみ。
+
+#### F02 (medium) — t_269_edge_roundtrip_yaml_serialize_deserialize の検証が浅い
+
+- 場所: `crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs:1742`
+- 指摘: GLM が追加した YAML roundtrip テストが CreateBox 1件目のみ検証しており、本 Issue の主題 (CreateSketch.plane_ref/profile/offset) 経路を検証していない。
+- 判断: Issue scope 越境 (engawa-build acceptance に YAML serialize 検証を入れたこと自体が C-F02/M-F02 でも指摘済)。後続 Issue で format 側に移動する判断と連動。本 batch では受容。
+
+#### F03 (low) — EDGE_269_* ブロックの scope 越境
+
+- 場所: `crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs:1803`
+- 指摘: NaN/Inf/empty id/negative zero の serialize 検証が engawa-format 仕様への結合を engawa-build acceptance に持ち込んでいる。
+- 判断: F02 と同根。format 側へ移動の follow-up Issue 起票候補として記録。本 batch では受容。
+
+### auto-fix loop 経過
+
+- **F01 (r1 critical) 採用 + 修正済**: slug-matched ファイルに 2 件 #[test] 追加 → r2 で coverage_hints heuristic 名前不一致が判明 → r2 で rename → r3 で解消。
+- **F02 (r1 high) 採用 + 修正済**: success-path determinism test (byte-equal YAML 比較) を `test_269_success_path_determinism_byte_equal` として追加 → r3 で消化済。
+- **F01 (r2 critical) 採用 + 修正済**: extractor regex `(?:test_|t\d+_)` に合うよう `t_269_*` → `test_269_*` リネーム → r3 で解消。
+
+### autonomous mode 規約適合性
+
+B-6 spec「4. 再レビューで blocking == 0 になれば完了」を満たす。r1 → r2 → r3 で blocking 解消。loop policy 通り。

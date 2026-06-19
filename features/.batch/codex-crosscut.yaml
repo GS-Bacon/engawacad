@@ -1,15 +1,15 @@
 issues:
   - id: F01
-    severity: high
-    file: "crates/engawa-build/src/feature_crud.rs"
-    line_hint: 179
-    finding: "`refs_resolve_in_state` は `CreateSketch` の `plane_ref` だけを見ており、`Extrude` / `ExtrudeCut` は sketch ID が残っている限り executed 扱いのままです。`[box_1, sk(plane=box_1), Cut(box_1,...), e1(sketch=sk)]` のように sketch 作成後に `plane_ref` の body が dead になる history でも `e1` が `executed_at_*` に残るため、今回導入した transitive plane_ref lifetime ルールと `simulate_history` が不整合になり、broken-prefix history で downstream consumer の誤検出/見落としが起きます。"
-    suggestion: "`Extrude` / `ExtrudeCut` の実行判定でも参照 sketch の implicit body refs を `live_bodies_at` に対して再検証し、`plane_ref` body が dead なら executed から除外してください。あわせて『sk は body live 時に作成済みだが、その後 body が consumed された後に sketch user が現れる』回帰テストを追加してください。"
+    severity: critical
+    file: "crates/engawa-build/tests/refs_resolve_transitive_plane_ref_acceptance.rs"
+    line_hint: 1
+    finding: "Issue #269 用に追加した integration test ファイルに `#[test]` が1件もなく、実テストは既存スイート側の `t_269_*` / `EDGE_269_*` に置かれているため、添付 TEST SUMMARY では `coverage_hints.total_added=0`, `determinism=0`, `degenerate=0`, `golden=0` のままになっている。#269 は決定性と退化系を含むテスト追加が要件なので、この差分のままでは自動ゲート上は『テスト未追加』として扱われる。"
+    suggestion: "Issue 専用ファイルに実テストを移すか、summary 抽出器が拾う命名/配置に揃えて `coverage_hints` に反映される形へ修正する。"
   - id: F02
-    severity: medium
-    file: "crates/engawa-build/tests/feature_crud_plane_ref_acceptance.rs"
-    line_hint: 1110
-    finding: "`t14_266_extrudecut_via_sketch_user` が `displaced_feature_id == \"sk\"` でも通るため、`ec1` への transitive hit を強制できていません。T11/T12/T13/T15 も同様に `sk`/`e1` 両許容へ緩められており、`feature_transitive_implicit_body_refs` が sketch user 側で壊れても先行 `CreateSketch` consumer` だけでテストが通ります。"
-    suggestion: "少なくとも 1 本は『先行 sketch consumer では満たせず、sketch user (`ec1` / `e1`) だけが hit する』fixture にして、transitive sketch-user 検出そのものを assertion で固定してください。"
+    severity: high
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1507
+    finding: "`t_269_determinism` と `t_269_edge_determinism_100_iter` はどちらも broken-prefix の `BodyNotFound` 一致しか見ておらず、合意済み T01 の『成功パスを2回実行して post-insert の結果順序を比較する』検証になっていない。加えて `t_269_clean_history_tail_insert` は既存 consumer が live のままかを確認せず、`t_269_clean_history_unaffected` は `CreateBox` しか通らないため、新規の transitive plane_ref check が clean history の成功パスで回帰してもこの suite では検出できない。"
+    suggestion: "clean history に既存 `Extrude` / `ExtrudeCut` を含めた成功ケースで同じ `FeatureCrud::insert` を2回 `Ok` まで実行し、返却 `Document` の feature 順序または `to_yaml()` を byte-equal で比較するテストへ差し替える。T02/T03 も `refs_resolve_in_state` の transitive 分岐を実際に通す形に組み直す。"
 
 verdict: fail

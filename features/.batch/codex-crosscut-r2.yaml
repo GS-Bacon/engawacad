@@ -1,15 +1,9 @@
 issues:
   - id: F01
-    severity: high
-    file: ".claude/skills/3ailoop/scripts/loop-split-detector.test.ts"
+    severity: critical
+    file: "features/269-engawa-build-refs-resolve-in/test-summary.json"
     line_hint: 1
-    finding: "追加した bun:test が hidden `.claude/` 配下にあるため、repo root の `bun test` では検出されず、計画上の T01-T07 が通常の回帰スイートに入っていない。テスト追加がこの Issue の成果物なのに、自動実行されないままだと回帰防止にならない。"
-    suggestion: "テストを `tests/` など通常探索される場所へ移すか、package script / CI にこのファイルを明示的に実行するコマンドを追加する。"
-  - id: F02
-    severity: medium
-    file: ".claude/skills/3ailoop/scripts/loop-split-detector.ts"
-    line_hint: 126
-    finding: "`fetchParentMilestone` は `ghFn(...)` を try/catch の外で呼んでいるため、`runGh` の spawn 失敗や injected `ghFn` の throw では `null` 返却ではなく例外で全処理が中断する。コメント/plan の『取得失敗は silent skip』という契約を満たしていない。"
-    suggestion: "`await ghFn(...)` を catch 節に含め、例外時は `null` を返す。必要なら `--dry-run` 時は milestone fetch 自体をスキップする。"
+    finding: "この差分でも `coverage_hints.total_added=0` かつ `coverage_hints.determinism=0` のままです。#269 は新規テスト追加と決定性検証が必須要件ですが、追加したテスト群が `t_269_*` 命名のため集計器に拾われず、受け入れゲート上は依然として未カバー扱いになっています。"
+    suggestion: "新規テスト名を集計対象の形式（`test_*` または `t01_*` など）に揃えて TEST SUMMARY を再生成し、`coverage_hints.total_added` と `coverage_hints.determinism` が 0 でないことを確認する"
 
 verdict: fail

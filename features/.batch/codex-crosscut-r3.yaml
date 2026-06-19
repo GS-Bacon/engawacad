@@ -1,2 +1,20 @@
-issues: []
+issues:
+  - id: F01
+    severity: medium
+    file: "features/269-engawa-build-refs-resolve-in/test-summary.json"
+    line_hint: 9
+    finding: "この feature folder の `coverage_hints` が `total_added: 0` / `determinism: 0` のままです。`refs_resolve_transitive_plane_ref_acceptance.rs` を追加して extractor に拾わせる意図だったのに、コミット済みの証跡は依然『テスト未追加・決定性テストなし』を示しており、レビュー/自動判定を誤らせます。"
+    suggestion: "追加テスト後の TEST SUMMARY を再生成し、`test-summary.json` と関連メタファイルの `coverage_hints` を実際の追加内容に合わせて更新する"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1742
+    finding: "`t_269_edge_roundtrip_yaml_serialize_deserialize` は『全フィールドが一致』と説明していますが、実際に比較しているのは 1 件目の `CreateBox` だけです。#269 の主題である 2 件目の `CreateSketch` の `plane_ref` / `profile` / `offset` は未検証なので、この roundtrip テストでは新しい参照経路の YAML ドリフトを検出できません。"
+    suggestion: "Document 全体の YAML を byte-equal で比較するか、少なくとも 2 件目の `CreateSketch` の各フィールドまで明示的に assert する"
+  - id: F03
+    severity: low
+    file: "crates/engawa-build/tests/feature_crud_prefix_validate_acceptance.rs"
+    line_hint: 1803
+    finding: "`EDGE_269_03` 以降で追加している NaN/Inf/empty id/negative zero のシリアライズ検証は、今回変更した `refs_resolve_in_state` を一切通らず、`engawa-build` の acceptance を `engawa-format` の数値・YAML仕様に結び付けています。format 側の妥当性ルールを変えるだけで、この issue と無関係に `engawa-build` CI が赤くなる構成です。"
+    suggestion: "transitive plane_ref liveness に直接効くテストだけをこの suite に残し、シリアライズ境界値は `engawa-format` 側の専用テストへ移す"
 verdict: pass
