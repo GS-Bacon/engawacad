@@ -54,7 +54,7 @@ export function detectCodexUsageLimit(combinedOutput: string): boolean {
   return /usage\s*limit|rate\s*limit|hit\s+your\s+(usage|rate)|\b429\b/i.test(text);
 }
 
-function parseVerdict(text: string): {
+export function parseVerdict(text: string): {
   verdict: string;
   severity_counts: Record<string, number>;
   blocking: number;

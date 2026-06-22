@@ -1,11 +1,12 @@
-// dispatch-codex-3persona.ts: 3 persona 並列 spawn & merge テスト (#231)
+// dispatch-codex-3persona.ts: 3 persona 並列 spawn & merge テスト (#231) + GLM fallback (#281)
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
   dispatchCodex3Persona,
+  isAllCodexFailedFor3p,
   mergePersonaResults,
   PERSONAS,
   type PersonaResult,
@@ -189,5 +190,135 @@ describe("dispatchCodex3Persona parallel mock", () => {
     const mergedYaml = readFileSync(result, "utf-8");
     expect(mergedYaml).toMatch(/^issues:\s*\[\]\s*$/m);
     expect(mergedYaml).toMatch(/^verdict:\s*pass\s*$/m);
+  });
+});
+
+// #281: Codex usage limit → GLM 3 persona fallback
+describe("isAllCodexFailedFor3p (#281)", () => {
+  const r = (exitCode: number): PersonaResult => ({
+    persona: "architect",
+    exitCode,
+    yamlPath: "/tmp/x",
+    verdict: "unknown",
+    severity_counts: { critical: 0, high: 0, medium: 0, low: 0 },
+    blocking: 0,
+  });
+
+  test("空配列 → false", () => {
+    expect(isAllCodexFailedFor3p([])).toBe(false);
+  });
+
+  test("3 個とも exitCode≠0 → true (fallback 発火)", () => {
+    expect(isAllCodexFailedFor3p([r(1), r(137), r(2)])).toBe(true);
+  });
+
+  test("1 個でも exitCode=0 → false (fallback 不発)", () => {
+    expect(isAllCodexFailedFor3p([r(0), r(1), r(1)])).toBe(false);
+  });
+
+  test("3 個とも exitCode=0 → false (fallback 不発)", () => {
+    expect(isAllCodexFailedFor3p([r(0), r(0), r(0)])).toBe(false);
+  });
+});
+
+describe("mergePersonaResults fallback_used (#281)", () => {
+  const mock = (verdict: "pass" | "fail"): PersonaResult => ({
+    persona: "architect",
+    exitCode: 0,
+    yamlPath: "/tmp/x",
+    verdict,
+    severity_counts: { critical: 0, high: 0, medium: 0, low: 0 },
+    blocking: 0,
+  });
+
+  test("デフォルト (引数なし) → fallback_used=false (後方互換)", () => {
+    const m = mergePersonaResults([mock("pass"), mock("pass"), mock("pass")]);
+    expect(m.fallback_used).toBe(false);
+  });
+
+  test("第 2 引数 true → fallback_used=true", () => {
+    const m = mergePersonaResults([mock("pass"), mock("pass"), mock("pass")], true);
+    expect(m.fallback_used).toBe(true);
+  });
+});
+
+describe("dispatchCodex3Persona GLM fallback E2E (#281)", () => {
+  afterEach(() => {
+    delete process.env.DISPATCH_CODEX_3P_MOCK_CODEX;
+    delete process.env.DISPATCH_CODEX_3P_MOCK_GLM;
+  });
+
+  test("Codex usage-limit + GLM pass → merged verdict=pass, fallback_used=true, codex.json 保全", async () => {
+    const { instr, result } = freshTmpRoot("t281-glm-pass");
+    process.env.DISPATCH_CODEX_3P_MOCK_CODEX = "usage-limit";
+    process.env.DISPATCH_CODEX_3P_MOCK_GLM = "pass";
+    const merged = await dispatchCodex3Persona({
+      instructionFile: instr,
+      resultFile: result,
+    });
+    expect(merged.verdict).toBe("pass");
+    expect(merged.fallback_used).toBe(true);
+    expect(merged.blocking).toBe(0);
+    // 元 Codex 結果 (全 exit=1) が保全されている
+    expect(existsSync(`${result}.codex.json`)).toBe(true);
+    const codexRuns = JSON.parse(readFileSync(`${result}.codex.json`, "utf-8"));
+    expect(codexRuns).toHaveLength(3);
+    expect(codexRuns.every((r: PersonaResult) => r.exitCode === 1)).toBe(true);
+    // merged yaml に fallback_used: true 行
+    const mergedYaml = readFileSync(result, "utf-8");
+    expect(mergedYaml).toMatch(/^fallback_used:\s*true\s*$/m);
+    expect(mergedYaml).toMatch(/Codex usage limit fallback/);
+    // merged .verdict.json にも fallback_used: true
+    const verdictJson = JSON.parse(readFileSync(`${result}.verdict.json`, "utf-8"));
+    expect(verdictJson.fallback_used).toBe(true);
+  });
+
+  test("Codex usage-limit + GLM fail → merged verdict=fail, fallback_used=true, blocking≥3", async () => {
+    const { instr, result } = freshTmpRoot("t281-glm-fail");
+    process.env.DISPATCH_CODEX_3P_MOCK_CODEX = "usage-limit";
+    process.env.DISPATCH_CODEX_3P_MOCK_GLM = "fail";
+    const merged = await dispatchCodex3Persona({
+      instructionFile: instr,
+      resultFile: result,
+    });
+    expect(merged.verdict).toBe("fail");
+    expect(merged.fallback_used).toBe(true);
+    expect(merged.blocking).toBeGreaterThanOrEqual(3);
+    const verdictJson = JSON.parse(readFileSync(`${result}.verdict.json`, "utf-8"));
+    expect(verdictJson.fallback_used).toBe(true);
+  });
+
+  test("Codex usage-limit + GLM mixed → merged verdict=fail (contrarian fail), fallback_used=true", async () => {
+    const { instr, result } = freshTmpRoot("t281-glm-mixed");
+    process.env.DISPATCH_CODEX_3P_MOCK_CODEX = "usage-limit";
+    process.env.DISPATCH_CODEX_3P_MOCK_GLM = "mixed";
+    const merged = await dispatchCodex3Persona({
+      instructionFile: instr,
+      resultFile: result,
+    });
+    expect(merged.verdict).toBe("fail");
+    expect(merged.fallback_used).toBe(true);
+    expect(merged.blocking).toBe(1);
+    const byPersona = Object.fromEntries(merged.per_persona.map(p => [p.persona, p]));
+    expect(byPersona.architect.verdict).toBe("pass");
+    expect(byPersona.contrarian.verdict).toBe("fail");
+    expect(byPersona.migration.verdict).toBe("pass");
+  });
+
+  test("既存 --mock-mode=pass は fallback ルートに乗らない (fallback_used=false, codex.json 不在)", async () => {
+    const { instr, result } = freshTmpRoot("t281-no-fallback");
+    // mockMode を渡せば DISPATCH_CODEX_3P_MOCK_CODEX が立っていても fallback には乗らない
+    process.env.DISPATCH_CODEX_3P_MOCK_CODEX = "usage-limit";
+    const merged = await dispatchCodex3Persona({
+      instructionFile: instr,
+      resultFile: result,
+      mockMode: "pass",
+    });
+    expect(merged.verdict).toBe("pass");
+    expect(merged.fallback_used).toBe(false);
+    expect(existsSync(`${result}.codex.json`)).toBe(false);
+    const mergedYaml = readFileSync(result, "utf-8");
+    expect(mergedYaml).toMatch(/^fallback_used:\s*false\s*$/m);
+    expect(mergedYaml).toMatch(/Merged Codex review/);
   });
 });

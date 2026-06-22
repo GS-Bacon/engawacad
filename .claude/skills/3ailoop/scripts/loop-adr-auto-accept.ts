@@ -22,11 +22,12 @@
 //   1 = 内部エラー
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { dirname, basename } from "path";
+import { basename } from "path";
 import { lintAdr } from "./loop-adr-decision-matrix-lint";
 import { addTokens, incRegen, retire } from "./loop-adr-regen-tracker";
 import { runChecked } from "./loop-spawn-checked.ts";
 import { detectCodexUsageLimit } from "../../3ai/scripts/dispatch-codex.ts";
+import { runGlmViaZAI } from "../../3ai/scripts/glm-via-zai.ts";
 
 const PERSONAS = [
   {
@@ -56,23 +57,6 @@ export function isAllCodexFailed(verdicts: PersonaVerdict[]): boolean {
   return verdicts.every(v =>
     !v.approved && (v.raw_excerpt.startsWith("[codex exit=") || detectCodexUsageLimit(v.raw_excerpt))
   );
-}
-
-function parseEnvFile(path: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf-8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = trimmed.slice(0, eqIdx).trim();
-    let val = trimmed.slice(eqIdx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    result[key] = val;
-  }
-  return result;
 }
 
 async function runGh(args: string[]): Promise<{ stdout: string; exit: number }> {
@@ -167,7 +151,8 @@ async function runPersonaReview(
 }
 
 /** #251: GLM (Z.AI 経由 claude -p) で persona review を実行する fallback ルート。
- *  Codex usage limit 時に runPersonaReview の代わりに呼ばれる。 */
+ *  Codex usage limit 時に runPersonaReview の代わりに呼ばれる。
+ *  Z.AI 呼び出しの低レベル部分は glm-via-zai.ts に共通化 (#281)。 */
 async function runPersonaReviewViaGlm(
   persona: typeof PERSONAS[number],
   adrText: string,
@@ -180,39 +165,23 @@ async function runPersonaReviewViaGlm(
     return { persona: persona.key, approved: false, raw_excerpt: "[mock:glm-refute]" };
   }
 
-  const zaiEnv = process.env.ZAI_ENV ?? `${process.env.HOME}/AutoClaudeKMP/.env`;
-  if (!existsSync(zaiEnv)) {
-    return { persona: persona.key, approved: false, raw_excerpt: `[glm: Z.AI env not found at ${zaiEnv}]` };
-  }
-  const envVars = parseEnvFile(zaiEnv);
-  if (!envVars.Z_AI_API_KEY) {
-    return { persona: persona.key, approved: false, raw_excerpt: `[glm: Z_AI_API_KEY missing in ${zaiEnv}]` };
-  }
-
   const instructionFile = `${outDir}/persona-${persona.key}.glm-instruction.md`;
   const resultFile = `${outDir}/persona-${persona.key}.glm-result.md`;
   const prompt = buildPersonaPrompt(persona, adrText);
   mkdirSync(outDir, { recursive: true });
   writeFileSync(instructionFile, prompt, "utf-8");
 
-  const glmEnv: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
-    ANTHROPIC_AUTH_TOKEN: envVars.Z_AI_API_KEY,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-4.6",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-4.6",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.6",
-    API_TIMEOUT_MS: "600000",
-  };
-  delete glmEnv.CLAUDECODE;
-
-  const r = await runChecked(
-    ["claude", "-p", prompt, "--max-turns", "3", "--output-format", "json"],
-    { allowFailure: true, env: glmEnv },
-  );
+  const r = await runGlmViaZAI({ prompt });
   writeFileSync(`${resultFile}.raw`, r.stdout + r.stderr, "utf-8");
 
-  if (r.exitCode !== 0) {
+  if (!r.ok) {
+    if (r.error) {
+      return {
+        persona: persona.key,
+        approved: false,
+        raw_excerpt: `[glm: ${r.error}]`,
+      };
+    }
     const errSnippet = r.stderr.trim().slice(-300) || "(no stderr)";
     process.stderr.write(`WARN: glm exec exit=${r.exitCode} for persona=${persona.key}: ${errSnippet}\n`);
     return {
@@ -222,20 +191,7 @@ async function runPersonaReviewViaGlm(
     };
   }
 
-  let text = "";
-  try {
-    const lines = r.stdout.trim().split("\n").reverse();
-    for (const line of lines) {
-      try {
-        const obj = JSON.parse(line);
-        if (typeof obj === "object" && obj !== null && "result" in obj) {
-          text = String(obj.result);
-          break;
-        }
-      } catch {}
-    }
-  } catch {}
-  if (!text) text = r.stdout;
+  const text = r.result || r.stdout;
   writeFileSync(resultFile, text, "utf-8");
 
   const verdictMatch = text.match(/verdict:\s*(approved|refuted)/i);
