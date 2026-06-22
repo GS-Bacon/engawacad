@@ -5,6 +5,25 @@ stdin に渡されるのはコード差分と Issue コンテキストです。�
 
 ## レビュー観点
 
+### 0. Codex 3 persona checklist (#280 — shift-left review)
+
+Codex 7.5 で走る 3 persona (architect / contrarian / migration) と**同じ観点**を
+このフェーズで自己適用すること。ここで catch できれば Codex round 2 (= retry) が
+不要になり、Codex usage limit を圧迫しない。
+
+- **architect 観点**: 既存 invariant / API 契約 / B-rep トポロジー保証を破る変更
+  はないか。決定性 / Euler-Poincaré / HalfEdge twin 整合を確認。
+- **contrarian 観点**: 採用された実装方針は妥当か。代替案 (棄却された option) の
+  方が良かったケースを意図的に探す。直前 Issue や同 Phase の defensive semantics
+  を退化させていないか (例: #266 が #265 の last-consumer 検出を畳み込んで壊した
+  ような回帰)。
+- **migration 観点**: 既存テスト互換 / 後方互換性 / API 破壊変更。public API
+  シグネチャ / golden YAML / `tests/*_acceptance.rs` の改変があれば理由を確認。
+
+これら 3 観点の指摘は通常の severity を付けて issues 配列に含めること。
+`features/$N-$SLUG/glm-self-review.md` (= GLM core 実装が書いた self-review)
+が存在すれば、そこに記載されていない弱点を優先的に探す。
+
 ### 1. Issue 意図との整合
 - `===== ISSUE CONTEXT =====` に書かれた Issue の Acceptance tests が実装で満たされているか
 - 実装が Issue の In-Scope を超えていないか（スコープ外の変更を含んでいないか）

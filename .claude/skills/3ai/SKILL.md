@@ -534,6 +534,38 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
 
 ---
 
+## STEP 6.7: Claude self-review (#280 — Codex 往復削減 shift-left)
+
+**ゲート:** `features/$ISSUE_NUM-$ISSUE_SLUG/glm-self-review.md` が存在すること
+(STEP 6 の GLM core 実装が完了直前に出力)。
+
+Codex 7.5 で走る 3 persona (architect / contrarian / migration) と同じ観点を
+**Codex を呼ぶ前に Claude が自己適用**する。これにより Codex round 2 (= retry) が
+不要になり、Codex usage limit を圧迫しない。
+
+Claude が実行する手順:
+
+1. `git diff main..HEAD` で実装差分を読む (CI green の最終状態)
+2. `glm-self-review.md` を読み、GLM が認めた弱点を把握
+3. 以下の 3 観点で **GLM が見落としている弱点**を探す:
+   - **architect**: 既存 invariant / API 契約 / B-rep トポロジー保証を破る変更
+   - **contrarian**: 採用方針の反論可能性 / 直前 Issue や同 Phase の defensive
+     semantics 退化
+   - **migration**: 既存テスト互換 / 後方互換性 / public API 破壊
+4. 結果を `features/$ISSUE_NUM-$ISSUE_SLUG/claude-self-review.md` に Write
+   (フォーマットは glm-self-review.md と同じ 3 観点セクション)
+5. 重要度判定:
+   - **critical/high** が 1 件以上 → STEP 6.x に戻して GLM 再実装 dispatch
+     (debug-spec として claude-self-review.md を渡す)
+   - **medium のみ** → claude-self-review.md に記録、STEP 7 へ進む
+   - **弱点なし** → claude-self-review.md に "## 結論\n弱点検出なし" と書いて
+     STEP 7 へ進む
+
+「弱点なし」を頻発するなら critical thinking 不足。最低 1 件は仮説を出して
+GLM 実装が反証できるか考えること。Codex 7.5 finding 率を下げるのが目的。
+
+---
+
 ## STEP 7: GLM 最終レビュー（背景実行・完了通知）
 
 **ゲート:**

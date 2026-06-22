@@ -77,6 +77,41 @@ error_pattern の連続性から行う。
 
 ---
 
+## 完了直前: GLM self-review.md 出力 (#280)
+
+CI green を達成した後、`--result-file` JSON を書く**前に** `features/$N-$SLUG/glm-self-review.md`
+を以下の 3 観点で出力すること (= 自分の実装の弱点を自己批評する)。
+
+これは Codex 7.5 (architect / contrarian / migration) の 3 観点を**実装フェーズで
+事前防御**するための shift-left review。書き出した self-review は次段の Claude
+self-review (STEP 6.7) と GLM final review (STEP 7) で参考にされる。
+
+```markdown
+# GLM Self-Review for #N
+
+## architect 観点 (既存 invariant / API 契約 / トポロジー保証)
+- 何を満たしているか (1-3 行)
+- 弱点 / リスクが残る箇所 (file:line で具体的に、なければ "なし")
+
+## contrarian 観点 (採用した実装方針の反論可能性)
+- 代替案を意図的に却下した理由 (1-3 行)
+- 直前 Issue や同 Phase の defensive semantics を退化させていないか (具体的に)
+
+## migration 観点 (既存テスト互換 / 後方互換性)
+- 触った public API / golden YAML の変更があれば列挙
+- 既存 acceptance test を改変したならその理由
+
+## 残課題 (scope-defer / 後続 Issue 候補)
+- 本 Issue の scope 外で気付いた問題 (1-5 件)
+```
+
+書けない (= 弱点が思いつかない) 場合は **正直に「弱点なし」と書く**。
+ただし「弱点なし」を頻発するなら critical thinking が不足している兆候。
+
+self-review.md 出力後に result JSON を書く。
+
+---
+
 ## 完了時の必須アクション
 
 作業完了時に、以下の JSON を `--result-file` に指定されたパスに書き出す:
