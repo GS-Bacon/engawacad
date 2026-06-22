@@ -2,7 +2,7 @@
 
 use engawa_build::FeatureCrud;
 use engawa_format::{
-    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchPlane, SketchSegment,
+    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchElement, SketchPlane,
 };
 
 /// T01: Determinism — 同 history + 同 implicit ref で 2 回 insert → エラー variant 同一 + Document YAML byte-equal
@@ -22,7 +22,7 @@ fn t01_determinism() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -172,7 +172,7 @@ fn t04_downstream_sketch_blocks_extrude_fuse_target() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -480,7 +480,7 @@ fn diff01_downstream_extrude_fuse_target_implicit_ref_duplicate() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -893,7 +893,7 @@ fn t10_266_determinism() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -980,7 +980,7 @@ fn t11_266_cut_blocked_via_sketch_user() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1050,7 +1050,7 @@ fn t12_266_fuse_blocked_via_sketch_user() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1119,7 +1119,7 @@ fn t13_266_intersect_blocked_via_sketch_user() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1199,7 +1199,7 @@ fn t14_266_extrudecut_via_sketch_user() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1286,7 +1286,7 @@ fn t15_266_derived_chain_resolves_transitively() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1364,7 +1364,7 @@ fn t16_266_degen_no_sketch_user_unblocks() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1430,7 +1430,7 @@ fn t17_266_boundary_extrude_insert_with_consumed_plane() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],

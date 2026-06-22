@@ -112,17 +112,19 @@ describe("T03 footprintProfile", () => {
     const segments = footprintProfile(positions, indices, faceIds, faceId, "xy");
     expect(segments).not.toBeNull();
     expect(segments!.length).toBe(4);
+    // #273: footprintProfile は Line のみ返す前提で narrow
+    const lines = segments! as Array<{ kind: "line"; id: string; from: [number, number]; to: [number, number] }>;
     // closed: last seg.to === first seg.from
-    expect(segments![3].to).toEqual(segments![0].from);
+    expect(lines[3].to).toEqual(lines[0].from);
     // Bounding rectangle of (0..10, 0..10) on xy plane
-    expect(segments![0].from).toEqual([0, 0]);
-    expect(segments![0].to).toEqual([10, 0]);
-    expect(segments![1].from).toEqual([10, 0]);
-    expect(segments![1].to).toEqual([10, 10]);
-    expect(segments![2].from).toEqual([10, 10]);
-    expect(segments![2].to).toEqual([0, 10]);
-    expect(segments![3].from).toEqual([0, 10]);
-    expect(segments![3].to).toEqual([0, 0]);
+    expect(lines[0].from).toEqual([0, 0]);
+    expect(lines[0].to).toEqual([10, 0]);
+    expect(lines[1].from).toEqual([10, 0]);
+    expect(lines[1].to).toEqual([10, 10]);
+    expect(lines[2].from).toEqual([10, 10]);
+    expect(lines[2].to).toEqual([0, 10]);
+    expect(lines[3].from).toEqual([0, 10]);
+    expect(lines[3].to).toEqual([0, 0]);
   });
 });
 
@@ -395,9 +397,10 @@ describe("T12 footprintProfile different planes", () => {
     const result = footprintProfile(positions, indices, faceIds, faceId, "xz");
     expect(result).not.toBeNull();
     expect(result!.length).toBe(4);
+    const lines = result! as Array<{ kind: "line"; id: string; from: [number, number]; to: [number, number] }>;
     // Bounding rect on xz: x=[0,10], z=[0,20]
-    expect(result![0].from).toEqual([0, 0]);
-    expect(result![1].to).toEqual([10, 20]);
+    expect(lines[0].from).toEqual([0, 0]);
+    expect(lines[1].to).toEqual([10, 20]);
   });
 
   it("yz plane projects (y,z)", () => {
@@ -413,9 +416,10 @@ describe("T12 footprintProfile different planes", () => {
     const result = footprintProfile(positions, indices, faceIds, faceId, "yz");
     expect(result).not.toBeNull();
     expect(result!.length).toBe(4);
+    const lines = result! as Array<{ kind: "line"; id: string; from: [number, number]; to: [number, number] }>;
     // y=[0,10], z=[0,20]
-    expect(result![0].from).toEqual([0, 0]);
-    expect(result![1].to).toEqual([10, 20]);
+    expect(lines[0].from).toEqual([0, 0]);
+    expect(lines[1].to).toEqual([10, 20]);
   });
 });
 
@@ -488,28 +492,30 @@ describe("T13 postFeature error handling", () => {
 describe("T14 insetRect", () => {
   it("10×10 rectangle with ratio 0.25 → 5×5 centered", () => {
     const rect = [
-      { id: "seg_0", from: [0, 0] as [number, number], to: [10, 0] as [number, number] },
-      { id: "seg_1", from: [10, 0] as [number, number], to: [10, 10] as [number, number] },
-      { id: "seg_2", from: [10, 10] as [number, number], to: [0, 10] as [number, number] },
-      { id: "seg_3", from: [0, 10] as [number, number], to: [0, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_0", from: [0, 0] as [number, number], to: [10, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_1", from: [10, 0] as [number, number], to: [10, 10] as [number, number] },
+      { kind: "line" as const, id: "seg_2", from: [10, 10] as [number, number], to: [0, 10] as [number, number] },
+      { kind: "line" as const, id: "seg_3", from: [0, 10] as [number, number], to: [0, 0] as [number, number] },
     ];
     const result = insetRect(rect, 0.25);
     expect(result).not.toBeNull();
+    // #273: SketchElement は discriminated union。insetRect は Line のみ返す前提なので narrow
+    const lines = result! as Array<{ kind: "line"; id: string; from: [number, number]; to: [number, number] }>;
     // extent = 10, shrink per side = 10 * 0.25 = 2.5, new range = [2.5, 7.5]
-    expect(result![0].from).toEqual([2.5, 2.5]);
-    expect(result![1].to).toEqual([7.5, 7.5]);
+    expect(lines[0].from).toEqual([2.5, 2.5]);
+    expect(lines[1].to).toEqual([7.5, 7.5]);
     // 4 segments, closed
-    expect(result!.length).toBe(4);
-    expect(result![3].to).toEqual(result![0].from);
+    expect(lines.length).toBe(4);
+    expect(lines[3].to).toEqual(lines[0].from);
   });
 
   it("collapse case: tiny extent → null", () => {
     // extent = 2, ratio = 0.5 → shrink = 1 each side → new extent = 0
     const rect = [
-      { id: "seg_0", from: [0, 0] as [number, number], to: [2, 0] as [number, number] },
-      { id: "seg_1", from: [2, 0] as [number, number], to: [2, 2] as [number, number] },
-      { id: "seg_2", from: [2, 2] as [number, number], to: [0, 2] as [number, number] },
-      { id: "seg_3", from: [0, 2] as [number, number], to: [0, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_0", from: [0, 0] as [number, number], to: [2, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_1", from: [2, 0] as [number, number], to: [2, 2] as [number, number] },
+      { kind: "line" as const, id: "seg_2", from: [2, 2] as [number, number], to: [0, 2] as [number, number] },
+      { kind: "line" as const, id: "seg_3", from: [0, 2] as [number, number], to: [0, 0] as [number, number] },
     ];
     const result = insetRect(rect, 0.5);
     expect(result).toBeNull();
@@ -517,24 +523,25 @@ describe("T14 insetRect", () => {
 
   it("non-square rectangle: 20×4 with ratio 0.25 → 10×2", () => {
     const rect = [
-      { id: "seg_0", from: [0, 0] as [number, number], to: [20, 0] as [number, number] },
-      { id: "seg_1", from: [20, 0] as [number, number], to: [20, 4] as [number, number] },
-      { id: "seg_2", from: [20, 4] as [number, number], to: [0, 4] as [number, number] },
-      { id: "seg_3", from: [0, 4] as [number, number], to: [0, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_0", from: [0, 0] as [number, number], to: [20, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_1", from: [20, 0] as [number, number], to: [20, 4] as [number, number] },
+      { kind: "line" as const, id: "seg_2", from: [20, 4] as [number, number], to: [0, 4] as [number, number] },
+      { kind: "line" as const, id: "seg_3", from: [0, 4] as [number, number], to: [0, 0] as [number, number] },
     ];
     const result = insetRect(rect, 0.25);
     expect(result).not.toBeNull();
+    const lines = result! as Array<{ kind: "line"; id: string; from: [number, number]; to: [number, number] }>;
     // U: [5, 15], V: [1, 3]
-    expect(result![0].from).toEqual([5, 1]);
-    expect(result![1].to).toEqual([15, 3]);
+    expect(lines[0].from).toEqual([5, 1]);
+    expect(lines[1].to).toEqual([15, 3]);
   });
 
   it("deterministic: same input → same output 100 times", () => {
     const rect = [
-      { id: "seg_0", from: [0, 0] as [number, number], to: [10, 0] as [number, number] },
-      { id: "seg_1", from: [10, 0] as [number, number], to: [10, 10] as [number, number] },
-      { id: "seg_2", from: [10, 10] as [number, number], to: [0, 10] as [number, number] },
-      { id: "seg_3", from: [0, 10] as [number, number], to: [0, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_0", from: [0, 0] as [number, number], to: [10, 0] as [number, number] },
+      { kind: "line" as const, id: "seg_1", from: [10, 0] as [number, number], to: [10, 10] as [number, number] },
+      { kind: "line" as const, id: "seg_2", from: [10, 10] as [number, number], to: [0, 10] as [number, number] },
+      { kind: "line" as const, id: "seg_3", from: [0, 10] as [number, number], to: [0, 0] as [number, number] },
     ];
     const first = insetRect(rect, 0.25);
     expect(first).not.toBeNull();
@@ -970,10 +977,10 @@ describe("T02_plan: footprintProfile yz plane Y:[-10,10] Z:[-15,15]", () => {
     const result = footprintProfile(positions, indices, faceIds, "f_x_pos", "yz");
     expect(result).not.toBeNull();
     expect(result!.length).toBe(4);
-    expect(result![0]).toEqual({ id: "seg_0", from: [-10, -15], to: [10, -15] });
-    expect(result![1]).toEqual({ id: "seg_1", from: [10, -15], to: [10, 15] });
-    expect(result![2]).toEqual({ id: "seg_2", from: [10, 15], to: [-10, 15] });
-    expect(result![3]).toEqual({ id: "seg_3", from: [-10, 15], to: [-10, -15] });
+    expect(result![0]).toEqual({ kind: "line" as const, id: "seg_0", from: [-10, -15], to: [10, -15] });
+    expect(result![1]).toEqual({ kind: "line" as const, id: "seg_1", from: [10, -15], to: [10, 15] });
+    expect(result![2]).toEqual({ kind: "line" as const, id: "seg_2", from: [10, 15], to: [-10, 15] });
+    expect(result![3]).toEqual({ kind: "line" as const, id: "seg_3", from: [-10, 15], to: [-10, -15] });
   });
 });
 

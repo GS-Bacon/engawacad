@@ -432,7 +432,7 @@ mod tests {
 
     #[test]
     fn test_extruded_rect_yaml_golden() {
-        use crate::feature::{Feature, SketchPlane, SketchSegment};
+        use crate::feature::{Feature, SketchElement, SketchPlane};
         use std::path::Path;
 
         // Load from file and verify exact serialization
@@ -447,10 +447,10 @@ mod tests {
         static GOLDEN: &str = concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
             "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
-            "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
-            "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
-            "    - id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
-            "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "    - kind: line\n      id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - kind: line\n      id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
+            "    - kind: line\n      id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
+            "    - kind: line\n      id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
             "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
         );
         assert_eq!(yaml, GOLDEN, "extruded_rect.engawa YAML golden mismatch");
@@ -463,22 +463,22 @@ mod tests {
             offset: 0.0,
             variables: Vec::new(),
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],

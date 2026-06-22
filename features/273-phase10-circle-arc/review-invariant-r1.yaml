@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "テスト計画 > T_BOUNDARY_full_circle"
+    finding: "Arc(start=0, end=2π) を tessellate すると最後の点が最初の点と重複する可能性がある（start_angle と end_angle が計算上一致するケース）。Circle の polyline は最初と最後の点が重複しない（0..n）。このままではベクトル長が異なりテストが失敗する恐れがある。"
+    suggestion: "Arc tessellation で sweep ≈ 2π の場合、最後の点を除外して n 点を返すよう実装時のロジックに明記すること、または T_BOUNDARY テストの期待結果を「最初の n 点が一致（n < min(len_circle, len_arc)）」に調整すること"
+
+verdict: pass

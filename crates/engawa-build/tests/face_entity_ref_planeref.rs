@@ -1,7 +1,7 @@
 //! Issue #215: CreateSketch.plane_ref EntityRef (Face) 経路 acceptance tests
 
 use engawa_build::build_bodies_from_features;
-use engawa_format::{EntityKind, EntityRef, Feature, PlaneRef, SketchPlane, SketchSegment};
+use engawa_format::{EntityKind, EntityRef, Feature, PlaneRef, SketchElement, SketchPlane};
 use engawa_kernel::brep::topology::IdGenerator;
 use engawa_kernel::geometry::surface::Surface;
 
@@ -25,22 +25,22 @@ fn t01_determinism() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [5.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [5.0, 0.0],
                     to: [5.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [5.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -143,22 +143,22 @@ fn t02_legacy_string_planeref_backward_compat() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -202,22 +202,22 @@ fn t03_plane_ref_entity_extrude() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [5.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [5.0, 0.0],
                     to: [5.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [5.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -320,22 +320,22 @@ fn t04_plane_ref_entity_extrude_cut() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [2.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [2.0, 0.0],
                     to: [2.0, 2.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [2.0, 2.0],
                     to: [0.0, 2.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 2.0],
                     to: [0.0, 0.0],
@@ -392,22 +392,22 @@ fn t07_degen_unknown_entity_ref() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [5.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [5.0, 0.0],
                     to: [5.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [5.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -462,22 +462,22 @@ fn t08_degen_non_planar_face() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [5.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [5.0, 0.0],
                     to: [5.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [5.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -529,22 +529,22 @@ fn t09_boundary_derived_ref() {
             suppressed: false,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [5.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [5.0, 0.0],
                     to: [5.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [5.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],

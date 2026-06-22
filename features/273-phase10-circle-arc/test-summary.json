@@ -1,0 +1,17 @@
+{
+  "totals": {
+    "passed": 1334,
+    "failed": 0,
+    "ignored": 17
+  },
+  "by_crate": {},
+  "added_in_round": [],
+  "coverage_hints": {
+    "total_added": 0,
+    "determinism": 0,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

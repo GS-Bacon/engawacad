@@ -224,7 +224,7 @@ fn t09_all_suppressed_component_builds_empty() {
 /// T10: restore invalid feature (broken refs) → rejected (C-F02 regression).
 #[test]
 fn t10_restore_invalid_feature_rejected() {
-    use engawa_format::{SketchPlane, SketchSegment};
+    use engawa_format::{SketchElement, SketchPlane};
 
     // Create document with CreateSketch and a suppressed Extrude with broken sketch ref.
     // This simulates hand-edited YAML where a suppressed Extrude has an invalid ref.
@@ -234,7 +234,7 @@ fn t10_restore_invalid_feature_rejected() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -266,23 +266,23 @@ fn t10_restore_invalid_feature_rejected() {
 /// T11: body producer suppressed with sketch active → builds empty (M-F01 regression).
 #[test]
 fn t11_body_producer_suppressed_with_sketch_builds_empty() {
-    use engawa_format::{SketchPlane, SketchSegment};
+    use engawa_format::{SketchElement, SketchPlane};
     use engawa_kernel::brep::topology::IdGenerator;
 
     // Create document with CreateSketch (active) and Extrude (suppressed)
     let mut doc = Document::new("t11");
     // Closed triangle profile (3 segments forming a loop)
-    let seg1 = SketchSegment {
+    let seg1 = SketchElement::Line {
         id: "seg1".to_string(),
         from: [0.0, 0.0],
         to: [10.0, 0.0],
     };
-    let seg2 = SketchSegment {
+    let seg2 = SketchElement::Line {
         id: "seg2".to_string(),
         from: [10.0, 0.0],
         to: [5.0, 10.0],
     };
-    let seg3 = SketchSegment {
+    let seg3 = SketchElement::Line {
         id: "seg3".to_string(),
         from: [5.0, 10.0],
         to: [0.0, 0.0], // closes loop

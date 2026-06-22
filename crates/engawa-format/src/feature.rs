@@ -262,12 +262,108 @@ pub enum PlaneRef {
     Entity(EntityRef),
 }
 
-/// A line segment in a 2D sketch profile.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
-pub struct SketchSegment {
-    pub id: String,
-    pub from: [f64; 2],
-    pub to: [f64; 2],
+/// A sketch element — a primitive curve in a 2D profile.
+/// Tagged serialization with `kind` field; legacy untagged `Line` (without `kind`)
+/// falls back to `Line` variant for backward compatibility.
+#[derive(Debug, Clone, Serialize, JsonSchema, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchElement {
+    /// Line segment from `from` to `to`.
+    Line {
+        id: String,
+        from: [f64; 2],
+        to: [f64; 2],
+    },
+    /// Full circle (closed loop) with given center and radius.
+    Circle {
+        id: String,
+        center: [f64; 2],
+        radius: f64,
+    },
+    /// Arc segment (CCW from start_angle to end_angle).
+    Arc {
+        id: String,
+        center: [f64; 2],
+        radius: f64,
+        /// radian; CCW from +X axis
+        start_angle: f64,
+        /// radian; CCW from +X axis. end_angle - start_angle = sweep angle
+        end_angle: f64,
+    },
+}
+
+/// Custom deserialize: try tagged format first; if missing `kind`, fall back to legacy Line.
+/// This allows reading both:
+///   - tagged: `{kind: line, id: l1, from: [0,0], to: [1,0]}`
+///   - legacy: `{id: l1, from: [0,0], to: [1,0]}`
+impl<'de> Deserialize<'de> for SketchElement {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+
+        // Try tagged format first via content
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Tagged {
+            Line {
+                id: String,
+                from: [f64; 2],
+                to: [f64; 2],
+            },
+            Circle {
+                id: String,
+                center: [f64; 2],
+                radius: f64,
+            },
+            Arc {
+                id: String,
+                center: [f64; 2],
+                radius: f64,
+                start_angle: f64,
+                end_angle: f64,
+            },
+        }
+
+        // For YAML, we can deserialize to a Value first and inspect it.
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+
+        // Try tagged format (has "kind" key)
+        if let Ok(tagged) = serde_yaml::from_value::<Tagged>(value.clone()) {
+            return Ok(match tagged {
+                Tagged::Line { id, from, to } => SketchElement::Line { id, from, to },
+                Tagged::Circle { id, center, radius } => {
+                    SketchElement::Circle { id, center, radius }
+                }
+                Tagged::Arc {
+                    id,
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } => SketchElement::Arc {
+                    id,
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                },
+            });
+        }
+
+        // Fallback: legacy Line (id, from, to without "kind")
+        #[derive(Deserialize)]
+        struct LegacyLine {
+            id: String,
+            from: [f64; 2],
+            to: [f64; 2],
+        }
+        let legacy: LegacyLine = serde_yaml::from_value(value)
+            .map_err(|e| Error::custom(format!("invalid SketchElement: {e}")))?;
+        Ok(SketchElement::Line {
+            id: legacy.id,
+            from: legacy.from,
+            to: legacy.to,
+        })
+    }
 }
 
 /// A feature — one step in the operation history.
@@ -317,7 +413,7 @@ pub enum Feature {
         offset: f64,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         variables: Vec<Variable>,
-        profile: Vec<SketchSegment>,
+        profile: Vec<SketchElement>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plane_ref: Option<PlaneRef>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -482,22 +578,22 @@ mod tests {
             offset: 0.0,
             variables: Vec::new(),
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -509,7 +605,7 @@ mod tests {
         let yaml = serde_yaml::to_string(&f).unwrap();
         assert_eq!(
             yaml,
-            "type: create_sketch\nid: sketch_1\nplane: xy\nprofile:\n- id: seg_a\n  from:\n  - 0.0\n  - 0.0\n  to:\n  - 10.0\n  - 0.0\n- id: seg_b\n  from:\n  - 10.0\n  - 0.0\n  to:\n  - 10.0\n  - 5.0\n- id: seg_c\n  from:\n  - 10.0\n  - 5.0\n  to:\n  - 0.0\n  - 5.0\n- id: seg_d\n  from:\n  - 0.0\n  - 5.0\n  to:\n  - 0.0\n  - 0.0\n",
+            "type: create_sketch\nid: sketch_1\nplane: xy\nprofile:\n- kind: line\n  id: seg_a\n  from:\n  - 0.0\n  - 0.0\n  to:\n  - 10.0\n  - 0.0\n- kind: line\n  id: seg_b\n  from:\n  - 10.0\n  - 0.0\n  to:\n  - 10.0\n  - 5.0\n- kind: line\n  id: seg_c\n  from:\n  - 10.0\n  - 5.0\n  to:\n  - 0.0\n  - 5.0\n- kind: line\n  id: seg_d\n  from:\n  - 0.0\n  - 5.0\n  to:\n  - 0.0\n  - 0.0\n",
             "CreateSketch YAML golden mismatch — field order or rename drifted"
         );
         let back: Feature = serde_yaml::from_str(&yaml).unwrap();
@@ -1301,6 +1397,86 @@ mod tests {
             let yaml = serde_yaml::to_string(&e).unwrap();
             let back: EntityRef = serde_yaml::from_str(&yaml).unwrap();
             assert_eq!(e, back);
+        }
+    }
+
+    // --- SketchElement golden YAML tests (Issue #273) ---
+
+    /// T_GOLDEN_legacy_compat: legacy YAML (no kind field) deserializes as Line.
+    #[test]
+    fn t_golden_legacy_line_compat() {
+        let yaml = "id: seg_a\nfrom:\n- 0.0\n- 0.0\nto:\n- 10.0\n- 0.0\n";
+        let elem: SketchElement = serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(elem, SketchElement::Line { id, .. } if id == "seg_a"));
+    }
+
+    /// T_GOLDEN_circle_yaml: tagged Circle roundtrips.
+    #[test]
+    fn t_golden_circle_roundtrip() {
+        let circle = SketchElement::Circle {
+            id: "c1".to_string(),
+            center: [5.0, 3.0],
+            radius: 2.5,
+        };
+        let yaml = serde_yaml::to_string(&circle).unwrap();
+        let back: SketchElement = serde_yaml::from_str(&yaml).unwrap();
+        match (circle, back) {
+            (
+                SketchElement::Circle {
+                    id: id1,
+                    center: c1,
+                    radius: r1,
+                },
+                SketchElement::Circle {
+                    id: id2,
+                    center: c2,
+                    radius: r2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(c1, c2);
+                assert_eq!(r1, r2);
+            }
+            _ => panic!("Circle did not roundtrip"),
+        }
+    }
+
+    /// T_GOLDEN_arc_yaml: tagged Arc roundtrips.
+    #[test]
+    fn t_golden_arc_roundtrip() {
+        let arc = SketchElement::Arc {
+            id: "a1".to_string(),
+            center: [0.0, 0.0],
+            radius: 1.0,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::PI / 2.0,
+        };
+        let yaml = serde_yaml::to_string(&arc).unwrap();
+        let back: SketchElement = serde_yaml::from_str(&yaml).unwrap();
+        match (arc, back) {
+            (
+                SketchElement::Arc {
+                    id: id1,
+                    center: c1,
+                    radius: r1,
+                    start_angle: s1,
+                    end_angle: e1,
+                },
+                SketchElement::Arc {
+                    id: id2,
+                    center: c2,
+                    radius: r2,
+                    start_angle: s2,
+                    end_angle: e2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(c1, c2);
+                assert_eq!(r1, r2);
+                assert_eq!(s1, s2);
+                assert_eq!(e1, e2);
+            }
+            _ => panic!("Arc did not roundtrip"),
         }
     }
 }

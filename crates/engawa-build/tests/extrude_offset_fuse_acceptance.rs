@@ -9,24 +9,24 @@ use engawa_kernel::brep::topology::IdGenerator;
 use engawa_kernel::error::KernelError;
 
 /// Helper: closed rectangular profile on a plane
-fn rect_profile() -> Vec<engawa_format::SketchSegment> {
+fn rect_profile() -> Vec<engawa_format::SketchElement> {
     vec![
-        engawa_format::SketchSegment {
+        engawa_format::SketchElement::Line {
             id: "s0".into(),
             from: [0.0, 0.0],
             to: [5.0, 0.0],
         },
-        engawa_format::SketchSegment {
+        engawa_format::SketchElement::Line {
             id: "s1".into(),
             from: [5.0, 0.0],
             to: [5.0, 5.0],
         },
-        engawa_format::SketchSegment {
+        engawa_format::SketchElement::Line {
             id: "s2".into(),
             from: [5.0, 5.0],
             to: [0.0, 5.0],
         },
-        engawa_format::SketchSegment {
+        engawa_format::SketchElement::Line {
             id: "s3".into(),
             from: [0.0, 5.0],
             to: [0.0, 0.0],
@@ -178,22 +178,22 @@ fn t04a_extrusion_is_manifold() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s0".into(),
                     from: [-2.0, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 2.0],
                     to: [-2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".into(),
                     from: [-2.0, 2.0],
                     to: [-2.0, -2.0],
@@ -240,22 +240,22 @@ fn t04b_box_extrude_fuse_via_feature() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s0".into(),
                     from: [-2.0, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 2.0],
                     to: [-2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".into(),
                     from: [-2.0, 2.0],
                     to: [-2.0, -2.0],
@@ -306,22 +306,22 @@ fn t04_fuse_target_overlapping_box() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s0".into(),
                     from: [-2.0, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 2.0],
                     to: [-2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".into(),
                     from: [-2.0, 2.0],
                     to: [-2.0, -2.0],

@@ -2,7 +2,7 @@
 
 use engawa_build::FeatureCrud;
 use engawa_format::{
-    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchPlane, SketchSegment,
+    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchElement, SketchPlane,
 };
 
 /// T01: 決定性 — broken prefix history + 同 insert を 2 回 → エラー variant 同一 + Document YAML byte-equal
@@ -120,7 +120,7 @@ fn t03_broken_extrude_sketch_skips_output() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -255,7 +255,7 @@ fn t06_cascade_broken_prefix_invalidates_dependent() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -972,7 +972,7 @@ fn t_266_r2_early_consumer_with_later_reregister_returns_first() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "seg_a".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1317,7 +1317,7 @@ fn t_269_extrude_transitive_plane_ref_dead() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1416,7 +1416,7 @@ fn t_269_extrudecut_transitive_plane_ref_dead() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1482,7 +1482,7 @@ fn t_269_degen_clean_plane_ref_alive() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1544,7 +1544,7 @@ fn t_269_degen_plain_planeref_unaffected() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1594,7 +1594,7 @@ fn t_269_boundary_self_dependency() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1665,7 +1665,7 @@ fn t_269_determinism() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1742,7 +1742,7 @@ fn t_269_clean_history_tail_insert() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1822,7 +1822,7 @@ fn t_269_edge_determinism_100_iter() {
         plane: engawa_format::SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -1911,7 +1911,7 @@ fn t_269_edge_roundtrip_yaml_serialize_deserialize() {
         plane: engawa_format::SketchPlane::Xz,
         offset: 5.0,
         variables: vec![],
-        profile: vec![engawa_format::SketchSegment {
+        profile: vec![engawa_format::SketchElement::Line {
             id: "s1".to_string(),
             from: [1.0, 2.0],
             to: [3.0, 4.0],

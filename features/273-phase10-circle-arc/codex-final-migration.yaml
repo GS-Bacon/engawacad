@@ -1,0 +1,11 @@
+```yaml
+issues:
+  - id: F01
+    severity: medium
+    file: "web/src/generated/SketchSegment.ts"
+    line_hint: 1
+    finding: "SketchSegment type が削除されており、既存コードで `import { SketchSegment }` を使用している箇所でコンパイルエラーが発生する（後方互換性違反）"
+    suggestion: "web/ 側の移行コード（SketchSegment → SketchElement リネーム）が含まれているか確認する。または type alias を残して export type SketchSegment = SketchElement の互換レイヤーを検討"
+
+verdict: pass
+```

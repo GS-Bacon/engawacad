@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "テスト計画 > T01"
+    finding: "T01 の記述「同一 Circle/Arc 入力を 2 回 tessellate」となっているが、期待結果の説明が不足している。決定性テストの核心は「同じ入力に対して 2 回実行した結果が完全に一致すること」であるべき"
+    suggestion: "期待結果を「1 回目と 2 回目の tessellate 結果が完全一致（assert_eq! で全 polyline の一致を確認）」と明確化すること。ただし実際の実装コードは決定的（浮動小数点演算も決定的、非決定的要素なし）なので致命的ではない"
+
+verdict: pass

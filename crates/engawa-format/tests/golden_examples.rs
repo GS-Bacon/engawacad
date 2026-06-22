@@ -172,15 +172,16 @@ fn golden_boolean_intersect_cyl_sphere() {
 #[test]
 fn golden_extruded_rect() {
     // #158 Codex F02 r4: legacy example の wire-format 不変を exact golden で直接検証する。
+    // Updated for #273: SketchElement tagged serialization (kind: line)
     assert_golden(
         "extruded_rect.engawa",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
             "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
-            "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
-            "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
-            "    - id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
-            "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "    - kind: line\n      id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - kind: line\n      id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
+            "    - kind: line\n      id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
+            "    - kind: line\n      id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
             "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
         ),
     );
@@ -188,20 +189,21 @@ fn golden_extruded_rect() {
 
 #[test]
 fn golden_two_bodies() {
+    // Updated for #273: SketchElement tagged serialization (kind: line)
     assert_golden(
         "two_bodies.engawa",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Two Bodies\n  features:\n",
             "  - type: create_sketch\n    id: sketch_a\n    plane: xy\n    profile:\n",
-            "    - id: sa1\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
-            "    - id: sa2\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 10.0\n",
-            "    - id: sa3\n      from:\n      - 10.0\n      - 10.0\n      to:\n      - 0.0\n      - 10.0\n",
-            "    - id: sa4\n      from:\n      - 0.0\n      - 10.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "    - kind: line\n      id: sa1\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - kind: line\n      id: sa2\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 10.0\n",
+            "    - kind: line\n      id: sa3\n      from:\n      - 10.0\n      - 10.0\n      to:\n      - 0.0\n      - 10.0\n",
+            "    - kind: line\n      id: sa4\n      from:\n      - 0.0\n      - 10.0\n      to:\n      - 0.0\n      - 0.0\n",
             "  - type: create_sketch\n    id: sketch_b\n    plane: xy\n    profile:\n",
-            "    - id: sb1\n      from:\n      - 50.0\n      - 0.0\n      to:\n      - 60.0\n      - 0.0\n",
-            "    - id: sb2\n      from:\n      - 60.0\n      - 0.0\n      to:\n      - 60.0\n      - 10.0\n",
-            "    - id: sb3\n      from:\n      - 60.0\n      - 10.0\n      to:\n      - 50.0\n      - 10.0\n",
-            "    - id: sb4\n      from:\n      - 50.0\n      - 10.0\n      to:\n      - 50.0\n      - 0.0\n",
+            "    - kind: line\n      id: sb1\n      from:\n      - 50.0\n      - 0.0\n      to:\n      - 60.0\n      - 0.0\n",
+            "    - kind: line\n      id: sb2\n      from:\n      - 60.0\n      - 0.0\n      to:\n      - 60.0\n      - 10.0\n",
+            "    - kind: line\n      id: sb3\n      from:\n      - 60.0\n      - 10.0\n      to:\n      - 50.0\n      - 10.0\n",
+            "    - kind: line\n      id: sb4\n      from:\n      - 50.0\n      - 10.0\n      to:\n      - 50.0\n      - 0.0\n",
             "  - type: extrude\n    id: body_a\n    sketch: sketch_a\n    depth: 10.0\n",
             "  - type: extrude\n    id: body_b\n    sketch: sketch_b\n    depth: 10.0\n",
         ),
@@ -225,16 +227,17 @@ fn golden_assembly() {
 
 #[test]
 fn golden_sketch_via_refplane() {
+    // Updated for #273: SketchElement tagged serialization (kind: line)
     assert_golden(
         "sketch_via_refplane.engawa",
         concat!(
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n",
             "  name: Extruded Rect via RefPlane\n  features:\n",
             "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
-            "    - id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
-            "    - id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
-            "    - id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
-            "    - id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
+            "    - kind: line\n      id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
+            "    - kind: line\n      id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
+            "    - kind: line\n      id: seg_c\n      from:\n      - 10.0\n      - 5.0\n      to:\n      - 0.0\n      - 5.0\n",
+            "    - kind: line\n      id: seg_d\n      from:\n      - 0.0\n      - 5.0\n      to:\n      - 0.0\n      - 0.0\n",
             "    plane_ref: Front\n",
             "  - type: extrude\n    id: extrude_1\n    sketch: sketch_1\n    depth: 8.0\n",
         ),

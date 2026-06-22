@@ -2,7 +2,7 @@
 //! STEP 6.6 実装完了
 
 use engawa_build::build_bodies_from_features;
-use engawa_format::{Document, PlaneRef, RefPlane, SketchPlane, SketchSegment};
+use engawa_format::{Document, PlaneRef, RefPlane, SketchElement, SketchPlane};
 use engawa_kernel::brep::topology::IdGenerator;
 
 #[test]
@@ -96,22 +96,22 @@ fn t06_plane_ref_priority_over_plane() {
             offset: 100.0,          // This offset should be ignored
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -155,22 +155,22 @@ fn t07_legacy_plane_offset_still_works() {
             offset: 5.0, // offset
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -211,22 +211,22 @@ fn t10_degen_unknown_plane_ref() {
             offset: 0.0,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -266,22 +266,22 @@ fn t11_boundary_empty_plane_ref_string() {
             offset: 0.0,
             variables: vec![],
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [10.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [10.0, 0.0],
                     to: [10.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [10.0, 5.0],
                     to: [0.0, 5.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [0.0, 5.0],
                     to: [0.0, 0.0],
@@ -329,22 +329,22 @@ fn t15_child_component_uses_own_ref_planes() {
             variables: vec![],
             plane_ref: Some(PlaneRef::RefPlane("Custom".into())),
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [1.0, 0.0],
                     to: [1.0, 1.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [1.0, 1.0],
                     to: [0.0, 1.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],
@@ -384,7 +384,7 @@ fn t15_child_component_uses_own_ref_planes() {
 fn t16_empty_child_falls_back_to_canonical_not_parent() {
     use engawa_build::build_assembly;
     use engawa_format::component::Transform;
-    use engawa_format::{Component, Document, Feature, SketchPlane, SketchSegment};
+    use engawa_format::{Component, Document, Feature, SketchElement, SketchPlane};
 
     // 親が custom ref_planes (Front 等は含まない) のみを持ち、child は空 ref_planes。
     // child の features 内で plane_ref: "Front" を使う。
@@ -408,22 +408,22 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
                 variables: Vec::new(),
                 plane_ref: Some(PlaneRef::RefPlane("Front".into())),
                 profile: vec![
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s1".into(),
                         from: [0.0, 0.0],
                         to: [1.0, 0.0],
                     },
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s2".into(),
                         from: [1.0, 0.0],
                         to: [1.0, 1.0],
                     },
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s3".into(),
                         from: [1.0, 1.0],
                         to: [0.0, 1.0],
                     },
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s4".into(),
                         from: [0.0, 1.0],
                         to: [0.0, 0.0],
@@ -472,7 +472,7 @@ fn t16_empty_child_falls_back_to_canonical_not_parent() {
 fn t17_degen_grandchild_canonical_fallback() {
     use engawa_build::build_assembly;
     use engawa_format::component::Transform;
-    use engawa_format::{Component, Document, Feature, SketchPlane, SketchSegment};
+    use engawa_format::{Component, Document, Feature, SketchElement, SketchPlane};
 
     // 親 custom-only + 中間 child custom-only + 孫 empty の深ネスト構成。
     // 孫の features で plane_ref: "Front" を使い、canonical fallback により解決されることを確認。
@@ -499,22 +499,22 @@ fn t17_degen_grandchild_canonical_fallback() {
                 variables: Vec::new(),
                 plane_ref: Some(PlaneRef::RefPlane("Front".into())),
                 profile: vec![
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s1".into(),
                         from: [0.0, 0.0],
                         to: [1.0, 0.0],
                     },
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s2".into(),
                         from: [1.0, 0.0],
                         to: [1.0, 1.0],
                     },
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s3".into(),
                         from: [1.0, 1.0],
                         to: [0.0, 1.0],
                     },
-                    SketchSegment {
+                    SketchElement::Line {
                         id: "s4".into(),
                         from: [0.0, 1.0],
                         to: [0.0, 0.0],
@@ -617,22 +617,22 @@ fn t18_degen_build_layer_refplane_offset_not_finite() {
             variables: Vec::new(),
             plane_ref: Some(PlaneRef::RefPlane("BadOffset".into())),
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [1.0, 0.0],
                     to: [1.0, 1.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [1.0, 1.0],
                     to: [0.0, 1.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],

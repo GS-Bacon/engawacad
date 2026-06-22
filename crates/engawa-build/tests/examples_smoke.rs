@@ -174,3 +174,9 @@ fn sketch_extrudecut_hole() {
         "../../../examples/sketch_extrudecut_hole.engawa"
     ));
 }
+
+/// Issue #273: Phase 10 Circle / Arc smoke テスト
+#[test]
+fn circle_arc() {
+    smoke(include_str!("../../../examples/circle_arc.engawa"));
+}

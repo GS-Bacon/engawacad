@@ -9,7 +9,7 @@
 
 use engawa_build::FeatureCrud;
 use engawa_format::{
-    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchPlane, SketchSegment,
+    Document, EntityKind, EntityRef, Feature, PlaneRef, SketchElement, SketchPlane,
 };
 
 /// T_269 T01 (success-path determinism, B-6 F02 採用): clean history に Extrude を 2 回 insert し、
@@ -39,7 +39,7 @@ fn test_269_success_path_determinism_byte_equal() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -116,7 +116,7 @@ fn test_269_minimal_transitive_check() {
         plane: SketchPlane::Xy,
         offset: 0.0,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],

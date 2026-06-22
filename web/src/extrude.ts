@@ -4,6 +4,7 @@
  */
 import type { Feature } from "./generated/Feature";
 import type { SketchPlane } from "./generated/SketchPlane";
+import type { SketchElement } from "./generated/SketchElement";
 
 // 1e-6: 1000× kernel LENGTH_TOLERANCE (1e-9) to prevent coplanar face contact (#111)
 const EPSILON_GUARD = 1e-6;
@@ -96,8 +97,6 @@ export function planeForFaceNormal(
   return "yz";
 }
 
-type SketchSegment = { id: string; from: [number, number]; to: [number, number] };
-
 /**
  * Project triangles of the selected face onto the given plane and return
  * a bounding rectangle as 4 closed sketch segments (CCW).
@@ -115,7 +114,7 @@ export function footprintProfile(
   faceIds: string[],
   faceId: string,
   plane: SketchPlane,
-): SketchSegment[] | null {
+): SketchElement[] | null {
   // Collect unique vertex indices from matching triangles
   const vertSet = new Set<number>();
   for (let t = 0; t < faceIds.length; t++) {
@@ -163,10 +162,10 @@ export function footprintProfile(
 
   // CCW bounding rectangle: BL → BR → TR → TL → (back to BL)
   return [
-    { id: "seg_0", from: [minU, minV], to: [maxU, minV] },
-    { id: "seg_1", from: [maxU, minV], to: [maxU, maxV] },
-    { id: "seg_2", from: [maxU, maxV], to: [minU, maxV] },
-    { id: "seg_3", from: [minU, maxV], to: [minU, minV] },
+    { kind: "line", id: "seg_0", from: [minU, minV], to: [maxU, minV] },
+    { kind: "line", id: "seg_1", from: [maxU, minV], to: [maxU, maxV] },
+    { kind: "line", id: "seg_2", from: [maxU, maxV], to: [minU, maxV] },
+    { kind: "line", id: "seg_3", from: [minU, maxV], to: [minU, minV] },
   ];
 }
 
@@ -257,11 +256,16 @@ export function nextId(prefix: string, existing: Set<string>): string {
  * Returns null if the resulting extent is <= EPSILON_GUARD in either axis.
  */
 export function insetRect(
-  rect: SketchSegment[],
+  rect: SketchElement[],
   ratio: number,
-): SketchSegment[] | null {
-  // Extract corners from segments (CCW: BL→BR→TR→TL)
-  const corners: [number, number][] = rect.map((s) => s.from);
+): SketchElement[] | null {
+  // Extract corners from segments (CCW: BL→BR→TR→TL).
+  // #273: SketchElement は discriminated union。insetRect は Line のみを受ける前提なので
+  // 非 Line variant を含む場合は対応不可として null を返す。
+  if (rect.some((s) => s.kind !== "line")) {
+    return null;
+  }
+  const corners: [number, number][] = rect.map((s) => (s as { kind: "line"; from: [number, number] }).from);
   let minU = corners[0][0];
   let maxU = corners[0][0];
   let minV = corners[0][1];
@@ -284,10 +288,10 @@ export function insetRect(
     return null;
   }
   return [
-    { id: "seg_0", from: [newMinU, newMinV], to: [newMaxU, newMinV] },
-    { id: "seg_1", from: [newMaxU, newMinV], to: [newMaxU, newMaxV] },
-    { id: "seg_2", from: [newMaxU, newMaxV], to: [newMinU, newMaxV] },
-    { id: "seg_3", from: [newMinU, newMaxV], to: [newMinU, newMinV] },
+    { kind: "line", id: "seg_0", from: [newMinU, newMinV], to: [newMaxU, newMinV] },
+    { kind: "line", id: "seg_1", from: [newMaxU, newMinV], to: [newMaxU, newMaxV] },
+    { kind: "line", id: "seg_2", from: [newMaxU, newMaxV], to: [newMinU, newMaxV] },
+    { kind: "line", id: "seg_3", from: [newMinU, newMaxV], to: [newMinU, newMinV] },
   ];
 }
 

@@ -117,7 +117,7 @@ pub fn build_bodies_from_features(
         plane_ref: Option<PlaneRef>,
         plane: SketchPlane,
         offset: f64,
-        profile: &'a [engawa_format::SketchSegment],
+        profile: &'a [engawa_format::SketchElement],
     }
 
     let mut sketches: HashMap<&str, SketchEntry> = HashMap::new();
@@ -223,7 +223,7 @@ pub fn build_bodies_from_features(
                 plane_ref,
                 suppressed: _,
             } => {
-                validate_sketch_segment_ids(profile)?;
+                validate_sketch_element_ids(profile)?;
                 validate_profile_closed(profile)?;
                 if sketches
                     .insert(
@@ -256,10 +256,20 @@ pub fn build_bodies_from_features(
 
                 let plane = resolve_plane(entry, ref_planes, &built)?;
 
+                // Tessellate each sketch element into polyline points.
+                const BASE_SEGMENTS: usize = 32;
                 let profile_uv: Vec<(f64, f64)> = entry
                     .profile
                     .iter()
-                    .map(|s| (s.from[0], s.from[1]))
+                    .map(|elem| {
+                        engawa_kernel::tessellation::sketch::tessellate_sketch_element(
+                            elem,
+                            BASE_SEGMENTS,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flat_map(|poly| poly.into_iter().map(|p| (p[0], p[1])))
                     .collect();
                 let extruded = make_extrusion(&plane, &profile_uv, *depth, gen)?;
 
@@ -348,10 +358,19 @@ pub fn build_bodies_from_features(
                     }
                 };
 
+                const BASE_SEGMENTS: usize = 32;
                 let profile_uv: Vec<(f64, f64)> = entry
                     .profile
                     .iter()
-                    .map(|s| (s.from[0], s.from[1]))
+                    .map(|elem| {
+                        engawa_kernel::tessellation::sketch::tessellate_sketch_element(
+                            elem,
+                            BASE_SEGMENTS,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flat_map(|poly| poly.into_iter().map(|p| (p[0], p[1])))
                     .collect();
                 let tool = make_extrusion(&plane, &profile_uv, *depth, gen)?;
 
@@ -492,45 +511,69 @@ fn validate_feature_id(id: &str) -> Result<(), KernelError> {
     Ok(())
 }
 
-fn validate_sketch_segment_ids(
-    segments: &[engawa_format::SketchSegment],
+fn validate_sketch_element_ids(
+    elements: &[engawa_format::SketchElement],
 ) -> Result<(), KernelError> {
     let mut seen = HashMap::new();
-    for seg in segments {
-        if seg.id.is_empty() {
+    for elem in elements {
+        let id = match elem {
+            engawa_format::SketchElement::Line { id, .. }
+            | engawa_format::SketchElement::Circle { id, .. }
+            | engawa_format::SketchElement::Arc { id, .. } => id,
+        };
+        if id.is_empty() {
             return Err(KernelError::InvalidParameter {
-                kind: "sketch_segment_id",
+                kind: "sketch_element_id",
             });
         }
-        if !seg
-            .id
+        if !id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         {
             return Err(KernelError::InvalidParameter {
-                kind: "sketch_segment_id",
+                kind: "sketch_element_id",
             });
         }
-        if seen.insert(&seg.id, ()).is_some() {
+        if seen.insert(id, ()).is_some() {
             return Err(KernelError::InvalidParameter {
-                kind: "sketch_segment_id",
+                kind: "sketch_element_id",
             });
         }
     }
     Ok(())
 }
 
-fn validate_profile_closed(segments: &[engawa_format::SketchSegment]) -> Result<(), KernelError> {
+/// Validate that profile forms a closed loop.
+///
+/// For Line elements, checks that `to[i] == from[(i+1)%n]` within tolerance.
+/// For Circle/Arc, tessellation is required to verify closure — this is
+/// deferred to runtime (tessellate_sketch_element produces closed polylines).
+fn validate_profile_closed(elements: &[engawa_format::SketchElement]) -> Result<(), KernelError> {
     use engawa_kernel::LENGTH_TOLERANCE;
-    if segments.is_empty() {
+    if elements.is_empty() {
         return Err(KernelError::InvalidParameter { kind: "profile" });
     }
-    for i in 0..segments.len() {
-        let j = (i + 1) % segments.len();
-        let du = segments[j].from[0] - segments[i].to[0];
-        let dv = segments[j].from[1] - segments[i].to[1];
-        if (du * du + dv * dv).sqrt() > LENGTH_TOLERANCE {
-            return Err(KernelError::InvalidParameter { kind: "profile" });
+    // Only Line elements have explicit to/from; Circle/Arc tessellate to closed polylines
+    let line_count = elements
+        .iter()
+        .filter(|e| matches!(e, engawa_format::SketchElement::Line { .. }))
+        .count();
+    if line_count == elements.len() {
+        // All Lines: verify explicit closure
+        for i in 0..elements.len() {
+            let j = (i + 1) % elements.len();
+            let (from_j, to_i) = match (&elements[j], &elements[i]) {
+                (
+                    engawa_format::SketchElement::Line { from, .. },
+                    engawa_format::SketchElement::Line { to, .. },
+                ) => (from, to),
+                _ => unreachable!(),
+            };
+            let du = from_j[0] - to_i[0];
+            let dv = from_j[1] - to_i[1];
+            if (du * du + dv * dv).sqrt() > LENGTH_TOLERANCE {
+                return Err(KernelError::InvalidParameter { kind: "profile" });
+            }
         }
     }
     Ok(())

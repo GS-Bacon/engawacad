@@ -97,4 +97,10 @@ pub enum KernelError {
 
     #[error("face is not planar (only Surface::Plane supported): {canonical_name}")]
     FaceNotPlanar { canonical_name: String },
+
+    #[error("degenerate sketch element: {element_id}, reason: {reason}")]
+    DegenerateSketchElement {
+        element_id: String,
+        reason: &'static str,
+    },
 }

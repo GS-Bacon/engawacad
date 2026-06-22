@@ -1,0 +1,27 @@
+schema_version: 1
+# Issue #273: Phase 10 Circle / Arc — smoke test example.
+# 単独 Circle profile (= 自己閉路) を sketch して extrude する最小ケース。
+# Line/Arc を含む合成 profile (= 閉路を成すよう Line と Arc を接続して chord 化)
+# は validate_profile_closed の generalize と一緒に #275 (Rectangle/Polygon/Slot) で扱う。
+version: "0.1.0"
+root_component:
+  name: "circle_arc_example"
+  features:
+    - type: create_box
+      id: box_base
+      width: 20.0
+      height: 20.0
+      depth: 10.0
+    - type: create_sketch
+      id: sketch_circle
+      plane: xy
+      offset: 10.0
+      profile:
+        - kind: circle
+          id: circle_1
+          center: [10.0, 10.0]
+          radius: 4.0
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_circle
+      depth: 3.0

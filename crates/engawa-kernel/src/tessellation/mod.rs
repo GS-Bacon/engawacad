@@ -1,3 +1,4 @@
+pub mod sketch;
 pub mod stl;
 pub use stl::to_ascii_stl;
 

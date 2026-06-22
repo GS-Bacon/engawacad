@@ -1,0 +1,32 @@
+# Merged GLM review (3 persona, #281 — Codex usage limit fallback)
+issues:
+  # [architect] issues: [] (verdict=pass)
+  - id: C-F01
+    severity: low
+    file: "web/src/generated/Feature.ts"
+    line_hint: 7
+    finding: "SketchSegment から SketchElement へのリネームは、既存の line-only ワークロードに対して破壊的変更を伴わないか検証が必要。NON-GOALS に「既存 example の Circle/Arc 化は不要」とあるが、TypeScript 側の型変更により web/src/*.test.ts 等でコンパイルエラーが発生していないか確認が不足している可能性がある。"
+    suggestion: "cargo test --workspace で TypeScript 側のテストも含めて検証されていることを確認。"
+  - id: C-F02
+    severity: medium
+    file: "web/src/generated/SketchElement.ts"
+    line_hint: 14
+    finding: "Arc の start_angle/end_angle 定義で「CCW from +X axis」と明記されているが、math crate 側の実装と整合しているか検証が不足。Rust 側の Arc 構造体で同じ角度規約を採用しているか確認が必要。"
+    suggestion: "Rust 側の Arc 実装を確認し、角度規約が一致していることをテストで証明する。"
+  - id: C-F03
+    severity: low
+    file: "web/src/generated/SketchElement.ts"
+    line_hint: 6
+    finding: "「Tagged serialization with `kind` field」とあるが、untagged fallback の「legacy untagged `Line` (without `kind`)」が実際に機能しているか検証不足。古い .engawa ファイルを新しいパーサーで読み込んだ際の golden round-trip テストがない。"
+    suggestion: "line-only の古い YAML を新しい SketchElement パーサーで読み込む acceptance test を追加。"
+  - id: M-F01
+    severity: medium
+    file: "web/src/generated/SketchSegment.ts"
+    line_hint: 1
+    finding: "SketchSegment type が削除されており、既存コードで `import { SketchSegment }` を使用している箇所でコンパイルエラーが発生する（後方互換性違反）"
+    suggestion: "web/ 側の移行コード（SketchSegment → SketchElement リネーム）が含まれているか確認する。または type alias を残して export type SketchSegment = SketchElement の互換レイヤーを検討"
+
+verdict: pass
+fallback_used: true
+# severity_counts: critical=0, high=0, medium=2, low=2
+# blocking: 0

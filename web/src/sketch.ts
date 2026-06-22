@@ -1,5 +1,6 @@
 import type { Feature } from "./generated/Feature";
 import type { SketchPlane } from "./generated/SketchPlane";
+import type { SketchElement } from "./generated/SketchElement";
 
 export type RefPlaneId = "Front" | "Top" | "Right";
 
@@ -29,6 +30,7 @@ export function buildCreateSketchFromSketch(sketch: Sketch, sketchId: string): F
     id: sketchId,
     plane: REFPLANE_TO_SKETCHPLANE[sketch.planeRefId],
     profile: sketch.segments.map((seg, i) => ({
+      kind: "line",
       id: `${sketchId}_seg_${i}`,
       from: [seg.from.x, seg.from.y],
       to: [seg.to.x, seg.to.y],

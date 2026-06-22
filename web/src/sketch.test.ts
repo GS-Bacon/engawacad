@@ -150,7 +150,7 @@ describe("SketchSession", () => {
         id: "sk1",
         plane: "xy",
         profile: [
-          { id: "sk1_seg_0", from: [0, 0], to: [5, 0] },
+          { kind: "line", id: "sk1_seg_0", from: [0, 0], to: [5, 0] },
         ],
         plane_ref: "Front",
       });
@@ -265,8 +265,10 @@ describe("SketchSession", () => {
       };
       const result = buildCreateSketchFromSketch(sketch, "sk_degen");
       if (result.type !== "create_sketch") throw new Error("expected create_sketch");
-      expect(result.profile[0].from).toEqual([5, 5]);
-      expect(result.profile[0].to).toEqual([5, 5]);
+      const elem0 = result.profile[0];
+      if (elem0.kind !== "line") throw new Error("expected line");
+      expect(elem0.from).toEqual([5, 5]);
+      expect(elem0.to).toEqual([5, 5]);
     });
 
     it("should handle large coordinate values (near f64 limits)", () => {
@@ -277,8 +279,10 @@ describe("SketchSession", () => {
       };
       const result = buildCreateSketchFromSketch(sketch, "sk_large");
       if (result.type !== "create_sketch") throw new Error("expected create_sketch");
-      expect(result.profile[0].from[0]).toBe(-large);
-      expect(result.profile[0].to[0]).toBe(large);
+      const elem0 = result.profile[0];
+      if (elem0.kind !== "line") throw new Error("expected line");
+      expect(elem0.from[0]).toBe(-large);
+      expect(elem0.to[0]).toBe(large);
     });
 
     it("should handle very small coordinate values (near zero)", () => {
@@ -289,7 +293,9 @@ describe("SketchSession", () => {
       };
       const result = buildCreateSketchFromSketch(sketch, "sk_tiny");
       if (result.type !== "create_sketch") throw new Error("expected create_sketch");
-      expect(result.profile[0].to[0]).toBe(tiny);
+      const elem0 = result.profile[0];
+      if (elem0.kind !== "line") throw new Error("expected line");
+      expect(elem0.to[0]).toBe(tiny);
     });
   });
 

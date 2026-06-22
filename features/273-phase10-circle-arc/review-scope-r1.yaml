@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "In-Scope / Out-of-Scope"
+    finding: "`SketchElement` enum の配置クレートが明記されていない"
+    suggestion: "In-Scope 表に「SketchElement enum は engawa-format クレートに配置」であることを明記すること（現在は「新設」とのみ記載）"
+
+verdict: pass

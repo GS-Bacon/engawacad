@@ -358,22 +358,22 @@ fn t05_fuse_disjoint_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".to_string(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".to_string(),
                     from: [1.0, 0.0],
                     to: [1.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".to_string(),
                     from: [1.0, 1.0],
                     to: [0.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s4".to_string(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],
@@ -395,22 +395,22 @@ fn t05_fuse_disjoint_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s5".to_string(),
                     from: [10.0, 0.0],
                     to: [11.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s6".to_string(),
                     from: [11.0, 0.0],
                     to: [11.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s7".to_string(),
                     from: [11.0, 1.0],
                     to: [10.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s8".to_string(),
                     from: [10.0, 1.0],
                     to: [10.0, 0.0],
@@ -456,22 +456,22 @@ fn t05_intersect_disjoint_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".to_string(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".to_string(),
                     from: [1.0, 0.0],
                     to: [1.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".to_string(),
                     from: [1.0, 1.0],
                     to: [0.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s4".to_string(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],
@@ -493,22 +493,22 @@ fn t05_intersect_disjoint_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s5".to_string(),
                     from: [10.0, 0.0],
                     to: [11.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s6".to_string(),
                     from: [11.0, 0.0],
                     to: [11.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s7".to_string(),
                     from: [11.0, 1.0],
                     to: [10.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s8".to_string(),
                     from: [10.0, 1.0],
                     to: [10.0, 0.0],
@@ -574,7 +574,7 @@ fn t06_forward_reference_cut() {
 
 #[test]
 fn t07_duplicate_feature_id() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
     let features = vec![
         Feature::CreateSketch {
             id: "sketch_1".to_string(),
@@ -583,12 +583,12 @@ fn t07_duplicate_feature_id() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [1.0, 0.0],
                     to: [0.0, 0.0],
@@ -603,12 +603,12 @@ fn t07_duplicate_feature_id() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [0.0, 0.0],
                     to: [2.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_d".to_string(),
                     from: [2.0, 0.0],
                     to: [0.0, 0.0],
@@ -634,7 +634,7 @@ fn t07_duplicate_feature_id() {
 
 #[test]
 fn t11_zero_bodies() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
     let features = vec![Feature::CreateSketch {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
@@ -642,12 +642,12 @@ fn t11_zero_bodies() {
         variables: vec![],
         plane_ref: None,
         profile: vec![
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg_a".to_string(),
                 from: [0.0, 0.0],
                 to: [1.0, 0.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg_b".to_string(),
                 from: [1.0, 0.0],
                 to: [0.0, 0.0],
@@ -694,7 +694,7 @@ fn sketch_not_found() {
 
 #[test]
 fn forward_reference_prohibited() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
     let features = vec![
         Feature::Extrude {
             id: "ext_1".to_string(),
@@ -710,17 +710,17 @@ fn forward_reference_prohibited() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_a".to_string(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_b".to_string(),
                     from: [1.0, 0.0],
                     to: [0.0, 1.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "seg_c".to_string(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],
@@ -743,7 +743,7 @@ fn forward_reference_prohibited() {
 
 #[test]
 fn duplicate_segment_id() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
     let features = vec![Feature::CreateSketch {
         id: "sketch_1".to_string(),
         plane: SketchPlane::Xy,
@@ -751,17 +751,17 @@ fn duplicate_segment_id() {
         variables: vec![],
         plane_ref: None,
         profile: vec![
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg_a".to_string(),
                 from: [0.0, 0.0],
                 to: [1.0, 0.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg_a".to_string(),
                 from: [1.0, 0.0],
                 to: [1.0, 1.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg_b".to_string(),
                 from: [1.0, 1.0],
                 to: [0.0, 0.0],
@@ -773,9 +773,11 @@ fn duplicate_segment_id() {
     let result = build_bodies_from_features(&features, &Vec::new(), &mut g);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
+    // #273: validate_sketch_segment_ids → validate_sketch_element_ids への generalize に伴い
+    // エラー kind は "sketch_element_id" に変わった (SketchSegment 廃止 + SketchElement enum 化)
     assert!(
-        err.contains("sketch_segment_id"),
-        "expected segment id error, got: {err}"
+        err.contains("sketch_element_id"),
+        "expected element id error, got: {err}"
     );
 }
 
@@ -844,22 +846,22 @@ fn t02_fuse_touching_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".into(),
                     from: [0.0, 0.0],
                     to: [2.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 0.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".into(),
                     from: [2.0, 2.0],
                     to: [0.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s4".into(),
                     from: [0.0, 2.0],
                     to: [0.0, 0.0],
@@ -881,22 +883,22 @@ fn t02_fuse_touching_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s5".into(),
                     from: [0.0, 0.0],
                     to: [2.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s6".into(),
                     from: [2.0, 0.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s7".into(),
                     from: [2.0, 2.0],
                     to: [0.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s8".into(),
                     from: [0.0, 2.0],
                     to: [0.0, 0.0],
@@ -1051,22 +1053,22 @@ fn t06_cut_partial_l_shape() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -1152,22 +1154,22 @@ fn t09_intersect_contact_only() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".into(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".into(),
                     from: [1.0, 0.0],
                     to: [1.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".into(),
                     from: [1.0, 1.0],
                     to: [0.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s4".into(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],
@@ -1189,22 +1191,22 @@ fn t09_intersect_contact_only() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s5".into(),
                     from: [1.0, 0.0],
                     to: [2.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s6".into(),
                     from: [2.0, 0.0],
                     to: [2.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s7".into(),
                     from: [2.0, 1.0],
                     to: [1.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s8".into(),
                     from: [1.0, 1.0],
                     to: [1.0, 0.0],
@@ -1265,22 +1267,22 @@ fn t12_boolean_determinism() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -1331,22 +1333,22 @@ fn t17_boolean_stl_export() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -1399,22 +1401,22 @@ fn t20_build_live_bodies() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -1506,22 +1508,22 @@ fn t24_disjoint_fuse_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s1".into(),
                     from: [0.0, 0.0],
                     to: [1.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s2".into(),
                     from: [1.0, 0.0],
                     to: [1.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s3".into(),
                     from: [1.0, 1.0],
                     to: [0.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s4".into(),
                     from: [0.0, 1.0],
                     to: [0.0, 0.0],
@@ -1543,22 +1545,22 @@ fn t24_disjoint_fuse_boxes() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s5".into(),
                     from: [10.0, 0.0],
                     to: [11.0, 0.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s6".into(),
                     from: [11.0, 0.0],
                     to: [11.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s7".into(),
                     from: [11.0, 1.0],
                     to: [10.0, 1.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "s8".into(),
                     from: [10.0, 1.0],
                     to: [10.0, 0.0],
@@ -1611,22 +1613,22 @@ fn t18_intersection_edge_names() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -1696,22 +1698,22 @@ fn t19_boolean_determinism_with_names() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -1770,22 +1772,22 @@ fn t20_intersection_edge_name_golden() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                engawa_format::SketchSegment {
+                engawa_format::SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -2216,7 +2218,7 @@ fn tx7_a3_sphere_face_name() {
 /// U01: Determinism — build ExtrudeCut twice with same IdGenerator seed, solids byte-identical.
 #[test]
 fn u01_extrude_cut_determinism() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
 
     // make_cuboid(10,10,10) → [-5,5]×[-5,5]×[-5,5]
     // make_extrusion XY plane, profile [-3,3]→[3,-3]→[3,3]→[-3,3], depth=3 → z∈[0,3]
@@ -2236,22 +2238,22 @@ fn u01_extrude_cut_determinism() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [-3.0, -3.0],
                     to: [3.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [3.0, -3.0],
                     to: [3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [3.0, 3.0],
                     to: [-3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [-3.0, 3.0],
                     to: [-3.0, -3.0],
@@ -2281,7 +2283,7 @@ fn u01_extrude_cut_determinism() {
 /// U02: Void shell — box minus inset cuboid (fully embedded, depth small).
 #[test]
 fn u02_extrude_cut_void_shell() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
 
     // make_cuboid(10,10,10) → [-5,5]×[-5,5]×[-5,5]
     // tool: XY profile [-3,-3]→[3,-3]→[3,3]→[-3,3], depth=3 → z∈[0,3]
@@ -2301,22 +2303,22 @@ fn u02_extrude_cut_void_shell() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [-3.0, -3.0],
                     to: [3.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [3.0, -3.0],
                     to: [3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [3.0, 3.0],
                     to: [-3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [-3.0, 3.0],
                     to: [-3.0, -3.0],
@@ -2349,7 +2351,7 @@ fn u02_extrude_cut_void_shell() {
 /// U05_degen: ExtrudeCut with degenerate depth (≤ 0) → InvalidParameter.
 #[test]
 fn u05_extrude_cut_degen_depth() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
 
     // Normal box + sketch, but depth = 0.0
     let features_depth_zero = vec![
@@ -2367,22 +2369,22 @@ fn u05_extrude_cut_degen_depth() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [-3.0, -3.0],
                     to: [3.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [3.0, -3.0],
                     to: [3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [3.0, 3.0],
                     to: [-3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [-3.0, 3.0],
                     to: [-3.0, -3.0],
@@ -2422,22 +2424,22 @@ fn u05_extrude_cut_degen_depth() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [-3.0, -3.0],
                     to: [3.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [3.0, -3.0],
                     to: [3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [3.0, 3.0],
                     to: [-3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [-3.0, 3.0],
                     to: [-3.0, -3.0],
@@ -2465,7 +2467,7 @@ fn u05_extrude_cut_degen_depth() {
 /// U06a: ExtrudeCut with missing target → BodyNotFound.
 #[test]
 fn u06a_extrude_cut_missing_target() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
 
     let features = vec![
         Feature::CreateBox {
@@ -2482,22 +2484,22 @@ fn u06a_extrude_cut_missing_target() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [-3.0, -3.0],
                     to: [3.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [3.0, -3.0],
                     to: [3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [3.0, 3.0],
                     to: [-3.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [-3.0, 3.0],
                     to: [-3.0, -3.0],
@@ -2531,7 +2533,7 @@ fn u06a_extrude_cut_missing_target() {
 /// boolean(Cut) should return Ok with target unchanged (no-op cut).
 #[test]
 fn u06b_extrude_cut_nonintersecting() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
 
     // Target box: make_cuboid(10,10,10) → [-5,5]×[-5,5]×[-5,5]
     // Tool: XY profile far away at [100,100]→[110,110], depth=5 → z∈[0,5]
@@ -2551,22 +2553,22 @@ fn u06b_extrude_cut_nonintersecting() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [100.0, 100.0],
                     to: [110.0, 100.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [110.0, 100.0],
                     to: [110.0, 110.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [110.0, 110.0],
                     to: [100.0, 110.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s4".into(),
                     from: [100.0, 110.0],
                     to: [100.0, 100.0],
@@ -2647,7 +2649,7 @@ fn u06b_extrude_cut_nonintersecting() {
 /// Mirrors the existing t06_cut_partial_l_shape pattern but via ExtrudeCut dispatch.
 #[test]
 fn u03_extrude_cut_partial_l() {
-    use engawa_format::feature::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::feature::{Feature, SketchElement, SketchPlane};
 
     // make_cuboid(2,2,2) → [-1,1]×[-1,1]×[-1,1]
     // Tool: XY profile [0.5,-2]→[2,-2]→[2,2]→[0.5,2], depth=2 → z∈[0,2]
@@ -2667,22 +2669,22 @@ fn u03_extrude_cut_partial_l() {
             variables: vec![],
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "ts1".into(),
                     from: [0.5, -2.0],
                     to: [2.0, -2.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "ts2".into(),
                     from: [2.0, -2.0],
                     to: [2.0, 2.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "ts3".into(),
                     from: [2.0, 2.0],
                     to: [0.5, 2.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "ts4".into(),
                     from: [0.5, 2.0],
                     to: [0.5, -2.0],
@@ -2727,7 +2729,7 @@ fn u03_extrude_cut_partial_l() {
 // centroid is at X > 5 (i.e., extends outward in the +X direction).
 #[test]
 fn t01_positive_extrude_centroid() {
-    use engawa_format::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::{Feature, SketchElement, SketchPlane};
 
     let features = vec![
         // 10×20×30 box centered at origin: X ∈ [-5, +5]
@@ -2746,22 +2748,22 @@ fn t01_positive_extrude_centroid() {
             variables: Vec::new(),
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s0".into(),
                     from: [-2.0, -3.0],
                     to: [2.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [2.0, -3.0],
                     to: [2.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 3.0],
                     to: [-2.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [-2.0, 3.0],
                     to: [-2.0, -3.0],
@@ -2801,7 +2803,7 @@ fn t01_positive_extrude_centroid() {
 // Bug #110: extrusion goes to X > -5 (inward) instead.
 #[test]
 fn t02_reg_negative_extrude_centroid() {
-    use engawa_format::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::{Feature, SketchElement, SketchPlane};
 
     let features = vec![
         Feature::CreateBox {
@@ -2819,22 +2821,22 @@ fn t02_reg_negative_extrude_centroid() {
             variables: Vec::new(),
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s0".into(),
                     from: [-2.0, -3.0],
                     to: [2.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [2.0, -3.0],
                     to: [2.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 3.0],
                     to: [-2.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [-2.0, 3.0],
                     to: [-2.0, -3.0],
@@ -2880,7 +2882,7 @@ fn t02_reg_negative_extrude_centroid() {
 #[test]
 #[ignore = "known limitation: boolean engine produces non-manifold result for offset-plane fuse"]
 fn t04_negative_extrude_fuse_integration() {
-    use engawa_format::{Feature, SketchPlane, SketchSegment};
+    use engawa_format::{Feature, SketchElement, SketchPlane};
 
     let features = vec![
         Feature::CreateBox {
@@ -2898,22 +2900,22 @@ fn t04_negative_extrude_fuse_integration() {
             variables: Vec::new(),
             plane_ref: None,
             profile: vec![
-                SketchSegment {
+                SketchElement::Line {
                     id: "s0".into(),
                     from: [-2.0, -3.0],
                     to: [2.0, -3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s1".into(),
                     from: [2.0, -3.0],
                     to: [2.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s2".into(),
                     from: [2.0, 3.0],
                     to: [-2.0, 3.0],
                 },
-                SketchSegment {
+                SketchElement::Line {
                     id: "s3".into(),
                     from: [-2.0, 3.0],
                     to: [-2.0, -3.0],

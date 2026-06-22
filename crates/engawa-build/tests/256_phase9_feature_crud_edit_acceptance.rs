@@ -205,7 +205,7 @@ fn t06_deg_variant_mismatch() {
 /// 後段の Cut{tool:box_b} が box_b を失うパターンを reject。
 #[test]
 fn t07_deg_edit_steals_body_from_downstream() {
-    use engawa_format::SketchSegment;
+    use engawa_format::SketchElement;
     let mut doc = Document::new("Test");
     // box_a (target), box_b (tool), sk1 (sketch for e1), Extrude e1 (fuse_target=None), Cut c1 (tool=box_b)
     doc.root_component.features.push(Feature::CreateBox {
@@ -229,22 +229,22 @@ fn t07_deg_edit_steals_body_from_downstream() {
         offset: 0.0,
         variables: vec![],
         profile: vec![
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg1".to_string(),
                 from: [0.0, 0.0],
                 to: [10.0, 0.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg2".to_string(),
                 from: [10.0, 0.0],
                 to: [10.0, 10.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg3".to_string(),
                 from: [10.0, 10.0],
                 to: [0.0, 10.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg4".to_string(),
                 from: [0.0, 10.0],
                 to: [0.0, 0.0],

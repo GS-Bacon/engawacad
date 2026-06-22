@@ -4,7 +4,7 @@
 //! together with the production code change.
 
 use engawa_build::feature_crud::{FeatureCrud, FeatureCrudError};
-use engawa_format::{Document, Feature, SketchPlane, SketchSegment};
+use engawa_format::{Document, Feature, SketchElement, SketchPlane};
 
 #[test]
 fn t01_determinism() {
@@ -16,22 +16,22 @@ fn t01_determinism() {
         suppressed: false,
         variables: vec![],
         profile: vec![
-            SketchSegment {
+            SketchElement::Line {
                 id: "s1".to_string(),
                 from: [0.0, 0.0],
                 to: [10.0, 0.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "s2".to_string(),
                 from: [10.0, 0.0],
                 to: [10.0, 10.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "s3".to_string(),
                 from: [10.0, 10.0],
                 to: [0.0, 10.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "s4".to_string(),
                 from: [0.0, 10.0],
                 to: [0.0, 0.0],
@@ -73,7 +73,7 @@ fn t02_normal_insert_extrude_after_sketch() {
         offset: 0.0,
         suppressed: false,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -277,7 +277,7 @@ fn t11_extrude_cut_body_not_found() {
         offset: 0.0,
         suppressed: false,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -310,7 +310,7 @@ fn t12_extrude_fuse_target_not_found() {
         offset: 0.0,
         suppressed: false,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],
@@ -429,7 +429,7 @@ fn t16_insert_at_tail_full_history() {
         offset: 0.0,
         suppressed: false,
         variables: vec![],
-        profile: vec![SketchSegment {
+        profile: vec![SketchElement::Line {
             id: "s1".to_string(),
             from: [0.0, 0.0],
             to: [10.0, 0.0],

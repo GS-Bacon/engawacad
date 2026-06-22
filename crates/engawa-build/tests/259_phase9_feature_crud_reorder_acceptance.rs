@@ -3,7 +3,7 @@
 //! Core tests: T01 (determinism), T02 (normal build), T04_BOUNDARY_self, T05_DEG_circular, T06_DEG_unknown_id.
 
 use engawa_build::FeatureCrud;
-use engawa_format::{Document, Feature, SketchSegment};
+use engawa_format::{Document, Feature, SketchElement};
 
 /// T01: Determinism — same (doc, feature_id, before_id) → byte-equal YAML.
 #[test]
@@ -97,22 +97,22 @@ fn t05_deg_circular_producer_after_consumer() {
         offset: 0.0,
         variables: vec![],
         profile: vec![
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg1".to_string(),
                 from: [0.0, 0.0],
                 to: [10.0, 0.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg2".to_string(),
                 from: [10.0, 0.0],
                 to: [10.0, 10.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg3".to_string(),
                 from: [10.0, 10.0],
                 to: [0.0, 10.0],
             },
-            SketchSegment {
+            SketchElement::Line {
                 id: "seg4".to_string(),
                 from: [0.0, 10.0],
                 to: [0.0, 0.0],
