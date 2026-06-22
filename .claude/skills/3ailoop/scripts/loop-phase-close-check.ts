@@ -139,6 +139,42 @@ interface CheckResult {
   roadmap_already_marked: boolean;
 }
 
+/** #271: split parent (blocked-by-split ラベル付き) で全子 closed なら auto-close する。
+ *  Phase 完了処理デッドロックの解消に必須 (#194/#195/#206 系)。
+ *  返値は close した親 Issue 番号の配列。 */
+export async function autoCloseFinishedSplitParents(
+  openParents: IssueLite[],
+  ghFn: typeof runGh = runGh,
+): Promise<number[]> {
+  const closed: number[] = [];
+  for (const parent of openParents) {
+    if (!parent.labels.some(l => l.name === "blocked-by-split")) continue;
+    // 子 Issue: parent-blocked-by-split:<N> ラベル付き
+    const childLabel = `parent-blocked-by-split:${parent.number}`;
+    const r = await ghFn([
+      "issue", "list", "--state", "all", "--label", childLabel,
+      "--limit", "200", "--json", "number,state",
+    ]);
+    if (r.exit !== 0) continue;
+    let children: Array<{ number: number; state: string }>;
+    try {
+      children = JSON.parse(r.stdout);
+    } catch {
+      continue;
+    }
+    if (children.length === 0) continue;
+    const allClosed = children.every(c => c.state.toUpperCase() === "CLOSED");
+    if (!allClosed) continue;
+    const childList = children.map(c => `#${c.number}`).join(", ");
+    const closeR = await ghFn([
+      "issue", "close", String(parent.number),
+      "--comment", `split children ${childList} all closed — auto-close by phase-close-check (#271)`,
+    ]);
+    if (closeR.exit === 0) closed.push(parent.number);
+  }
+  return closed;
+}
+
 async function check(phase: number): Promise<CheckResult> {
   const ms = await fetchMilestone(phase);
   if (!ms) {
@@ -148,7 +184,16 @@ async function check(phase: number): Promise<CheckResult> {
       gate_human_feel: [], gate_adr_review: [], roadmap_already_marked: false,
     };
   }
-  const issues = await fetchIssuesByMilestone(ms.number);
+  let issues = await fetchIssuesByMilestone(ms.number);
+  // #271: split parent auto-close を check の冒頭で実施 (Phase 完了判定の前)
+  const openParents = issues.filter(
+    i => i.state.toUpperCase() === "OPEN" && isFeatureType(i.labels),
+  );
+  const autoClosed = await autoCloseFinishedSplitParents(openParents);
+  if (autoClosed.length > 0) {
+    // 再 fetch して最新状態を反映
+    issues = await fetchIssuesByMilestone(ms.number);
+  }
   const features = issues.filter(i => isFeatureType(i.labels));
   const featuresOpen = features.filter(i => i.state.toUpperCase() === "OPEN").map(i => i.number);
 

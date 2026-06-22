@@ -82,6 +82,28 @@ cap 越え (3 回) で `needs-human` 退避。
 これにより滞留 gate が毎サイクル進行する: approve なら解消、refute 連続なら確定的に
 needs-human に移行 (= 人間判断待ち、ただし他の actionable Issue を block しない)。
 
+### L-1.6: Phase 完了処理 (#271 で L-2.5 から移動)
+
+L-2 (should-stop) の前に Phase 完了判定 + 移行を実施する。L-2.5 にあった頃は
+「Phase の最終子 Issue が closed → 次サイクル冒頭 L-2 で actionable=0 → pause →
+phase-close-check に永遠に到達しない」という構造的デッドロックがあった (cycle 46
+で実観測、144 連続 pause で watcher halt)。L-1.6 に前倒しすることで、
+最終子 closed の直後サイクルで ROADMAP ✅ + milestone close + current_phase 進行が
+発火し、L-2 では既に next phase の Issue が actionable として見える。
+
+```bash
+bun .claude/skills/3ailoop/scripts/loop-phase-close-check.ts apply
+RC=$?
+```
+
+- `RC=0` (apply 成功 = ROADMAP/milestone 更新済 or 完了不要): L-2 へ
+- `RC=1` (未完): そのまま L-2 へ (Phase 進行中なら通常 Issue を消化)
+
+phase-close-check は内部で **split parent auto-close** (#271) も実施する:
+- Phase N milestone の open type:feature Issue で `blocked-by-split` ラベル付き、
+  かつ `parent-blocked-by-split:N` 子 Issue が全 closed なら、親を auto-close
+- これがないと #194/#195/#206 系の split 親が永遠に open で Phase 完了判定が失敗する
+
 ### L-2: 停止条件チェック
 
 ```bash
@@ -89,18 +111,8 @@ bun .claude/skills/3ailoop/scripts/loop-should-stop.ts
 RC=$?
 ```
 
-- `RC=0` (proceed): 続行 → L-2.5 へ
+- `RC=0` (proceed): 続行 → L-3 へ
 - `RC=1` (stop): pause 理由を `loop-cycle-record record --pause-reason "<reason>"` で記録し、`bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind loop-stop --text "[STOP] loop paused — <reason>"` で通知してから、`loop-lock release --token $TOKEN` してから終了 (sentinel emit せず)
-
-### L-2.5: Phase 完了処理
-
-```bash
-bun .claude/skills/3ailoop/scripts/loop-phase-close-check.ts apply
-RC=$?
-```
-
-- `RC=0` (apply 成功 = ROADMAP/milestone 更新済 or 完了不要): L-3 へ
-- `RC=1` (未完): そのまま L-3 へ (Phase 進行中なら通常 Issue を消化)
 
 ### L-3: バッチ選定 (loop モード)
 
