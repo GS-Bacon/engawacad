@@ -1,0 +1,269 @@
+summary: |
+  Phase 10 起点 Issue #195 を ROADMAP 完了条件 2 項目 (基本曲線 7 種 + スケッチ編集 7 種) に分解。
+  ADR-016 → Circle/Arc → Ellipse/Conic → Rectangle/Polygon/Slot → Trim/Extend → Offset/Fillet/Chamfer → Mirror/Pattern の順で消化される。
+  Editing 系 (子 5-7) は最低 1 curve 子 (子 2 = Circle/Arc) が closed であれば着手可能。
+
+split_proposal:
+  - title: "feat(phase10-adr): ADR-016 draft — スケッチ基本曲線拡張 + スケッチ編集の方針"
+    labels: ["type: foundation", "batch:skill"]
+    body: |
+      ## 概要
+
+      Phase 10 全体の設計方針を ADR-016 にまとめる draft Issue。子 2 以降 (#195 split) の前提となるブロッカー。
+
+      ## スコープ
+
+      - 基本曲線 7 種 (Circle / Arc / Ellipse / Conic / Rectangle / Polygon / Slot) のパラメータ表現
+        - Circle: 中心 + 半径
+        - Arc: 中心 + 半径 + start/end angle
+        - Ellipse: 中心 + 長軸半径 a + 短軸半径 b + 回転角
+        - Conic: 一般二次形式 Ax² + Bxy + Cy² + Dx + Ey + F = 0 の 5 自由度
+        - Rectangle: 2 corner (or 中心 + width + height)
+        - Polygon: 中心 + 頂点数 n + 外接円半径 (regular polygon)
+        - Slot: 2 中心点 + 半径
+      - 退化判定基準 (ε_radius, ε_angle, ε_axis_ratio, 多角形最小辺長, conic discriminant 境界)
+      - スケッチ編集 7 種 (Trim / Extend / Offset / Sketch Fillet / Sketch Chamfer / Mirror / Pattern) の API 抽象
+        - in-place vs 純関数の選択 (子 5-7 共通)
+        - ID-stable 性 (編集後も既存 element ID を保持するか)
+        - 参照解決失敗時のエラー伝播 (Trim 対象が削除済み等)
+      - 既存 Line ベース sketch との互換性 (`SketchElement` enum 拡張 vs 別 type)
+      - Options A/B/C + Trade-off + 採用前提崩壊 trigger + 既存 ADR (-004 / -005) との関係
+
+      ## 完了条件
+
+      - `docs/decisions/016-*.md` を draft 状態で commit
+      - `gate:adr-review` 付与 → ADR-013 auto-accept フロー (Decision Matrix lint + Codex 3 ペルソナ並列) で approved
+      - 親 #195 の分割計画書 (`features/195-phase10-phase-issue/plan.md`) と整合
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-006 §1 粒度ガード
+      - ADR-013 auto-accept フロー
+      - ADR-004 (tolerance 規約)、ADR-005 (Topological Naming)
+
+  - title: "feat(phase10): 円 + 弧 (Circle / Arc) を engawa-format / engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      最も基本的な 2 曲線 Circle / Arc を実装する。Phase 10 完了条件 (基本曲線 7 種) の 2 つ目。
+
+      ## 前提
+
+      - ADR-016 (Phase 10 方針 ADR) approved 済み
+
+      ## スコープ
+
+      - `SketchElement::Circle { center: Point2d, radius: f64 }`
+      - `SketchElement::Arc { center: Point2d, radius: f64, start_angle: f64, end_angle: f64 }` (radian)
+      - tessellation で polyline 化 (ε_angle に基づく適応分割)
+      - 退化判定: radius < ε_radius → error、(end_angle - start_angle) < ε_angle → error
+      - `.engawa` YAML schema 拡張 + parse/serialize
+
+      ## テスト
+
+      - T01 (決定性): 同一 Circle/Arc 入力を 2 回 tessellate → 同一 polyline
+      - T02 (正常系): 単位円 / 90°円弧の代表値テスト
+      - T_DEG_zero_radius (退化): radius=0 → InvalidRadius
+      - T_DEG_zero_angle (退化): start_angle == end_angle → InvalidArcRange
+      - T_BOUNDARY_full_circle (境界): Arc(start=0, end=2π) と Circle で同じ polyline (誤差 < ε)
+      - golden YAML: examples/circle_arc.engawa
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-016
+
+  - title: "feat(phase10): 楕円 + Conic (Ellipse / Conic) を engawa-format / engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      楕円と一般二次曲線 (Conic) を実装する。Phase 10 完了条件 (基本曲線 7 種) の 3 つ目。
+
+      ## 前提
+
+      - ADR-016 approved 済み
+
+      ## スコープ
+
+      - `SketchElement::Ellipse { center, a, b, rotation }` (a >= b > 0)
+      - `SketchElement::Conic { a_coef, b_coef, c_coef, d_coef, e_coef, f_coef }` (一般二次形式 5 自由度)
+      - tessellation: 楕円は parametric (cos t, sin t)、Conic は arc-length 適応サンプリング
+      - 退化判定: a < ε → error、b < ε → error、conic discriminant B² - 4AC で円/楕円/放物線/双曲線判別
+      - 円縮退 (a == b ± ε): Circle 扱い (内部 fallback でも別 ID でも可、ADR-016 で確定)
+
+      ## テスト
+
+      - T01 (決定性): 同一 Ellipse/Conic 入力を 2 回 tessellate → 同一 polyline
+      - T02 (正常系): 標準楕円 (a=2, b=1)、回転楕円 (rotation=π/4)
+      - T03 (Conic 正常系): 楕円 conic、双曲線 conic、放物線 conic
+      - T_DEG_zero_axis (退化): a=0 or b=0 → InvalidEllipseAxis
+      - T_DEG_circle_degeneracy (境界): a == b → Circle 縮退検出
+      - T_DEG_conic_degenerate (退化): discriminant = 0 with no curve → InvalidConic
+      - golden YAML: examples/ellipse_conic.engawa
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-016
+
+  - title: "feat(phase10): 矩形 + 多角形 + Slot (Rectangle / Polygon / Slot) を engawa-format / engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      3 つの複合形状 (Rectangle / Polygon / Slot) を実装する。Phase 10 完了条件 (基本曲線 7 種) の 4 つ目。
+
+      ## 前提
+
+      - ADR-016 approved 済み
+
+      ## スコープ
+
+      - `SketchElement::Rectangle { corner1: Point2d, corner2: Point2d }` (axis-aligned)
+      - `SketchElement::Polygon { center: Point2d, n: u32, radius: f64, rotation: f64 }` (regular polygon, 外接円半径)
+      - `SketchElement::Slot { center1: Point2d, center2: Point2d, radius: f64 }` (semicircle + line + semicircle + line)
+      - 内部展開: それぞれを構成 line/arc として展開 (tessellation) しつつ「論理的単一要素」として 1 ID で管理
+      - 退化判定: Rectangle 幅高さ < ε / Polygon n < 3 / Slot 2 中心点一致 (|c1-c2| < ε)
+
+      ## テスト
+
+      - T01 (決定性): 同一入力 → 同一展開結果
+      - T02 (正常系): 単位矩形 / 正六角形 / 標準 Slot
+      - T_DEG_rect_zero_width (退化): corner1 == corner2 → InvalidRectangle
+      - T_DEG_polygon_n2 (退化): n=2 → InvalidPolygon (n>=3 が必須)
+      - T_DEG_slot_same_center (退化): center1 == center2 → 円に縮退 or InvalidSlot (ADR-016 で確定)
+      - T_BOUNDARY_polygon_large_n (境界): n=64 大きい正多角形の決定性
+      - golden YAML: examples/rect_polygon_slot.engawa
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-016
+
+  - title: "feat(phase10): Trim + Extend (スケッチ編集) を engawa-format / engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      既存 sketch element の切断 (Trim) と延長 (Extend) を実装する。Phase 10 完了条件 (スケッチ編集 7 種) の 1 つ目。
+
+      ## 前提
+
+      - ADR-016 approved 済み
+      - 子 2 (Circle/Arc) closed (Trim/Extend は line/circle/arc 同士の intersection に依存)
+
+      ## スコープ
+
+      - `SketchEdit::Trim { target_id, cut_point: Point2d, keep_side: Side }`
+        - 与えた intersection 点で element を 2 つに分割し、`keep_side` 指定側を残す
+        - 元 element の ID は keep 側に維持、cut 側は新規 ID (or 削除)
+      - `SketchEdit::Extend { target_id, to_id, intersection_hint: Option<Point2d> }`
+        - target element を to element まで伸長
+      - intersection 計算: line-line / line-circle / line-arc / circle-circle / circle-arc / arc-arc のみ対応
+        - 楕円/Conic intersection は ADR-016 で defer 判断 (Phase 11 以降)
+      - エラー: intersection なし / 接線交差 (1 点のみ) / target/to が存在しない ID
+
+      ## テスト
+
+      - T01 (決定性): 同一 Trim/Extend を 2 回適用 → 同一結果
+      - T02 (Trim 正常系): line を中点で trim
+      - T03 (Extend 正常系): line を別 line まで extend
+      - T04 (curve intersection): circle-line, arc-arc の交点
+      - T_DEG_no_intersection (退化): 並行 line → NoIntersection
+      - T_DEG_tangent (退化): 接線交差 → TangentIntersection (or 単一交点として処理、ADR-016 で確定)
+      - T_DEG_missing_id (退化): 存在しない target_id → InvalidReference
+      - golden YAML: examples/trim_extend.engawa
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-016
+      - 子 2 (Circle/Arc) 依存
+
+  - title: "feat(phase10): Offset + Sketch Fillet + Sketch Chamfer を engawa-format / engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      3 つの形状改変操作 (Offset / Fillet / Chamfer) を実装する。Phase 10 完了条件 (スケッチ編集 7 種) の 2 つ目。
+
+      ## 前提
+
+      - ADR-016 approved 済み
+      - 子 2 (Circle/Arc) closed (Fillet で円弧挿入が必要)
+
+      ## スコープ
+
+      - `SketchEdit::Offset { target_id, distance: f64 }`
+        - element を法線方向に距離 d だけ平行移動
+        - closed curve (Circle/Ellipse/Rectangle/Polygon/Slot) は signed distance で内/外 offset
+        - 自己交差検出 (Offset で element が潰れる場合) → 警告 or エラー
+      - `SketchEdit::SketchFillet { elem1_id, elem2_id, radius: f64 }`
+        - 2 element の交点に半径 r の円弧を挿入、元 element を Trim
+        - 半径過大 (収まらない) → FilletRadiusTooLarge
+      - `SketchEdit::SketchChamfer { elem1_id, elem2_id, length: f64 }`
+        - 同様に長さ c の line を挿入、元 element を Trim
+        - 長さ過大 → ChamferLengthTooLarge
+
+      ## テスト
+
+      - T01 (決定性): 同一 Offset/Fillet/Chamfer を 2 回適用 → 同一結果
+      - T02 (Offset 正常系): line を距離 1.0 で offset
+      - T03 (closed offset 正常系): Circle を半径方向に offset (内 = 同心円縮小)
+      - T04 (Fillet 正常系): L 字 line ペアに半径 1.0 fillet
+      - T05 (Chamfer 正常系): L 字 line ペアに長さ 1.0 chamfer
+      - T_DEG_zero_distance (退化): Offset distance=0 → 入力と同一
+      - T_DEG_offset_collapse (退化): Polygon を内 offset で潰す → SelfIntersection
+      - T_DEG_fillet_too_large (退化): Fillet 半径過大 → FilletRadiusTooLarge
+      - T_DEG_chamfer_too_long (退化): Chamfer 長さ過大 → ChamferLengthTooLarge
+      - golden YAML: examples/offset_fillet_chamfer.engawa
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-016
+      - 子 2 (Circle/Arc) 依存
+
+  - title: "feat(phase10): Mirror + Pattern (スケッチ複製) を engawa-format / engawa-build に実装"
+    labels: ["type: feature", "batch:kernel"]
+    body: |
+      ## 概要
+
+      2 つの複製操作 (Mirror / Pattern) を実装する。Phase 10 完了条件 (スケッチ編集 7 種) の 3 つ目。
+
+      ## 前提
+
+      - ADR-016 approved 済み
+      - 子 2 (Circle/Arc) closed (Pattern で arc 等も複製対象)
+
+      ## スコープ
+
+      - `SketchEdit::Mirror { axis_p1: Point2d, axis_p2: Point2d, target_ids: Vec<EntityId> }`
+        - 与えた線対称軸で element 群を鏡像複製
+        - 複製要素は新規 ID
+      - `SketchEdit::PatternLinear { target_ids, count: u32, direction: Vec2, distance: f64 }`
+        - 線形配列 (n 個 × 距離 d 方向 v)
+      - `SketchEdit::PatternCircular { target_ids, center: Point2d, count: u32, total_angle: f64 }`
+        - 円形配列 (n 個 × 中心 c × 全角 θ)
+      - 軸上要素の Mirror (自己重複): 元 element と完全一致 → 重複検出して skip or 警告
+
+      ## テスト
+
+      - T01 (決定性): 同一 Mirror/Pattern を 2 回適用 → 同一結果
+      - T02 (Mirror 正常系): line を y 軸対称で複製
+      - T03 (PatternLinear 正常系): line を x 方向 3 個複製
+      - T04 (PatternCircular 正常系): line を中心 (0,0) × 8 個 × 全角 2π 複製
+      - T_DEG_mirror_on_axis (退化): 軸上要素 → 重複検出
+      - T_DEG_pattern_n1 (境界): count=1 → 入力と同一 (no-op)
+      - T_DEG_pattern_n0 (退化): count=0 → InvalidPatternCount
+      - T_DEG_zero_direction (退化): PatternLinear direction = (0,0) → InvalidDirection
+      - golden YAML: examples/mirror_pattern.engawa
+
+      ## 関連
+
+      - 親 #195 (blocked-by-split)
+      - ADR-016
+      - 子 2 (Circle/Arc) 依存
