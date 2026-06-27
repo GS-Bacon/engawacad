@@ -1,0 +1,14 @@
+**Findings**
+
+- High: `schema_version` を v1 のまま据え置く案は、既存 reader との互換境界を壊します。[document.rs](/home/bacon/engawacad/crates/engawa-format/src/document.rs:10) では `CURRENT_SCHEMA_VERSION = 1` かつ `schema_version > CURRENT` のときだけ `UnknownSchemaVersion` で落としますが、同じ v1 のまま `kind: ellipse` や新しい `Feature::SketchTrim` を出したら、旧 reader は事前拒否できず深い deserialization で壊れます。[feature.rs](/home/bacon/engawacad/crates/engawa-format/src/feature.rs:265) の `SketchElement` と [feature.rs](/home/bacon/engawacad/crates/engawa-format/src/feature.rs:408) の `Feature` は wire format の実質変更なので、ADR-015 の migration 境界を使わない理由が足りません。
+
+- High: 移行計画の前提が既存実装とずれています。ADR は「現状 `profile: Vec<SketchSegment>`」「#273 で `SketchSegment -> SketchElement::Line` を初回導入」と書いていますが、実装は既に [feature.rs](/home/bacon/engawacad/crates/engawa-format/src/feature.rs:408) で `profile: Vec<SketchElement>` ですし、web も [sketch.ts](/home/bacon/engawacad/web/src/sketch.ts:27) で `kind: "line"` を出しています。つまりこの ADR は「これからの移行計画」ではなく、既に始まっている移行を古い前提で再記述しており、子 Issue の分割順と責務見積もりを誤らせます。
+
+- High: 「golden YAML の表現を 1 字も変えない」は成立していません。現行 serializer は line でも `kind: line` を出し、golden もそれ前提に更新済みです。[golden_examples.rs](/home/bacon/engawacad/crates/engawa-format/tests/golden_examples.rs:173) では `#273: tagged serialization` を明示して既存 example の期待値を書き換えています。さらに [planeref_yaml_roundtrip.rs](/home/bacon/engawacad/crates/engawa-format/tests/planeref_yaml_roundtrip.rs:7) は「初回 roundtrip 後に安定」としか保証しておらず、read 互換と byte-identical roundtrip 互換を分けて扱っています。ADR の互換説明はここを混同しています。
+
+- Medium: 互換層の reject 戦略が甘いです。[feature.rs](/home/bacon/engawacad/crates/engawa-format/src/feature.rs:299) の tagged/legacy deserializer は `deny_unknown_fields` を使っていないので、ADR が例示する「`kind: circle` なのに `from/to` がある矛盾は error」は自動では起きません。段階移行中の手編集 YAML や dual-form データが silent accept される余地があり、これは migration 時の fail-fast を弱めます。
+
+- Medium: sketch 編集 op を独立 `Feature` variant に増やす案は、既存 CRUD の依存モデルをそのままでは延長できません。[feature_crud.rs](/home/bacon/engawacad/crates/engawa-build/src/feature_crud.rs:100) は sketch 参照を `Extrude` / `ExtrudeCut` しか見ず、variant 名判定も [feature_crud.rs](/home/bacon/engawacad/crates/engawa-build/src/feature_crud.rs:120) の現 9 種前提です。`element_id` 参照や sketch 内編集履歴を増やすなら、reorder/delete/rollback の互換性まで含めた依存規約を ADR に先に書かないと「既存実装から容易に移行」は言えません。
+
+この ADR は「旧 line-only v1 を新 enum v1 に無停止で伸ばせる」という物語を置いていますが、現実のコードはすでに `SketchElement` 化と canonical write-back を始めており、互換問題は deserialize 可否ではなく「旧 binary がどこで拒否するか」「roundtrip で何が書き換わるか」「CRUD/参照解析が新 variant をどう扱うか」に移っています。`schema_version` 据え置き、migration hook 不要、golden 無変更の 3 点は現行実装の証拠と整合せず、既存実装からの移行容易性をむしろ過小評価しています。少なくとも `schema_version` を上げるか、v1 canonicalization と v2 新曲線/新編集 op を明確に分離しない限り、この ADR を互換方針として受けるのは危険です。
+verdict: refuted

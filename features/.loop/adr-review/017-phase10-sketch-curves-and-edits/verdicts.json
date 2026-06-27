@@ -1,0 +1,20 @@
+{
+  "fallback_used": false,
+  "verdicts": [
+    {
+      "persona": "architect",
+      "approved": false,
+      "raw_excerpt": "**Findings**\n1. High: `schema_version` を v1 に据え置く判断は、ADR-015 の version gate 契約と衝突しています。[draft §3-4]([017-phase10-sketch-curves-and-edits.md](/home/bacon/engawacad/docs/decisions/017-phase10-sketch-cur"
+    },
+    {
+      "persona": "contrarian",
+      "approved": false,
+      "raw_excerpt": "**Findings**\n1. `schema_version` を v1 に据え置きつつ「breaking なし」とする主張は成立していません。[ADR-017 §4](/home/bacon/engawacad/docs/decisions/017-phase10-sketch-curves-and-edits.md:129) は migration hook 不要としますが、[ADR-015"
+    },
+    {
+      "persona": "migration",
+      "approved": false,
+      "raw_excerpt": "**Findings**\n\n- High: `schema_version` を v1 のまま据え置く案は、既存 reader との互換境界を壊します。[document.rs](/home/bacon/engawacad/crates/engawa-format/src/document.rs:10) では `CURRENT_SCHEMA_VERSION = 1` かつ `schema_vers"
+    }
+  ]
+}
