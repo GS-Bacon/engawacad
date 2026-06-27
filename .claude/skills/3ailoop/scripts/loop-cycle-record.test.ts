@@ -4,7 +4,7 @@
 // での再 pause) を 1 cycle で打ち切るための純関数。本テストはハッシュ抽出と判定を検証する。
 
 import { describe, expect, test } from "bun:test";
-import { extractRootCauseHash, isSameStatePause } from "./loop-cycle-record.ts";
+import { extractRootCauseHash, isSameStatePause, detectPauseStreakBoundaries, PAUSE_STREAK_BOUNDARIES } from "./loop-cycle-record.ts";
 
 describe("extractRootCauseHash", () => {
   test("T01: undefined → null", () => {
@@ -137,5 +137,72 @@ describe("isSameStatePause (#229 short-circuit)", () => {
     const prev = "#220 STEP 6-D foo";
     const cur = "#220 STEP 6-D bar";
     expect(isSameStatePause(cur, prev)).toEqual(isSameStatePause(cur, prev));
+  });
+});
+
+// --- #285 欠陥 C 再現テスト: 連続 pause 境界検出 ---
+// recent_cycles 末尾の連続 pause 数を測り、閾値 (5/10/20/40) のいずれかにちょうど到達した
+// 瞬間だけ true を返す。境界以外 (途中状態) は false。これで「連続 pause 中に何度も同じ通知が
+// 飛ぶ」のを防ぎつつ、N=5,10,20,40 の節目で警告 1 回ずつ発火する設計を保証する。
+
+describe("detectPauseStreakBoundaries (#285)", () => {
+  function makeCycles(pausePattern: boolean[]): Array<{ pause_reason?: string }> {
+    return pausePattern.map((p, i) => p ? { pause_reason: `r${i}` } : {});
+  }
+
+  test("既定閾値は [5, 10, 20, 40]", () => {
+    expect(PAUSE_STREAK_BOUNDARIES).toEqual([5, 10, 20, 40]);
+  });
+
+  test("0 連続 pause → 何も発火しない", () => {
+    const cycles = makeCycles([false, false, false]);
+    expect(detectPauseStreakBoundaries(cycles)).toEqual({ streak: 0, triggered: [] });
+  });
+
+  test("4 連続 pause (閾値未満) → triggered 空", () => {
+    const cycles = makeCycles([false, true, true, true, true]);
+    expect(detectPauseStreakBoundaries(cycles)).toEqual({ streak: 4, triggered: [] });
+  });
+
+  test("ちょうど 5 連続 pause → 5 発火", () => {
+    const cycles = makeCycles([false, true, true, true, true, true]);
+    expect(detectPauseStreakBoundaries(cycles)).toEqual({ streak: 5, triggered: [5] });
+  });
+
+  test("6 連続 pause (5 を超えたが 10 未満) → 何も再発火しない", () => {
+    const cycles = makeCycles([false, true, true, true, true, true, true]);
+    expect(detectPauseStreakBoundaries(cycles)).toEqual({ streak: 6, triggered: [] });
+  });
+
+  test("ちょうど 10 連続 pause → 10 のみ発火 (5 は再発火しない)", () => {
+    const cycles = makeCycles([false, true, true, true, true, true, true, true, true, true, true]);
+    expect(detectPauseStreakBoundaries(cycles)).toEqual({ streak: 10, triggered: [10] });
+  });
+
+  test("ちょうど 20 連続 pause → 20 のみ発火", () => {
+    const pattern = [false, ...Array(20).fill(true)];
+    expect(detectPauseStreakBoundaries(makeCycles(pattern))).toEqual({ streak: 20, triggered: [20] });
+  });
+
+  test("ちょうど 40 連続 pause → 40 のみ発火", () => {
+    const pattern = [false, ...Array(40).fill(true)];
+    expect(detectPauseStreakBoundaries(makeCycles(pattern))).toEqual({ streak: 40, triggered: [40] });
+  });
+
+  test("41 連続 pause (40 超過後) → 何も再発火しない", () => {
+    const pattern = [false, ...Array(41).fill(true)];
+    expect(detectPauseStreakBoundaries(makeCycles(pattern))).toEqual({ streak: 41, triggered: [] });
+  });
+
+  test("全 cycles が pause で先頭境界なし → streak は cycles.length、境界判定は通常通り", () => {
+    // 履歴の先頭から全部 pause、recent_cycles[0] の手前は存在しない → 「直前 cycle が pause でない」
+    // が成立 (= 存在しないものは pause でない扱い)。streak=5 なら 5 発火。
+    const cycles = makeCycles([true, true, true, true, true]);
+    expect(detectPauseStreakBoundaries(cycles)).toEqual({ streak: 5, triggered: [5] });
+  });
+
+  test("カスタム閾値 [3, 7] を渡せる", () => {
+    const cycles = makeCycles([false, true, true, true]);
+    expect(detectPauseStreakBoundaries(cycles, [3, 7])).toEqual({ streak: 3, triggered: [3] });
   });
 });

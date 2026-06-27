@@ -4,9 +4,11 @@
 import { describe, expect, it } from "bun:test";
 import {
   decideAction,
+  decideWatcherPauseWarning,
   detectCycleCompleted,
   extractLastEndedAt,
   isPaneActive,
+  WATCHER_PAUSE_WARNING_THRESHOLDS,
 } from "./loop-tmux-watcher.ts";
 
 describe("extractLastEndedAt", () => {
@@ -214,5 +216,45 @@ describe("decideAction", () => {
     });
     expect(action.kind).toBe("should-stop-error");
     if (action.kind === "should-stop-error") expect(action.rc).toBe(99);
+  });
+});
+
+// --- #285: pause mode 中の段階通知 ---
+// pauseStreak が WATCHER_PAUSE_WARNING_THRESHOLDS (24, 72) 境界にちょうど到達した瞬間だけ
+// 該当閾値を返す。境界以外は null。halt (144) はこの関数の責務外 (decideAction で扱う)。
+
+describe("decideWatcherPauseWarning (#285)", () => {
+  it("既定閾値は [24, 72]", () => {
+    expect(WATCHER_PAUSE_WARNING_THRESHOLDS).toEqual([24, 72]);
+  });
+
+  it("streak=0 → null", () => {
+    expect(decideWatcherPauseWarning(0)).toBeNull();
+  });
+
+  it("streak=23 (24 未満) → null", () => {
+    expect(decideWatcherPauseWarning(23)).toBeNull();
+  });
+
+  it("streak=24 (ちょうど境界) → 24", () => {
+    expect(decideWatcherPauseWarning(24)).toBe(24);
+  });
+
+  it("streak=25 (24 を超えたが 72 未満) → null", () => {
+    expect(decideWatcherPauseWarning(25)).toBeNull();
+  });
+
+  it("streak=72 (ちょうど境界) → 72", () => {
+    expect(decideWatcherPauseWarning(72)).toBe(72);
+  });
+
+  it("streak=143 (halt 直前) → null (72 以降は閾値なし)", () => {
+    expect(decideWatcherPauseWarning(143)).toBeNull();
+  });
+
+  it("カスタム閾値 [10, 50] を渡せる", () => {
+    expect(decideWatcherPauseWarning(10, [10, 50])).toBe(10);
+    expect(decideWatcherPauseWarning(11, [10, 50])).toBeNull();
+    expect(decideWatcherPauseWarning(50, [10, 50])).toBe(50);
   });
 });

@@ -42,6 +42,30 @@ export function extractRootCauseHash(pauseReason: string | undefined): { issueNu
   return { issueNum, step, hash: `${issueNum}:${step}` };
 }
 
+/** #285: 連続 pause 境界の通知発火閾値。これらの値にちょうど streak が到達した瞬間だけ
+ *  通知を 1 回出す。streak 中に何度も鳴らさないため境界判定で抑制する。 */
+export const PAUSE_STREAK_BOUNDARIES = [5, 10, 20, 40] as const;
+
+interface CycleLike {
+  pause_reason?: string;
+}
+
+/** #285: recent_cycles 末尾の連続 pause 数を測り、各閾値にちょうど到達した瞬間だけ
+ *  triggered に閾値を含めて返す。境界以外 (streak が閾値の +1 や +2 など) は triggered=[]。
+ *  これで「同じ streak 中に同じ通知が鳴り続ける」のを防ぐ。 */
+export function detectPauseStreakBoundaries(
+  recentCycles: CycleLike[],
+  thresholds: ReadonlyArray<number> = PAUSE_STREAK_BOUNDARIES,
+): { streak: number; triggered: number[] } {
+  let streak = 0;
+  for (let i = recentCycles.length - 1; i >= 0; i--) {
+    if (recentCycles[i].pause_reason) streak++;
+    else break;
+  }
+  const triggered = thresholds.filter(t => streak === t);
+  return { streak, triggered };
+}
+
 /** #229: 直前 cycle と現サイクルの pause_reason が同じ root cause hash を持つか判定。
  *  両方の hash が一致した場合のみ same-state とみなす (片方が null なら false)。 */
 export function isSameStatePause(
@@ -228,6 +252,26 @@ async function bumpPauseStreak(
   }
 }
 
+/** #285: 連続 pause の境界通知。`loop-notify --kind pause-streak --text "..."` を spawn。
+ *  失敗しても loop は止めない (notify は best-effort)。 */
+async function notifyPauseStreakBoundary(
+  streak: number,
+  reason: string | undefined,
+): Promise<void> {
+  const tailReason = reason ? ` — ${reason.slice(0, 160)}` : "";
+  const r = await runChecked(
+    [
+      "bun", ".claude/skills/3ailoop/scripts/loop-notify.ts",
+      "--kind", "pause-streak",
+      "--text", `[WARN] loop ${streak} 連続 pause 中。dashboard / state.json を確認してください${tailReason}`,
+    ],
+    { allowFailure: true },
+  );
+  if (r.exitCode !== 0) {
+    process.stderr.write(`WARN: pause-streak notify exit=${r.exitCode}: ${r.stderr.trim().slice(0, 200)}\n`);
+  }
+}
+
 /** #284: Issue が前進した瞬間 (closed) に、その Issue の全 Category streak を一掃する。
  *  これがないと「pause→close→再 open→pause」のサイクルで偽の連続検出になる。 */
 async function resetPauseStreaksForClosed(closed: number[]): Promise<void> {
@@ -339,6 +383,21 @@ async function recordCycle(opts: {
   // 各 Issue の全 category streak をリセット。
   if (closed.length > 0) {
     await resetPauseStreaksForClosed(closed);
+  }
+
+  // #285 欠陥 C: 連続 pause が境界 (5/10/20/40) に到達した瞬間に Discord 通知。
+  // entry を書いた直後の state.json を読み直して計算する (lock 外でよい、読み取りのみ)。
+  if (entry.pause_reason) {
+    try {
+      const postState = readState();
+      const { streak, triggered } = detectPauseStreakBoundaries(postState.recent_cycles);
+      for (const t of triggered) {
+        await notifyPauseStreakBoundary(t, entry.pause_reason);
+        process.stderr.write(`WARN: pause-streak boundary reached: ${streak} (notified at ${t})\n`);
+      }
+    } catch (e) {
+      process.stderr.write(`WARN: pause-streak boundary check failed: ${(e as Error).message}\n`);
+    }
   }
 
   // Append-only journal (#177 指摘 2): state.json 破損時の復旧用

@@ -103,6 +103,23 @@ export type WatcherAction =
 // send-clear-and-restart 側の lastActivityAt リセットで吸収される。
 const IDLE_COMMANDS = new Set(["bash", "zsh", "sh", "fish", "dash"]);
 
+/** #285: pause mode 中の段階通知用閾値。pauseStreak がこれらの値にちょうど一致した
+ *  瞬間だけ Discord に warning を出す (24/72/その他)。halt (144) はこの関数の責務外で、
+ *  watcher main loop の PAUSE_STREAK_HALT 判定で扱う。
+ *  既定値: 24 (4h with default 600s sleep), 72 (12h). */
+export const WATCHER_PAUSE_WARNING_THRESHOLDS = [24, 72] as const;
+
+/** #285: pauseStreak が境界に到達したら閾値を返す。境界以外は null。 */
+export function decideWatcherPauseWarning(
+  streak: number,
+  thresholds: ReadonlyArray<number> = WATCHER_PAUSE_WARNING_THRESHOLDS,
+): number | null {
+  for (const t of thresholds) {
+    if (streak === t) return t;
+  }
+  return null;
+}
+
 /** worker pane の foreground command がアクティブなら true。null / 空 / 既知 shell は false。 */
 export function isPaneActive(cmd: string | null): boolean {
   if (!cmd) return false;
@@ -566,6 +583,15 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
         );
         cleanup(`pause streak ${pauseStreak} >= ${PAUSE_STREAK_HALT}`);
         return;
+      }
+      // #285: 段階通知。halt (144) より手前の節目 (24/72) で warning を 1 回ずつ出す。
+      const warnAt = decideWatcherPauseWarning(pauseStreak);
+      if (warnAt !== null) {
+        const hours = (warnAt * PAUSE_SLEEP_SEC / 3600).toFixed(1);
+        await notify(
+          "loop-tmux-pause-warning",
+          `[WARN] watcher: ${pauseStreak} 連続 pause (~${hours}h) — halt 閾値 ${PAUSE_STREAK_HALT} 接近中`,
+        );
       }
       continue;
     }

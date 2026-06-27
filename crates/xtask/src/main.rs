@@ -931,6 +931,8 @@ fn ci() -> ExitCode {
             // #284: pause-streak tracker と cycle-record の same-state pause 検出を回帰スイートへ。
             "./.claude/skills/3ailoop/scripts/loop-pause-streak-tracker.test.ts",
             "./.claude/skills/3ailoop/scripts/loop-cycle-record.test.ts",
+            // #285: watcher の段階通知 (decideWatcherPauseWarning) を回帰スイートへ。
+            "./.claude/skills/3ailoop/scripts/loop-tmux-watcher.test.ts",
         ])
         .current_dir(workspace_root())
         .status()
