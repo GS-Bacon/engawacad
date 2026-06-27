@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-18
 **Status**: Proposed
-**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-007 (アセンブリ参照), ADR-013 (ADR 自動 accept フロー), ADR-014 (Component RefPlane 隔離)
+**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-007 (アセンブリ参照), ADR-010 (Sketch input model — serde default + 互換維持の先例), ADR-013 (ADR 自動 accept フロー), ADR-014 (Component RefPlane 隔離)
 **Resolves**: Issue #237 (parent #194 split — Phase 9 起点)
 
 ---
@@ -71,6 +71,12 @@ Sketch 内で同名 Variable を定義した場合、Sketch ローカルが優�
 - u32 単調増加 (v1 → v2 → v3)
 - 未指定 = v1 (`INITIAL_SCHEMA_VERSION = 1` 固定)
 - `CURRENT_SCHEMA_VERSION` < `schema_version` → `FormatError::UnknownSchemaVersion` で reject (downgrade migration はサポートしない)
+
+**bump triggering condition** (Phase 9-18 ルール):
+- bump する: `.engawa` YAML の **外部表現の意味的変更** (フィールド削除、フィールド名変更、既存値の意味変更、必須フィールド追加で legacy YAML が読めなくなる場合)
+- bump **しない**: Rust 内部のデータ構造変更 (enum 内包化、struct リファクタ、フィールド追加で `#[serde(default)]` で吸収できる範囲) で legacy YAML が同じ意味で読める場合
+- 先例: ADR-010 で `CreateSketch.plane_ref` を新規追加した際、`plane` / `offset` を互換のため残して legacy YAML を読めるようにし、schema_version 概念導入前ではあるが「外部互換が取れる範囲は bump しない」思想で進めた
+- multi-version 管理 (複数 schema_version pair の MigrationHook 連鎖、並行 schema 改定の衝突解消) の本格運用は **Phase 19 STEP I/O で再設計**。Phase 9-18 の Sketch / Feature 拡張は原則 v1 据え置きで進める
 
 MigrationHook trait:
 - 1 メソッド `migrate(&self, from, to, doc)` の最小形 (`from()`/`to()` getter は driver 側で扱う)
