@@ -115,7 +115,76 @@ async function runGh(args: string[]): Promise<{ stdout: string; exit: number }> 
   return { stdout: out.trim(), exit: proc.exitCode ?? 0 };
 }
 
-export async function retire(slug: string, issueNum: number, reason: string): Promise<{ ok: boolean }> {
+/** #283 欠陥 A: ADR Issue 自身を retire したとき、その ADR に依存する子 Issue
+ *  (= `parent-adr:<ADR Issue 番号>` ラベル付き) を一括で `blocked-by-adr-retired`
+ *  に切り替える。これがないと batch-select の split-batch tier で子が永遠に
+ *  pick され、intent-check aligned=no で連続 pause する (cycle 49-65 観測)。
+ *  gh list の失敗は親 retire 自体を巻き込まない。 */
+async function propagateRetireToChildren(
+  adrIssueNum: number,
+  ghFn: (args: string[]) => Promise<{ stdout: string; exit: number }>,
+): Promise<number[]> {
+  const list = await ghFn([
+    "issue", "list",
+    "--label", `parent-adr:${adrIssueNum}`,
+    "--state", "open",
+    "--json", "number",
+    "--limit", "100",
+  ]);
+  if (list.exit !== 0) return [];
+  let arr: Array<{ number: number }>;
+  try {
+    const parsed = JSON.parse(list.stdout);
+    if (!Array.isArray(parsed)) return [];
+    arr = parsed as Array<{ number: number }>;
+  } catch {
+    return [];
+  }
+  const propagated: number[] = [];
+  for (const it of arr) {
+    const r = await ghFn(["issue", "edit", String(it.number), "--add-label", "blocked-by-adr-retired"]);
+    if (r.exit === 0) propagated.push(it.number);
+  }
+  return propagated;
+}
+
+/** #283 欠陥 A: clearRetiredIfHumanReleased の対称処理。
+ *  ADR を再評価ルートに戻したとき、子 Issue から `blocked-by-adr-retired`
+ *  を一括削除して loop に actionable として復帰させる。 */
+async function releaseChildrenFromRetiredBlock(
+  adrIssueNum: number,
+  ghFn: (args: string[]) => Promise<{ stdout: string; exit: number }>,
+): Promise<number[]> {
+  const list = await ghFn([
+    "issue", "list",
+    "--label", `parent-adr:${adrIssueNum}`,
+    "--state", "open",
+    "--json", "number",
+    "--limit", "100",
+  ]);
+  if (list.exit !== 0) return [];
+  let arr: Array<{ number: number }>;
+  try {
+    const parsed = JSON.parse(list.stdout);
+    if (!Array.isArray(parsed)) return [];
+    arr = parsed as Array<{ number: number }>;
+  } catch {
+    return [];
+  }
+  const released: number[] = [];
+  for (const it of arr) {
+    const r = await ghFn(["issue", "edit", String(it.number), "--remove-label", "blocked-by-adr-retired"]);
+    if (r.exit === 0) released.push(it.number);
+  }
+  return released;
+}
+
+export async function retire(
+  slug: string,
+  issueNum: number,
+  reason: string,
+  ghFn: (args: string[]) => Promise<{ stdout: string; exit: number }> = runGh,
+): Promise<{ ok: boolean; propagated: number[] }> {
   const state = readState(slug);
   if (state) {
     state.retired = { at: nowIso(), reason };
@@ -123,21 +192,25 @@ export async function retire(slug: string, issueNum: number, reason: string): Pr
     writeState(state);
   }
   // gate:adr-review 削除 + needs-human 付与
-  const r1 = await runGh(["issue", "edit", String(issueNum), "--remove-label", "gate:adr-review"]);
-  const r2 = await runGh(["issue", "edit", String(issueNum), "--add-label", "needs-human"]);
+  const r1 = await ghFn(["issue", "edit", String(issueNum), "--remove-label", "gate:adr-review"]);
+  const r2 = await ghFn(["issue", "edit", String(issueNum), "--add-label", "needs-human"]);
+  // #283: 子 Issue 一括 block
+  const propagated = await propagateRetireToChildren(issueNum, ghFn);
   // decision-log への append は呼び元 (caller) で行う想定
-  return { ok: r1.exit === 0 && r2.exit === 0 };
+  return { ok: r1.exit === 0 && r2.exit === 0, propagated };
 }
 
 export type ClearRetiredResult = {
   cleared: boolean;
   reason?: "no_tracker_file" | "not_retired" | "needs_human_still_present" | "gh_error";
+  released?: number[];
 };
 
 /** ADR-013 運用: retired (regen_cap / token_cap) 状態の ADR を再評価ルートに戻す。
  *  人間が `needs-human` ラベルを外していれば retired フィールドを削除 + regen_count を 0 リセット。
  *  needs-human が残っていれば no-op (= 人間がまだ released していない)。
- *  L-1.5 (auto-accept rescan) 入口で全 gate:adr-review Issue について呼ばれる。 */
+ *  L-1.5 (auto-accept rescan) 入口で全 gate:adr-review Issue について呼ばれる。
+ *  #283: cleared 時に parent-adr:N 子 Issue から blocked-by-adr-retired を一括削除。 */
 export async function clearRetiredIfHumanReleased(
   slug: string,
   issueNum: number,
@@ -164,7 +237,9 @@ export async function clearRetiredIfHumanReleased(
   state.regen_count = 0;
   state.last_updated_at = nowIso();
   writeState(state);
-  return { cleared: true };
+  // #283: 子 Issue を一括解放
+  const released = await releaseChildrenFromRetiredBlock(issueNum, ghFn);
+  return { cleared: true, released };
 }
 
 if (import.meta.main) {

@@ -34,6 +34,9 @@ const LOOP_EXCLUDE_LABELS = new Set([
   "needs-intent-review",
   "needs-review",
   "blocked-by-split",
+  // #283: ADR retire の伝播で子 Issue に付く。親 ADR が needs-human から
+  // 戻されると clearRetiredIfHumanReleased がこれを外して再 actionable 化する。
+  "blocked-by-adr-retired",
 ]);
 
 function isLoopExcludedLabels(labels: string[]): boolean {

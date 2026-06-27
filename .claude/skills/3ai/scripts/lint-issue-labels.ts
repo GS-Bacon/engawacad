@@ -45,7 +45,7 @@ const KNOWN_LABELS = new Set([
   "gate:human-feel", "gate:adr-review",
   // 3ailoop needs/blocked ラベル
   "needs-triage", "needs-phase", "needs-human", "needs-intent-review",
-  "blocked-by-split",
+  "blocked-by-split", "blocked-by-adr-retired",
   // 既存慣習
   "needs-review",
   "enhancement",
@@ -54,10 +54,12 @@ const KNOWN_LABELS = new Set([
   "duplicate", "good first issue", "help wanted", "invalid", "question", "wontfix",
 ]);
 
-// regex 限定: parent-blocked-by-split:<数値> のみ既知扱い
+// regex 限定: parent-blocked-by-split:<数値> / parent-adr:<数値> のみ既知扱い
 // (Issue #169: prefix 一致だけだと "parent-blocked-by-split:" や ":abc" が通る typo 検出漏れ)
+// (Issue #283: ADR retire の子伝播のため parent-adr:N を追加)
 const KNOWN_REGEX_PATTERNS = [
   /^parent-blocked-by-split:\d+$/,
+  /^parent-adr:\d+$/,
 ];
 
 function isKnownLabel(label: string): boolean {
