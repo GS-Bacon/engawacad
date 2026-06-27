@@ -15,7 +15,15 @@ Phase 9 で `engawa entry add/edit/remove/reorder/suppress` を含む大量の C
 
 ## Decision
 
-採用: **`engawa <object> <verb> [args]` (object → verb 順)、2 階層上限、共通フラグは `--feature-id` / `--at` / `--before` / `--after` の 4 種を canonical 名とする**
+採用: **`engawa <object> <verb> [args]` (object → verb 順)、2 階層上限、共通フラグは `--feature-id` / `--at` / `--before` / `--after` の 4 種を canonical 名とする**。各項目の Options A/B/C と Trade-off は §1〜§4 のサブセクション + `## Decision Matrix` 表を参照のこと。代表項目 (動詞/名詞順序) の Options 要約をここで明示する。
+
+### Options 要約 (動詞/名詞順序)
+
+- A. `engawa <object> <verb>` (object → verb 順、採用) — Pros: shell 補完が階層的に効く (`engawa entry <Tab>` → verb 候補)、git/cargo/kubectl と同じ認知パターン、`engawa entry --help` で grouping。Cons: 既存 `engawa run` / `engawa convert` (verb-first) と表面が混在
+- B. `engawa <verb> <object>` (verb → object 順) — Pros: 英語の文として自然 ("add an entry"). Cons: object 横断の補完が効かない、`engawa add <Tab>` で何を add するか文脈不明
+- C. フラット (`engawa-entry-add`) — Pros: shell history 検索が直接ヒット。Cons: コマンド数が線形に増えてエコシステム (補完/man/help) が肥大化
+
+**Trade-off**: Option A は既存 verb-first コマンドとの混在を許容する代わりに、補完 UX と認知負荷で Option B/C より優位 (A 採用)。
 
 ### 1. 動詞/名詞順序
 

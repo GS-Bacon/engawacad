@@ -22,7 +22,17 @@ Phase 10 (スケッチ基本曲線拡張 + スケッチ編集) の設計基盤�
 
 ---
 
-## Decision (Phase 10 設計基盤 4 項目)
+## Decision
+
+本 ADR では Phase 10 設計基盤の 4 項目 (基本曲線 7 種のパラメータ表現 / 退化判定基準 / スケッチ編集 7 種の API 抽象 / 既存 Line ベース sketch との互換性) を決定する。代表項目 (基本曲線データモデル) の Options 要約をここで明示し、残り 3 項目は §1〜§4 のサブセクション + `## Decision Matrix` 表 (本 ADR では §1 で表形式を兼ねる) を参照のこと。
+
+### Options 要約 (基本曲線データモデル / SketchSegment との互換性)
+
+- A. 新規 `SketchElement` enum を導入し既存 `SketchSegment` を `SketchElement::Line` に内包 (採用) — Pros: パターンマッチで全曲線を一括処理 (`SketchElement::tessellate` 統一 API)、`Feature::CreateSketch.profile` の型を 1 行で差し替えるだけで既存履歴が拡張対応。Cons: `SketchSegment` を `Line` 配下に追い込むため deserialize 互換層が必要 (`#[serde(untagged)]` で吸収)
+- B. trait object (`Box<dyn SketchElementTrait>`) — Pros: 第三者 crate からの曲線追加が容易。Cons: dyn 越境で型情報が欠落し Serialize/Deserialize と相性が悪い、決定性検証が dyn のため難しい
+- C. 別 type 並列 (`SketchSegment` + 新規 `SketchCurve`) — Pros: 既存 `SketchSegment` を破壊しない。Cons: profile 内の順序保証 (= 線と円が混在する scratch 順を表現) が難しい、2 つの Vec を ID で同期する必要
+
+**Trade-off**: Option A は deserialize 互換層のコストを払う代わりに、profile 順序の保証と Serialize 安定性で Option B/C より優位 (A 採用)。
 
 ### 1. 基本曲線 7 種のパラメータ表現
 

@@ -18,7 +18,17 @@ Phase 9 (CAD カーネル成熟期の起点) で固める設計基盤を 1 つ�
 3. **`schema_version` + MigrationHook 形状** — フォーマット進化の入口
 4. **品質基盤ツール選定** — proptest / criterion / cargo-fuzz / cargo-llvm-cov / Playwright の役割と最小 setup 範囲
 
-## Decision (Phase 9 設計基盤 4 項目)
+## Decision
+
+本 ADR では Phase 9 設計基盤の 4 項目 (Feature CRUD API 抽象 / Variable 2 段スコープ / `schema_version` + MigrationHook / 品質基盤ツール選定) を決定する。各項目の採用 option と Trade-off を `## Decision Matrix` 表に集約しており、本セクションでは代表項目 (Feature CRUD API) の Options 要約をここで明示し、残り 3 項目は §1〜§4 のサブセクション + Decision Matrix を参照のこと。
+
+### Options 要約 (Feature CRUD API 抽象)
+
+- A. 個別関数 (`edit_feature()` / `delete_feature()` ...) — Pros: 既存実装の最小拡張。Cons: 呼び出し点が散らばり CRUD 横断の不変条件 (`feature_id` 一意性等) を強制しづらい
+- B. `FeatureOp` enum + `Document::apply_op()` 中央ディスパッチ (採用) — Pros: Undo/Redo を統一 (各 op が `inverse(&self) -> FeatureOp` を返す)、CLI verb と 1:1 対応。Cons: variant 追加が breaking (`#[non_exhaustive]` で forward-compat 確保)
+- C. `Box<dyn Command>` (Command pattern, trait object) — Pros: collection に持てる。Cons: dyn 越境で型情報欠落、Serialize/Deserialize と相性が悪い
+
+**Trade-off**: Option B は variant 追加が breaking だが `#[non_exhaustive]` で forward-compat 確保可能、Option A/C より中庸 (B 採用)。
 
 ### 1. Feature CRUD API 抽象
 

@@ -1,47 +1,8 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 61,
-  "last_cycle_at": "2026-06-22T06:07:27.784Z",
+  "cycle": 63,
+  "last_cycle_at": "2026-06-27T01:48:58.623Z",
   "recent_cycles": [
-    {
-      "cycle": 42,
-      "started_at": "2026-06-19T05:17:13.198Z",
-      "ended_at": "2026-06-19T06:30:34.175Z",
-      "closed": [
-        263
-      ],
-      "raised": [
-        265,
-        264
-      ],
-      "merged_commits": 2,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 2479417,
-        "glm": 14414,
-        "codex": 6904358
-      }
-    },
-    {
-      "cycle": 43,
-      "started_at": "2026-06-19T06:30:34.175Z",
-      "ended_at": "2026-06-19T08:51:01.013Z",
-      "closed": [
-        265,
-        264
-      ],
-      "raised": [
-        267,
-        266
-      ],
-      "merged_commits": 5,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 6175035,
-        "glm": 20621,
-        "codex": 7881492
-      }
-    },
     {
       "cycle": 44,
       "started_at": "2026-06-19T08:51:01.013Z",
@@ -345,15 +306,52 @@
         "glm": 0,
         "codex": 0
       }
+    },
+    {
+      "cycle": 62,
+      "started_at": "2026-06-22T06:07:27.784Z",
+      "ended_at": "2026-06-27T01:45:35.452Z",
+      "closed": [
+        281,
+        273,
+        208,
+        207
+      ],
+      "raised": [
+        281
+      ],
+      "merged_commits": 3,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#274 試行で再現、前 12 cycle #49-#60 と同一原因の 13 連続 pause)。Codex CLI 復旧待ち。#275-#278 も同条件のため skip。",
+      "tokens": {
+        "claude": 2646883,
+        "glm": 13765,
+        "codex": 123848
+      }
+    },
+    {
+      "cycle": 63,
+      "started_at": "2026-06-27T01:45:35.452Z",
+      "ended_at": "2026-06-27T01:48:58.623Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "ADR-017 (#279) 滞留 (gate:adr-review + regen_required count=2/3) のため Phase 10 sketch 子 Issue #274-#278 を実装不可。#274 intent-check も aligned:no (Out-of-Scope/Non-Goals/数値モデル不足)。同条件の #275-#278 も skip。先に ADR-017 を確定する必要あり。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
     }
   ],
   "cumulative": {
-    "cycles_total": 61,
-    "issues_closed": 182,
+    "cycles_total": 63,
+    "issues_closed": 186,
     "raised_resolved": 0,
     "adr_total": 17,
-    "token_claude": 199748343,
-    "token_glm": 272781195,
-    "token_codex": 112121366
+    "token_claude": 202395226,
+    "token_glm": 272794960,
+    "token_codex": 112245214
   }
 }
