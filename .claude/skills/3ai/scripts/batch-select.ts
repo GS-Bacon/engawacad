@@ -51,6 +51,48 @@ function isParentBlockedBySplitChild(labels: string[]): boolean {
   return labels.some(l => /^parent-blocked-by-split:\d+$/.test(l));
 }
 
+/** parent-adr:N ラベルから親 ADR Issue 番号を抽出 */
+export function extractParentAdrNumbers(labels: string[]): number[] {
+  const nums: number[] = [];
+  for (const l of labels) {
+    const m = l.match(/^parent-adr:(\d+)$/);
+    if (m) nums.push(parseInt(m[1], 10));
+  }
+  return nums;
+}
+
+/**
+ * 親 ADR の active 状態を判定するために inactive とみなすラベル群。
+ * 子 Issue がこれら状態の親を持つ場合、ADR の方針が未確定なため
+ * split-batch tier / その他 tier から除外する (歪み #1 修正)。
+ *
+ * gate:* prefix も inactive (gate:adr-review = ADR レビュー未通過) として扱う。
+ */
+const ADR_PARENT_INACTIVE_LABELS = new Set([
+  "needs-human",
+  "needs-intent-review",
+  "blocked-by-adr-retired",
+]);
+
+/**
+ * 親 ADR Issue の labels から inactive かどうか判定。
+ * Issue が allIssues (open のみ) に無ければ closed = accepted/retired 確定済みとみなして false。
+ */
+export function isParentAdrInactive(
+  labels: string[],
+  parentLabelsLookup: (n: number) => string[] | null,
+): boolean {
+  for (const n of extractParentAdrNumbers(labels)) {
+    const parentLabels = parentLabelsLookup(n);
+    if (parentLabels === null) continue;
+    for (const pl of parentLabels) {
+      if (ADR_PARENT_INACTIVE_LABELS.has(pl)) return true;
+      if (pl.startsWith("gate:")) return true;
+    }
+  }
+  return false;
+}
+
 // --- 引数解析 ---
 
 type BatchArg = "fixes" | "phase" | "foundation";
@@ -241,6 +283,15 @@ async function main() {
 
   const labelNames = (issue: GhIssue) => issue.labels.map(l => l.name);
   const hasBatchLabel = (issue: GhIssue) => labelNames(issue).some(l => l.startsWith("batch:"));
+
+  // 親 ADR 状態の lookup (allIssues は open Issue のみ含むため、closed = accepted/retired 確定済みとみなす)
+  const issueByNumber = new Map<number, GhIssue>(allIssues.map(i => [i.number, i]));
+  const parentLabelsLookup = (n: number): string[] | null => {
+    const parent = issueByNumber.get(n);
+    return parent ? labelNames(parent) : null;
+  };
+  const isLoopExcluded = (labels: string[]): boolean =>
+    isLoopExcludedLabels(labels) || isParentAdrInactive(labels, parentLabelsLookup);
   const isFeatureTier = (labels: string[]) =>
     labels.some(l => l === "type:feature" || l === "type: feature");
   const isFoundationTier = (labels: string[]) =>
@@ -258,10 +309,14 @@ async function main() {
 
   // 3ailoop モード: split-batch tier を最優先 (parent-blocked-by-split:<N> 子 Issue)
   if (loopMode && batchArg === null) {
-    const splitChildren = allIssues.filter(i => {
-      const labels = labelNames(i);
-      return isParentBlockedBySplitChild(labels) && !isLoopExcludedLabels(labels);
-    });
+    const splitChildrenRaw = allIssues.filter(i => isParentBlockedBySplitChild(labelNames(i)));
+    const splitChildren = splitChildrenRaw.filter(i => !isLoopExcluded(labelNames(i)));
+    const splitDowngraded = splitChildrenRaw.length - splitChildren.length;
+    if (splitDowngraded > 0) {
+      warnings.push(
+        `split-batch tier: ${splitDowngraded} 件を降格 (gate/needs-* または親 ADR が inactive)`,
+      );
+    }
     if (splitChildren.length > 0) {
       selected = splitChildren;
       tier = "split-batch";
@@ -301,7 +356,7 @@ async function main() {
     // #187: loop モードでは各 tier の filter 内で loop exclude も同時適用し、
     // exclude 後に 0 件なら次 tier に fall-through する。
     const applyLoopExclude = (xs: GhIssue[]) =>
-      loopMode ? xs.filter(i => !isLoopExcludedLabels(labelNames(i))) : xs;
+      loopMode ? xs.filter(i => !isLoopExcluded(labelNames(i))) : xs;
 
     let excludedTotal = 0;
     const tryTier = (raw: GhIssue[]): GhIssue[] => {
@@ -365,14 +420,14 @@ async function main() {
     }
   }
 
-  // 3ailoop モード: 共通 exclude フィルタを適用 (gate:* / needs-* / blocked-by-split)
+  // 3ailoop モード: 共通 exclude フィルタを適用 (gate:* / needs-* / blocked-by-split / 親 ADR inactive)
   // (引数なし起動時は上のラダー内で適用済み。--batch fixes/foundation/phase 経路では後段で適用)
   if (loopMode && batchArg !== null) {
     const beforeCount = selected.length;
-    selected = selected.filter(i => !isLoopExcludedLabels(labelNames(i)));
+    selected = selected.filter(i => !isLoopExcluded(labelNames(i)));
     const filtered = beforeCount - selected.length;
     if (filtered > 0) {
-      warnings.push(`loop モード: gate/needs-* で ${filtered} 件除外 (残 ${selected.length} 件)`);
+      warnings.push(`loop モード: gate/needs-*/親ADR inactive で ${filtered} 件除外 (残 ${selected.length} 件)`);
     }
   }
 

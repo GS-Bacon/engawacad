@@ -46,6 +46,54 @@ describe("isFutureMilestoneTitle (#210)", () => {
   });
 });
 
+// 歪み #1: 親 ADR inactive 時に split 子 Issue を tier から降格
+import { extractParentAdrNumbers, isParentAdrInactive } from "../batch-select.ts";
+
+describe("extractParentAdrNumbers", () => {
+  test("parent-adr:N ラベルから番号を抽出", () => {
+    expect(extractParentAdrNumbers(["parent-adr:279", "bug"])).toEqual([279]);
+  });
+  test("複数 parent-adr 抽出", () => {
+    expect(extractParentAdrNumbers(["parent-adr:279", "parent-adr:281"])).toEqual([279, 281]);
+  });
+  test("該当ラベル無しなら空配列", () => {
+    expect(extractParentAdrNumbers(["bug", "batch:kernel"])).toEqual([]);
+  });
+});
+
+describe("isParentAdrInactive (歪み #1)", () => {
+  test("親 ADR が needs-human → true", () => {
+    const lookup = (_: number) => ["gate:adr-review", "needs-human"];
+    expect(isParentAdrInactive(["parent-adr:279"], lookup)).toBe(true);
+  });
+  test("親 ADR が gate:adr-review (まだ accept されていない) → true", () => {
+    const lookup = (_: number) => ["gate:adr-review", "type: foundation"];
+    expect(isParentAdrInactive(["parent-adr:279"], lookup)).toBe(true);
+  });
+  test("親 ADR が blocked-by-adr-retired → true", () => {
+    const lookup = (_: number) => ["blocked-by-adr-retired"];
+    expect(isParentAdrInactive(["parent-adr:279"], lookup)).toBe(true);
+  });
+  test("親 ADR が closed (lookup = null) → false (accept 確定済み扱い)", () => {
+    const lookup = (_: number) => null;
+    expect(isParentAdrInactive(["parent-adr:279"], lookup)).toBe(false);
+  });
+  test("親 ADR が active (gate/needs-human 無し) → false", () => {
+    const lookup = (_: number) => ["type: foundation"];
+    expect(isParentAdrInactive(["parent-adr:279"], lookup)).toBe(false);
+  });
+  test("parent-adr ラベル無し → false (lookup 呼ばれない)", () => {
+    let called = false;
+    const lookup = (_: number) => { called = true; return null; };
+    expect(isParentAdrInactive(["bug"], lookup)).toBe(false);
+    expect(called).toBe(false);
+  });
+  test("複数親のうち 1 つでも inactive なら true", () => {
+    const lookup = (n: number) => n === 279 ? ["needs-human"] : ["type: foundation"];
+    expect(isParentAdrInactive(["parent-adr:279", "parent-adr:281"], lookup)).toBe(true);
+  });
+});
+
 // #254: refactor-batch tier が BatchTierType に追加されていることを型で確認
 import type { BatchTierType } from "../types.ts";
 
