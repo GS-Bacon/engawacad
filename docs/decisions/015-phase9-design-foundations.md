@@ -1,7 +1,7 @@
 # ADR-015: Phase 9 設計基盤 (履歴 CRUD 抽象 + Variable スコープ + schema_version + 品質基盤)
 
 **Date**: 2026-06-18
-**Status**: Proposed
+**Status**: Withdrawn (2026-06-27: Phase 9 が #283/#284/#285 で実装完了し ROADMAP/milestone 共に ✅ になったため、本 ADR は事後正規化対象から外す。auto-accept 経由の 3 ペルソナ refute (FeatureOp 型設計が現実装と齟齬 / 既存 pure-functional FeatureCrud との不整合) が解消困難で、かつ Phase 9 完了済みのため retire。実装の真実は engawa-build/engawa-cli の現コードを真とする。今後 Phase 9 範囲を再設計する場合は本 ADR を起点とせず新 ADR を起票)
 **Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-007 (アセンブリ参照), ADR-010 (Sketch input model — serde default + 互換維持の先例), ADR-013 (ADR 自動 accept フロー), ADR-014 (Component RefPlane 隔離), ADR-016 (engawa-cli 命名)
 **Resolves**: Issue #237 (parent #194 split — Phase 9 起点)
 

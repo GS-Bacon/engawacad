@@ -1,7 +1,7 @@
 # ADR-016: engawa CLI 命名規約
 
 **Date**: 2026-06-18
-**Status**: Proposed
+**Status**: Withdrawn (2026-06-27: Phase 9 が #283/#284/#285 で実装完了し、engawa-cli は `export` / `view` / `entry add/edit/remove/reorder/suppress` の form で実装済み。auto-accept 3 ペルソナ全 refute は ADR 本文の「既存 CLI = run/convert」記載が実体 (export/view/entry) と乖離している指摘で正当。実装の真実は engawa-cli の現コードを真とし、本 ADR は retire)
 **Related**: ADR-006 (Issue 粒度), ADR-013 (ADR 自動 accept フロー), ADR-015 (Phase 9 設計基盤)
 **Resolves**: Issue #238 (parent #194 split)
 
