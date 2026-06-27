@@ -11,8 +11,10 @@
 //   bun loop-adr-regen-tracker.ts add-tokens --adr <slug> --tokens <n>
 //   bun loop-adr-regen-tracker.ts get --adr <slug>
 //   bun loop-adr-regen-tracker.ts retire --adr <slug> --issue <n> --reason <text>
+//   bun loop-adr-regen-tracker.ts clear-retired --adr <slug> --issue <n>
 //
 // inc-regen / add-tokens は stdout に JSON {state, capped: bool, reason?: string} を返す。
+// clear-retired は stdout に JSON {cleared: bool, reason?: string} を返す。
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
@@ -127,6 +129,44 @@ export async function retire(slug: string, issueNum: number, reason: string): Pr
   return { ok: r1.exit === 0 && r2.exit === 0 };
 }
 
+export type ClearRetiredResult = {
+  cleared: boolean;
+  reason?: "no_tracker_file" | "not_retired" | "needs_human_still_present" | "gh_error";
+};
+
+/** ADR-013 運用: retired (regen_cap / token_cap) 状態の ADR を再評価ルートに戻す。
+ *  人間が `needs-human` ラベルを外していれば retired フィールドを削除 + regen_count を 0 リセット。
+ *  needs-human が残っていれば no-op (= 人間がまだ released していない)。
+ *  L-1.5 (auto-accept rescan) 入口で全 gate:adr-review Issue について呼ばれる。 */
+export async function clearRetiredIfHumanReleased(
+  slug: string,
+  issueNum: number,
+  ghFn: (args: string[]) => Promise<{ stdout: string; exit: number }> = runGh,
+): Promise<ClearRetiredResult> {
+  const state = readState(slug);
+  if (!state) return { cleared: false, reason: "no_tracker_file" };
+  if (!state.retired) return { cleared: false, reason: "not_retired" };
+
+  const r = await ghFn(["issue", "view", String(issueNum), "--json", "labels"]);
+  if (r.exit !== 0) return { cleared: false, reason: "gh_error" };
+  let labels: Array<{ name: string }>;
+  try {
+    const parsed = JSON.parse(r.stdout) as { labels?: Array<{ name: string }> };
+    labels = parsed.labels ?? [];
+  } catch {
+    return { cleared: false, reason: "gh_error" };
+  }
+  if (labels.some(l => l.name === "needs-human")) {
+    return { cleared: false, reason: "needs_human_still_present" };
+  }
+
+  delete state.retired;
+  state.regen_count = 0;
+  state.last_updated_at = nowIso();
+  writeState(state);
+  return { cleared: true };
+}
+
 if (import.meta.main) {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
@@ -136,7 +176,7 @@ if (import.meta.main) {
   }
   const slug = arg("--adr");
   if (!cmd || !slug) {
-    console.error("Usage: loop-adr-regen-tracker.ts <inc-regen|add-tokens|get|retire> --adr <slug> [...]");
+    console.error("Usage: loop-adr-regen-tracker.ts <inc-regen|add-tokens|get|retire|clear-retired> --adr <slug> [...]");
     process.exit(1);
   }
   switch (cmd) {
@@ -166,6 +206,16 @@ if (import.meta.main) {
       const r = await retire(slug, issueNum, reason);
       console.log(JSON.stringify(r));
       process.exit(r.ok ? 0 : 1);
+    }
+    case "clear-retired": {
+      const issueNum = parseInt(arg("--issue") ?? "0");
+      if (!issueNum) {
+        console.error("clear-retired: --issue <n> required");
+        process.exit(1);
+      }
+      const r = await clearRetiredIfHumanReleased(slug, issueNum);
+      console.log(JSON.stringify(r));
+      process.exit(r.cleared ? 0 : 1);
     }
     default:
       console.error(`unknown command: ${cmd}`);

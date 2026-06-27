@@ -1,0 +1,17 @@
+[
+  {
+    "persona": "architect",
+    "approved": false,
+    "raw_excerpt": "ADR-002 は batch 軸を「どのファイル群を変更するか」の分類として定義しており、`batch:kernel` は `crates/**` を触る Issue に対応します ([002-roadmap-management.md](/home/bacon/engawacad/docs/decisions/002-roadmap-management.md:71), [batch-sele"
+  },
+  {
+    "persona": "contrarian",
+    "approved": false,
+    "raw_excerpt": "**Findings**\n\n1. **致命的: Multi-LLM Review が独立したレビューになっていません。**  \n`architect / contrarian / migration` の 3 ペルソナは、同一 draft・同一 orchestration・ほぼ同系統の評価基準に依存しています。Context で問題視している「Codex draft 単独では reviewable"
+  },
+  {
+    "persona": "migration",
+    "approved": false,
+    "raw_excerpt": "**Findings**\n- Critical: [loop-adr-auto-accept.ts](/home/bacon/engawacad/.claude/skills/3ailoop/scripts/loop-adr-auto-accept.ts:330), [loop-adr-pause-detector.ts](/home/bacon/engawacad/.claude/skills/"
+  }
+]

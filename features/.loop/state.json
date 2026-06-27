@@ -1,300 +1,8 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 46,
-  "last_cycle_at": "2026-06-19T19:22:02.728Z",
+  "cycle": 61,
+  "last_cycle_at": "2026-06-22T06:07:27.784Z",
   "recent_cycles": [
-    {
-      "cycle": 27,
-      "started_at": "2026-06-18T03:18:29.023Z",
-      "ended_at": "2026-06-18T05:10:58.315Z",
-      "closed": [
-        235
-      ],
-      "raised": [
-        235
-      ],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "pause_reason": "batch-select returned 0 candidates (open=15, actionable=12) — loop-actionable Issue が残っていても batch-select が候補を返さない (split-batch tier 最優先で除外条件に該当している可能性)。次回サイクルで再判定。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 28,
-      "started_at": "2026-06-18T05:10:58.315Z",
-      "ended_at": "2026-06-18T05:53:16.460Z",
-      "closed": [
-        236
-      ],
-      "raised": [
-        243,
-        242,
-        241,
-        240,
-        239,
-        238,
-        237,
-        236
-      ],
-      "merged_commits": 2,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 29,
-      "started_at": "2026-06-18T05:53:16.460Z",
-      "ended_at": "2026-06-18T08:32:31.211Z",
-      "closed": [
-        239,
-        238,
-        237
-      ],
-      "raised": [
-        244
-      ],
-      "merged_commits": 7,
-      "adr_drafts": [
-        "docs/decisions/016-engawa-cli-naming.md",
-        "docs/decisions/015-phase9-design-foundations.md"
-      ],
-      "tokens": {
-        "claude": 4650746,
-        "glm": 0,
-        "codex": 8351660
-      }
-    },
-    {
-      "cycle": 30,
-      "started_at": "2026-06-18T08:32:31.211Z",
-      "ended_at": "2026-06-18T16:04:50.279Z",
-      "closed": [
-        249,
-        243,
-        241
-      ],
-      "raised": [
-        249,
-        248,
-        247,
-        246,
-        245
-      ],
-      "merged_commits": 5,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 1303803,
-        "glm": 6854,
-        "codex": 11058769
-      }
-    },
-    {
-      "cycle": 31,
-      "started_at": "2026-06-18T16:04:50.279Z",
-      "ended_at": "2026-06-18T17:04:55.891Z",
-      "closed": [
-        248,
-        247
-      ],
-      "raised": [
-        250
-      ],
-      "merged_commits": 4,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 32,
-      "started_at": "2026-06-18T17:04:55.891Z",
-      "ended_at": "2026-06-18T17:18:20.188Z",
-      "closed": [
-        250
-      ],
-      "raised": [],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 33,
-      "started_at": "2026-06-18T17:18:20.188Z",
-      "ended_at": "2026-06-19T00:27:53.896Z",
-      "closed": [
-        251
-      ],
-      "raised": [
-        251
-      ],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "pause_reason": "batch-select returned 0 candidates (open=20, actionable=12) — loop-actionable 12 件は全て Phase 10+ 起点 (#195-#205) と type:refactor batch:skill (#244) で、current_phase=9 のため tier から除外される。gate:adr-review 4 件 (#246/#245/#208/#207) と needs-human #220 が人間対応待ち。loop policy 通り pause.",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 34,
-      "started_at": "2026-06-19T00:27:53.896Z",
-      "ended_at": "2026-06-19T00:44:03.825Z",
-      "closed": [
-        252
-      ],
-      "raised": [
-        252
-      ],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "pause_reason": "batch-select returned 0 candidates (open=20, actionable=12) — actionable 12件は全て Phase 10+ 起点 (#195-#205) と type:refactor batch:skill (#244) で current_phase=9 では tier から除外。gate:adr-review 4件 (#246/#245/#208/#207) と needs-human #220 が人間対応待ち。前 cycle と同一状況で再 pause。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 35,
-      "started_at": "2026-06-19T00:44:03.825Z",
-      "ended_at": "2026-06-19T00:54:56.522Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "pause_reason": "batch-select returned 0 candidates (open=20, actionable=11). L-1.5 で gate #246/#245 を regen_required に、gate #208/#207 を retired (needs-human) に分類。残 actionable は #244 (type:refactor batch:skill, current_phase=9 では tier 除外) と Phase 10+ 起点 (#195-#205) のみで pick できる Issue なし。Phase 9 起点 #194 と子 #240/#242 は blocked-by-split。Phase 9 を進めるには #244 子分割完了 か gate #246/#245 再 regen サイクル待ち。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 36,
-      "started_at": "2026-06-19T00:54:56.522Z",
-      "ended_at": "2026-06-19T01:21:47.928Z",
-      "closed": [
-        253
-      ],
-      "raised": [
-        253
-      ],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "pause_reason": "batch-select returned 0 candidates (open=20, actionable=11). L-1.5 で残 gate #246/#245 を retired (needs-human) に移行完了 → gate:adr-review は 0 件に。残 actionable は #244 (type:refactor batch:skill — current_phase=9 phase-feature tier 対象外) と Phase 10+ 起点 (#196-#205) のみ。Phase 9 起点 #194 と子 #240/#242 は blocked-by-split のまま。Phase 9 を進めるには #244 で #240/#242 を 6 子 Issue に再分割する人手作業が必要 (ADR-006 §1 違反の修正)。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 37,
-      "started_at": "2026-06-19T01:21:47.928Z",
-      "ended_at": "2026-06-19T01:36:08.322Z",
-      "closed": [
-        254
-      ],
-      "raised": [
-        254
-      ],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 38,
-      "started_at": "2026-06-19T01:36:08.322Z",
-      "ended_at": "2026-06-19T01:45:03.687Z",
-      "closed": [
-        244
-      ],
-      "raised": [
-        260,
-        259,
-        258,
-        257,
-        256,
-        255
-      ],
-      "merged_commits": 2,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 39,
-      "started_at": "2026-06-19T01:45:03.687Z",
-      "ended_at": "2026-06-19T02:31:26.141Z",
-      "closed": [
-        261
-      ],
-      "raised": [
-        261
-      ],
-      "merged_commits": 5,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 40,
-      "started_at": "2026-06-19T02:31:26.141Z",
-      "ended_at": "2026-06-19T03:57:30.272Z",
-      "closed": [
-        255
-      ],
-      "raised": [
-        263,
-        262
-      ],
-      "merged_commits": 2,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 1880653,
-        "glm": 10038,
-        "codex": 966608
-      }
-    },
-    {
-      "cycle": 41,
-      "started_at": "2026-06-19T03:57:30.272Z",
-      "ended_at": "2026-06-19T05:17:13.198Z",
-      "closed": [
-        262
-      ],
-      "raised": [],
-      "merged_commits": 2,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
     {
       "cycle": 42,
       "started_at": "2026-06-19T05:17:13.198Z",
@@ -393,13 +101,257 @@
         "glm": 82217,
         "codex": 10104969
       }
+    },
+    {
+      "cycle": 47,
+      "started_at": "2026-06-19T19:22:02.728Z",
+      "ended_at": "2026-06-22T03:48:09.131Z",
+      "closed": [
+        271,
+        194
+      ],
+      "raised": [
+        278,
+        277,
+        276,
+        275,
+        274,
+        273,
+        272,
+        271
+      ],
+      "merged_commits": 3,
+      "adr_drafts": [],
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 48,
+      "started_at": "2026-06-22T03:48:09.131Z",
+      "ended_at": "2026-06-22T04:06:24.973Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 2,
+      "adr_drafts": [
+        "docs/decisions/017-phase10-sketch-curves-and-edits.md"
+      ],
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 49,
+      "started_at": "2026-06-22T04:06:24.973Z",
+      "ended_at": "2026-06-22T04:11:34.704Z",
+      "closed": [
+        272
+      ],
+      "raised": [
+        279
+      ],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (all 6 issues #273-#278). 次サイクルで再試行する想定。ADR-017 (#279) は regen_required (count=2/3) のままで、子 Issue 実装は ADR auto-accept 完了後に着手する方が安全。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 50,
+      "started_at": "2026-06-22T04:11:34.704Z",
+      "ended_at": "2026-06-22T04:14:20.761Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (all 6 split-batch issues #273-#278 失敗、infra 一時障害扱い)。watcher は次サイクル発火するが、Codex CLI 復旧まで同じ pause が継続する見込み。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 51,
+      "started_at": "2026-06-22T04:14:20.761Z",
+      "ended_at": "2026-06-22T04:18:25.314Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#274 試行で再現、#275-#278 も同条件のため全件 skip)。前 cycle (#50) と同一原因で連続 pause。Codex CLI 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 52,
+      "started_at": "2026-06-22T04:18:25.314Z",
+      "ended_at": "2026-06-22T04:21:27.212Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#274 試行で再現、前 cycle #51 と同一原因の 4 連続 pause)。Codex CLI 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 53,
+      "started_at": "2026-06-22T04:21:27.212Z",
+      "ended_at": "2026-06-22T04:24:44.955Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#275 試行で再現、前 4 cycle #49-#52 と同一原因の 5 連続 pause)。Codex CLI 復旧待ち。#276-#278 も同条件のため skip。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 54,
+      "started_at": "2026-06-22T04:24:44.955Z",
+      "ended_at": "2026-06-22T04:27:14.402Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#275 試行で再現、前 5 cycle #49-#53 と同一原因の 6 連続 pause)。Codex CLI 復旧待ち。#276-#278 も同条件のため skip。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 55,
+      "started_at": "2026-06-22T04:27:14.402Z",
+      "ended_at": "2026-06-22T04:30:24.362Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#276/#277/#278 全件失敗、前 6 cycle #49-#54 と同一原因の 7 連続 pause)。Codex CLI 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 56,
+      "started_at": "2026-06-22T04:30:24.362Z",
+      "ended_at": "2026-06-22T04:33:09.436Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#276 試行で再現、前 7 cycle #49-#55 と同一原因の 8 連続 pause)。Codex CLI 復旧待ち。#277/#278 も同条件のため skip。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 57,
+      "started_at": "2026-06-22T04:33:09.436Z",
+      "ended_at": "2026-06-22T04:35:40.713Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#277/#278 全件失敗、前 8 cycle #49-#56 と同一原因の 9 連続 pause)。Codex CLI 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 58,
+      "started_at": "2026-06-22T04:35:40.713Z",
+      "ended_at": "2026-06-22T04:38:21.310Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#277 試行で再現、前 9 cycle #49-#57 と同一原因の 10 連続 pause)。Codex CLI 復旧待ち。#278 も同条件のため skip。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 59,
+      "started_at": "2026-06-22T04:38:21.310Z",
+      "ended_at": "2026-06-22T04:41:45.180Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#278 試行で再現、前 10 cycle #49-#58 と同一原因の 11 連続 pause)。Codex CLI 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 60,
+      "started_at": "2026-06-22T04:41:45.180Z",
+      "ended_at": "2026-06-22T04:44:28.848Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "codex usage limit at B-3 intent-check (#278 試行で再現、前 11 cycle #49-#59 と同一原因の 12 連続 pause)。Codex CLI 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 61,
+      "started_at": "2026-06-22T04:44:28.848Z",
+      "ended_at": "2026-06-22T06:07:27.784Z",
+      "closed": [
+        280
+      ],
+      "raised": [
+        280
+      ],
+      "merged_commits": 2,
+      "adr_drafts": [],
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
     }
   ],
   "cumulative": {
-    "cycles_total": 46,
-    "issues_closed": 178,
+    "cycles_total": 61,
+    "issues_closed": 182,
     "raised_resolved": 0,
-    "adr_total": 16,
+    "adr_total": 17,
     "token_claude": 199748343,
     "token_glm": 272781195,
     "token_codex": 112121366

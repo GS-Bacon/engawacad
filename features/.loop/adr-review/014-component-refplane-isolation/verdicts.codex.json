@@ -1,0 +1,17 @@
+[
+  {
+    "persona": "architect",
+    "approved": false,
+    "raw_excerpt": "ADR-005 は `EntityRef` の参照スコープを「現在の文書の単一 Component 内」に限定しており、component/occurrence path は将来拡張の予告に留まります (`docs/decisions/005-topological-naming.md`)。実装もそれに従っていて、`EntityRef` には component path がなく、`feature"
+  },
+  {
+    "persona": "contrarian",
+    "approved": false,
+    "raw_excerpt": "- High: `採用理由 2/5` は、`coordinate frame` の独立性と `ref_plane` 名解決スコープを混同しています。child が自前の transform / local sketch 座標を持つことと、親の datum を参照できることは両立可能です。Option B はその両立可能性を切り捨て、assembly 全体で共有したい datum を child ご"
+  },
+  {
+    "persona": "migration",
+    "approved": false,
+    "raw_excerpt": "1. `schema_version` を上げず、移行導線もないまま child の空 `ref_planes` の意味を固定しているのは後方互換性違反です。`Component.ref_planes` は省略可能で、空配列でも canonical three でも YAML では省略されます ([component.rs](/home/bacon/engawacad/crates/engawa-"
+  }
+]

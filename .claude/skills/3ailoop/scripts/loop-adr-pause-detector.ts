@@ -14,8 +14,9 @@
 // 関連 plan: dashboard の Decision Log に「ADR-NNN draft 起票」として追加される想定
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { basename, dirname } from "path";
 import { autoAccept } from "./loop-adr-auto-accept";
+import { clearRetiredIfHumanReleased } from "./loop-adr-regen-tracker";
 
 const DEFAULT_MARKER_PATH = "features/.loop/last-adr-scan-sha";
 
@@ -44,15 +45,29 @@ export type RescanRecord = {
   issue: number;
   adr: string | null;
   outcome: string;
+  retired_cleared?: boolean;
 };
 
+/** ADR-013 運用: docs/decisions/<slug>.md → <slug> */
+export function adrSlugFromPath(adrPath: string): string {
+  return basename(adrPath, ".md");
+}
+
 /** #252: 既存の open gate:adr-review Issue を rescan して autoAccept に再投入する。
- *  両 LLM 不在 / regen 中断 / 過去サイクル取り残しで滞留した gate Issue を救済する。 */
+ *  両 LLM 不在 / regen 中断 / 過去サイクル取り残しで滞留した gate Issue を救済する。
+ *  ADR-013 運用拡張: autoAccept 実行前に clearRetiredIfHumanReleased を呼び、
+ *  人間が `needs-human` ラベルを外した retired ADR を auto-accept ルートに戻す。 */
 export async function rescanStaleGateIssues(
-  opts: { dryRun?: boolean; autoAcceptFn?: typeof autoAccept; ghFn?: typeof runGh } = {},
+  opts: {
+    dryRun?: boolean;
+    autoAcceptFn?: typeof autoAccept;
+    ghFn?: typeof runGh;
+    clearRetiredFn?: typeof clearRetiredIfHumanReleased;
+  } = {},
 ): Promise<RescanRecord[]> {
   const gh = opts.ghFn ?? runGh;
   const aa = opts.autoAcceptFn ?? autoAccept;
+  const clr = opts.clearRetiredFn ?? clearRetiredIfHumanReleased;
   const r = await gh([
     "issue", "list",
     "--label", "gate:adr-review",
@@ -87,11 +102,23 @@ export async function rescanStaleGateIssues(
       records.push({ issue: i.number, adr: adrPath, outcome: "dry-run" });
       continue;
     }
+    // ADR-013: 人間が needs-human を外していれば retired 解除して auto-accept ルートに戻す
+    let retiredCleared = false;
+    try {
+      const slug = adrSlugFromPath(adrPath);
+      const c = await clr(slug, i.number, gh);
+      retiredCleared = c.cleared;
+      if (c.cleared) {
+        process.stderr.write(`[rescan] retired state cleared for ${slug} (issue #${i.number})\n`);
+      }
+    } catch (e) {
+      process.stderr.write(`WARN: clearRetiredIfHumanReleased failed for issue #${i.number}: ${(e as Error).message}\n`);
+    }
     try {
       const outcome = await aa({ adrPath, issueNum: i.number });
-      records.push({ issue: i.number, adr: adrPath, outcome: outcome.kind });
+      records.push({ issue: i.number, adr: adrPath, outcome: outcome.kind, retired_cleared: retiredCleared });
     } catch (e) {
-      records.push({ issue: i.number, adr: adrPath, outcome: `error:${(e as Error).message}` });
+      records.push({ issue: i.number, adr: adrPath, outcome: `error:${(e as Error).message}`, retired_cleared: retiredCleared });
     }
   }
   return records;
