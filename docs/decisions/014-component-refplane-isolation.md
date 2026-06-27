@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-17
 **Status**: Accepted
-**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-007 (アセンブリと部品参照), ADR-013 (ADR 自動 accept フロー)
+**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-005 (Topological Naming), ADR-006 (Issue 粒度), ADR-007 (アセンブリと部品参照), ADR-013 (ADR 自動 accept フロー)
 **Resolves**: Issue #158 STEP 7.5 Codex F01 (r2/r4 oscillation), Issue #162
 
 ---

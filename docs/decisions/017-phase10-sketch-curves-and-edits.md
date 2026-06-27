@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-22
 **Status**: Proposed
-**Related**: ADR-001 (B-rep), ADR-004 (tolerance 規約), ADR-005 (Topological Naming), ADR-006 (Issue 粒度), ADR-013 (ADR 自動 accept フロー), ADR-015 (Phase 9 設計基盤)
+**Related**: ADR-001 (B-rep), ADR-004 (tolerance 規約), ADR-005 (Topological Naming), ADR-006 (Issue 粒度), ADR-013 (ADR 自動 accept フロー), ADR-015 (Phase 9 設計基盤), ADR-016 (engawa-cli 命名)
 **Resolves**: Issue #272 (Issue 本文の "ADR-016" は番号衝突 — 次の空き番号 ADR-017 を採用)
 
 ---

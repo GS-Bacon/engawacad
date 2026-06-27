@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-18
 **Status**: Proposed
-**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-007 (アセンブリ参照), ADR-010 (Sketch input model — serde default + 互換維持の先例), ADR-013 (ADR 自動 accept フロー), ADR-014 (Component RefPlane 隔離)
+**Related**: ADR-002 (ロードマップ・ラベル運用), ADR-006 (Issue 粒度), ADR-007 (アセンブリ参照), ADR-010 (Sketch input model — serde default + 互換維持の先例), ADR-013 (ADR 自動 accept フロー), ADR-014 (Component RefPlane 隔離), ADR-016 (engawa-cli 命名)
 **Resolves**: Issue #237 (parent #194 split — Phase 9 起点)
 
 ---

@@ -87,6 +87,63 @@ function hasAdrRelations(md: string): boolean {
   return false;
 }
 
+/**
+ * preamble (最初の `## ` セクション前) の `**Related**:` 行から ADR-\d+ を抽出。
+ * 行末カンマや日本語の併記 (例: `ADR-010 (Sketch input model)`) にも対応。
+ */
+export function extractRelatedAdrs(md: string): number[] {
+  const lines = md.split("\n");
+  const nums = new Set<number>();
+  for (const line of lines) {
+    if (/^##\s+/.test(line)) break;
+    if (!/(\*\*Related\*\*|^Related)\s*[::]/i.test(line)) continue;
+    const re = /ADR-(\d{3})/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line)) !== null) nums.add(parseInt(m[1], 10));
+  }
+  return [...nums].sort((a, b) => a - b);
+}
+
+/** ADR 本文全体から ADR-\d+ 引用を抽出 (preamble 含む)。自己参照は除外。 */
+export function extractBodyAdrReferences(md: string, selfAdrNumber: number | null): number[] {
+  const nums = new Set<number>();
+  const re = /ADR-(\d{3})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md)) !== null) {
+    const n = parseInt(m[1], 10);
+    if (selfAdrNumber !== null && n === selfAdrNumber) continue;
+    nums.add(n);
+  }
+  return [...nums].sort((a, b) => a - b);
+}
+
+/** ADR ファイルパス / タイトルから自身の ADR 番号を推定。検出できなければ null。 */
+export function detectSelfAdrNumber(md: string): number | null {
+  const titleMatch = md.match(/^#\s+ADR-(\d{3})/m);
+  return titleMatch ? parseInt(titleMatch[1], 10) : null;
+}
+
+/**
+ * sensitive topic キーワード。これらが本文に含まれる場合、Related 行に
+ * 最低 1 件の他 ADR 引用が必要 (Independent 単独宣言は不可)。
+ * ADR-015 amend の教訓: 形式 ADR が単独で書かれると後段で先例との矛盾を生む。
+ */
+const SENSITIVE_TOPIC_KEYWORDS = [
+  "schema_version", "MigrationHook", "migration hook",
+  "format", "互換", "compatibility", "breaking",
+  "topology", "topological naming", "feature history",
+  "boolean", "kernel", "B-rep", "brep",
+  "schema",
+];
+
+export function hasSensitiveTopic(md: string): boolean {
+  for (const kw of SENSITIVE_TOPIC_KEYWORDS) {
+    const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    if (re.test(md)) return true;
+  }
+  return false;
+}
+
 export function lintAdr(md: string): LintResult {
   const issues: LintIssue[] = [];
   const sections = splitSections(md);
@@ -129,6 +186,33 @@ export function lintAdr(md: string): LintResult {
     issues.push({
       rule: "adr_relations",
       message: "既存 ADR との関係 (Related: ADR-NNN or Independent) の明示がありません",
+    });
+  }
+
+  // 強化 1: sensitive topic (schema / format / topology / boolean 等) を扱う ADR は
+  //         Related 行に最低 1 件の他 ADR 引用が必要 (Independent 単独不可)
+  const relatedAdrs = extractRelatedAdrs(md);
+  if (hasSensitiveTopic(md) && relatedAdrs.length === 0) {
+    issues.push({
+      rule: "adr_relations_required_for_sensitive_topic",
+      message:
+        "schema / format / topology / boolean 等の sensitive topic を扱う ADR は " +
+        "Related 行に最低 1 件の既存 ADR 引用が必要 (Independent 単独宣言不可)。" +
+        "過去 ADR の先例と意味的整合を取るために必要。",
+    });
+  }
+
+  // 強化 2: 本文中で参照している ADR-NNN が Related 行で挙げられているか
+  //         (引用漏れは cross-reference の意味整合を曇らせる)
+  const selfNum = detectSelfAdrNumber(md);
+  const bodyAdrs = extractBodyAdrReferences(md, selfNum);
+  const relatedSet = new Set(relatedAdrs);
+  const orphans = bodyAdrs.filter(n => !relatedSet.has(n));
+  if (orphans.length > 0) {
+    issues.push({
+      rule: "adr_relations_body_orphan",
+      message:
+        `本文中で引用している ADR が Related 行に挙げられていません: ${orphans.map(n => `ADR-${String(n).padStart(3, "0")}`).join(", ")}`,
     });
   }
 
