@@ -114,6 +114,20 @@ RC=$?
 - `RC=0` (proceed): 続行 → L-3 へ
 - `RC=1` (stop): pause 理由を `loop-cycle-record record --pause-reason "<reason>"` で記録し、`bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind loop-stop --text "[STOP] loop paused — <reason>"` で通知してから、`loop-lock release --token $TOKEN` してから終了 (sentinel emit せず)
 
+**#284: pause で skip した Issue があれば `--pause-issue` と `--pause-category` を併用する**:
+
+```bash
+bun .claude/skills/3ailoop/scripts/loop-cycle-record.ts record \
+  --pause-reason "$REASON" \
+  --pause-issue "274,275,276" \
+  --pause-category "intent-aligned-no"
+```
+
+- `--pause-issue` は CSV (skip した Issue 番号)。ADR 番号は **入れない** (混在で偽カウントになる)
+- `--pause-category` は kebab-case の英数文字列 (例: `intent-aligned-no` / `codex-usage-limit` / `adr-not-finalized` / `scope-cut-error`)
+- 各 Issue × Category で連続 3 回到達したとき `needs-human` 自動付与 + コメント投稿 (pause-streak tracker)
+- Issue が close (= 前進) すると、その Issue の全 category streak は record 内で自動リセットされる
+
 ### L-3: バッチ選定 (loop モード)
 
 ```bash
@@ -260,6 +274,12 @@ for ic in features/*/intent-check.yaml; do
 done
 ```
 
+**#284 補足**: `loop-intent-guard.ts` は intent-check.yaml が **生成された** ケース専用カウンタ。
+ADR 滞留など intent-check 自体に到達しない pause は L-2 stop / L-3 batch pick で skip されるため、
+intent-guard は inc されない。同等の状況を捕捉する経路として **L-2 stop 時に `loop-cycle-record record`
+で `--pause-issue` + `--pause-category` を渡す** ことで `pause-streak tracker` が連続検出する
+(両者は並行運用)。
+
 ### L-6: Dashboard 更新
 
 ```bash
@@ -345,6 +365,7 @@ memory `project-3ailoop-known-races` に詳細。loop-lock の stale takeover ra
 - `loop-token-meter.ts` (#171) — token 閾値 (累積 100M / 24h 5M)
 - `loop-decision-log.ts` (#171) — 重要判断の時系列追記
 - `loop-failure-tracker.ts` (#172) — 連続失敗 N=3 で needs-human
+- `loop-pause-streak-tracker.ts` (#284) — Issue × Category 2 軸の連続 pause カウンタ。L-5 の `loop-cycle-record record --pause-issue --pause-category` から呼ばれ N=3 で needs-human
 - `loop-adr-pause-detector.ts` (#172, #190) — 新規 ADR で gate:adr-review、`--auto-accept` で review chain 連動
 - `loop-adr-decision-matrix-lint.ts` (#191, ADR-013) — ADR draft の必須セクションを機械 lint
 - `loop-adr-auto-accept.ts` (#190, ADR-013) — Decision Matrix lint + Multi-LLM Review + auto-accept フロー本体

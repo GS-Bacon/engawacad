@@ -928,6 +928,9 @@ fn ci() -> ExitCode {
             "./.claude/skills/3ailoop/scripts/loop-adr-pause-detector.test.ts",
             "./.claude/skills/3ailoop/scripts/loop-adr-decision-matrix-lint.test.ts",
             "./.claude/skills/3ailoop/scripts/loop-adr-auto-accept.test.ts",
+            // #284: pause-streak tracker と cycle-record の same-state pause 検出を回帰スイートへ。
+            "./.claude/skills/3ailoop/scripts/loop-pause-streak-tracker.test.ts",
+            "./.claude/skills/3ailoop/scripts/loop-cycle-record.test.ts",
         ])
         .current_dir(workspace_root())
         .status()

@@ -204,7 +204,53 @@ async function bumpFailureToNeedsHuman(issue: number): Promise<void> {
   }
 }
 
-async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): Promise<void> {
+/** #284 欠陥 B: pause した呼び元が指定した Issue × Category について、
+ *  loop-pause-streak-tracker.ts inc を呼ぶ。閾値到達時は tracker 内部で
+ *  needs-human ラベル付与 + コメント投稿が走る (gh edit / gh comment)。
+ *  各 issue について 1 回ずつ呼ぶ (tracker 側 inc は副作用込みのため再呼び不要)。 */
+async function bumpPauseStreak(
+  issues: number[],
+  category: string,
+  reason: string | undefined,
+): Promise<void> {
+  for (const issue of issues) {
+    const args = [
+      ".claude/skills/3ailoop/scripts/loop-pause-streak-tracker.ts",
+      "inc",
+      "--issue", String(issue),
+      "--category", category,
+    ];
+    if (reason) args.push("--reason", reason);
+    const r = await runChecked(["bun", ...args], { allowFailure: true });
+    if (r.exitCode !== 0) {
+      process.stderr.write(`WARN: pause-streak inc #${issue} category=${category} exit=${r.exitCode}: ${r.stderr.trim().slice(0, 200)}\n`);
+    }
+  }
+}
+
+/** #284: Issue が前進した瞬間 (closed) に、その Issue の全 Category streak を一掃する。
+ *  これがないと「pause→close→再 open→pause」のサイクルで偽の連続検出になる。 */
+async function resetPauseStreaksForClosed(closed: number[]): Promise<void> {
+  for (const issue of closed) {
+    const r = await runChecked(
+      [
+        "bun", ".claude/skills/3ailoop/scripts/loop-pause-streak-tracker.ts",
+        "reset-all", "--issue", String(issue),
+      ],
+      { allowFailure: true },
+    );
+    if (r.exitCode !== 0) {
+      process.stderr.write(`WARN: pause-streak reset-all #${issue} exit=${r.exitCode}: ${r.stderr.trim().slice(0, 200)}\n`);
+    }
+  }
+}
+
+async function recordCycle(opts: {
+  startedAt?: string;
+  pauseReason?: string;
+  pauseIssues?: number[];
+  pauseCategory?: string;
+}): Promise<void> {
   // Fetch GH/git data outside the lock — these are slow I/O on read-only sources,
   // safe to run without serialization. We re-read state.json under the lock before
   // merge to pick up any concurrent updates (e.g. token-meter updating cumulative).
@@ -282,6 +328,19 @@ async function recordCycle(opts: { startedAt?: string; pauseReason?: string }): 
     await bumpFailureToNeedsHuman(sameStateIssue);
   }
 
+  // #284 欠陥 B: pause で skip された Issue 一覧 × カテゴリで streak を inc。
+  // 既存 #229 hash 抽出は ADR 番号と実 Issue の取り違えに弱いので、
+  // 呼び元 (/3ailoop の L-5) が明示的に渡してきたものを正規ルートとして扱う。
+  if (opts.pauseIssues && opts.pauseIssues.length > 0 && opts.pauseCategory) {
+    await bumpPauseStreak(opts.pauseIssues, opts.pauseCategory, opts.pauseReason);
+  }
+
+  // #284: closed[] の Issue は前進した = 過去の連続 pause は意味を失う。
+  // 各 Issue の全 category streak をリセット。
+  if (closed.length > 0) {
+    await resetPauseStreaksForClosed(closed);
+  }
+
   // Append-only journal (#177 指摘 2): state.json 破損時の復旧用
   try {
     mkdirSync(dirname(JOURNAL_PATH), { recursive: true });
@@ -301,7 +360,18 @@ if (import.meta.main) {
   }
 
   if (cmd === "record") {
-    await recordCycle({ startedAt: arg("--started-at"), pauseReason: arg("--pause-reason") });
+    // #284: --pause-issue は CSV (例: "274,275,276")。pauseCategory と組み合わせて
+    // pause-streak tracker を inc する。両方そろっていないと streak は更新しない。
+    const pauseIssuesCsv = arg("--pause-issue");
+    const pauseIssues = pauseIssuesCsv
+      ? pauseIssuesCsv.split(",").map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0)
+      : undefined;
+    await recordCycle({
+      startedAt: arg("--started-at"),
+      pauseReason: arg("--pause-reason"),
+      pauseIssues,
+      pauseCategory: arg("--pause-category"),
+    });
   } else if (cmd === "show") {
     const state = readState();
     console.log(JSON.stringify(state, null, 2));
