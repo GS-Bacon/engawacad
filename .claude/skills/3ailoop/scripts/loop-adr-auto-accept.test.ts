@@ -10,6 +10,9 @@ let adrDir: string;
 
 const GOOD_ADR = [
   "# ADR-X: テスト用",
+  "",
+  "**Related**: ADR-001",
+  "",
   "## Decision",
   "- A. opt1",
   "- B. opt2",
@@ -22,7 +25,6 @@ const GOOD_ADR = [
   "### (c) opt3 详细",
   "## Consequences",
   "採用前提崩壊 trigger: foo が観測されたら見直し",
-  "Related: ADR-001",
 ].join("\n");
 
 const BAD_ADR = [
@@ -95,7 +97,8 @@ describe("loop-adr-auto-accept", () => {
       adrPath: path,
       issueNum: 99995,
       dryRun: true,
-      estimatedReviewTokens: 300_000,
+      // TOKEN_CAP=350k なので、cross-ref 加算 (8k) + 予約 400k で確実に超過
+      estimatedReviewTokens: 400_000,
     });
     expect(r.kind).toBe("retired");
     if (r.kind === "retired") expect(r.reason).toBe("token_cap");

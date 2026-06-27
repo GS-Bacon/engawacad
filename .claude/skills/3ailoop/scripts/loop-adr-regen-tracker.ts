@@ -3,7 +3,7 @@
 //
 // 各 ADR ごとに「再生成回数」「累積 token」を永続化し、
 //   - 再生成 3 回越え
-//   - 累積 token 200k 越え
+//   - 累積 token 350k 越え (元 200k、cross-ref + refute overrider 追加で引き上げ)
 // のいずれかで該当 ADR Issue を gate:adr-review 削除 + needs-human 付与に切り替える。
 //
 // 使い方 (CLI):
@@ -21,7 +21,9 @@ import { dirname } from "path";
 
 const ROOT = "features/.loop/adr-regen-count";
 export const REGEN_CAP = 3;
-export const TOKEN_CAP = 200_000;
+// 元値 200_000。歪み #2 修正で cross-ref check (+5-10k) と refute overrider (+30-50k) を
+// auto-accept フローに追加したため、ADR draft 1 件あたりの実用 token 上限を 350_000 に引き上げ。
+export const TOKEN_CAP = 350_000;
 
 export type AdrTrackerState = {
   adr: string;

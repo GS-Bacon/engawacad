@@ -28,6 +28,8 @@ import { addTokens, incRegen, retire } from "./loop-adr-regen-tracker";
 import { runChecked } from "./loop-spawn-checked.ts";
 import { detectCodexUsageLimit } from "../../3ai/scripts/dispatch-codex.ts";
 import { runGlmViaZAI } from "../../3ai/scripts/glm-via-zai.ts";
+import { crossRefCheck, type CrossRefCheckResult } from "./loop-adr-cross-ref-check.ts";
+import { overrideRefutes, type RefuteOverrideResult } from "./loop-adr-refute-overrider.ts";
 
 const PERSONAS = [
   {
@@ -204,8 +206,8 @@ async function runPersonaReviewViaGlm(
 }
 
 export type AutoAcceptOutcome =
-  | { kind: "accepted"; verdicts: PersonaVerdict[] }
-  | { kind: "regen_required"; reason: "lint" | "review"; details: string[]; regen_count: number }
+  | { kind: "accepted"; verdicts: PersonaVerdict[]; refute_override?: RefuteOverrideResult }
+  | { kind: "regen_required"; reason: "lint" | "cross_ref" | "review"; details: string[]; regen_count: number }
   | { kind: "retired"; reason: "regen_cap" | "token_cap"; regen_count: number; token_used: number };
 
 export type AutoAcceptOpts = {
@@ -221,6 +223,15 @@ export async function autoAccept(opts: AutoAcceptOpts): Promise<AutoAcceptOutcom
   const outDir = opts.outDir ?? `features/.loop/adr-review/${slug}`;
   const adrText = readFileSync(opts.adrPath, "utf-8");
 
+  // mock 経路 (review を mock 化している場合) では cross-ref と refute overrider も
+  // 実 LLM 呼び出しをせずに dry-run 動作 (cross-ref=aligned, override=keep-all) で進める。
+  const isReviewMocked = !!(
+    process.env.ADR_AUTOACCEPT_MOCK ||
+    process.env.ADR_AUTOACCEPT_MOCK_CODEX ||
+    process.env.CODEX_DRY_RUN
+  );
+  const subDryRun = opts.dryRun || isReviewMocked;
+
   // Step 1: Decision Matrix lint
   const lintResult = lintAdr(adrText);
   if (!lintResult.ok) {
@@ -233,6 +244,31 @@ export async function autoAccept(opts: AutoAcceptOpts): Promise<AutoAcceptOutcom
       kind: "regen_required",
       reason: "lint",
       details: lintResult.issues.map(i => `[${i.rule}] ${i.message}`),
+      regen_count: inc.state.regen_count,
+    };
+  }
+
+  // Step 1.5: Cross-ADR 意味整合 precheck (歪み #2 修正)
+  //   draft が触れる領域で「引用すべき過去 ADR」「矛盾する既存 ADR」を LLM で点検し、
+  //   不整合があれば draft 改善要求として regen ルートに回す。
+  //   LLM 1 呼び出し (Codex → GLM fallback) で軽量 (5-10k token 想定)。
+  const crossRef = await crossRefCheck({ adrPath: opts.adrPath, outDir, dryRun: subDryRun });
+  if (!crossRef.aligned) {
+    // 予算消費を簡易に計上 (Codex 1 呼び出し 推定 8k)
+    addTokens(slug, 8_000);
+    const inc = incRegen(slug);
+    if (inc.capped) {
+      if (!opts.dryRun) await retire(slug, opts.issueNum, "regen_cap");
+      return { kind: "retired", reason: "regen_cap", regen_count: inc.state.regen_count, token_used: inc.state.token_used };
+    }
+    const details: string[] = [];
+    for (const m of crossRef.missing_refs) details.push(`[missing_ref] ${m}`);
+    for (const c of crossRef.conflicts) details.push(`[conflict] ${c}`);
+    for (const s of crossRef.suggestions) details.push(`[suggest] ${s}`);
+    return {
+      kind: "regen_required",
+      reason: "cross_ref",
+      details,
       regen_count: inc.state.regen_count,
     };
   }
@@ -269,16 +305,38 @@ export async function autoAccept(opts: AutoAcceptOpts): Promise<AutoAcceptOutcom
   }, null, 2), "utf-8");
 
   const refuted = verdicts.filter(v => !v.approved);
+
+  // Step 3.5: refute overrider (歪み #2 修正の第 2 弾)
+  //   refute が出た場合、各 refute を「真の矛盾 (keep)」「字義解釈 (override)」で判定し、
+  //   全て override 可能なら accept ルートへ昇格させる。
+  //   refute 1 件あたり LLM 1 呼び出し (Codex → GLM fallback)、推定 15k token/件。
+  let refuteOverride: RefuteOverrideResult | undefined;
   if (refuted.length > 0) {
+    addTokens(slug, 15_000 * refuted.length);
+    refuteOverride = await overrideRefutes({
+      adrPath: opts.adrPath,
+      refutes: refuted,
+      outDir,
+      dryRun: subDryRun,
+    });
+  }
+
+  if (refuted.length > 0 && !refuteOverride?.all_overridable) {
     const inc = incRegen(slug);
     if (inc.capped) {
       await retire(slug, opts.issueNum, "regen_cap");
       return { kind: "retired", reason: "regen_cap", regen_count: inc.state.regen_count, token_used: inc.state.token_used };
     }
+    const details = refuted.map(v => `${v.persona}: refuted (${v.raw_excerpt.slice(0, 80)}...)`);
+    if (refuteOverride) {
+      for (const j of refuteOverride.judgements) {
+        if (j.keep_refute) details.push(`${j.persona}: refute judged as 真の矛盾 — ${j.reasoning.slice(0, 100)}`);
+      }
+    }
     return {
       kind: "regen_required",
       reason: "review",
-      details: refuted.map(v => `${v.persona}: refuted (${v.raw_excerpt.slice(0, 80)}...)`),
+      details,
       regen_count: inc.state.regen_count,
     };
   }
@@ -286,8 +344,11 @@ export async function autoAccept(opts: AutoAcceptOpts): Promise<AutoAcceptOutcom
   // Step 4: auto-accept (gate ラベル削除 + Issue close)
   await runGh(["issue", "edit", String(opts.issueNum), "--remove-label", "gate:adr-review"]);
   const reviewer = fallbackUsed ? "GLM (Codex usage limit fallback, #251)" : "Codex";
-  await runGh(["issue", "close", String(opts.issueNum), "--comment", `auto-accepted by ADR-013 flow (3 ${reviewer} personas approved)`]);
-  return { kind: "accepted", verdicts };
+  const overrideNote = refuteOverride && refuteOverride.judgements.length > 0
+    ? ` + ${refuteOverride.judgements.length} refute overridden as 字義解釈 (reviewer=${refuteOverride.reviewer})`
+    : "";
+  await runGh(["issue", "close", String(opts.issueNum), "--comment", `auto-accepted by ADR-013 flow (3 ${reviewer} personas approved${overrideNote})`]);
+  return { kind: "accepted", verdicts, refute_override: refuteOverride };
 }
 
 if (import.meta.main) {

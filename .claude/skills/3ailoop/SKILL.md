@@ -194,12 +194,14 @@ echo "$ADR_JSON"
 
 `--auto-accept` モードでは各 ADR について `loop-adr-auto-accept.ts` を呼び出し、以下を実施:
 
-1. **Decision Matrix lint** (`loop-adr-decision-matrix-lint.ts`) — Options A/B/C / Trade-off / 採用前提崩壊 trigger / 既存 ADR 関係を機械判定
-2. **Multi-LLM Adversarial Review** — Codex を architect / contrarian / migration の 3 ペルソナで並列実行、refute デフォルト
-3. **暴走防止 cap** (`loop-adr-regen-tracker.ts`) — 再生成 3 回越え or 1 ADR 200k token 越えで `needs-human` 退避
+1. **Decision Matrix lint** (`loop-adr-decision-matrix-lint.ts`) — Options A/B/C / Trade-off / 採用前提崩壊 trigger / 既存 ADR 関係を機械判定。歪み #2 修正で **sensitive topic + orphan check** を追加 (schema/format/topology/boolean を扱う ADR は Related 行に他 ADR 引用必須、本文中の ADR-NNN は Related 行に挙げる)
+2. **Cross-ADR 意味整合 precheck** (`loop-adr-cross-ref-check.ts`, 歪み #2 第 1 弾) — LLM 1 呼び出し (Codex → GLM fallback) で「引用すべき過去 accepted ADR」「矛盾する既存 ADR」「ROADMAP 将来 Phase 構想との整合」を点検、misaligned なら missing_refs/conflicts/suggestions を regen にフィードバック
+3. **Multi-LLM Adversarial Review** — Codex を architect / contrarian / migration の 3 ペルソナで並列実行、refute デフォルト
+4. **Refute overrider** (`loop-adr-refute-overrider.ts`, 歪み #2 第 2 弾) — refute が出た場合のみ起動。各 refute を「真の矛盾 (keep)」「字義解釈 (override)」で 1 LLM judge。全 refute override 可能なら accept ルート昇格、1 つでも keep なら regen 維持
+5. **暴走防止 cap** (`loop-adr-regen-tracker.ts`) — 再生成 3 回越え or 1 ADR 350k token 越えで `needs-human` 退避 (元 200k、cross-ref + overrider 追加で引き上げ)
 
-3 ペルソナ全員 approved なら `gate:adr-review` を削除して Issue を close (auto-accept)。
-1 ペルソナでも refute なら regen_required (呼び元 = 次サイクルの /3ai が draft 再生成)。
+3 ペルソナ全員 approved (または全 refute が override 可) なら `gate:adr-review` を削除して Issue を close (auto-accept)。
+cross-ref misaligned / 1 ペルソナでも keep_refute なら regen_required (呼び元 = 次サイクルの /3ai が draft 再生成)。
 cap 越えなら `gate:adr-review` 削除 + `needs-human` 付与 で loop は他 Issue に進む。
 
 旧運用 (手動 gate:adr-review pause) に戻すには `--auto-accept` を外す。fallback として gate ラベルと
