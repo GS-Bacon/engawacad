@@ -36,8 +36,13 @@ import {
 import { dirname, join } from "path";
 import { randomBytes } from "crypto";
 
-const LOCK_DIR = "features/.batch/lock";
-const META_PATH = join(LOCK_DIR, "meta.json");
+// LOCK_DIR / META_PATH は関数経由で参照する (テスト用に env LOOP_LOCK_DIR で override 可能)。
+function getLockDir(): string {
+  return process.env.LOOP_LOCK_DIR ?? "features/.batch/lock";
+}
+function getMetaPath(): string {
+  return join(getLockDir(), "meta.json");
+}
 const STALE_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12h: 通常 lock の最大保持
 const DIR_MTIME_STALE_MS = 5 * 60 * 1000; // 5min: meta 不在 / 破損時の dir 回収
 
@@ -62,17 +67,19 @@ function isValidIsoTimestamp(s: unknown): s is string {
 }
 
 function atomicWriteMeta(meta: LockMeta): void {
-  mkdirSync(dirname(META_PATH), { recursive: true });
-  const tmpPath = `${META_PATH}.tmp.${process.pid}.${Date.now()}`;
+  const metaPath = getMetaPath();
+  mkdirSync(dirname(metaPath), { recursive: true });
+  const tmpPath = `${metaPath}.tmp.${process.pid}.${Date.now()}`;
   writeFileSync(tmpPath, JSON.stringify(meta, null, 2), "utf-8");
-  renameSync(tmpPath, META_PATH);
+  renameSync(tmpPath, metaPath);
 }
 
 /** 値域厳格検証付き readMeta。不合格なら null。 */
 function readMeta(): LockMeta | null {
-  if (!existsSync(META_PATH)) return null;
+  const metaPath = getMetaPath();
+  if (!existsSync(metaPath)) return null;
   try {
-    const text = readFileSync(META_PATH, "utf-8");
+    const text = readFileSync(metaPath, "utf-8");
     const obj = JSON.parse(text) as Partial<LockMeta>;
     if (typeof obj.token !== "string" || !/^[0-9a-f]{32}$/.test(obj.token)) return null;
     if (obj.owner !== "loop" && obj.owner !== "intake") return null;
@@ -82,6 +89,41 @@ function readMeta(): LockMeta | null {
     return obj as LockMeta;
   } catch {
     return null;
+  }
+}
+
+/**
+ * pid liveness check (#282). meta.pid を `kill(pid, 0)` で存在確認し、ESRCH なら dead 判定。
+ * 12h TTL より先に呼ぶことで、cycle 完了直後に lock owner プロセスが死んだケースを早期 takeover する。
+ *
+ * - 戻り値 dead: true → caller は lock を rm + takeover
+ * - dead: false の sub-case:
+ *   - "alive": kill(0) 成功 = プロセス生存
+ *   - "EPERM": プロセス存在するが別 user 所有 → 保守判定で alive 扱い (誤 takeover しない方向に倒す)
+ *   - "no pid": meta.pid が number でない (legacy meta) → alive 扱い (TTL に任せる)
+ *   - "unknown errno": その他 errno → alive 扱い
+ *
+ * pid recycling (kernel が同 pid を新規 process に再割り当て) は本 check では検出不可。
+ * Linux で 4M pid 周期、12h TTL safety net で受容 (project_3ailoop_known_races)。
+ */
+function isOwnerDead(meta: LockMeta): { dead: boolean; reason: string } {
+  if (typeof meta.pid !== "number" || !Number.isFinite(meta.pid)) {
+    return { dead: false, reason: "no pid" };
+  }
+  try {
+    process.kill(meta.pid, 0);
+    return { dead: false, reason: "alive" };
+  } catch (e: unknown) {
+    // Node は SystemError.code に "ESRCH" / "EPERM" を入れるが、Bun は errno 数値のみ。
+    // 両方を見るため code と errno 双方で判定する (Linux errno: ESRCH=3, EPERM=1)。
+    const err = e as NodeJS.ErrnoException & { errno?: number };
+    const code = err.code;
+    const errno = err.errno;
+    const isESRCH = code === "ESRCH" || errno === 3;
+    const isEPERM = code === "EPERM" || errno === 1;
+    if (isESRCH) return { dead: true, reason: `ESRCH pid=${meta.pid}` };
+    if (isEPERM) return { dead: false, reason: `EPERM pid=${meta.pid}` };
+    return { dead: false, reason: `unknown errno code=${code ?? "?"} errno=${errno ?? "?"}` };
   }
 }
 
@@ -99,7 +141,7 @@ function isStaleByMeta(meta: LockMeta): { stale: boolean; reason: string } {
 /** meta.json が読めないとき、LOCK_DIR の mtime で stale 判定 (dir 生成のみで死んだケースの復旧)。 */
 function isStaleByDirMtime(): { stale: boolean; reason: string } {
   try {
-    const stat = statSync(LOCK_DIR);
+    const stat = statSync(getLockDir());
     const ageMs = Date.now() - stat.mtimeMs;
     if (ageMs > DIR_MTIME_STALE_MS) {
       const ageMin = (ageMs / 60000).toFixed(1);
@@ -115,9 +157,10 @@ function isStaleByDirMtime(): { stale: boolean; reason: string } {
 }
 
 function tryAcquireDir(): "created" | "exists" {
-  mkdirSync(dirname(LOCK_DIR), { recursive: true });
+  const lockDir = getLockDir();
+  mkdirSync(dirname(lockDir), { recursive: true });
   try {
-    mkdirSync(LOCK_DIR, { recursive: false });
+    mkdirSync(lockDir, { recursive: false });
     return "created";
   } catch (e: unknown) {
     const code = (e as NodeJS.ErrnoException).code;
@@ -141,7 +184,7 @@ export function acquireLock(owner: Owner): AcquireResult {
       // meta.json 不在 / 破損 → dir mtime で短期 stale 判定
       const dirStale = isStaleByDirMtime();
       if (dirStale.stale) {
-        rmSync(LOCK_DIR, { recursive: true, force: true });
+        rmSync(getLockDir(), { recursive: true, force: true });
         return acquireLock(owner); // 再試行 (1 段の再帰、新規 mkdir パスへ)
       }
       return {
@@ -149,14 +192,21 @@ export function acquireLock(owner: Owner): AcquireResult {
         reason: `lock dir exists but meta.json missing/invalid; ${dirStale.reason} (will auto-reclaim after ${DIR_MTIME_STALE_MS / 60000}min). Use 'release --force' to override.`,
       };
     }
+    // 1. pid liveness check (#282): TTL より先に dead owner を回収する。
+    const dead = isOwnerDead(meta);
+    if (dead.dead) {
+      rmSync(getLockDir(), { recursive: true, force: true });
+      return acquireLock(owner);
+    }
+    // 2. 12h TTL (pid recycling 防御 + 強制 release 漏れ復旧の safety net)
     const { stale, reason } = isStaleByMeta(meta);
     if (stale) {
-      rmSync(LOCK_DIR, { recursive: true, force: true });
+      rmSync(getLockDir(), { recursive: true, force: true });
       return acquireLock(owner);
     }
     return {
       ok: false,
-      reason: `lock held by owner=${meta.owner} token=${meta.token.slice(0, 8)}... since ${meta.acquired_at}`,
+      reason: `lock held by owner=${meta.owner} pid=${meta.pid} (${dead.reason}) token=${meta.token.slice(0, 8)}... since ${meta.acquired_at}`,
     };
   }
 
@@ -178,11 +228,12 @@ export interface SimpleResult {
 }
 
 export function releaseLock(token: string, force = false): SimpleResult {
-  if (!existsSync(LOCK_DIR)) {
+  const lockDir = getLockDir();
+  if (!existsSync(lockDir)) {
     return { ok: true, reason: "no lock to release" };
   }
   if (force) {
-    rmSync(LOCK_DIR, { recursive: true, force: true });
+    rmSync(lockDir, { recursive: true, force: true });
     return { ok: true, reason: "force released" };
   }
   const meta = readMeta();
@@ -192,7 +243,7 @@ export function releaseLock(token: string, force = false): SimpleResult {
   if (meta.token !== token) {
     return { ok: false, reason: `token mismatch (held by ${meta.token.slice(0, 8)}...)` };
   }
-  rmSync(LOCK_DIR, { recursive: true, force: true });
+  rmSync(lockDir, { recursive: true, force: true });
   return { ok: true, reason: "released" };
 }
 
