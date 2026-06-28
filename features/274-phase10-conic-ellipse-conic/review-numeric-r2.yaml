@@ -1,0 +1,10 @@
+issues:
+  - id: NU01
+    severity: medium
+    section: "設計方針 > 数値モデル"
+    finding: "Conic の M 固有値計算で、λ1 と λ2 の magnitudes が著しく異なる場合 (λ1 >> λ2 または λ2 >> λ1) の数値安定性が未定義。対称行列の固有値計算は数値安定であるが、|λ1| >> |λ2| のケースで F' からの a/b 算出 (`sqrt(-F' / λi)`) で cancellation が生じる可能性がある"
+    suggestion: "「数値モデル」セクションに「固有値計算は対称行列の Jacobi 法で数値安定 (|λ1| >> |λ2| での cancellation は Phase 11+ で評価、本 Issue では base_segments*2 の固定サンプリングで mask)」を補足すること"
+
+verdict: pass
+# pass = Critical または High が 1 件以上ある場合のみ fail
+# medium 1 件のみなので pass

@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 257
+    finding: "Conic の双曲線分岐が `fp.abs()/lambda.abs()` と固定の `(cosh, sinh)` 軸で 1 分枝を作っており、`F' > 0` になる平行移動済み双曲線を正しく扱えていません。例えば `(x-2)^2 - y^2 = 1` を `F=-1` 正規化した係数では、生成点が元の conic 方程式を満たさず、宣言された 5 自由度 Conic の tessellation が一部入力で破綻します。"
+    suggestion: "双曲線は `F'` と固有値の符号で開く軸を決め、必要なら `cosh` を `e2` 側に載せ替える実装に修正してください。少なくとも平行移動済み hyperbola の回帰テストを 1 件追加してください。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 389
+    finding: "`SketchElement` の legacy `Line` fallback が無条件なので、`schema_version: 2` なのに `kind` が無い要素や、未知/typo の `kind` を持つ要素でも `id/from/to` があれば `Line` として読めてしまいます。これでは ADR-017 の v1→v2 migration 境界が効かず、不正な tagged データを静かに別形状へ読み替える誤読が起きます。"
+    suggestion: "`kind` キーが存在しない場合だけ legacy fallback を許可し、しかもそれを v1 migration 経路に限定してください。`schema_version` を見られない `SketchElement::deserialize` ではなく、`Document` 側の migration pre-pass で legacy line を変換する形に寄せるのが安全です。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-build/tests/examples_smoke.rs"
+    line_hint: 186
+    finding: "追加された `ellipse_conic` smoke は `examples/ellipse_conic.engawa` の `create_sketch` だけを読むため、`build_bodies_from_features` が新規の Ellipse/Conic tessellation 経路に一度も入りません。テスト名と計画上の `T_SMOKE_examples` に対して、実際には parse-only に近く、今回の実装本体を保護できていません。"
+    suggestion: "smoke 用 fixture を body-producing な履歴にして `tessellate_sketch_element` まで到達させるか、少なくとも Ellipse/Conic を含む extrusion の build 回帰テストを別途追加してください。"
+
+verdict: fail

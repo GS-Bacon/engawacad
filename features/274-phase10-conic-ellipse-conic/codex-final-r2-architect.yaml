@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 257
+    finding: "双曲線分岐が `fp.abs()/lambda.abs()` と固定 `(a cosh t, b sinh t)` を使っており、平行移動で `F' > 0` になる valid hyperbola の主軸符号を失う。例えば `coeffs=[-1/3,0,1/3,4/3,0]`（`(x-2)^2-y^2=1` を `F=-1` 正規化）では生成点が元の conic 方程式を満たさない。"
+    suggestion: "canonical form の符号を保持したまま、`lambda_i` と `F'` の符号から `cosh` を載せる主軸を決めて分枝を組み立てる。少なくとも平行移動付き双曲線の回帰テストを追加し、全サンプル点が `A x^2 + B xy + C y^2 + D x + E y - 1 = 0` を満たすことを検証する。"
+
+verdict: fail

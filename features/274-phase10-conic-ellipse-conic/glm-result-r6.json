@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": true,
+  "failed_reason": "cargo xtask ci failed — see features/274-phase10-conic-ellipse-conic/ci.log",
+  "error_pattern": "test sketch_circle_on_face ... FAILED",
+  "error_pattern_kind": "test"
+}

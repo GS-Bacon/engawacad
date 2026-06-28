@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "In-Scope / Out-of-Scope"
+    finding: "Out-of-Scope に「Circle / Arc — Issue #273 (closed)」が記載されているが、これは既に完了した過去 Issue であり「本 Issue のスコープ外」という意味で記載するのは混乱を招く"
+    suggestion: "過去 Issue は Out-of-Scope から削除し、In-Scope に「前提 Issue #273 (closed)」として明示するか、単に削除する"
+
+verdict: pass

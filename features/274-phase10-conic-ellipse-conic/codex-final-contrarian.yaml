@@ -1,0 +1,20 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 79
+    finding: "Ellipse/Conic の新規分岐が派生値の有限性を検証しておらず、`center=[NaN,0]` の楕円や `coeffs=[-1,0,-1,0,0]` の実点を持たない conic でも `Ok(Vec<[f64;2]>)` を返して NaN 点列を downstream に流します。退化入力を `DegenerateSketchElement` で止める設計と矛盾します。"
+    suggestion: "center の有限性に加え、Conic の `det`/`fp`/`lambda`/`semi_a`/`semi_b` が有限かつ実数域にあることをサンプリング前に検証し、実点を持たない場合は fail-fast してください。"
+  - id: F02
+    severity: high
+    file: "examples/ellipse_conic.engawa"
+    line_hint: 1
+    finding: "新しい `kind: ellipse` / `kind: conic` を使うサンプルがまだ `schema_version: 1` を名乗っており、`CURRENT_SCHEMA_VERSION` も 1 のままです。wire-format を拡張したのに version gate が無いので、旧 reader には unknown kind で落ちる文書を v1 互換と誤宣言します。"
+    suggestion: "`CURRENT_SCHEMA_VERSION` を 2 に上げ、v1 の line-only profile を v2 `SketchElement::Line` へ移行する migration hook と受け入れテストを同じ変更に含めてください。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 553
+    finding: "`validate_profile_closed` は依然として all-Line ケースしか閉路検証していないため、今回追加した `Conic`/`Ellipse` は自己閉路かどうかを見ないまま `CreateSketch.profile` に通ります。とくに双曲線 conic は開曲線なのに `Extrude` 経路では全要素を 1 本の polygon に flat-map するため、利用時に generic `profile` error か不正形状に化けます。"
+    suggestion: "非 Line 要素も tessellate 後に閉路/単一ループを検証するか、少なくとも開曲線 conic を `profile` から弾いて `Extrude`/`ExtrudeCut` に流さないようにしてください。"
+verdict: fail

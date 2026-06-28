@@ -1,0 +1,49 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 257
+    finding: "双曲線分岐が `fp.abs()/lambda.abs()` と固定 `(a cosh t, b sinh t)` を使っており、平行移動で `F' > 0` になる valid hyperbola の主軸符号を失う。例えば `coeffs=[-1/3,0,1/3,4/3,0]`（`(x-2)^2-y^2=1` を `F=-1` 正規化）では生成点が元の conic 方程式を満たさない。"
+    suggestion: "canonical form の符号を保持したまま、`lambda_i` と `F'` の符号から `cosh` を載せる主軸を決めて分枝を組み立てる。少なくとも平行移動付き双曲線の回帰テストを追加し、全サンプル点が `A x^2 + B xy + C y^2 + D x + E y - 1 = 0` を満たすことを検証する。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 257
+    finding: "Conic の双曲線分岐が `fp.abs()/lambda.abs()` と固定の `(cosh, sinh)` 軸で 1 分枝を作っており、`F' > 0` になる平行移動済み双曲線を正しく扱えていません。例えば `(x-2)^2 - y^2 = 1` を `F=-1` 正規化した係数では、生成点が元の conic 方程式を満たさず、宣言された 5 自由度 Conic の tessellation が一部入力で破綻します。"
+    suggestion: "双曲線は `F'` と固有値の符号で開く軸を決め、必要なら `cosh` を `e2` 側に載せ替える実装に修正してください。少なくとも平行移動済み hyperbola の回帰テストを 1 件追加してください。"
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 389
+    finding: "`SketchElement` の legacy `Line` fallback が無条件なので、`schema_version: 2` なのに `kind` が無い要素や、未知/typo の `kind` を持つ要素でも `id/from/to` があれば `Line` として読めてしまいます。これでは ADR-017 の v1→v2 migration 境界が効かず、不正な tagged データを静かに別形状へ読み替える誤読が起きます。"
+    suggestion: "`kind` キーが存在しない場合だけ legacy fallback を許可し、しかもそれを v1 migration 経路に限定してください。`schema_version` を見られない `SketchElement::deserialize` ではなく、`Document` 側の migration pre-pass で legacy line を変換する形に寄せるのが安全です。"
+  - id: C-F03
+    severity: medium
+    file: "crates/engawa-build/tests/examples_smoke.rs"
+    line_hint: 186
+    finding: "追加された `ellipse_conic` smoke は `examples/ellipse_conic.engawa` の `create_sketch` だけを読むため、`build_bodies_from_features` が新規の Ellipse/Conic tessellation 経路に一度も入りません。テスト名と計画上の `T_SMOKE_examples` に対して、実際には parse-only に近く、今回の実装本体を保護できていません。"
+    suggestion: "smoke 用 fixture を body-producing な履歴にして `tessellate_sketch_element` まで到達させるか、少なくとも Ellipse/Conic を含む extrusion の build 回帰テストを別途追加してください。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 254
+    finding: "`discriminant > 0` 分岐が `fp` の符号を潰して常に `X=a cosh t, Y=b sinh t` を使うため、実軸が `lambda2` 側に出る双曲線で誤った点列を返します。たとえば `coeffs=[1,0,-1,0,4]`（`(y-2)^2 - x^2 = 3`）は有効な conic ですが、現行実装の生成点は方程式 residual が一定で 0 にならず、曲線上に乗りません。"
+    suggestion: "`abs()` で正規化せず `fp / lambda_i` の符号で実軸を決め、`cosh` を置く軸を切り替えてください。少なくとも `D/E != 0` の双曲線回帰テストを追加するべきです。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 389
+    finding: "`SketchElement::deserialize` の legacy Line fallback が無条件のままなので、`schema_version: 2` の文書でも `kind:` なしの旧 Line 表現をそのまま受理します。これでは v1→v2 migration hook が唯一の互換経路にならず、壊れた v2 YAML を fail-fast できません。"
+    suggestion: "legacy Line の持ち上げは `schema_version == 1` の migration 経路に限定し、v2 文書で `kind:` が無い要素は schema error にしてください。"
+  - id: M-F03
+    severity: high
+    file: "crates/engawa-kernel/tests/ellipse_conic_acceptance.rs"
+    line_hint: 7
+    finding: "合意済みの T01〜T_GOLDEN acceptance テストがまだ全件 `#[ignore]` + `todo!()` のままで、stdin の `KNOWN IGNORED TESTS` にある決定性・golden ケースが CI に入っていません。inline unit test は追加されていますが、公開 YAML と build 経路を通す受け入れ面の検証は未実装です。"
+    suggestion: "この acceptance suite を実装して ignore を外すか、同等の非 ignored な統合テストへ置き換えて `examples/ellipse_conic.engawa` の roundtrip・determinism・退化入力を CI で実行してください。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=0, high=6, medium=1, low=0
+# blocking: 6

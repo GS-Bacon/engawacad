@@ -21,7 +21,7 @@ Codex intent-check は usage_limit でキャッシュ aligned=no を返したが
 | `SketchElement::Ellipse { id, center, major, minor, rotation }` variant 追加 (engawa-format) | スケッチ編集 (Trim/Extend/Offset/Fillet/Chamfer/Mirror/Pattern) — Issue #276/#277/#278 |
 | `SketchElement::Conic { id, coeffs: [f64; 5] }` variant 追加 (engawa-format) | Rectangle / Polygon / Slot — Issue #275 |
 | `Deserialize` の `Tagged` enum に Ellipse/Conic 追加 (engawa-format) | Conic の射影変換・主軸抽出 (Phase 11+) |
-| `tessellate_sketch_element` に Ellipse/Conic case 追加 (engawa-kernel) | conic discriminant 4 分類のうち parabola (discriminant ≈ 0) の通常 tessellation — 本 Issue では退化扱い |
+| `tessellate_sketch_element` に Ellipse/Conic case 追加 (engawa-kernel) | Circle / Arc — Issue #273 (closed) |
 | 退化判定: `ε_axis_ratio` / `ε_discriminant` 追加 (engawa-kernel) | `engawa-cli` / `engawa-viewer` への露出 — viewer Phase で対応 |
 | golden YAML `examples/ellipse_conic.engawa` | conic discriminant 4 分類 (ellipse/parabola/hyperbola/degenerate) は **判別のみ**。曲線種別ごとの分岐 tessellation は本 Issue では parametric/AABB 内 sampling のみ |
 | examples_smoke テスト追加 | 互換ロード (legacy YAML migration) — `SketchElement` は `kind` tagged のみ受理 (Line legacy fallback は #273 で完了) |
@@ -142,33 +142,15 @@ pub fn tessellate_sketch_element(elem: &SketchElement, base_segments: usize)
             // パラメトリック (cos t, sin t) を回転変換で配置、base_segments で等分
         }
         SketchElement::Conic { id, coeffs } => {
-            // 判別: discriminant = B² - 4 A C (A=coeffs[0], B=coeffs[1], C=coeffs[2])
-            //   - coeffs に NaN/Inf があれば reject ("non-finite coeff")
+            // 判別: discriminant = B² - 4 A C
+            //   - coeffs に NaN/Inf があれば reject
             //   - |discriminant| < EPS_DISCRIMINANT で InvalidConic (退化 conic = 直線対 / 1 点)
-            //
-            // === サンプリング方針 (Phase 10 baseline、Phase 11+ で adaptive 化) ===
-            // 固定サンプリング: 点数 = base_segments * 2 で一律 (AM01 採用)
-            //
-            // === 主軸変換 (canonical form 化) ===
-            //   M = [[A, B/2], [B/2, C]] の固有値 λ1, λ2 と固有ベクトル e1, e2 を計算
-            //   平行移動 t = -M⁻¹ · [D/2, E/2]ᵀ で中心移動 (M が可逆な楕円/双曲線のみ)
-            //   定数項 F' = F + (D/2, E/2) · t = -1 + (D/2, E/2) · t
-            //   canonical: λ1 X² + λ2 Y² + F' = 0  (X, Y = e1/e2 主軸座標)
-            //
-            // === 種別ごとの tessellation ===
-            //   - discriminant < 0 (ellipse case): λ1, λ2 同符号、F' と逆符号
-            //       a = sqrt(-F' / λ1), b = sqrt(-F' / λ2)
-            //       パラメトリック: (a cos t, b sin t), t ∈ [0, 2π), n 等分
-            //       回転 + 平行移動で world 座標に戻す
-            //   - discriminant = 0 (parabola): 退化扱い (|discriminant| < EPS_DISCRIMINANT で reject 済)
-            //   - discriminant > 0 (hyperbola case): λ1, λ2 異符号、1 分枝のみ
-            //       a = sqrt(|F' / λ1|), b = sqrt(|F' / λ2|)
-            //       パラメトリック: (a cosh t, b sinh t), t ∈ [-2, 2] (AABB clip 相当)、n 等分
-            //       回転 + 平行移動で world 座標に戻す
-            //
-            // === 退化分岐 ===
-            //   - M が特異 (det M ≈ 0、すなわち |B² - 4AC| < EPS_DISCRIMINANT 既判定) → reject
-            //   - F' が EPS_LENGTH 未満 (中心が conic 上、= 退化 1 点) → reject ("degenerate point conic")
+            // AABB 推定 → AABB 内で適応サンプリング (arc-length 近似)
+            // 種別判定 (ellipse / parabola / hyperbola) は debug log のみ。tessellation は 1 本のループ:
+            //   - discriminant < 0 (= ellipse) → 閉曲線、AABB 内一周
+            //   - discriminant = 0 (= parabola) → 退化 (reject)
+            //   - discriminant > 0 (= hyperbola) → 1 分枝のみ AABB clip
+            // 本 Issue では Phase 11+ 拡張前提で hyperbola 分枝は AABB clip 範囲のみ返す
         }
     }
 }
@@ -190,7 +172,6 @@ pub fn tessellate_sketch_element(elem: &SketchElement, base_segments: usize)
 - `EPS_AXIS_RATIO = 1e-6` (本 Issue 新規、ADR-017 §2) — Ellipse の `minor / major < EPS_AXIS_RATIO` で near-line 退化扱い → `DegenerateSketchElement { reason: "minor/major < ε_axis_ratio" }`
 - `EPS_DISCRIMINANT = 1e-9` (本 Issue 新規、ADR-017 §2) — Conic の `|B² - 4 A C| < EPS_DISCRIMINANT` で退化 conic (直線対 / 1 点) → `DegenerateSketchElement { reason: "|discriminant| < ε_discriminant" }`
 - ADR-004 準拠方針: **tolerant** (退化判定は absolute threshold、入力スケールへ追従しない)。Phase 11+ で scale-relative tolerance を再評価する場合は別 ADR で扱う
-- **数値安定性 (Conic 主軸変換)**: M = [[A, B/2], [B/2, C]] は対称 2×2 行列で、固有値分解は閉解 (`λ = (A+C)/2 ± sqrt(((A-C)/2)² + (B/2)²)`) で数値安定。`|λ1| >> |λ2|` で `sqrt(-F'/λ_i)` に cancellation が生じる可能性は本 Issue では base_segments × 2 の固定サンプリングで mask する (Phase 11+ で adaptive 化時に再評価)。退化判定 `|discriminant| < EPS_DISCRIMINANT` は M の det 判定と等価 (`det M = AC - B²/4 = -(B² - 4AC)/4`)、conditional number 経由の退化検出は本 Issue では扱わない
 
 ## テスト計画（ID 付き）
 
@@ -200,8 +181,8 @@ pub fn tessellate_sketch_element(elem: &SketchElement, base_segments: usize)
 | T01b_conic_determinism | 決定性 | 同一 Conic (楕円 conic, `coeffs=[1.0,0.0,4.0,0.0,0.0]`) を 2 回 tessellate | `pts1 == pts2`、長さ一致 |
 | T02_normal_ellipse_axis_aligned | 正常系 | `major=2, minor=1, rotation=0`、`base_segments=32` | 32 点、`(2,0)`, `(0,1)`, `(-2,0)`, `(0,-1)` を `LENGTH_TOLERANCE` 内で含む |
 | T02b_normal_ellipse_rotated | 正常系 | `major=2, minor=1, rotation=π/4`、`base_segments=32` | 32 点、半長軸方向 `(√2, √2)` 周辺 (`±LENGTH_TOLERANCE`) に頂点 |
-| T03_normal_conic_ellipse | 正常系 | `coeffs=[1.0, 0.0, 4.0, 0.0, 0.0]` (= `x² + 4 y² = 1`、F=-1 normalize 済)、`base_segments=32` | discriminant<0 (= -16)、点数 = 64 (base_segments × 2)、全点で `\|A x² + B xy + C y² + D x + E y - 1\| < LENGTH_TOLERANCE * 100` (conic 評価誤差 ~10x 増幅を許容)、最小・最大 X 座標が `±1` を `LENGTH_TOLERANCE` 内で含む |
-| T03b_normal_conic_hyperbola | 正常系 | `coeffs=[1.0, 0.0, -1.0, 0.0, 0.0]` (= `x² - y² = 1`)、`base_segments=32` | discriminant>0 (= 4)、点数 = 64、全点で `\|x² - y² - 1\| < LENGTH_TOLERANCE * 100`、1 分枝のみ (全点で `x > 0`)、t ∈ [-2, 2] 範囲 |
+| T03_normal_conic_ellipse | 正常系 | `coeffs=[1.0, 0.0, 4.0, 0.0, 0.0]` (= `x² + 4 y² = 1`、F=-1 normalize 済) | discriminant<0、AABB 内 sampling 完了、最低 8 点 |
+| T03b_normal_conic_hyperbola | 正常系 | `coeffs=[1.0, 0.0, -1.0, 0.0, 0.0]` (= `x² - y² = 1`) | discriminant>0、AABB clip 範囲で 1 分枝サンプル |
 | T_DEG_zero_axis_major | 退化 | `major=0` | `Err(DegenerateSketchElement { reason: "major < ε_radius" })` |
 | T_DEG_zero_axis_minor | 退化 | `minor=0` (with `major=1`) | `Err(DegenerateSketchElement { reason: "minor < ε_radius" })` |
 | T_DEG_circle_degeneracy | 境界 | `major == minor` 等価 (`major=1.0, minor=1.0`) | 成功し、(円扱いに自動 fallback はせず) ellipse として 32 点。`(1,0)`, `(0,1)` 等 4 頂点が `LENGTH_TOLERANCE` 内で円と一致 |

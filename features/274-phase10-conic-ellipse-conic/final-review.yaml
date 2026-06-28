@@ -1,0 +1,9 @@
+issues:
+  - id: NAM01
+    severity: low
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 654
+    finding: "テスト名 `t_boundary_circle_degeneracy` が plan.md の ID `T_DEG_circle_degeneracy` と不一致。命名規則の一貫性が欠如"
+    suggestion: "テスト名を `t_degenerate_circle_degeneracy` に改名して plan.md と整合させる"
+
+verdict: pass

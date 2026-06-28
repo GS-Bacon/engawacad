@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 62
+    finding: "Circle/Arc は center しか finite 検証しておらず、`radius` と `start_angle`/`end_angle` の NaN/Inf を通してしまう。特に Arc は `end_angle = +∞` で `arc_segment_count` が `usize::MAX` へ飽和し、巨大 `Vec` 確保/OOM 経路になります。Circle/Arc の NaN/Inf 半径も non-finite 点列を返して決定性と後段 profile 検証を壊します。"
+    suggestion: "Ellipse/Conic と同様に Circle/Arc でも scalar parameter を `is_finite()` で fail-fast し、`arc_segment_count` の前に `radius`/`start_angle`/`end_angle` を拒否してください。併せて同ファイル内の NaN/Inf 成功テストは `DegenerateSketchElement` 期待へ反転させるべきです。"
+
+verdict: fail

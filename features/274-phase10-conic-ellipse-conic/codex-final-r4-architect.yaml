@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 393
+    finding: "`schema_version: 2` の Document でも `kind` を持たない sketch 要素が `LegacyLine` fallback でそのまま `Line` として受理される。これでは v1→v2 の wire-format 差分が gate されず、生成済みの `SketchElement` 型/Schema と実際の loader 契約が食い違う。"
+    suggestion: "`LegacyLine` fallback を v1 migration 経路に限定し、`schema_version >= 2` の Document では raw YAML 上で `kind` 必須を検証するか、v1 のみ pre-pass で `kind: line` を補完してから deserialize する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 221
+    finding: "`Conic` の楕円分岐は canonical form から求めた `semi_a`/`semi_b` に対して軸長比の退化判定をしていないため、`Ellipse` なら `minor/major < ε_axis_ratio` で reject される near-line 形状を `Conic` 表現だと素通しできる。公開 API の退化判定が表現依存になり、極薄 sliver profile が extrusion まで流れる。"
+    suggestion: "楕円 canonical form に落とした後で `semi_min < LENGTH_TOLERANCE` と `semi_min / semi_max < EPS_AXIS_RATIO` を `Ellipse` と同じ基準で検証し、退化 conic として reject する。"
+
+verdict: fail

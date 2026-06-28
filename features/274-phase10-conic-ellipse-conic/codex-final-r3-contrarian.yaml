@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 389
+    finding: "`SketchElement::deserialize` が `kind` 欠落時に無条件で legacy `Line` fallback へ落ちるため、`schema_version: 2` の文書でも untagged `{id, from, to}` を静かに受理します。ADR-017 の reject 戦略では v2 は fail-fast のはずで、現状は migration 境界を迂回して壊れた v2 YAML を正当な `Line` に読み替えてしまいます。"
+    suggestion: "legacy Line の持ち上げは `schema_version == 1` の migration 経路に限定し、`SketchElement` 単体の Deserialize では untagged 要素を reject してください。少なくとも `schema_version: 2` + `kind` なし profile を失敗させる回帰テストを追加してください。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/examples_smoke.rs"
+    line_hint: 186
+    finding: "追加された smoke は `examples/ellipse_conic.engawa` を通しますが、その fixture には `kind: ellipse` しか入っていません。repo 内にも `kind: conic` を含む `.engawa` fixture / build smoke / API roundtrip が無く、`Conic` は kernel 内部 unit test 以外で一度も `engawa-format`/`engawa-build` 経路を通っていません。"
+    suggestion: "閉じた conic（例: `x^2 + 4y^2 = 1`）を含む v2 fixture を追加し、Document load → build/extrude まで通す smoke か統合テストで `Conic` の end-to-end 経路を固定してください。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 133
+    finding: "`Ellipse`/`Conic` は `base_segments` をそのまま点数に使うため、`base_segments == 0` で `Ok(vec![])` を返します。既存の `Circle`/`Arc` は `arc_segment_count(...).max(1)` で最低 1 点を保証しており、新規分岐だけ空 polyline を返すのは API 契約が不一致です。"
+    suggestion: "`Ellipse`/`Conic` でも `base_segments.max(1)` 相当で下限を設けるか、0 を明示的にエラーにしてください。併せて zero-segment 境界テストを追加してください。"
+
+verdict: fail

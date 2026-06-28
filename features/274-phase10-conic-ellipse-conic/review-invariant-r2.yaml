@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: low
+    section: "実装対象 > 影響クレート/ファイル"
+    finding: "plan.md では `crates/engawa-kernel/src/geometry/math.rs` に EPS_AXIS_RATIO/EPS_DISCRIMINANT を追加すると記載されているが、ADR-017 §2 では `crates/engawa-kernel/src/geometry/tolerances.rs` に追加すると記載されている (#273 で LENGTH_TOLERANCE が定義されたファイル)"
+    suggestion: "実装時には tolerances.rs に追加すること（#273 の既存 ε 定義との整合性維持）"
+
+verdict: pass

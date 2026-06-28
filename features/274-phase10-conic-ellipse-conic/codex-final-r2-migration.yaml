@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 254
+    finding: "`discriminant > 0` 分岐が `fp` の符号を潰して常に `X=a cosh t, Y=b sinh t` を使うため、実軸が `lambda2` 側に出る双曲線で誤った点列を返します。たとえば `coeffs=[1,0,-1,0,4]`（`(y-2)^2 - x^2 = 3`）は有効な conic ですが、現行実装の生成点は方程式 residual が一定で 0 にならず、曲線上に乗りません。"
+    suggestion: "`abs()` で正規化せず `fp / lambda_i` の符号で実軸を決め、`cosh` を置く軸を切り替えてください。少なくとも `D/E != 0` の双曲線回帰テストを追加するべきです。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 389
+    finding: "`SketchElement::deserialize` の legacy Line fallback が無条件のままなので、`schema_version: 2` の文書でも `kind:` なしの旧 Line 表現をそのまま受理します。これでは v1→v2 migration hook が唯一の互換経路にならず、壊れた v2 YAML を fail-fast できません。"
+    suggestion: "legacy Line の持ち上げは `schema_version == 1` の migration 経路に限定し、v2 文書で `kind:` が無い要素は schema error にしてください。"
+  - id: F03
+    severity: high
+    file: "crates/engawa-kernel/tests/ellipse_conic_acceptance.rs"
+    line_hint: 7
+    finding: "合意済みの T01〜T_GOLDEN acceptance テストがまだ全件 `#[ignore]` + `todo!()` のままで、stdin の `KNOWN IGNORED TESTS` にある決定性・golden ケースが CI に入っていません。inline unit test は追加されていますが、公開 YAML と build 経路を通す受け入れ面の検証は未実装です。"
+    suggestion: "この acceptance suite を実装して ignore を外すか、同等の非 ignored な統合テストへ置き換えて `examples/ellipse_conic.engawa` の roundtrip・determinism・退化入力を CI で実行してください。"
+
+verdict: fail

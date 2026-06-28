@@ -21,7 +21,7 @@ Codex intent-check は usage_limit でキャッシュ aligned=no を返したが
 | `SketchElement::Ellipse { id, center, major, minor, rotation }` variant 追加 (engawa-format) | スケッチ編集 (Trim/Extend/Offset/Fillet/Chamfer/Mirror/Pattern) — Issue #276/#277/#278 |
 | `SketchElement::Conic { id, coeffs: [f64; 5] }` variant 追加 (engawa-format) | Rectangle / Polygon / Slot — Issue #275 |
 | `Deserialize` の `Tagged` enum に Ellipse/Conic 追加 (engawa-format) | Conic の射影変換・主軸抽出 (Phase 11+) |
-| `tessellate_sketch_element` に Ellipse/Conic case 追加 (engawa-kernel) | conic discriminant 4 分類のうち parabola (discriminant ≈ 0) の通常 tessellation — 本 Issue では退化扱い |
+| `tessellate_sketch_element` に Ellipse/Conic case 追加 (engawa-kernel) | Circle / Arc — Issue #273 (closed) |
 | 退化判定: `ε_axis_ratio` / `ε_discriminant` 追加 (engawa-kernel) | `engawa-cli` / `engawa-viewer` への露出 — viewer Phase で対応 |
 | golden YAML `examples/ellipse_conic.engawa` | conic discriminant 4 分類 (ellipse/parabola/hyperbola/degenerate) は **判別のみ**。曲線種別ごとの分岐 tessellation は本 Issue では parametric/AABB 内 sampling のみ |
 | examples_smoke テスト追加 | 互換ロード (legacy YAML migration) — `SketchElement` は `kind` tagged のみ受理 (Line legacy fallback は #273 で完了) |
@@ -190,7 +190,6 @@ pub fn tessellate_sketch_element(elem: &SketchElement, base_segments: usize)
 - `EPS_AXIS_RATIO = 1e-6` (本 Issue 新規、ADR-017 §2) — Ellipse の `minor / major < EPS_AXIS_RATIO` で near-line 退化扱い → `DegenerateSketchElement { reason: "minor/major < ε_axis_ratio" }`
 - `EPS_DISCRIMINANT = 1e-9` (本 Issue 新規、ADR-017 §2) — Conic の `|B² - 4 A C| < EPS_DISCRIMINANT` で退化 conic (直線対 / 1 点) → `DegenerateSketchElement { reason: "|discriminant| < ε_discriminant" }`
 - ADR-004 準拠方針: **tolerant** (退化判定は absolute threshold、入力スケールへ追従しない)。Phase 11+ で scale-relative tolerance を再評価する場合は別 ADR で扱う
-- **数値安定性 (Conic 主軸変換)**: M = [[A, B/2], [B/2, C]] は対称 2×2 行列で、固有値分解は閉解 (`λ = (A+C)/2 ± sqrt(((A-C)/2)² + (B/2)²)`) で数値安定。`|λ1| >> |λ2|` で `sqrt(-F'/λ_i)` に cancellation が生じる可能性は本 Issue では base_segments × 2 の固定サンプリングで mask する (Phase 11+ で adaptive 化時に再評価)。退化判定 `|discriminant| < EPS_DISCRIMINANT` は M の det 判定と等価 (`det M = AC - B²/4 = -(B² - 4AC)/4`)、conditional number 経由の退化検出は本 Issue では扱わない
 
 ## テスト計画（ID 付き）
 

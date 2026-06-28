@@ -1,0 +1,55 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 553
+    finding: "`validate_profile_closed` が非 `Line` 要素を素通しするため、今回追加した `Conic` の双曲線 case は開曲線のまま `make_extrusion` に渡される。押し出し側は末尾と先頭を暗黙に結ぶので、指定していない閉鎖辺を持つ別形状のソリッドを生成する。"
+    suggestion: "Extrude/ExtrudeCut 前に profile 全体を tessellate して端点連結を検証し、単独 hyperbola など閉じない profile は `InvalidParameter { kind: \"profile\" }` で reject する。"
+  - id: A-F02
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 172
+    finding: "`discriminant < 0` 分岐で `-fp / lambda_i` の符号条件を確認していないため、`coeffs=[-1,0,-1,0,0]` のように実点を持たない conic でも `sqrt` が NaN になった polyline を `Ok` で返してしまう。"
+    suggestion: "canonical form 化後に `lambda1`, `lambda2`, `fp` の符号整合を検証し、半軸長が実数にならない conic は `DegenerateSketchElement` として失敗させる。"
+  - id: A-F03
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 97
+    finding: "`Ellipse` の公開契約は `major >= minor > 0` ですが、実装は正値と軸比しか見ておらず `major < minor` を受理する。これでは `major` が長軸半径を表す API invariant が崩れる。"
+    suggestion: "`minor > major` を明示的に reject するか、受理するなら軸を swap して `rotation += π/2` で正規化する。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 79
+    finding: "Ellipse/Conic の新規分岐が派生値の有限性を検証しておらず、`center=[NaN,0]` の楕円や `coeffs=[-1,0,-1,0,0]` の実点を持たない conic でも `Ok(Vec<[f64;2]>)` を返して NaN 点列を downstream に流します。退化入力を `DegenerateSketchElement` で止める設計と矛盾します。"
+    suggestion: "center の有限性に加え、Conic の `det`/`fp`/`lambda`/`semi_a`/`semi_b` が有限かつ実数域にあることをサンプリング前に検証し、実点を持たない場合は fail-fast してください。"
+  - id: C-F02
+    severity: high
+    file: "examples/ellipse_conic.engawa"
+    line_hint: 1
+    finding: "新しい `kind: ellipse` / `kind: conic` を使うサンプルがまだ `schema_version: 1` を名乗っており、`CURRENT_SCHEMA_VERSION` も 1 のままです。wire-format を拡張したのに version gate が無いので、旧 reader には unknown kind で落ちる文書を v1 互換と誤宣言します。"
+    suggestion: "`CURRENT_SCHEMA_VERSION` を 2 に上げ、v1 の line-only profile を v2 `SketchElement::Line` へ移行する migration hook と受け入れテストを同じ変更に含めてください。"
+  - id: C-F03
+    severity: medium
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 553
+    finding: "`validate_profile_closed` は依然として all-Line ケースしか閉路検証していないため、今回追加した `Conic`/`Ellipse` は自己閉路かどうかを見ないまま `CreateSketch.profile` に通ります。とくに双曲線 conic は開曲線なのに `Extrude` 経路では全要素を 1 本の polygon に flat-map するため、利用時に generic `profile` error か不正形状に化けます。"
+    suggestion: "非 Line 要素も tessellate 後に閉路/単一ループを検証するか、少なくとも開曲線 conic を `profile` から弾いて `Extrude`/`ExtrudeCut` に流さないようにしてください。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 293
+    finding: "`SketchElement` に `Ellipse`/`Conic` を追加して `CreateSketch.profile` の wire format を拡張しているのに、schema version は依然 v1 のままで、ADR-017 で合意した v1→v2 migration hook も入っていない。新しい example も `schema_version: 1` で保存されるため、外部互換の境界が壊れ、v1 reader/validator に新形式を紛れ込ませます。"
+    suggestion: "`CURRENT_SCHEMA_VERSION` を 2 に上げ、`Document::from_yaml` / `Deserialize` に v1 legacy profile を `SketchElement::Line` へ持ち上げる migration hook を追加し、新規 example と writer 出力を v2 に更新する。"
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 79
+    finding: "退化/特殊値の reject が不完全です。`Ellipse` は `center` の NaN/Inf を見ておらず、`Conic` は `-fp / lambda` の符号を検証せずに `sqrt` しているため、たとえば `center=[NaN,0]` や `coeffs=[-1,0,-1,0,0]` で `Ok(Vec<[f64;2]>)` のまま NaN 点列を返します。Issue 要件の fail-fast `DegenerateSketchElement` にならず、下流では generic な `InvalidParameter { kind: \"profile\" }` に化けます。"
+    suggestion: "`Ellipse` で center も有限性検証し、`Conic` では実数解が存在する条件と radicand の正値を確認してからサンプリングする。生成点列の有限性も検査し、非有限中心・実数解なし conic の退化テストを追加する。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=0, high=6, medium=2, low=0
+# blocking: 6

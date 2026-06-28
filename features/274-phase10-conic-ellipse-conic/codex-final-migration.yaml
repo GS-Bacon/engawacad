@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 293
+    finding: "`SketchElement` に `Ellipse`/`Conic` を追加して `CreateSketch.profile` の wire format を拡張しているのに、schema version は依然 v1 のままで、ADR-017 で合意した v1→v2 migration hook も入っていない。新しい example も `schema_version: 1` で保存されるため、外部互換の境界が壊れ、v1 reader/validator に新形式を紛れ込ませます。"
+    suggestion: "`CURRENT_SCHEMA_VERSION` を 2 に上げ、`Document::from_yaml` / `Deserialize` に v1 legacy profile を `SketchElement::Line` へ持ち上げる migration hook を追加し、新規 example と writer 出力を v2 に更新する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 79
+    finding: "退化/特殊値の reject が不完全です。`Ellipse` は `center` の NaN/Inf を見ておらず、`Conic` は `-fp / lambda` の符号を検証せずに `sqrt` しているため、たとえば `center=[NaN,0]` や `coeffs=[-1,0,-1,0,0]` で `Ok(Vec<[f64;2]>)` のまま NaN 点列を返します。Issue 要件の fail-fast `DegenerateSketchElement` にならず、下流では generic な `InvalidParameter { kind: \"profile\" }` に化けます。"
+    suggestion: "`Ellipse` で center も有限性検証し、`Conic` では実数解が存在する条件と radicand の正値を確認してからサンプリングする。生成点列の有限性も検査し、非有限中心・実数解なし conic の退化テストを追加する。"
+
+verdict: fail

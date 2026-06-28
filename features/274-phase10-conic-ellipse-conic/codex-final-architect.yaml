@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 553
+    finding: "`validate_profile_closed` が非 `Line` 要素を素通しするため、今回追加した `Conic` の双曲線 case は開曲線のまま `make_extrusion` に渡される。押し出し側は末尾と先頭を暗黙に結ぶので、指定していない閉鎖辺を持つ別形状のソリッドを生成する。"
+    suggestion: "Extrude/ExtrudeCut 前に profile 全体を tessellate して端点連結を検証し、単独 hyperbola など閉じない profile は `InvalidParameter { kind: \"profile\" }` で reject する。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 172
+    finding: "`discriminant < 0` 分岐で `-fp / lambda_i` の符号条件を確認していないため、`coeffs=[-1,0,-1,0,0]` のように実点を持たない conic でも `sqrt` が NaN になった polyline を `Ok` で返してしまう。"
+    suggestion: "canonical form 化後に `lambda1`, `lambda2`, `fp` の符号整合を検証し、半軸長が実数にならない conic は `DegenerateSketchElement` として失敗させる。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 97
+    finding: "`Ellipse` の公開契約は `major >= minor > 0` ですが、実装は正値と軸比しか見ておらず `major < minor` を受理する。これでは `major` が長軸半径を表す API invariant が崩れる。"
+    suggestion: "`minor > major` を明示的に reject するか、受理するなら軸を swap して `rotation += π/2` で正規化する。"
+
+verdict: fail

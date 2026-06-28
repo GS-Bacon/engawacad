@@ -1,0 +1,14 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "実装対象 > after (engawa-kernel/src/tessellation/sketch.rs)"
+    finding: "「AABB 推定 → AABB 内で適応サンプリング (arc-length 近似)」とあるが、AABB 推定の方法・適応サンプリングの具体的手法（点数決定・サンプリング間隔判定）が未定義"
+    suggestion: "「AABB は coeffs から係数行列の固有値解析で推定」「サンプリングは base_segments を初期点数とし、arc-length 変化が threshold 未満になるまで二分割」等を追記、または「Phase 11+ での詳細化を受け、本 Issue では固定サンプリング（例: base_segments×2 点）で実装」と明記"
+
+  - id: AM02
+    severity: medium
+    section: "テスト計画 > T03b_normal_conic_hyperbola"
+    finding: "期待結果が「AABB clip 範囲で 1 分枝サンプル」とのみ記載され、具体的な assert 条件（点数・AABB 定義・clip 手法）が欠落"
+    suggestion: "「最低 8 点・全点が推定 AABB 内に存在・discriminant > 0 を確認」等の具体的 assert 条件を記載すること。または T03b 自体を Phase 11+ に繰り延げ"
+
+verdict: pass

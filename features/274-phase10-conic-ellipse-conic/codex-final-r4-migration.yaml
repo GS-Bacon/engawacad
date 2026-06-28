@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 562
+    finding: "`validate_profile_closed()` が `discriminant > 0` の Conic を一律 `InvalidParameter { kind: \"profile\" }` で弾くため、T03b で追加した hyperbola Conic を `CreateSketch` として保持できません。`build_bodies_from_features()` は `CreateSketch` 登録時点でこの検査を走らせるので、押し出しに使わない standalone sketch まで拒否され、format/kernel 側で追加した hyperbola サポートと API/build の振る舞いが食い違います。"
+    suggestion: "開曲線の拒否は `CreateSketch` 共通検証ではなく `Extrude` / `ExtrudeCut` の profile 消費時に限定し、standalone の hyperbola sketch 自体は保存・読込できるようにする。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/tests/sketch_element_golden_acceptance.rs"
+    line_hint: 1
+    finding: "legacy untagged Line 互換の専用テストを削除していますが、置き換えとして追加された v1→v2 migration 経路は『実際に untagged line を含む非空 profile』で回っていません。`document.rs` 側の新規 pre-pass はこの移行 Issue の中核なのに、現状のテストは空 feature / 空 profile しか押さえておらず、既存 `.engawa` sketch の後方互換が CI で固定されていません。"
+    suggestion: "v1 `create_sketch` に untagged line 要素を入れた YAML を `Document::from_yaml()` で読む回帰テストを追加し、`schema_version: 2` へ正規化されても profile 内容が変わらないことを確認する。"
+
+verdict: fail

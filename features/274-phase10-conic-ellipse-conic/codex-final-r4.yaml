@@ -1,0 +1,32 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 393
+    finding: "`schema_version: 2` の Document でも `kind` を持たない sketch 要素が `LegacyLine` fallback でそのまま `Line` として受理される。これでは v1→v2 の wire-format 差分が gate されず、生成済みの `SketchElement` 型/Schema と実際の loader 契約が食い違う。"
+    suggestion: "`LegacyLine` fallback を v1 migration 経路に限定し、`schema_version >= 2` の Document では raw YAML 上で `kind` 必須を検証するか、v1 のみ pre-pass で `kind: line` を補完してから deserialize する。"
+  - id: A-F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 221
+    finding: "`Conic` の楕円分岐は canonical form から求めた `semi_a`/`semi_b` に対して軸長比の退化判定をしていないため、`Ellipse` なら `minor/major < ε_axis_ratio` で reject される near-line 形状を `Conic` 表現だと素通しできる。公開 API の退化判定が表現依存になり、極薄 sliver profile が extrusion まで流れる。"
+    suggestion: "楕円 canonical form に落とした後で `semi_min < LENGTH_TOLERANCE` と `semi_min / semi_max < EPS_AXIS_RATIO` を `Ellipse` と同じ基準で検証し、退化 conic として reject する。"
+  # [contrarian] issues: [] (verdict=pass)
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 562
+    finding: "`validate_profile_closed()` が `discriminant > 0` の Conic を一律 `InvalidParameter { kind: \"profile\" }` で弾くため、T03b で追加した hyperbola Conic を `CreateSketch` として保持できません。`build_bodies_from_features()` は `CreateSketch` 登録時点でこの検査を走らせるので、押し出しに使わない standalone sketch まで拒否され、format/kernel 側で追加した hyperbola サポートと API/build の振る舞いが食い違います。"
+    suggestion: "開曲線の拒否は `CreateSketch` 共通検証ではなく `Extrude` / `ExtrudeCut` の profile 消費時に限定し、standalone の hyperbola sketch 自体は保存・読込できるようにする。"
+  - id: M-F02
+    severity: medium
+    file: "crates/engawa-format/tests/sketch_element_golden_acceptance.rs"
+    line_hint: 1
+    finding: "legacy untagged Line 互換の専用テストを削除していますが、置き換えとして追加された v1→v2 migration 経路は『実際に untagged line を含む非空 profile』で回っていません。`document.rs` 側の新規 pre-pass はこの移行 Issue の中核なのに、現状のテストは空 feature / 空 profile しか押さえておらず、既存 `.engawa` sketch の後方互換が CI で固定されていません。"
+    suggestion: "v1 `create_sketch` に untagged line 要素を入れた YAML を `Document::from_yaml()` で読む回帰テストを追加し、`schema_version: 2` へ正規化されても profile 内容が変わらないことを確認する。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=0, high=2, medium=2, low=0
+# blocking: 2
