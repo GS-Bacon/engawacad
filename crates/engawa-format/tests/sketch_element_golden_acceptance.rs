@@ -1,28 +1,9 @@
 //! #273: Phase 10 Circle / Arc — golden YAML acceptance tests.
 //!
-//! T_GOLDEN_legacy_compat / T_GOLDEN_circle_yaml / T_GOLDEN_arc_yaml
+//! T_GOLDEN_circle_yaml / T_GOLDEN_arc_yaml
+//! F13: Legacy compat test removed — Document::from_yaml migration path is tested in document.rs
 
 use engawa_format::SketchElement;
-
-#[test]
-fn t_golden_legacy_compat() {
-    // legacy YAML: kind フィールドなし、from/to のみ
-    let yaml = r#"
-- id: legacy_seg
-  from: [0.0, 0.0]
-  to: [10.0, 0.0]
-"#;
-    let elements: Vec<SketchElement> = serde_yaml::from_str(yaml).expect("legacy YAML must parse");
-    assert_eq!(elements.len(), 1);
-    match &elements[0] {
-        SketchElement::Line { id, from, to } => {
-            assert_eq!(id, "legacy_seg");
-            assert_eq!(*from, [0.0, 0.0]);
-            assert_eq!(*to, [10.0, 0.0]);
-        }
-        other => panic!("expected Line variant, got {:?}", other),
-    }
-}
 
 #[test]
 fn t_golden_circle_yaml() {

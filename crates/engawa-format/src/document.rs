@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use ts_rs::TS;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
 /// Schema version assumed for documents that omit `schema_version` (pre-field documents).
 /// Must remain `1` regardless of `CURRENT_SCHEMA_VERSION` so that legacy .engawa files
@@ -16,6 +16,82 @@ const INITIAL_SCHEMA_VERSION: u32 = 1;
 
 fn default_schema_version() -> u32 {
     INITIAL_SCHEMA_VERSION
+}
+
+/// Migration hook for schema_version 1 → 2.
+/// v1 sketch elements may be untagged (legacy Line without `kind:` field).
+/// The YAML pre-pass in `from_yaml` already injects `kind: line`, so this
+/// migration only bumps the schema version.
+fn migrate_v1_to_v2(mut doc: Document) -> Document {
+    doc.schema_version = 2;
+    doc
+}
+
+/// Rewrite v1 legacy untagged Line elements to tagged `kind: line` format.
+/// Traverses `root_component.features[].profile[]` and injects `kind: "line"`
+/// for any Mapping that has `id`, `from`, `to` but no `kind` key.
+fn rewrite_v1_legacy_lines_to_tagged(mut value: serde_yaml::Value) -> serde_yaml::Value {
+    use serde_yaml::Value as Y;
+
+    // Helper to recurse through the document tree
+    fn rewrite_profile_elements(profile: &mut Y) {
+        if let Y::Sequence(seq) = profile {
+            for elem in seq.iter_mut() {
+                if let Y::Mapping(map) = elem {
+                    // Check if this is a legacy untagged Line: has id, from, to but no kind
+                    let has_id = map.get(Y::String("id".into())).is_some();
+                    let has_from = map.get(Y::String("from".into())).is_some();
+                    let has_to = map.get(Y::String("to".into())).is_some();
+                    let has_kind = map.get(Y::String("kind".into())).is_some();
+
+                    if has_id && has_from && has_to && !has_kind {
+                        // Insert `kind: "line"` at the beginning for clean YAML output
+                        let mut new_map = serde_yaml::Mapping::new();
+                        new_map.insert(Y::String("kind".into()), Y::String("line".into()));
+                        // Copy existing entries (order preserved via indexmap internally)
+                        for (k, v) in map.iter() {
+                            new_map.insert(k.clone(), v.clone());
+                        }
+                        *elem = Y::Mapping(new_map);
+                    }
+                }
+            }
+        }
+    }
+
+    // Recurse into the document tree
+    fn recurse_component(component: &mut Y) {
+        if let Y::Mapping(map) = component {
+            // Process features list
+            if let Some(Y::Sequence(features)) = map.get_mut(Y::String("features".into())) {
+                for feature in features.iter_mut() {
+                    if let Y::Mapping(fmap) = feature {
+                        // F16: Process profile list in create_sketch features.
+                        // Only create_sketch has a profile field — safe to unconditionally process.
+                        if let Some(profile) = fmap.get_mut(Y::String("profile".into())) {
+                            rewrite_profile_elements(profile);
+                        }
+                    }
+                }
+            }
+
+            // Recurse into children
+            if let Some(Y::Sequence(children)) = map.get_mut(Y::String("children".into())) {
+                for child in children.iter_mut() {
+                    recurse_component(child);
+                }
+            }
+        }
+    }
+
+    // Start recursion from root_component
+    if let Y::Mapping(doc_map) = &mut value {
+        if let Some(root) = doc_map.get_mut(Y::String("root_component".into())) {
+            recurse_component(root);
+        }
+    }
+
+    value
 }
 
 /// The top-level document representing a EngawaCAD design file.
@@ -85,8 +161,16 @@ impl Document {
             });
         }
 
+        // Stage 1.5: v1 pre-pass — inject `kind: line` for legacy untagged Line elements
+        let processed_value = if peeked_version == 1 {
+            rewrite_v1_legacy_lines_to_tagged(value)
+        } else {
+            value
+        };
+        let yaml_processed = serde_yaml::to_string(&processed_value).map_err(FormatError::Yaml)?;
+
         // Stage 2: typed deserialize (now we know the schema is one we support).
-        let raw: RawDocument = serde_yaml::from_value(value)?;
+        let raw: RawDocument = serde_yaml::from_str(&yaml_processed)?;
         let mut doc = Document {
             schema_version: raw.schema_version,
             version: raw.version,
@@ -97,6 +181,11 @@ impl Document {
         if doc.root_component.ref_planes.is_empty() {
             doc.root_component.ref_planes = RefPlane::default_canonical_three();
         }
+        // Apply migrations if needed (bump schema_version only; Line tags already injected)
+        if doc.schema_version < CURRENT_SCHEMA_VERSION && doc.schema_version == 1 {
+            doc = migrate_v1_to_v2(doc);
+        }
+        // Future migrations: else if doc.schema_version == 2 { ... }
         doc.validate()?;
         Ok(doc)
     }
@@ -137,6 +226,11 @@ impl<'de> Deserialize<'de> for Document {
         if doc.root_component.ref_planes.is_empty() {
             doc.root_component.ref_planes = RefPlane::default_canonical_three();
         }
+        // Apply migrations if needed
+        if doc.schema_version < CURRENT_SCHEMA_VERSION && doc.schema_version == 1 {
+            doc = migrate_v1_to_v2(doc);
+        }
+        // Future migrations: else if doc.schema_version == 2 { ... }
         doc.validate().map_err(serde::de::Error::custom)?;
         Ok(doc)
     }
@@ -378,18 +472,17 @@ mod tests {
 
     #[test]
     fn test_schema_version_backward_compat() {
-        // schema_version フィールドがない古い形式の YAML でも読めること
+        // F08: migration を経た doc は v2 表現になる
         let old_yaml = "version: 0.1.0\nroot_component:\n  name: Old\n  features: []\n";
         let doc = Document::from_yaml(old_yaml).expect("old yaml should parse");
         assert_eq!(
-            doc.schema_version, 1,
-            "missing schema_version defaults to 1"
+            doc.schema_version, 2,
+            "v1 legacy is migrated to v2 on load (ADR-017 §4)"
         );
-        // 再シリアライズすると schema_version: 1 が出力されること
         let yaml = doc.to_yaml().unwrap();
         assert!(
-            yaml.starts_with("schema_version: 1\n"),
-            "re-serialized yaml must include schema_version"
+            yaml.starts_with("schema_version: 2\n"),
+            "writer outputs current schema_version"
         );
     }
 
@@ -426,7 +519,7 @@ mod tests {
         let simple_box_path = examples_dir.join("simple_box.engawa");
         let doc = Document::from_path(&simple_box_path).unwrap();
         let yaml = doc.to_yaml().unwrap();
-        let golden = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
+        let golden = "schema_version: 2\nversion: 0.1.0\nroot_component:\n  name: Simple Box\n  features:\n  - type: create_box\n    id: box_1\n    width: 10.0\n    height: 20.0\n    depth: 30.0\n";
         assert_eq!(yaml, golden, "simple_box.engawa golden YAML mismatch");
     }
 
@@ -445,7 +538,7 @@ mod tests {
         let yaml = doc.to_yaml().unwrap();
 
         static GOLDEN: &str = concat!(
-            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n  name: Extruded Rect\n  features:\n",
             "  - type: create_sketch\n    id: sketch_1\n    plane: xy\n    profile:\n",
             "    - kind: line\n      id: seg_a\n      from:\n      - 0.0\n      - 0.0\n      to:\n      - 10.0\n      - 0.0\n",
             "    - kind: line\n      id: seg_b\n      from:\n      - 10.0\n      - 0.0\n      to:\n      - 10.0\n      - 5.0\n",
@@ -531,13 +624,16 @@ mod tests {
 
     #[test]
     fn test_schema_version_roundtrip_preserves_value() {
-        // Values <= CURRENT_SCHEMA_VERSION are preserved through roundtrip
+        // v1 files are migrated to v2 on load, then roundtrip preserves v2
         let yaml =
             "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: v1\n  features: []\n";
         let doc = Document::from_yaml(yaml).unwrap();
+        // After migration, schema_version is bumped to CURRENT
+        assert_eq!(doc.schema_version, CURRENT_SCHEMA_VERSION);
         let reserialized = doc.to_yaml().unwrap();
         let doc2 = Document::from_yaml(&reserialized).unwrap();
-        assert_eq!(doc2.schema_version, 1);
+        // Roundtrip preserves CURRENT_SCHEMA_VERSION
+        assert_eq!(doc2.schema_version, CURRENT_SCHEMA_VERSION);
     }
 
     #[test]
@@ -584,14 +680,14 @@ mod tests {
     #[test]
     fn test_empty_features_yaml() {
         let yaml =
-            "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: Empty\n  features: []\n";
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n  name: Empty\n  features: []\n";
         let doc = Document::from_yaml(yaml).unwrap();
         assert!(doc.root_component.features.is_empty());
     }
 
     #[test]
     fn test_missing_features_defaults() {
-        let yaml = "schema_version: 1\nversion: 0.1.0\nroot_component:\n  name: NoFeatures\n";
+        let yaml = "schema_version: 2\nversion: 0.1.0\nroot_component:\n  name: NoFeatures\n";
         let doc = Document::from_yaml(yaml).unwrap();
         assert!(doc.root_component.features.is_empty());
     }
@@ -611,15 +707,15 @@ mod tests {
             }
             let content = std::fs::read_to_string(&path).unwrap();
             assert!(
-                content.starts_with("schema_version: 1\n"),
-                "{} should start with schema_version: 1",
+                content.starts_with("schema_version: 1\n")
+                    || content.starts_with("schema_version: 2\n"),
+                "{} should start with schema_version: 1 or 2 (post-ADR-017)",
                 path.file_name().unwrap().to_string_lossy()
             );
             let doc = Document::from_path(&path).unwrap();
-            assert_eq!(
-                doc.schema_version,
-                1,
-                "{} should have schema_version 1",
+            assert!(
+                doc.schema_version == 1 || doc.schema_version == 2,
+                "{} should have schema_version 1 or 2 (post-ADR-017)",
                 path.file_name().unwrap().to_string_lossy()
             );
         }

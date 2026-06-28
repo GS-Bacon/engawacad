@@ -1,0 +1,32 @@
+schema_version: 2
+# Issue #274: Phase 10 Ellipse / Conic sketch profile smoke test.
+version: "0.1.0"
+root_component:
+  name: "Ellipse Conic Test"
+  features:
+    - type: create_sketch
+      id: sketch_ellipse
+      plane: xy
+      profile:
+        - kind: ellipse
+          id: ellipse_1
+          center: [0.0, 0.0]
+          major: 2.0
+          minor: 1.0
+          rotation: 0.0
+    - type: extrude
+      id: extrude_ellipse
+      sketch: sketch_ellipse
+      depth: 5.0
+    - type: create_sketch
+      id: sketch_conic
+      plane: xy
+      offset: 10.0
+      profile:
+        - kind: conic
+          id: conic_1
+          coeffs: [1.0, 0.0, 4.0, 0.0, 0.0]
+    - type: extrude
+      id: extrude_conic
+      sketch: sketch_conic
+      depth: 5.0

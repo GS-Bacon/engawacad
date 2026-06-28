@@ -428,7 +428,7 @@ fn ec02_build_yaml_rebuild_roundtrip() {
     // 2 回目 serialize で skip され idempotency が崩れる。Document::from_yaml() で
     // parse された Document と同じ状態 (= default 3 件) で構築するのが正しい。
     let doc = Document {
-        schema_version: 1,
+        schema_version: 2, // CURRENT_SCHEMA_VERSION in engawa_format::document
         version: "0.1.0".into(),
         variables: Vec::new(),
         root_component: Component {

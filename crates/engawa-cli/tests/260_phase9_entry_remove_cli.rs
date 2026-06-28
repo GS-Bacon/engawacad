@@ -61,7 +61,7 @@ root_component:
     assert_eq!(output_doc.root_component.features[1].id(), "cyl_1");
 
     // Byte-equal check: expected YAML without sphere_1
-    let expected_yaml = r#"schema_version: 1
+    let expected_yaml = r#"schema_version: 2
 version: 0.1.0
 root_component:
   name: Test

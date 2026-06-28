@@ -67,7 +67,7 @@ async fn send_post(app: axum::Router, body: &str) -> (StatusCode, String) {
 async fn t04_boundary_fuse_extrude_returns_single_body() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":4.9,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":4.9,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -100,7 +100,7 @@ async fn t04_determinism_offset_extrude() {
     let (_dir, path) = temp_copy("simple_box.engawa");
     let (_dir2, path2) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let extrude_json = r#"{"type":"extrude","id":"extrude_0","sketch":"sketch_0","depth":10.0}"#;
 
     let app1a = make_app(path.clone());

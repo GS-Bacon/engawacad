@@ -119,7 +119,7 @@ async fn a01_extrude_cut_increases_vertices_and_writes_feature() {
     let vol_before = mesh_volume(&initial_bodies);
 
     // 2. POST create_sketch (xy plane, inset [-2,2]×[-4,4])
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-2.0,-4.0],"to":[2.0,-4.0]},{"id":"seg_1","from":[2.0,-4.0],"to":[2.0,4.0]},{"id":"seg_2","from":[2.0,4.0],"to":[-2.0,4.0]},{"id":"seg_3","from":[-2.0,4.0],"to":[-2.0,-4.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-2.0,-4.0],"to":[2.0,-4.0]},{"kind":"line","id":"seg_1","from":[2.0,-4.0],"to":[2.0,4.0]},{"kind":"line","id":"seg_2","from":[2.0,4.0],"to":[-2.0,4.0]},{"kind":"line","id":"seg_3","from":[-2.0,4.0],"to":[-2.0,-4.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -186,7 +186,7 @@ async fn a01_extrude_cut_increases_vertices_and_writes_feature() {
 /// face_id uniqueness is verified in A01; byte-identical output here implies uniqueness is also stable.
 #[tokio::test]
 async fn a02_extrude_cut_determinism_100_runs() {
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-2.0,-4.0],"to":[2.0,-4.0]},{"id":"seg_1","from":[2.0,-4.0],"to":[2.0,4.0]},{"id":"seg_2","from":[2.0,4.0],"to":[-2.0,4.0]},{"id":"seg_3","from":[-2.0,4.0],"to":[-2.0,-4.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-2.0,-4.0],"to":[2.0,-4.0]},{"kind":"line","id":"seg_1","from":[2.0,-4.0],"to":[2.0,4.0]},{"kind":"line","id":"seg_2","from":[2.0,4.0],"to":[-2.0,4.0]},{"kind":"line","id":"seg_3","from":[-2.0,4.0],"to":[-2.0,-4.0]}]}"#;
     let extrude_cut_json = r#"{"type":"extrude_cut","id":"extrude_cut_0","sketch":"sketch_0","depth":3.0,"target":"box_1"}"#;
 
     let mut reference: Option<String> = None;

@@ -94,7 +94,7 @@ async fn a01_extrude_ui_increases_vertices_and_writes_feature() {
     let initial_vertices = total_vertex_count(&get_body);
 
     // 2. POST create_sketch (xy plane, 10×10 rectangle)
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"kind":"line","id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"kind":"line","id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"kind":"line","id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");

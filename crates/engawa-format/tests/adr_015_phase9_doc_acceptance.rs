@@ -68,8 +68,9 @@ fn t_boundary_status_accepted() {
     let content = adr_content();
     let has_accepted = content.contains("**Status**: Accepted");
     let has_proposed = content.contains("**Status**: Proposed");
+    let has_withdrawn = content.contains("**Status**: Withdrawn");
     assert!(
-        has_accepted || has_proposed,
-        "ADR-015 Status must be Accepted or Proposed"
+        has_accepted || has_proposed || has_withdrawn,
+        "ADR-015 Status must be Accepted, Proposed or Withdrawn (Issue #286)"
     );
 }

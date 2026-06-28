@@ -64,7 +64,9 @@ fn t_deg_file_missing() {
 fn t_boundary_status_accepted() {
     let content = adr_content();
     assert!(
-        content.contains("**Status**: Accepted") || content.contains("**Status**: Proposed"),
-        "ADR-016 Status must be Accepted or Proposed"
+        content.contains("**Status**: Accepted")
+            || content.contains("**Status**: Proposed")
+            || content.contains("**Status**: Withdrawn"),
+        "ADR-016 Status must be Accepted, Proposed or Withdrawn (Issue #286)"
     );
 }

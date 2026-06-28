@@ -3,12 +3,13 @@
 use engawa_format::Document;
 
 /// T05: YAML roundtrip legacy — examples/sketch_via_refplane.engawa を roundtrip
+/// F13: Use Document::from_yaml so v1 → v2 migration pre-pass runs for legacy Line.
 #[test]
 fn t05_yaml_roundtrip_sketch_via_refplane_example() {
     let yaml = include_str!("../../../examples/sketch_via_refplane.engawa");
-    let doc1: Document = serde_yaml::from_str(yaml).expect("first parse failed");
+    let doc1 = Document::from_yaml(yaml).expect("first parse failed");
     let yaml2 = serde_yaml::to_string(&doc1).expect("first serialize failed");
-    let doc2: Document = serde_yaml::from_str(&yaml2).expect("second parse failed");
+    let doc2 = Document::from_yaml(&yaml2).expect("second parse failed");
 
     // 再 serialize の YAML は安定 (2 回目以降は同一)
     let yaml3 = serde_yaml::to_string(&doc2).expect("second serialize failed");
@@ -30,12 +31,13 @@ fn t05_yaml_roundtrip_sketch_via_refplane_example() {
 }
 
 /// T06: YAML roundtrip Entity — examples/sketch_via_face_entity_ref.engawa を roundtrip
+/// F13: Use Document::from_yaml so v1 → v2 migration pre-pass runs for legacy Line.
 #[test]
 fn t06_yaml_roundtrip_sketch_via_face_entity_ref_example() {
     let yaml = include_str!("../../../examples/sketch_via_face_entity_ref.engawa");
-    let doc1: Document = serde_yaml::from_str(yaml).expect("first parse failed");
+    let doc1 = Document::from_yaml(yaml).expect("first parse failed");
     let yaml2 = serde_yaml::to_string(&doc1).expect("first serialize failed");
-    let doc2: Document = serde_yaml::from_str(&yaml2).expect("second parse failed");
+    let doc2 = Document::from_yaml(&yaml2).expect("second parse failed");
 
     // 再 serialize の YAML には "plane_ref:" の下に "ref:" "feature_id:" "kind:" "role:" が含まれる
     assert!(

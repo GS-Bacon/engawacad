@@ -1,5 +1,6 @@
 pub mod sketch;
 pub mod stl;
+pub use sketch::sketch_element_is_open;
 pub use stl::to_ascii_stl;
 
 use crate::brep::topology::Solid;

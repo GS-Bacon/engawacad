@@ -4,7 +4,8 @@ use engawa_kernel::brep::topology::IdGenerator;
 use engawa_kernel::tessellation::tessellate_solid;
 
 fn smoke(yaml: &str) {
-    let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
+    // Use Document::from_yaml so v1 → v2 migration runs (ADR-017 §4, #274).
+    let doc = Document::from_yaml(yaml).expect("YAML parse failed");
     if doc.root_component.features.is_empty() {
         return;
     }
@@ -99,7 +100,7 @@ fn boolean_cut_sphere_dimple() {
 #[test]
 fn boolean_cut_sphere_dimple_tessellate() {
     let yaml = include_str!("../../../examples/boolean_cut_sphere_dimple.engawa");
-    let doc: Document = serde_yaml::from_str(yaml).expect("YAML parse failed");
+    let doc = Document::from_yaml(yaml).expect("YAML parse failed");
     let mut gen = IdGenerator::new(0);
     let bodies = build_bodies_from_features(
         &doc.root_component.features,
@@ -179,4 +180,10 @@ fn sketch_extrudecut_hole() {
 #[test]
 fn circle_arc() {
     smoke(include_str!("../../../examples/circle_arc.engawa"));
+}
+
+/// Issue #274: Phase 10 Ellipse / Conic smoke テスト
+#[test]
+fn ellipse_conic() {
+    smoke(include_str!("../../../examples/ellipse_conic.engawa"));
 }

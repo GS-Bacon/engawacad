@@ -519,7 +519,9 @@ fn validate_sketch_element_ids(
         let id = match elem {
             engawa_format::SketchElement::Line { id, .. }
             | engawa_format::SketchElement::Circle { id, .. }
-            | engawa_format::SketchElement::Arc { id, .. } => id,
+            | engawa_format::SketchElement::Arc { id, .. }
+            | engawa_format::SketchElement::Ellipse { id, .. }
+            | engawa_format::SketchElement::Conic { id, .. } => id,
         };
         if id.is_empty() {
             return Err(KernelError::InvalidParameter {
@@ -548,10 +550,18 @@ fn validate_sketch_element_ids(
 /// For Line elements, checks that `to[i] == from[(i+1)%n]` within tolerance.
 /// For Circle/Arc, tessellation is required to verify closure — this is
 /// deferred to runtime (tessellate_sketch_element produces closed polylines).
+/// For Conic hyperbola (discriminant > 0), rejects as open curve (F05).
 fn validate_profile_closed(elements: &[engawa_format::SketchElement]) -> Result<(), KernelError> {
+    use engawa_kernel::tessellation::sketch_element_is_open;
     use engawa_kernel::LENGTH_TOLERANCE;
     if elements.is_empty() {
         return Err(KernelError::InvalidParameter { kind: "profile" });
+    }
+    // F05: reject hyperbola conic (open curve) in profile
+    for elem in elements {
+        if sketch_element_is_open(elem) {
+            return Err(KernelError::InvalidParameter { kind: "profile" });
+        }
     }
     // Only Line elements have explicit to/from; Circle/Arc tessellate to closed polylines
     let line_count = elements

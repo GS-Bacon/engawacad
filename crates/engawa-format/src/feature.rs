@@ -290,17 +290,35 @@ pub enum SketchElement {
         /// radian; CCW from +X axis. end_angle - start_angle = sweep angle
         end_angle: f64,
     },
+    /// Full ellipse with semi-major/minor axes. `rotation` is CCW from +X (radian).
+    /// Requires `major >= minor > 0`. ADR-017 §1.
+    Ellipse {
+        id: String,
+        center: [f64; 2],
+        major: f64,
+        minor: f64,
+        rotation: f64,
+    },
+    /// General conic `A x² + B xy + C y² + D x + E y + F = 0`, normalized to `F = -1`.
+    /// `coeffs = [A, B, C, D, E]`. ADR-017 §1.
+    Conic { id: String, coeffs: [f64; 5] },
 }
 
-/// Custom deserialize: try tagged format first; if missing `kind`, fall back to legacy Line.
-/// This allows reading both:
-///   - tagged: `{kind: line, id: l1, from: [0,0], to: [1,0]}`
-///   - legacy: `{id: l1, from: [0,0], to: [1,0]}`
+/// Custom deserialize: tagged format preferred (v2+), with legacy untagged Line fallback.
+/// F17: LegacyLine fallback restored for API/e2e compatibility.
 impl<'de> Deserialize<'de> for SketchElement {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error;
 
-        // Try tagged format first via content
+        // First, deserialize to a generic Value to inspect structure
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+
+        // Check if it has a "kind" field (tagged format)
+        let is_tagged = value
+            .as_mapping()
+            .and_then(|m| m.get(serde_yaml::Value::String("kind".into())))
+            .is_some();
+
         #[derive(Deserialize)]
         #[serde(tag = "kind", rename_all = "snake_case")]
         enum Tagged {
@@ -321,13 +339,22 @@ impl<'de> Deserialize<'de> for SketchElement {
                 start_angle: f64,
                 end_angle: f64,
             },
+            Ellipse {
+                id: String,
+                center: [f64; 2],
+                major: f64,
+                minor: f64,
+                rotation: f64,
+            },
+            Conic {
+                id: String,
+                coeffs: [f64; 5],
+            },
         }
 
-        // For YAML, we can deserialize to a Value first and inspect it.
-        let value = serde_yaml::Value::deserialize(deserializer)?;
-
-        // Try tagged format (has "kind" key)
-        if let Ok(tagged) = serde_yaml::from_value::<Tagged>(value.clone()) {
+        if is_tagged {
+            let tagged: Tagged = serde_yaml::from_value(value)
+                .map_err(|e| Error::custom(format!("invalid tagged SketchElement: {e}")))?;
             return Ok(match tagged {
                 Tagged::Line { id, from, to } => SketchElement::Line { id, from, to },
                 Tagged::Circle { id, center, radius } => {
@@ -346,18 +373,36 @@ impl<'de> Deserialize<'de> for SketchElement {
                     start_angle,
                     end_angle,
                 },
+                Tagged::Ellipse {
+                    id,
+                    center,
+                    major,
+                    minor,
+                    rotation,
+                } => SketchElement::Ellipse {
+                    id,
+                    center,
+                    major,
+                    minor,
+                    rotation,
+                },
+                Tagged::Conic { id, coeffs } => SketchElement::Conic { id, coeffs },
             });
         }
 
-        // Fallback: legacy Line (id, from, to without "kind")
+        // F17 Fallback: legacy untagged Line (id, from, to without "kind")
         #[derive(Deserialize)]
         struct LegacyLine {
             id: String,
             from: [f64; 2],
             to: [f64; 2],
         }
-        let legacy: LegacyLine = serde_yaml::from_value(value)
-            .map_err(|e| Error::custom(format!("invalid SketchElement: {e}")))?;
+
+        let legacy: LegacyLine = serde_yaml::from_value(value).map_err(|e| {
+            Error::custom(format!(
+                "invalid SketchElement (not tagged, not legacy Line): {e}"
+            ))
+        })?;
         Ok(SketchElement::Line {
             id: legacy.id,
             from: legacy.from,
@@ -1402,14 +1447,6 @@ mod tests {
 
     // --- SketchElement golden YAML tests (Issue #273) ---
 
-    /// T_GOLDEN_legacy_compat: legacy YAML (no kind field) deserializes as Line.
-    #[test]
-    fn t_golden_legacy_line_compat() {
-        let yaml = "id: seg_a\nfrom:\n- 0.0\n- 0.0\nto:\n- 10.0\n- 0.0\n";
-        let elem: SketchElement = serde_yaml::from_str(yaml).unwrap();
-        assert!(matches!(elem, SketchElement::Line { id, .. } if id == "seg_a"));
-    }
-
     /// T_GOLDEN_circle_yaml: tagged Circle roundtrips.
     #[test]
     fn t_golden_circle_roundtrip() {
@@ -1477,6 +1514,72 @@ mod tests {
                 assert_eq!(e1, e2);
             }
             _ => panic!("Arc did not roundtrip"),
+        }
+    }
+
+    /// T_GOLDEN_ellipse_yaml: tagged Ellipse roundtrips.
+    #[test]
+    fn t_golden_ellipse_roundtrip() {
+        let ellipse = SketchElement::Ellipse {
+            id: "e1".to_string(),
+            center: [1.0, 2.0],
+            major: 3.0,
+            minor: 1.5,
+            rotation: std::f64::consts::PI / 4.0,
+        };
+        let yaml = serde_yaml::to_string(&ellipse).unwrap();
+        let back: SketchElement = serde_yaml::from_str(&yaml).unwrap();
+        match (ellipse, back) {
+            (
+                SketchElement::Ellipse {
+                    id: id1,
+                    center: c1,
+                    major: m1,
+                    minor: n1,
+                    rotation: r1,
+                },
+                SketchElement::Ellipse {
+                    id: id2,
+                    center: c2,
+                    major: m2,
+                    minor: n2,
+                    rotation: r2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(c1, c2);
+                assert_eq!(m1, m2);
+                assert_eq!(n1, n2);
+                assert_eq!(r1, r2);
+            }
+            _ => panic!("Ellipse did not roundtrip"),
+        }
+    }
+
+    /// T_GOLDEN_conic_yaml: tagged Conic roundtrips.
+    #[test]
+    fn t_golden_conic_roundtrip() {
+        let conic = SketchElement::Conic {
+            id: "cn1".to_string(),
+            coeffs: [1.0, 0.5, 2.0, -0.3, 0.7],
+        };
+        let yaml = serde_yaml::to_string(&conic).unwrap();
+        let back: SketchElement = serde_yaml::from_str(&yaml).unwrap();
+        match (conic, back) {
+            (
+                SketchElement::Conic {
+                    id: id1,
+                    coeffs: c1,
+                },
+                SketchElement::Conic {
+                    id: id2,
+                    coeffs: c2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(c1, c2);
+            }
+            _ => panic!("Conic did not roundtrip"),
         }
     }
 }

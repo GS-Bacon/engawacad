@@ -15,6 +15,18 @@ pub const ANGLE_TOLERANCE: f64 = 1e-9;
 /// Scale-proportional relative tolerance (dimensionless).
 pub const RELATIVE_TOLERANCE: f64 = 1e-9;
 
+/// Axis ratio tolerance for ellipse degeneracy detection.
+/// If `minor / major < EPS_AXIS_RATIO`, the ellipse is considered degenerate (near-line).
+/// ADR-017 §2.
+pub const EPS_AXIS_RATIO: f64 = 1e-6;
+
+/// Discriminant tolerance for conic degeneracy detection.
+/// Conic `A x² + B xy + C y² + D x + E y + F = 0` (F = -1 normalized).
+/// Discriminant = B² - 4 A C.
+/// If `|discriminant| < EPS_DISCRIMINANT`, the conic is degenerate (parabolic or line pair).
+/// ADR-017 §2.
+pub const EPS_DISCRIMINANT: f64 = 1e-9;
+
 // ---------------------------------------------------------------------------
 // Comparison helpers
 // ---------------------------------------------------------------------------
@@ -117,6 +129,8 @@ mod tests {
         assert_eq!(LENGTH_TOLERANCE, 1e-9);
         assert_eq!(ANGLE_TOLERANCE, 1e-9);
         assert_eq!(RELATIVE_TOLERANCE, 1e-9);
+        assert_eq!(EPS_AXIS_RATIO, 1e-6);
+        assert_eq!(EPS_DISCRIMINANT, 1e-9);
     }
 
     // --- T02: Invariants (positive, small) ---
@@ -126,6 +140,8 @@ mod tests {
         assert!(LENGTH_TOLERANCE > 0.0 && LENGTH_TOLERANCE < 1e-3);
         assert!(ANGLE_TOLERANCE > 0.0 && ANGLE_TOLERANCE < 1e-3);
         assert!(RELATIVE_TOLERANCE > 0.0 && RELATIVE_TOLERANCE < 1e-3);
+        assert!(EPS_AXIS_RATIO > 0.0 && EPS_AXIS_RATIO < 1e-3);
+        assert!(EPS_DISCRIMINANT > 0.0 && EPS_DISCRIMINANT < 1e-3);
     }
 
     // --- T03: Helper boundary (<= tol → true, just above → false) ---
@@ -177,6 +193,8 @@ mod tests {
         let _ = crate::LENGTH_TOLERANCE;
         let _ = crate::ANGLE_TOLERANCE;
         let _ = crate::RELATIVE_TOLERANCE;
+        let _ = crate::EPS_AXIS_RATIO;
+        let _ = crate::EPS_DISCRIMINANT;
     }
 
     // --- Edge-case tests (adversarial persona) ---

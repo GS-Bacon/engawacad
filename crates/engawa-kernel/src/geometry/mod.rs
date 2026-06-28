@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub use math::{
     angle_near, arc_segment_count, length_near, point_near, point_near_scaled, unwrap_periodic_uv,
-    ANGLE_TOLERANCE, LENGTH_TOLERANCE, RELATIVE_TOLERANCE,
+    ANGLE_TOLERANCE, EPS_AXIS_RATIO, EPS_DISCRIMINANT, LENGTH_TOLERANCE, RELATIVE_TOLERANCE,
 };
 
 /// A 3D point with f64 precision.

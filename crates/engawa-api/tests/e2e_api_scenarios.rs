@@ -105,7 +105,7 @@ async fn s01_reload_no_duplicate_id() {
     );
 
     // 2. POST with a duplicate ID → 422
-    let dup_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[1.0,0.0]},{"id":"seg_1","from":[1.0,0.0],"to":[1.0,1.0]},{"id":"seg_2","from":[1.0,1.0],"to":[0.0,1.0]},{"id":"seg_3","from":[0.0,1.0],"to":[0.0,0.0]}]}"#;
+    let dup_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[0.0,0.0],"to":[1.0,0.0]},{"kind":"line","id":"seg_1","from":[1.0,0.0],"to":[1.0,1.0]},{"kind":"line","id":"seg_2","from":[1.0,1.0],"to":[0.0,1.0]},{"kind":"line","id":"seg_3","from":[0.0,1.0],"to":[0.0,0.0]}]}"#;
     let app2 = make_app(path.clone());
     let (dup_status, dup_body) = send_post_feature(app2, dup_json).await;
     assert_eq!(
@@ -128,7 +128,7 @@ async fn s02_extruded_face_ids_contain_cap() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // POST create_sketch (xy plane, 10x10 rectangle)
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"kind":"line","id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"kind":"line","id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"kind":"line","id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -183,7 +183,7 @@ async fn s03_extrude_creates_two_bodies() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // POST create_sketch (xy plane, 10x10 rectangle)
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"kind":"line","id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"kind":"line","id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"kind":"line","id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -223,7 +223,7 @@ async fn s04_degen_extrudecut_depth_boundary() {
 
     // simple_box: 10x20x30, centered at origin → z ∈ [-15, 15]
     // Sketch on yz plane at offset=5.0 (offset along x)
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -247,7 +247,7 @@ async fn s04_degen_extrudecut_depth_boundary() {
 async fn s04b_extrudecut_depth_just_inside_boundary() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":5.0,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -271,7 +271,7 @@ async fn s04b_extrudecut_depth_just_inside_boundary() {
 async fn s06_zero_depth_extrude_cut_rejected() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -295,7 +295,7 @@ async fn s06_zero_depth_extrude_cut_rejected() {
 async fn s07_negative_depth_extrude_cut_rejected() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
@@ -317,7 +317,7 @@ async fn s07_negative_depth_extrude_cut_rejected() {
 /// produce same vertex counts, same face_ids, same everything.
 #[tokio::test]
 async fn s05_determinism_multi_step() {
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[0.0,0.0],"to":[10.0,0.0]},{"kind":"line","id":"seg_1","from":[10.0,0.0],"to":[10.0,10.0]},{"kind":"line","id":"seg_2","from":[10.0,10.0],"to":[0.0,10.0]},{"kind":"line","id":"seg_3","from":[0.0,10.0],"to":[0.0,0.0]}]}"#;
     let extrude_json = r#"{"type":"extrude","id":"extrude_0","sketch":"sketch_0","depth":5.0}"#;
 
     // Run 1
@@ -353,7 +353,7 @@ async fn s08_multistep_extrude_cut() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Step 1: POST create_sketch (xy plane, [-3,3]×[-3,3])
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"kind":"line","id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"kind":"line","id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"kind":"line","id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
     let app1 = make_app(path.clone());
     let (s, body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_0 POST: {body}");
@@ -368,7 +368,7 @@ async fn s08_multistep_extrude_cut() {
 
     // Step 3: POST create_sketch on yz plane, profile (y,z)=[-1,1]×[1,4]
     // extrude_0 spans x∈[-3,3], y∈[-3,3], z∈[0,5]; the profile is fully inside.
-    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
+    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"kind":"line","id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"kind":"line","id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"kind":"line","id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"kind":"line","id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
     let app3 = make_app(path.clone());
     let (s, body) = send_post_feature(app3, sketch1_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_1 POST: {body}");
@@ -410,7 +410,7 @@ async fn s08_boundary_shallow_depth() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Step 1: sketch + extrude → extrude_0 (x∈[-3,3], y∈[-3,3], z∈[0,5])
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"kind":"line","id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"kind":"line","id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"kind":"line","id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
     let app1 = make_app(path.clone());
     let (s, body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_0 POST: {body}");
@@ -421,7 +421,7 @@ async fn s08_boundary_shallow_depth() {
     assert_eq!(s, StatusCode::OK, "extrude_0 POST: {body}");
 
     // Step 2: sketch_1 on yz plane, profile inside extrude_0
-    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
+    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"kind":"line","id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"kind":"line","id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"kind":"line","id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"kind":"line","id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
     let app3 = make_app(path.clone());
     let (s, body) = send_post_feature(app3, sketch1_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_1 POST: {body}");
@@ -445,7 +445,7 @@ async fn s08_degen_nonexistent_target() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Set up a sketch so the cut payload is otherwise valid
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-1.0,-1.0],"to":[1.0,-1.0]},{"id":"seg_1","from":[1.0,-1.0],"to":[1.0,1.0]},{"id":"seg_2","from":[1.0,1.0],"to":[-1.0,1.0]},{"id":"seg_3","from":[-1.0,1.0],"to":[-1.0,-1.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-1.0,-1.0],"to":[1.0,-1.0]},{"kind":"line","id":"seg_1","from":[1.0,-1.0],"to":[1.0,1.0]},{"kind":"line","id":"seg_2","from":[1.0,1.0],"to":[-1.0,1.0]},{"kind":"line","id":"seg_3","from":[-1.0,1.0],"to":[-1.0,-1.0]}]}"#;
     let app1 = make_app(path.clone());
     let (s, body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_0 POST: {body}");
@@ -473,9 +473,9 @@ async fn s08_degen_nonexistent_target() {
 /// ID generation and geometry remain deterministic under 100 repetitions.
 #[tokio::test]
 async fn s08_determinism_100x() {
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"kind":"line","id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"kind":"line","id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"kind":"line","id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
     let extrude_json = r#"{"type":"extrude","id":"extrude_0","sketch":"sketch_0","depth":5.0}"#;
-    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
+    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"kind":"line","id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"kind":"line","id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"kind":"line","id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"kind":"line","id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
     let cut_json = r#"{"type":"extrude_cut","id":"cut_0","sketch":"sketch_1","depth":2.0,"target":"extrude_0"}"#;
 
     let mut reference_body: Option<String> = None;
@@ -519,7 +519,7 @@ async fn s08_determinism_100x() {
 async fn s08_degen_nonexistent_sketch() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"kind":"line","id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"kind":"line","id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"kind":"line","id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
     let app1 = make_app(path.clone());
     let (s, body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_0 POST: {body}");
@@ -549,7 +549,7 @@ async fn s08_double_cut() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Step 1: sketch_0 + extrude_0
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[-3.0,-3.0],"to":[3.0,-3.0]},{"kind":"line","id":"seg_1","from":[3.0,-3.0],"to":[3.0,3.0]},{"kind":"line","id":"seg_2","from":[3.0,3.0],"to":[-3.0,3.0]},{"kind":"line","id":"seg_3","from":[-3.0,3.0],"to":[-3.0,-3.0]}]}"#;
     let app1 = make_app(path.clone());
     let (s, body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_0 POST: {body}");
@@ -560,7 +560,7 @@ async fn s08_double_cut() {
     assert_eq!(s, StatusCode::OK, "extrude_0 POST: {body}");
 
     // Step 2: First cut — yz plane, y∈[-1,1], z∈[1,4], depth=2 (x∈[0,2])
-    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
+    let sketch1_json = r#"{"type":"create_sketch","id":"sketch_1","plane":"yz","profile":[{"kind":"line","id":"seg_0","from":[-1.0,1.0],"to":[1.0,1.0]},{"kind":"line","id":"seg_1","from":[1.0,1.0],"to":[1.0,4.0]},{"kind":"line","id":"seg_2","from":[1.0,4.0],"to":[-1.0,4.0]},{"kind":"line","id":"seg_3","from":[-1.0,4.0],"to":[-1.0,1.0]}]}"#;
     let app3 = make_app(path.clone());
     let (s, body) = send_post_feature(app3, sketch1_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_1 POST: {body}");
@@ -575,7 +575,7 @@ async fn s08_double_cut() {
     );
 
     // Step 3: Second cut — yz plane at different location, y∈[-2,-1], z∈[2,3], depth=1.5
-    let sketch2_json = r#"{"type":"create_sketch","id":"sketch_2","plane":"yz","profile":[{"id":"seg_0","from":[-2.0,2.0],"to":[-1.0,2.0]},{"id":"seg_1","from":[-1.0,2.0],"to":[-1.0,3.0]},{"id":"seg_2","from":[-1.0,3.0],"to":[-2.0,3.0]},{"id":"seg_3","from":[-2.0,3.0],"to":[-2.0,2.0]}]}"#;
+    let sketch2_json = r#"{"type":"create_sketch","id":"sketch_2","plane":"yz","profile":[{"kind":"line","id":"seg_0","from":[-2.0,2.0],"to":[-1.0,2.0]},{"kind":"line","id":"seg_1","from":[-1.0,2.0],"to":[-1.0,3.0]},{"kind":"line","id":"seg_2","from":[-1.0,3.0],"to":[-2.0,3.0]},{"kind":"line","id":"seg_3","from":[-2.0,3.0],"to":[-2.0,2.0]}]}"#;
     let app5 = make_app(path.clone());
     let (s, body) = send_post_feature(app5, sketch2_json).await;
     assert_eq!(s, StatusCode::OK, "sketch_2 POST: {body}");
@@ -600,7 +600,7 @@ async fn s08_double_cut() {
 async fn s08_very_small_depth() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"yz","offset":1.0,"profile":[{"kind":"line","id":"seg_0","from":[-2.0,-2.0],"to":[2.0,-2.0]},{"kind":"line","id":"seg_1","from":[2.0,-2.0],"to":[2.0,2.0]},{"kind":"line","id":"seg_2","from":[2.0,2.0],"to":[-2.0,2.0]},{"kind":"line","id":"seg_3","from":[-2.0,2.0],"to":[-2.0,-2.0]}]}"#;
     let app1 = make_app(path.clone());
     let (s, body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(s, StatusCode::OK, "sketch POST: {body}");
@@ -626,7 +626,7 @@ async fn s08_degen_zero_length_segment() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // Profile with a zero-length segment: seg_1 has from == to
-    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"id":"seg_0","from":[0.0,0.0],"to":[2.0,0.0]},{"id":"seg_1","from":[2.0,0.0],"to":[2.0,0.0]},{"id":"seg_2","from":[2.0,0.0],"to":[0.0,2.0]},{"id":"seg_3","from":[0.0,2.0],"to":[0.0,0.0]}]}"#;
+    let sketch_json = r#"{"type":"create_sketch","id":"sketch_0","plane":"xy","profile":[{"kind":"line","id":"seg_0","from":[0.0,0.0],"to":[2.0,0.0]},{"kind":"line","id":"seg_1","from":[2.0,0.0],"to":[2.0,0.0]},{"kind":"line","id":"seg_2","from":[2.0,0.0],"to":[0.0,2.0]},{"kind":"line","id":"seg_3","from":[0.0,2.0],"to":[0.0,0.0]}]}"#;
     let app1 = make_app(path.clone());
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(

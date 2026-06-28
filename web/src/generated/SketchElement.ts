@@ -13,4 +13,4 @@ start_angle: number,
 /**
  * radian; CCW from +X axis. end_angle - start_angle = sweep angle
  */
-end_angle: number, };
+end_angle: number, } | { "kind": "ellipse", id: string, center: [number, number], major: number, minor: number, rotation: number, } | { "kind": "conic", id: string, coeffs: [number, number, number, number, number], };

@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-22
 **Status**: Accepted (2026-06-27: 人間判断で accept。auto-accept 3 ペルソナ全 refute (schema_version v1 据え置きが breaking なし主張と矛盾) は §4 を schema_version v2 バンプ + migration hook に書き直して解消。ADR-015/016 は Phase 9 完了で Withdrawn 化したため、本 ADR では参照を ADR-010 (Sketch input model 互換維持の先例) に差し替え)
-**Related**: ADR-001 (B-rep), ADR-004 (tolerance 規約), ADR-005 (Topological Naming), ADR-006 (Issue 粒度), ADR-010 (Sketch input model — serde default + 互換維持の先例), ADR-013 (ADR 自動 accept フロー)
+**Related**: ADR-001 (B-rep), ADR-004 (tolerance 規約), ADR-005 (Topological Naming), ADR-006 (Issue 粒度), ADR-010 (Sketch input model — serde default + 互換維持の先例), ADR-013 (ADR 自動 accept フロー), ADR-015 (Phase 9 design foundations — Withdrawn), ADR-016 (engawa-cli naming — Withdrawn)
 **Resolves**: Issue #272 (Issue 本文の "ADR-016" は番号衝突 — 次の空き番号 ADR-017 を採用)
 
 ---
