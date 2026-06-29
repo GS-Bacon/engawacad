@@ -1,0 +1,11 @@
+```yaml
+issues:
+  - id: FN01
+    severity: high
+    file: "crates/engawa-format/tests/golden_examples.rs"
+    line_hint: 247
+    finding: "In-Scope に明示された #275 (rect_polygon_slot.engawa) の golden round-trip テストが実装されていない。rect_polygon_slot.engawa ファイル自体が存在しない (#275 が未実装のため) が、Issue #290 の scope には「既存 example の golden retro-fit (#274 example, #275 example)」と明記されている。"
+    suggestion: "#275 が close して rect_polygon_slot.engawa が examples/ に作成された後に、別 Issue または follow-up commit で golden test を追加すること。"
+
+verdict: pass
+```
