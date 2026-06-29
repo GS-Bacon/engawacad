@@ -1,0 +1,7 @@
+{
+  "issue": 278,
+  "category": "intent-aligned-no",
+  "count": 3,
+  "last_at": "2026-06-29T11:54:05.836Z",
+  "last_reason": "cycle 81: #278 (Mirror + PatternLinear + PatternCircular) B-3 で Codex intent-check が再び aligned=no (理由: Mirror+Pattern 同居で 2 操作以上混在 + Out-of-Scope/Non-Goals 未記載 + count/total_angle/重複判定の数値モデル未記載、ADR-006 §1 粒度ガード違反)。scope 縮減で 1 機能のみ実装すると Issue body 契約違反 (残機能の未実装 close)、手動 split は /3ai scope 外で実行不可。pause-streak #278: 2→3 到達で pause-streak tracker が自動 needs-human + コメント投稿予定。Phase 10 sketch batch (#275/#276/#277) は既に全 needs-human で stuck、#278 合流で sketch batch tier 完全 stuck。batch:kernel 他 tier (#286 等) は split-batch tier 最優先のため依然 pick されず、ユーザー介入 (Phase 10 sketch 手動 split or batch-select policy 改善 = needs-human ADR/Issue を持つ split 子の自動下位 tier 化など) を待つ。"
+}

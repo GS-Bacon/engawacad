@@ -1,0 +1,7 @@
+{
+  "issue": 277,
+  "category": "intent-aligned-no",
+  "count": 2,
+  "last_at": "2026-06-29T11:45:10.486Z",
+  "last_reason": "cycle 79: #277 (Offset + Sketch Fillet + Sketch Chamfer) B-3 で Codex intent-check cached 結果 aligned=no を尊重して停止。Issue body は 3 機能を求めるが Codex 指摘 \"3 機能 1 Issue は粒度過大 + Out-of-Scope/数値モデル未記載\" は ADR-006 §1 粒度ガードと合致しており、scope 縮減で押し通すと Issue body 契約違反 (他 2 機能の未実装 close)、手動 split は /3ai scope 外。pause-streak count=1→2 に進めて自然 escalation。同条件の #278 (Mirror+Pattern) も同パターン推定で skip。直近 cycle 78 と同 category 'intent-aligned-no'。次 cycle で count=3 → 自動 needs-human → Phase 10 sketch batch が一時的に全 stuck、その他 batch (#286 batch:kernel など) は split-batch tier 最優先のため依然 pick されない構造のため、ユーザーアクション (Phase 10 sketch split or batch-select 改善) を待つ。"
+}

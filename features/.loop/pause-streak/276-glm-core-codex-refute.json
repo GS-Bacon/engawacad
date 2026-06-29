@@ -1,0 +1,7 @@
+{
+  "issue": 276,
+  "category": "glm-core-codex-refute",
+  "count": 1,
+  "last_at": "2026-06-29T11:32:19.890Z",
+  "last_reason": "cycle 77: #276 STEP 6 GLM core 試行 6 (ESC 3) 失敗 → Codex adversarial 3 ペルソナ全 refute (architect: EntityRef は B-rep Face/Edge/Vertex 専用で sketch 参照は ADR-005 契約違反 / contrarian: sketch_ref: EntityRef は schema/API 再設計でバグ修正でない / migration: wire-format 破壊的変更で局所修正でない)。plan.md 設計の根本見直し + ADR-005 EntityRef scope 議論 + 別 Issue (extrude 経路の dedup マスクによる s08_degen_zero_length_segment 既存バグ root cause) 切り出しが必要。#276 needs-human 自動付与済、#292 escalation auto-raised。同サイクル中の commit 0d9e923 (#276 kernel intermediate) は cad/276 ブランチ塩漬けで残存 (#275 パターンと同一)。"
+}
