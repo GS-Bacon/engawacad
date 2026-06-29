@@ -243,3 +243,36 @@ fn golden_sketch_via_refplane() {
         ),
     );
 }
+
+// #290 Phase 10 byte-identical golden retro-fit (#273 Circle/Arc, #274 Ellipse/Conic).
+
+#[test]
+fn golden_circle_arc() {
+    // schema_version: 1 で書かれているため to_yaml では migration 後の schema_version: 2 が出る。
+    assert_golden(
+        "circle_arc.engawa",
+        concat!(
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n  name: circle_arc_example\n  features:\n",
+            "  - type: create_box\n    id: box_base\n    width: 20.0\n    height: 20.0\n    depth: 10.0\n",
+            "  - type: create_sketch\n    id: sketch_circle\n    plane: xy\n    offset: 10.0\n    profile:\n",
+            "    - kind: circle\n      id: circle_1\n      center:\n      - 10.0\n      - 10.0\n      radius: 4.0\n",
+            "  - type: extrude\n    id: extrude_1\n    sketch: sketch_circle\n    depth: 3.0\n",
+        ),
+    );
+}
+
+#[test]
+fn golden_ellipse_conic() {
+    assert_golden(
+        "ellipse_conic.engawa",
+        concat!(
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n  name: Ellipse Conic Test\n  features:\n",
+            "  - type: create_sketch\n    id: sketch_ellipse\n    plane: xy\n    profile:\n",
+            "    - kind: ellipse\n      id: ellipse_1\n      center:\n      - 0.0\n      - 0.0\n      major: 2.0\n      minor: 1.0\n      rotation: 0.0\n",
+            "  - type: extrude\n    id: extrude_ellipse\n    sketch: sketch_ellipse\n    depth: 5.0\n",
+            "  - type: create_sketch\n    id: sketch_conic\n    plane: xy\n    offset: 10.0\n    profile:\n",
+            "    - kind: conic\n      id: conic_1\n      coeffs:\n      - 1.0\n      - 0.0\n      - 4.0\n      - 0.0\n      - 0.0\n",
+            "  - type: extrude\n    id: extrude_conic\n    sketch: sketch_conic\n    depth: 5.0\n",
+        ),
+    );
+}
