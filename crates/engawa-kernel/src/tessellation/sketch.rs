@@ -16,7 +16,7 @@ use engawa_format::SketchElement;
 /// - `Arc`: returns `n` points from `start_angle` to `end_angle` (CCW, endpoint excluded for chaining)
 ///
 /// # Errors
-/// - `DegenerateSketchElement` if `radius < LENGTH_TOLERANCE` or `|end_angle - start_angle| < ANGLE_TOLERANCE`
+/// - `DegenerateSketchElement` if `radius <= LENGTH_TOLERANCE` or `|end_angle - start_angle| < ANGLE_TOLERANCE`
 pub fn tessellate_sketch_element(
     elem: &SketchElement,
     base_segments: usize,
@@ -38,10 +38,10 @@ pub fn tessellate_sketch_element(
                     reason: "non-finite radius",
                 });
             }
-            if *radius < LENGTH_TOLERANCE {
+            if *radius <= LENGTH_TOLERANCE {
                 return Err(KernelError::DegenerateSketchElement {
                     element_id: id.clone(),
-                    reason: "radius < ε_radius",
+                    reason: "radius <= ε_radius",
                 });
             }
             let n = arc_segment_count(0.0, std::f64::consts::TAU, base_segments);
@@ -73,10 +73,10 @@ pub fn tessellate_sketch_element(
                     reason: "non-finite radius/angle",
                 });
             }
-            if *radius < LENGTH_TOLERANCE {
+            if *radius <= LENGTH_TOLERANCE {
                 return Err(KernelError::DegenerateSketchElement {
                     element_id: id.clone(),
-                    reason: "radius < ε_radius",
+                    reason: "radius <= ε_radius",
                 });
             }
             let sweep = end_angle - start_angle;
@@ -116,16 +116,16 @@ pub fn tessellate_sketch_element(
                     reason: "non-finite rotation",
                 });
             }
-            if *major < LENGTH_TOLERANCE {
+            if *major <= LENGTH_TOLERANCE {
                 return Err(KernelError::DegenerateSketchElement {
                     element_id: id.clone(),
-                    reason: "major < ε_radius",
+                    reason: "major <= ε_radius",
                 });
             }
-            if *minor < LENGTH_TOLERANCE {
+            if *minor <= LENGTH_TOLERANCE {
                 return Err(KernelError::DegenerateSketchElement {
                     element_id: id.clone(),
-                    reason: "minor < ε_radius",
+                    reason: "minor <= ε_radius",
                 });
             }
             // F04: major >= minor invariant enforcement (ADR-017 §1)
@@ -444,7 +444,7 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "radius < ε_radius"
+                reason: "radius <= ε_radius"
             } if element_id == "c0"
         ));
     }
@@ -534,7 +534,7 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "radius < ε_radius"
+                reason: "radius <= ε_radius"
             } if element_id == "neg_zero_circle"
         ));
     }
@@ -552,7 +552,7 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "radius < ε_radius"
+                reason: "radius <= ε_radius"
             } if element_id == "neg_circle"
         ));
     }
@@ -570,12 +570,12 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "radius < ε_radius"
+                reason: "radius <= ε_radius"
             } if element_id == "tiny_circle"
         ));
     }
 
-    /// T_EDGE_length_tolerance_boundary: radius = LENGTH_TOLERANCE passes.
+    /// T_EDGE_length_tolerance_boundary: radius = LENGTH_TOLERANCE rejected (`<=` convention, ADR-018).
     #[test]
     fn t_edge_length_tolerance_boundary_passes() {
         let circle = SketchElement::Circle {
@@ -583,9 +583,11 @@ mod tests {
             center: [0.0, 0.0],
             radius: LENGTH_TOLERANCE,
         };
-        // ε 以上は成功
-        let pts = tessellate_sketch_element(&circle, 32).unwrap();
-        assert_eq!(pts.len(), 32);
+        let mesh = tessellate_sketch_element(&circle, 32);
+        assert!(matches!(
+            mesh,
+            Err(KernelError::DegenerateSketchElement { .. })
+        ));
     }
 
     /// T_EDGE_angle_tolerance_boundary: sweep = ANGLE_TOLERANCE passes.
@@ -852,7 +854,7 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "major < ε_radius"
+                reason: "major <= ε_radius"
             } if element_id == "e0"
         ));
     }
@@ -872,7 +874,7 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "minor < ε_radius"
+                reason: "minor <= ε_radius"
             } if element_id == "e0"
         ));
     }
@@ -998,5 +1000,145 @@ mod tests {
         };
         let pts = tessellate_sketch_element(&conic, 0).unwrap();
         assert!(pts.len() >= 2);
+    }
+
+    // === ADR-018 境界テスト: `<=` inclusive 規約 ===
+
+    /// T_BOUNDARY_above_tolerance_circle: radius slightly above LENGTH_TOLERANCE passes.
+    #[test]
+    fn t_boundary_above_tolerance_circle() {
+        let circle = SketchElement::Circle {
+            id: "c1".to_string(),
+            center: [0.0, 0.0],
+            radius: LENGTH_TOLERANCE * 1.000_001,
+        };
+        let pts = tessellate_sketch_element(&circle, 32).unwrap();
+        assert_eq!(pts.len(), 32);
+    }
+
+    /// T_BOUNDARY_above_tolerance_arc: radius slightly above LENGTH_TOLERANCE passes.
+    #[test]
+    fn t_boundary_above_tolerance_arc() {
+        let arc = SketchElement::Arc {
+            id: "a1".to_string(),
+            center: [0.0, 0.0],
+            radius: LENGTH_TOLERANCE * 1.000_001,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::PI / 2.0,
+        };
+        let pts = tessellate_sketch_element(&arc, 32).unwrap();
+        assert_eq!(pts.len(), 8);
+    }
+
+    /// T_BOUNDARY_above_tolerance_ellipse_major: major = LENGTH_TOLERANCE * 1.000_001 passes.
+    /// 偽陽性ガード: `<` strict に戻すとテストが fail する。
+    #[test]
+    fn t_boundary_above_tolerance_ellipse_major() {
+        let major = LENGTH_TOLERANCE * 1.000_001;
+        let ellipse = SketchElement::Ellipse {
+            id: "e1".to_string(),
+            center: [0.0, 0.0],
+            major,
+            minor: LENGTH_TOLERANCE * 1.000_001,
+            rotation: 0.0,
+        };
+        let pts = tessellate_sketch_element(&ellipse, 32).unwrap();
+        assert_eq!(pts.len(), 32);
+    }
+
+    /// T_BOUNDARY_above_tolerance_ellipse_minor: minor = LENGTH_TOLERANCE * 1.000_001 passes.
+    /// 偽陽性ガード: `<` strict に戻すとテストが fail する。
+    #[test]
+    fn t_boundary_above_tolerance_ellipse_minor() {
+        let major = LENGTH_TOLERANCE * 1.000_001;
+        let ellipse = SketchElement::Ellipse {
+            id: "e1".to_string(),
+            center: [0.0, 0.0],
+            major,
+            minor: LENGTH_TOLERANCE * 1.000_001,
+            rotation: 0.0,
+        };
+        let pts = tessellate_sketch_element(&ellipse, 32).unwrap();
+        assert_eq!(pts.len(), 32);
+    }
+
+    /// T_BOUNDARY_exact_tolerance_circle: radius == LENGTH_TOLERANCE rejected (`<=` convention).
+    #[test]
+    fn t_boundary_exact_tolerance_circle() {
+        let circle = SketchElement::Circle {
+            id: "c0".to_string(),
+            center: [0.0, 0.0],
+            radius: LENGTH_TOLERANCE,
+        };
+        let err = tessellate_sketch_element(&circle, 32).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::DegenerateSketchElement {
+                reason: "radius <= ε_radius",
+                ..
+            }
+        ));
+    }
+
+    /// T_BOUNDARY_exact_tolerance_arc: radius == LENGTH_TOLERANCE rejected (`<=` convention).
+    #[test]
+    fn t_boundary_exact_tolerance_arc() {
+        let arc = SketchElement::Arc {
+            id: "a0".to_string(),
+            center: [0.0, 0.0],
+            radius: LENGTH_TOLERANCE,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::PI / 2.0,
+        };
+        let err = tessellate_sketch_element(&arc, 32).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::DegenerateSketchElement {
+                reason: "radius <= ε_radius",
+                ..
+            }
+        ));
+    }
+
+    /// T_BOUNDARY_exact_tolerance_ellipse_major: major == LENGTH_TOLERANCE rejected (`<=` convention).
+    /// 偽陽性ガード: `<` strict に戻すとテストが fail する（reason "major <= ε_radius" 一致）。
+    #[test]
+    fn t_boundary_exact_tolerance_ellipse_major() {
+        let ellipse = SketchElement::Ellipse {
+            id: "e0".to_string(),
+            center: [0.0, 0.0],
+            major: LENGTH_TOLERANCE,
+            minor: LENGTH_TOLERANCE,
+            rotation: 0.0,
+        };
+        let err = tessellate_sketch_element(&ellipse, 32).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::DegenerateSketchElement {
+                reason: "major <= ε_radius",
+                ..
+            }
+        ));
+    }
+
+    /// T_BOUNDARY_exact_tolerance_ellipse_minor: minor == LENGTH_TOLERANCE rejected (`<=` convention).
+    /// 偽陽性ガード: `<` strict に戻すとテストが fail する（reason "minor <= ε_radius" 一致）。
+    #[test]
+    fn t_boundary_exact_tolerance_ellipse_minor() {
+        let ellipse = SketchElement::Ellipse {
+            id: "e0".to_string(),
+            center: [0.0, 0.0],
+            major: LENGTH_TOLERANCE * 1.000_001,
+            minor: LENGTH_TOLERANCE,
+            rotation: 0.0,
+        };
+        let err = tessellate_sketch_element(&ellipse, 32).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::DegenerateSketchElement {
+                reason: "minor <= ε_radius",
+                ..
+            }
+        ));
     }
 }
