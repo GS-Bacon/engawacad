@@ -256,6 +256,10 @@ pub fn build_bodies_from_features(
 
                 let plane = resolve_plane(entry, ref_planes, &built)?;
 
+                // Reject multi-element profiles that include a closed primitive (Phase 10 scope).
+                // Multi-contour profiles are deferred to Phase 11+ (#288).
+                validate_sketch_profile_contours(entry.profile)?;
+
                 // Tessellate each sketch element into polyline points.
                 const BASE_SEGMENTS: usize = 32;
                 let profile_uv: Vec<(f64, f64)> = entry
@@ -357,6 +361,10 @@ pub fn build_bodies_from_features(
                         sketch_plane_to_plane(entry.plane)
                     }
                 };
+
+                // Reject multi-element profiles that include a closed primitive (Phase 10 scope).
+                // Multi-contour profiles are deferred to Phase 11+ (#288).
+                validate_sketch_profile_contours(entry.profile)?;
 
                 const BASE_SEGMENTS: usize = 32;
                 let profile_uv: Vec<(f64, f64)> = entry
@@ -585,6 +593,45 @@ fn validate_profile_closed(elements: &[engawa_format::SketchElement]) -> Result<
                 return Err(KernelError::InvalidParameter { kind: "profile" });
             }
         }
+    }
+    Ok(())
+}
+
+/// #288 Phase 10: Reject multi-element profiles that include a closed primitive.
+///
+/// Multi-contour profiles are deferred to Phase 11+. This guard prevents the
+/// current single-contour implementation from incorrectly flattening multiple
+/// closed primitives (e.g., `[Circle, Circle]`) into a single broken polyline.
+///
+/// Closed primitives: Circle, Ellipse, Conic (conservatively treated as closed),
+/// and Arc with sweep ≈ 2π (full circle).
+/// Open primitives: Line, Arc with sweep < 2π.
+fn is_closed_primitive(elem: &engawa_format::SketchElement) -> bool {
+    use engawa_format::SketchElement;
+    use engawa_kernel::ANGLE_TOLERANCE;
+    use std::f64::consts::TAU;
+    match elem {
+        SketchElement::Circle { .. }
+        | SketchElement::Ellipse { .. }
+        | SketchElement::Conic { .. } => true,
+        SketchElement::Arc {
+            start_angle,
+            end_angle,
+            ..
+        } => {
+            let sweep = (end_angle - start_angle).abs();
+            let n = (sweep / TAU).round();
+            n >= 1.0 && (sweep - n * TAU).abs() <= ANGLE_TOLERANCE
+        }
+        SketchElement::Line { .. } => false,
+    }
+}
+
+fn validate_sketch_profile_contours(
+    profile: &[engawa_format::SketchElement],
+) -> Result<(), KernelError> {
+    if profile.len() > 1 && profile.iter().any(is_closed_primitive) {
+        return Err(KernelError::InvalidParameter { kind: "profile" });
     }
     Ok(())
 }

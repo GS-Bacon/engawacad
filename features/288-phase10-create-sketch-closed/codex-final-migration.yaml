@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/tests/create_sketch_closed_acceptance.rs"
+    line_hint: 17
+    finding: "`build_with_profile` / `build_with_profile_extrude_cut` が `build_bodies_from_features(...).map(|_| ())` で戻り値を捨てているため、T01/T02 など正常系テストは `Ok` だったことしか確認できません。設計時に合意した『1 Solid 生成』という後方互換条件を実際には固定できていません。"
+    suggestion: "ヘルパーで生成結果をそのまま返し、正常系テストでは body 数と solid 数を明示的に assert してください。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/create_sketch_closed_acceptance.rs"
+    line_hint: 177
+    finding: "`t05_extrudecut_rejects_multi_closed` が `[Circle, Circle]` を使っており、下流の `make_extrusion` 側でも同じ `InvalidParameter { kind: \"profile\" }` に落ちうる入力です。これでは `Feature::ExtrudeCut` 経路に追加した `validate_sketch_profile_contours` 呼び出しを固有に固定できず、plan の T05（Circle+Line で guard を確認）も未充足です。"
+    suggestion: "`[Circle, Line]` か `[Line, Circle, Line]` のような guard 専用ケースに差し替え、ExtrudeCut 側の新規 call site が消えると fail する形にしてください。"
+
+verdict: pass

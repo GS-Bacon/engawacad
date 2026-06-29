@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-build/tests/create_sketch_closed_acceptance.rs"
+    line_hint: 168
+    finding: "`t05_extrudecut_rejects_multi_closed` が `[Circle, Circle]` を使っているため、`ExtrudeCut` 分岐に追加した `validate_sketch_profile_contours` 呼び出しを実質固定できていません。この入力は共有の下流経路でも `InvalidParameter { kind: \"profile\" }` に落ちる余地があり、`lib.rs` の `ExtrudeCut` 側 guard を外してもテストが通り続ける回帰を見逃します。"
+    suggestion: "plan.md どおり `ExtrudeCut` 専用ケースを `[Circle, Line]` など guard でしか reject しない入力に差し替えて、`ExtrudeCut` 側の call site を明示的に固定してください。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/create_sketch_closed_acceptance.rs"
+    line_hint: 35
+    finding: "`build_with_profile` が `build_bodies_from_features(...).map(|_| ())` で戻り値を捨てているため、T01/T02/T08 の正常系は `Err` にならないことしか検証していません。plan.md で合意した「1 Solid 生成」を確認しておらず、`Ok` だが body 数が崩れる回帰はこの acceptance では拾えません。"
+    suggestion: "helper で生成 body をそのまま返し、正常系テストでは少なくとも body 件数（必要なら 1 body）まで assert してください。"
+
+verdict: pass
