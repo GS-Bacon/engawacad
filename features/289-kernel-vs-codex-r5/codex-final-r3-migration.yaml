@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/tests/length_tolerance_boundary_acceptance.rs"
+    line_hint: 1
+    finding: "合意済みの acceptance test file がまだ untracked (`git status` で `??`) のため、実際の `git diff` には T01/T_BOUNDARY/T_DEG の `tests/` 側カバレッジが含まれていない。クリーン checkout では inline test しか残らず、計画した public-path 回帰ガードが消える。"
+    suggestion: "このファイルを追跡対象に追加して diff に含めるか、同等の acceptance coverage を既存の追跡済み `tests/` へ移してからマージする。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 44
+    finding: "`reason` を `\"radius < ε_radius\"` から `\"radius <= ε_radius\"` などへ変更したことで、`KernelError::to_string()` をそのまま `ErrorResponse.error` に載せる API/CLI の 422 文言も変わる。kernel 内部だけの変更ではなく、公開エラー本文の互換性変更になっている。"
+    suggestion: "外部向けエラー本文を互換契約とみなさないなら migration note と API 回帰テストを追加し、互換を保つなら operator 差分を reason 文字列に露出しない形へ切り分ける。"
+
+verdict: fail

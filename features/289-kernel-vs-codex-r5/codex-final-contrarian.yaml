@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 1033
+    finding: "新規 Ellipse 境界テストが、合意済みの fencepost を実際には踏んでいません。`above_tolerance` は 0.1/0.05 や 1.0/0.5 のような境界から遠い値を使い、`exact_tolerance` も 1e-10（`LENGTH_TOLERANCE` 未満）や別 invariant を同時に壊す入力になっているため、`major/minor <= LENGTH_TOLERANCE` の境界仕様そのものを検証できていません。acceptance 側も同じズレを複製しており、#289 の主要成果物である ellipse の境界回帰ガードが欠けています。"
+    suggestion: "Ellipse の境界ケースは、他 invariant を満たしたまま実際の境界値で組み直してください。例: pass は `major = minor = LENGTH_TOLERANCE * 1.000_001`、major 境界 reject は `major = minor = LENGTH_TOLERANCE`、minor 境界 reject は `major = LENGTH_TOLERANCE * 1.000_001, minor = LENGTH_TOLERANCE`。inline/acceptance の両方で同じ入力を使うべきです。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/mod.rs"
+    line_hint: 4
+    finding: "`pub use sketch::tessellate_sketch_element;` により `engawa_kernel::tessellation` の公開 API を増やしています。#289 の plan/ADR/self-review は『内部判定のみで public API 変更なし』を前提にしており、既存コードも `engawa_kernel::tessellation::sketch::tessellate_sketch_element` を直接使えているので、この re-export はテスト都合だけのスコープ逸脱です。"
+    suggestion: "この re-export は削除し、新規 integration test 側を `engawa_kernel::tessellation::sketch::tessellate_sketch_element` の import に切り替えてください。"
+
+verdict: fail

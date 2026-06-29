@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 1033
+    finding: "新規 Ellipse 境界テスト 4 件が `<= LENGTH_TOLERANCE` 変更を実際には検証していない。`t_boundary_above_tolerance_ellipse_{major,minor}` は 0.1/0.05・1.0/0.5 と境界から遠く、`t_boundary_exact_tolerance_ellipse_{major,minor}` は `1e-10` を使っていて `LENGTH_TOLERANCE` 等値境界を踏まない。実装を旧 `<` に戻してもこれらは通るため、Issue の中心である Ellipse の境界挙動が未保証。"
+    suggestion: "Ellipse の pass/reject ケースは `LENGTH_TOLERANCE * 1.000_001` と `LENGTH_TOLERANCE` を基準に組み直し、`major >= minor` と `minor/major >= EPS_AXIS_RATIO` を満たす値を使って本当に境界をまたぐようにする。`major == LENGTH_TOLERANCE` が不変条件上独立検証できないなら、そのケースは dedicated boundary test として主張しない。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/mod.rs"
+    line_hint: 4
+    finding: "`pub use sketch::tessellate_sketch_element;` の追加で `engawa_kernel::tessellation` の公開 API が広がっており、ADR-018 に書かれている「public API シグネチャを一切変更しない」と食い違っている。既存の `engawa_kernel::tessellation::sketch::tessellate_sketch_element` で同じテストは書けるので、この re-export はテスト都合のスコープ逸脱。"
+    suggestion: "re-export を戻し、統合テスト側は既存の `tessellation::sketch::tessellate_sketch_element` を import する。もし API 追加を残すなら、ADR/plan に意図した公開面変更として明記する。"
+
+verdict: fail

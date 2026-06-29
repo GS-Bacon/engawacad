@@ -1,0 +1,37 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 1033
+    finding: "新規 ellipse 境界テストが `LENGTH_TOLERANCE` の閾値を実際には検証していない。`above_tolerance_ellipse_*` は `0.1/0.05`・`1.0/0.5` のように境界から十分離れた値を使い、`exact_tolerance_ellipse_*` は `1e-10`（実際の `LENGTH_TOLERANCE=1e-9` より小さい）や `minor > major` / `minor/major < EPS_AXIS_RATIO` による別理由の reject に依存しているため、ellipse の比較が `<=` から `<` に戻ってもテストが通ってしまう。"
+    suggestion: "`major/minor` のテスト値を `LENGTH_TOLERANCE` と `LENGTH_TOLERANCE * 1.000_001` に揃え、reject 側は `reason: \"major <= ε_radius\"` / `\"minor <= ε_radius\"` まで一致させて他 invariant と切り分ける。acceptance 側の mirror テストも同じ入力・同じ期待値に合わせる。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 1033
+    finding: "新規 Ellipse 境界テストが、合意済みの fencepost を実際には踏んでいません。`above_tolerance` は 0.1/0.05 や 1.0/0.5 のような境界から遠い値を使い、`exact_tolerance` も 1e-10（`LENGTH_TOLERANCE` 未満）や別 invariant を同時に壊す入力になっているため、`major/minor <= LENGTH_TOLERANCE` の境界仕様そのものを検証できていません。acceptance 側も同じズレを複製しており、#289 の主要成果物である ellipse の境界回帰ガードが欠けています。"
+    suggestion: "Ellipse の境界ケースは、他 invariant を満たしたまま実際の境界値で組み直してください。例: pass は `major = minor = LENGTH_TOLERANCE * 1.000_001`、major 境界 reject は `major = minor = LENGTH_TOLERANCE`、minor 境界 reject は `major = LENGTH_TOLERANCE * 1.000_001, minor = LENGTH_TOLERANCE`。inline/acceptance の両方で同じ入力を使うべきです。"
+  - id: C-F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/mod.rs"
+    line_hint: 4
+    finding: "`pub use sketch::tessellate_sketch_element;` により `engawa_kernel::tessellation` の公開 API を増やしています。#289 の plan/ADR/self-review は『内部判定のみで public API 変更なし』を前提にしており、既存コードも `engawa_kernel::tessellation::sketch::tessellate_sketch_element` を直接使えているので、この re-export はテスト都合だけのスコープ逸脱です。"
+    suggestion: "この re-export は削除し、新規 integration test 側を `engawa_kernel::tessellation::sketch::tessellate_sketch_element` の import に切り替えてください。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 1033
+    finding: "新規 Ellipse 境界テスト 4 件が `<= LENGTH_TOLERANCE` 変更を実際には検証していない。`t_boundary_above_tolerance_ellipse_{major,minor}` は 0.1/0.05・1.0/0.5 と境界から遠く、`t_boundary_exact_tolerance_ellipse_{major,minor}` は `1e-10` を使っていて `LENGTH_TOLERANCE` 等値境界を踏まない。実装を旧 `<` に戻してもこれらは通るため、Issue の中心である Ellipse の境界挙動が未保証。"
+    suggestion: "Ellipse の pass/reject ケースは `LENGTH_TOLERANCE * 1.000_001` と `LENGTH_TOLERANCE` を基準に組み直し、`major >= minor` と `minor/major >= EPS_AXIS_RATIO` を満たす値を使って本当に境界をまたぐようにする。`major == LENGTH_TOLERANCE` が不変条件上独立検証できないなら、そのケースは dedicated boundary test として主張しない。"
+  - id: M-F02
+    severity: medium
+    file: "crates/engawa-kernel/src/tessellation/mod.rs"
+    line_hint: 4
+    finding: "`pub use sketch::tessellate_sketch_element;` の追加で `engawa_kernel::tessellation` の公開 API が広がっており、ADR-018 に書かれている「public API シグネチャを一切変更しない」と食い違っている。既存の `engawa_kernel::tessellation::sketch::tessellate_sketch_element` で同じテストは書けるので、この re-export はテスト都合のスコープ逸脱。"
+    suggestion: "re-export を戻し、統合テスト側は既存の `tessellation::sketch::tessellate_sketch_element` を import する。もし API 追加を残すなら、ADR/plan に意図した公開面変更として明記する。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=0, high=3, medium=2, low=0
+# blocking: 3

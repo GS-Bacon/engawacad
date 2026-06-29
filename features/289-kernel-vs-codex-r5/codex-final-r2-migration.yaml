@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: medium
+    file: "crates/engawa-kernel/tests/length_tolerance_boundary_acceptance.rs"
+    line_hint: 11
+    finding: "`EPS_AXIS_RATIO` を import していますが本文では未使用です。レビュー基準の `clippy -D warnings` では unused import warning がエラー化され、この acceptance test 追加後に lint を通せません。"
+    suggestion: "`EPS_AXIS_RATIO` を import から削除するか、本当に必要な検証に使う形へ揃えてください。"
+
+verdict: pass

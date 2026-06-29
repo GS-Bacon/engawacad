@@ -1,0 +1,20 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  # [architect] issues: [] (verdict=pass)
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-kernel/tests/length_tolerance_boundary_acceptance.rs"
+    line_hint: 11
+    finding: "`EPS_AXIS_RATIO` を import していますが、このファイル内で一度も使っていません。標準の `unused_imports` warning が出るため、追加した acceptance test を含めて `clippy -D warnings` を満たせません。"
+    suggestion: "line 11 の `EPS_AXIS_RATIO` を import から外すか、その定数を使う assertion を実際に追加して warning を解消してください。"
+  - id: M-F01
+    severity: medium
+    file: "crates/engawa-kernel/tests/length_tolerance_boundary_acceptance.rs"
+    line_hint: 11
+    finding: "`EPS_AXIS_RATIO` を import していますが本文では未使用です。レビュー基準の `clippy -D warnings` では unused import warning がエラー化され、この acceptance test 追加後に lint を通せません。"
+    suggestion: "`EPS_AXIS_RATIO` を import から削除するか、本当に必要な検証に使う形へ揃えてください。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=0, high=1, medium=1, low=0
+# blocking: 1

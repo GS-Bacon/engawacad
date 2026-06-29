@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/tessellation/sketch.rs"
+    line_hint: 1033
+    finding: "新規 ellipse 境界テストが `LENGTH_TOLERANCE` の閾値を実際には検証していない。`above_tolerance_ellipse_*` は `0.1/0.05`・`1.0/0.5` のように境界から十分離れた値を使い、`exact_tolerance_ellipse_*` は `1e-10`（実際の `LENGTH_TOLERANCE=1e-9` より小さい）や `minor > major` / `minor/major < EPS_AXIS_RATIO` による別理由の reject に依存しているため、ellipse の比較が `<=` から `<` に戻ってもテストが通ってしまう。"
+    suggestion: "`major/minor` のテスト値を `LENGTH_TOLERANCE` と `LENGTH_TOLERANCE * 1.000_001` に揃え、reject 側は `reason: \"major <= ε_radius\"` / `\"minor <= ε_radius\"` まで一致させて他 invariant と切り分ける。acceptance 側の mirror テストも同じ入力・同じ期待値に合わせる。"
+
+verdict: fail

@@ -1,0 +1,9 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/tests/length_tolerance_boundary_acceptance.rs"
+    line_hint: 11
+    finding: "`EPS_AXIS_RATIO` を import していますが、このファイル内で一度も使っていません。標準の `unused_imports` warning が出るため、追加した acceptance test を含めて `clippy -D warnings` を満たせません。"
+    suggestion: "line 11 の `EPS_AXIS_RATIO` を import から外すか、その定数を使う assertion を実際に追加して warning を解消してください。"
+
+verdict: fail
