@@ -91,28 +91,55 @@ export function isValidReviewYaml(yamlText: string): boolean {
 // (verdict: fail なのに blocking=0 / verdict: pass なのに blocking>=1) を
 // 検出できず STEP 7 の pass/blocking>=1 分岐どちらにも乗らない宙ぶらりん状態が
 // 再発する。verdict-blocking 整合性も検証する。
+//
+// #293: `pass-with-blockers` (verdict: pass + blocking >= 1) を一律 dispatch_error
+// 扱いにすると、GLM が defer 系の defensive note を high で出してくる頻発ケースで
+// false-positive な auto-raise Issue を量産する。verdict=pass を尊重し、issues を
+// medium にデモートして caller の verdict=pass 分岐に乗せる "demote" 経路を追加する。
+// `fail-without-blockers` は本物の矛盾なので fail のまま残す (非対称)。
+export type DispatchClassification =
+  | { kind: "ok"; reason: "" }
+  | { kind: "demote"; reason: "pass-with-blockers" }
+  | { kind: "fail"; reason: string };
+
+export function classifyDispatch(
+  rawOut: string,
+  exitCode: number,
+  yamlText: string,
+): DispatchClassification {
+  if (exitCode !== 0) return { kind: "fail", reason: `claude-exit-${exitCode}` };
+  if (isValidReviewYaml(yamlText)) {
+    const { verdict, blocking } = parseVerdict(yamlText);
+    if (verdict === "fail" && blocking === 0) return { kind: "fail", reason: "fail-without-blockers" };
+    if (verdict === "pass" && blocking > 0) return { kind: "demote", reason: "pass-with-blockers" };
+    return { kind: "ok", reason: "" };
+  }
+  if (/Error:\s*Reached\s+max\s+turns/i.test(rawOut)) return { kind: "fail", reason: "max-turns" };
+  if (/^\s*Error:/m.test(yamlText)) return { kind: "fail", reason: "claude-error" };
+  if (!/^verdict:\s*(pass|fail)\b/m.test(yamlText)) return { kind: "fail", reason: "no-verdict-line" };
+  return { kind: "fail", reason: "missing-issues" };
+}
+
+// 後方互換 wrapper: 既存の caller が detectDispatchFailure を import している場合に
+// 壊さないために残す。demote は failed=false 扱いにする (caller は警告ログのみ)。
+// 本ファイル内 main() は classifyDispatch を直接使う。
 export function detectDispatchFailure(
   rawOut: string,
   exitCode: number,
   yamlText: string,
 ): { failed: boolean; reason: string } {
-  if (exitCode !== 0) return { failed: true, reason: `claude-exit-${exitCode}` };
-  // 有効 YAML スキーマが揃っていれば transport 成功 — その後 contract 検証へ。
-  if (isValidReviewYaml(yamlText)) {
-    // verdict-blocking 整合性: pass ⇔ blocking=0, fail ⇒ blocking≥1。
-    // ここを破る出力は GLM の自己矛盾なので dispatch_error に倒し、
-    // STEP 7 の orphan 分岐 (no branch matches) を防ぐ (#262 r3 F01)。
-    const { verdict, blocking } = parseVerdict(yamlText);
-    if (verdict === "fail" && blocking === 0) return { failed: true, reason: "fail-without-blockers" };
-    if (verdict === "pass" && blocking > 0) return { failed: true, reason: "pass-with-blockers" };
-    return { failed: false, reason: "" };
-  }
-  // verdict / issues のいずれかが欠落 → 失敗モードを分類。
-  if (/Error:\s*Reached\s+max\s+turns/i.test(rawOut)) return { failed: true, reason: "max-turns" };
-  if (/^\s*Error:/m.test(yamlText)) return { failed: true, reason: "claude-error" };
-  if (!/^verdict:\s*(pass|fail)\b/m.test(yamlText)) return { failed: true, reason: "no-verdict-line" };
-  // verdict はあるが issues 欠落 → 部分的 / 構造不正
-  return { failed: true, reason: "missing-issues" };
+  const c = classifyDispatch(rawOut, exitCode, yamlText);
+  return { failed: c.kind === "fail", reason: c.reason };
+}
+
+// #293: pass-with-blockers のときに issues 配列の severity を medium に強制
+// デモートする。yaml は GLM 出力をそのまま使うため、文字列 regex 置換で安全に
+// 行単位の severity 行を書き換える (構造を変えず順序保持)。
+export function demoteIssuesToMedium(yamlText: string): string {
+  return yamlText.replace(
+    /^(\s*severity:\s*)(critical|high|low)(\s*)$/gm,
+    (_m, lead, _sev, tail) => `${lead}medium${tail}`,
+  );
 }
 
 // #262: dispatch 失敗時に書き出す verdict.json 形状。
@@ -373,16 +400,34 @@ async function main() {
   const yamlText = yamlBlock.trim();
 
   // #262: dispatch 失敗を明示的に検出して vacuous pass を防ぐ。
-  const failure = detectDispatchFailure(rawOut, exitCode, yamlText);
-  if (failure.failed) {
-    // 生の rawOut を result file に残して人間がデバッグ可能にする。
+  // #293: pass-with-blockers は dispatch_error にせず demote 経路で吸収する。
+  const classification = classifyDispatch(rawOut, exitCode, yamlText);
+  if (classification.kind === "fail") {
     writeFileSync(resultFile, rawOut, "utf-8");
-    const errVerdict = makeErrorVerdict(failure.reason);
+    const errVerdict = makeErrorVerdict(classification.reason);
     writeFileSync(verdictPath, JSON.stringify(errVerdict, null, 2), "utf-8");
     process.stderr.write(
-      `  verdict=error dispatch_error=true reason=${failure.reason} exit=${exitCode}\n`,
+      `  verdict=error dispatch_error=true reason=${classification.reason} exit=${exitCode}\n`,
     );
     process.exit(2);
+  }
+
+  if (classification.kind === "demote") {
+    // verdict=pass を尊重し issues を medium にデモートして書き出す。caller (STEP 7)
+    // の verdict=pass 分岐に正しく乗る。デモート事実は verdict.json に記録する。
+    const demotedYaml = demoteIssuesToMedium(yamlText);
+    writeFileSync(resultFile, demotedYaml, "utf-8");
+    const verdict = parseVerdict(demotedYaml);
+    const out = {
+      ...verdict,
+      demoted: true,
+      demote_reason: classification.reason,
+    };
+    writeFileSync(verdictPath, JSON.stringify(out, null, 2), "utf-8");
+    process.stderr.write(
+      `  verdict=${verdict.verdict} blocking=${verdict.blocking} (demoted: ${classification.reason}, issues→medium)\n`,
+    );
+    process.exit(0);
   }
 
   writeFileSync(resultFile, yamlText, "utf-8");

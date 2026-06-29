@@ -12,6 +12,8 @@ import {
   detectDispatchFailure,
   makeErrorVerdict,
   isValidReviewYaml,
+  classifyDispatch,
+  demoteIssuesToMedium,
 } from "../dispatch-glm-review.ts";
 
 describe("parseVerdict (既存挙動の固定)", () => {
@@ -172,15 +174,17 @@ issues:
     expect(r.reason).toBe("fail-without-blockers");
   });
 
-  test("C03: verdict:pass + critical 1 (blocking=1) → reason=pass-with-blockers", () => {
+  // #293: pass-with-blockers は dispatch_error にせず demote 経路で吸収する
+  // (verdict=pass を尊重し issues を medium にデモート、caller の pass 分岐に乗る)。
+  // 後方互換 wrapper detectDispatchFailure では demote = failed:false に倒している。
+  test("C03 (#293): verdict:pass + critical 1 → failed=false (demote 経路、wrapper では ok 扱い)", () => {
     const yaml = `verdict: pass
 issues:
   - id: C1
     severity: critical
 `;
     const r = detectDispatchFailure(yaml, 0, yaml);
-    expect(r.failed).toBe(true);
-    expect(r.reason).toBe("pass-with-blockers");
+    expect(r.failed).toBe(false);
   });
 
   test("C04: verdict:pass + issues empty (blocking=0) → failed=false (legitimate)", () => {
@@ -234,5 +238,119 @@ describe("makeErrorVerdict (#262 新規)", () => {
   test("T10: blocking は負数 (no-findings の 0 と区別)", () => {
     const v = makeErrorVerdict("claude-exit-1");
     expect(v.blocking).toBeLessThan(0);
+  });
+});
+
+// =====================================================================
+// #293: pass-with-blockers を dispatch_error にせず demote 経路で吸収する。
+// classifyDispatch (新規 3 値 API) と demoteIssuesToMedium のテスト。
+// =====================================================================
+
+const PASS_WITH_HIGH_293 = `issues:
+  - id: FN01
+    severity: high
+    file: "crates/engawa-format/tests/golden_examples.rs"
+    line_hint: 247
+    finding: "In-Scope の golden round-trip テストが未実装。"
+    suggestion: "別 Issue または follow-up commit で追加すること。"
+verdict: pass
+`;
+
+const PASS_NO_ISSUES_293 = `issues: []
+verdict: pass
+`;
+
+const FAIL_WITH_HIGH_293 = `issues:
+  - id: F01
+    severity: high
+    finding: "x"
+verdict: fail
+`;
+
+const FAIL_WITHOUT_BLOCKERS_293 = `issues: []
+verdict: fail
+`;
+
+describe("classifyDispatch (#293)", () => {
+  test("T01 pass-with-blockers → kind=demote (was fail/dispatch_error)", () => {
+    const r = classifyDispatch("", 0, PASS_WITH_HIGH_293);
+    expect(r.kind).toBe("demote");
+    expect(r.reason).toBe("pass-with-blockers");
+  });
+
+  test("T02_boundary_pass_no_issues → kind=ok", () => {
+    const r = classifyDispatch("", 0, PASS_NO_ISSUES_293);
+    expect(r.kind).toBe("ok");
+  });
+
+  test("T03_boundary_fail_with_blockers → kind=ok (caller 側で fail 処理)", () => {
+    const r = classifyDispatch("", 0, FAIL_WITH_HIGH_293);
+    expect(r.kind).toBe("ok");
+  });
+
+  test("T04_degen_fail_without_blockers → kind=fail (非対称、本物の矛盾)", () => {
+    const r = classifyDispatch("", 0, FAIL_WITHOUT_BLOCKERS_293);
+    expect(r.kind).toBe("fail");
+    expect(r.reason).toBe("fail-without-blockers");
+  });
+
+  test("T05_degen_exit_nonzero → kind=fail", () => {
+    const r = classifyDispatch("", 2, PASS_NO_ISSUES_293);
+    expect(r.kind).toBe("fail");
+    expect(r.reason).toBe("claude-exit-2");
+  });
+
+  test("T06_determinism: 同一入力で 2 回呼び出して同一結果", () => {
+    const a = classifyDispatch("", 0, PASS_WITH_HIGH_293);
+    const b = classifyDispatch("", 0, PASS_WITH_HIGH_293);
+    expect(a).toEqual(b);
+  });
+});
+
+describe("demoteIssuesToMedium (#293)", () => {
+  test("severity: high → severity: medium", () => {
+    const out = demoteIssuesToMedium(PASS_WITH_HIGH_293);
+    expect(out).toContain("severity: medium");
+    expect(out).not.toContain("severity: high");
+  });
+
+  test("severity: critical も medium にデモート", () => {
+    const yaml = `issues:
+  - id: X
+    severity: critical
+verdict: pass
+`;
+    const out = demoteIssuesToMedium(yaml);
+    expect(out).toContain("severity: medium");
+    expect(out).not.toContain("severity: critical");
+  });
+
+  test("severity: low も medium に整合化 (cap)", () => {
+    const yaml = `issues:
+  - id: X
+    severity: low
+verdict: pass
+`;
+    const out = demoteIssuesToMedium(yaml);
+    expect(out).toContain("severity: medium");
+    expect(out).not.toContain("severity: low");
+  });
+
+  test("デモート後の parseVerdict は blocking=0", () => {
+    const v = parseVerdict(demoteIssuesToMedium(PASS_WITH_HIGH_293));
+    expect(v.verdict).toBe("pass");
+    expect(v.blocking).toBe(0);
+    expect(v.severity_counts.high).toBe(0);
+    expect(v.severity_counts.medium).toBe(1);
+  });
+
+  test("issues 空のケースは no-op", () => {
+    expect(demoteIssuesToMedium(PASS_NO_ISSUES_293)).toBe(PASS_NO_ISSUES_293);
+  });
+
+  test("T_determinism: 同一入力で同一出力", () => {
+    const a = demoteIssuesToMedium(PASS_WITH_HIGH_293);
+    const b = demoteIssuesToMedium(PASS_WITH_HIGH_293);
+    expect(a).toBe(b);
   });
 });
