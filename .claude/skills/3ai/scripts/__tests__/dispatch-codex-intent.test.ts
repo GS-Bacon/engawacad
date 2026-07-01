@@ -5,6 +5,7 @@
 // T3: marker 無し + aligned:yes (pre-written) → 従来通り exit 0
 // T4: marker 無し + aligned:no  (pre-written) → 従来通り exit 1
 // T5: marker 有り + aligned:yes 同居 → skip 経路優先
+// T6: marker 無し + aligned:no + split_proposal 併記 (pre-written) → exit 1 + resultFile 保持 (下流の split-detector が消化する契約)
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
@@ -156,6 +157,43 @@ describe("runIntentCheck #235 split-detector skip ガード", () => {
       roadmapFile: join(dir, "nonexistent-roadmap.md"),
     });
     expect(code).toBe(1);
+  });
+
+  test("T6: aligned:no + split_proposal 併記 → exit 1 + resultFile が破壊されない (下流 split-detector が消化する契約)", async () => {
+    const dir = freshTmpRoot("t6");
+    const draftFile = join(dir, "draft.md");
+    const resultFile = join(dir, "result.yaml");
+    writeFileSync(draftFile, "# 粒度違反 Issue (3 機能混在)", "utf-8");
+    // Codex が aligned=no + split_proposal を出力した想定を pre-write で模擬
+    const preWritten = `aligned: no
+reason: |
+  3 機能が 1 Issue に混在しており粒度過大 (ADR-006 §1 違反)。
+split_proposal:
+  - title: "Feature A 実装"
+    body: |
+      分割元: #123
+    labels: ["type: feature", "batch:kernel"]
+  - title: "Feature B 実装"
+    body: |
+      分割元: #123
+    labels: ["type: feature", "batch:kernel"]
+`;
+    writeFileSync(resultFile, preWritten, "utf-8");
+
+    process.env.CODEX_DRY_RUN = "1";
+    const code = await runIntentCheck({
+      issueDraftFile: draftFile,
+      resultFile,
+      roadmapFile: join(dir, "nonexistent-roadmap.md"),
+    });
+
+    // aligned=no なので exit 1 (従来 T4 と同じ). split_proposal 併記でも regression させない
+    expect(code).toBe(1);
+    // resultFile が破壊されず split_proposal がそのまま保持されていること (下流 split-detector が消化するため)
+    const content = readFileSync(resultFile, "utf-8");
+    expect(content).toContain("split_proposal:");
+    expect(content).toContain("Feature A 実装");
+    expect(content).toContain("Feature B 実装");
   });
 
   test("T5: marker 有り + 仮の aligned:yes 同居 → skip 経路優先 (Codex 未呼出)", async () => {

@@ -256,23 +256,65 @@ done
 
 (split_proposal なしの review は no-op で終了)
 
-### L-5.8: intent-guard (aligned:no カウント)
+### L-5.8: intent-guard (aligned:no カウント) + intent-based auto-split
 
-/3ai の intent-check 結果 (`features/*/intent-check.yaml`) に `aligned: no` があれば inc:
+/3ai の intent-check 結果 (`features/*/intent-check.yaml` および `features/.batch/intent-*.yaml`) に `aligned: no` があるとき、**`split_proposal:` の有無で分岐**する。
+
+- **`split_proposal:` あり** (Codex が粒度違反を検出して分割案を併記) → `loop-split-detector.ts` に流して親 `blocked-by-split` + 子起票。intent-guard は inc しない (auto-split で構造的解決したため)。
+- **`split_proposal:` なし** → 従来通り intent-guard inc (連続 3 回で needs-intent-review)。
 
 ```bash
-for ic in features/*/intent-check.yaml; do
-  [ -f "$ic" ] || continue
-  if grep -q '^aligned:\s*no' "$ic"; then
-    PARENT=$(basename "$(dirname "$ic")" | awk -F- '{print $1}')
-    IG_OUT=$(bun .claude/skills/3ailoop/scripts/loop-intent-guard.ts inc --issue "$PARENT" 2>&1)
+process_intent_yaml() {
+  local ic="$1"
+  local parent_hint="$2"  # dir 由来 / file 由来のヒント
+  [ -f "$ic" ] || return
+  if ! grep -q '^aligned:\s*no' "$ic"; then return; fi
+
+  if grep -q '^split_proposal:' "$ic"; then
+    # auto-split ルート
+    local PARENT="$parent_hint"
+    SD_OUT=$(bun .claude/skills/3ailoop/scripts/loop-split-detector.ts process \
+      --review-yaml "$ic" --parent-issue "$PARENT" 2>&1 || true)
+    echo "$SD_OUT" | tail -5
+    # 子 Issue ごとに 1 通通知
+    echo "$SD_OUT" | bun -e '
+      const lines = require("fs").readFileSync(0,"utf-8").trim().split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const l = lines[i].trim();
+        if (!l.startsWith("{")) continue;
+        try {
+          const o = JSON.parse(l);
+          if (!o.ok || !Array.isArray(o.children)) break;
+          for (const c of o.children) { if (c.child) console.log(`${c.child}\t${o.parent}`); }
+          break;
+        } catch {}
+      }
+    ' | while IFS=$'\t' read -r CHILD PARENT_N; do
+      bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-raised-split --text "[NEW] #${CHILD} raised (intent-check split of #${PARENT_N})"
+    done
+  else
+    # 従来: intent-guard inc
+    IG_OUT=$(bun .claude/skills/3ailoop/scripts/loop-intent-guard.ts inc --issue "$parent_hint" 2>&1)
     echo "$IG_OUT" | tail -2
-    # threshold 越えで stderr に WARN が出ているなら通知
     if echo "$IG_OUT" | grep -q "needs-intent-review added"; then
       CNT=$(echo "$IG_OUT" | grep -oE "reached [0-9]+" | grep -oE "[0-9]+" | head -1)
-      bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind intent-guard --text "[WARN] #${PARENT} needs-intent-review (aligned:no ×${CNT:-3})"
+      bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind intent-guard --text "[WARN] #${parent_hint} needs-intent-review (aligned:no ×${CNT:-3})"
     fi
   fi
+}
+
+# feature-dir 経由 (features/N-slug/intent-check.yaml)
+for ic in features/*/intent-check.yaml; do
+  [ -f "$ic" ] || continue
+  PARENT=$(basename "$(dirname "$ic")" | awk -F- '{print $1}')
+  process_intent_yaml "$ic" "$PARENT"
+done
+
+# batch 経由 (features/.batch/intent-N.yaml) — B-3 実行時に生成される
+for ic in features/.batch/intent-*.yaml; do
+  [ -f "$ic" ] || continue
+  PARENT=$(basename "$ic" .yaml | sed 's/^intent-//')
+  process_intent_yaml "$ic" "$PARENT"
 done
 ```
 

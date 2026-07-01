@@ -31,7 +31,7 @@ async function runGh(args: string[]): Promise<{ stdout: string; exit: number }> 
 }
 
 /** 極めて単純な split_proposal YAML パーサー (依存ゼロ、想定形式のみサポート) */
-function parseSplitProposalYaml(text: string): SplitEntry[] {
+export function parseSplitProposalYaml(text: string): SplitEntry[] {
   const lines = text.split("\n");
   const startIdx = lines.findIndex(l => /^split_proposal\s*:/.test(l));
   if (startIdx < 0) return [];

@@ -63,7 +63,15 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
     --issue $N \
     --result features/.batch/intent-$N.yaml
   ```
-  `aligned: yes` → 続行。`aligned: no` → Claude が ROADMAP/ADR でスコープ整合を再確認し、推奨スコープに調整して続行。ただし *Phase/スコープ自体の根本的不整合*（例: 別 Phase 向け Issue など）と判断したら推奨実装せず停止してユーザーにエスカレーション。`aligned: skip (split-detector parent)` → **yes と等価扱い** (#235: body に `loop-split-detector で分割される想定` か label `splittable` のある起点 Issue は intent-check を skip し、STEP 3 で `split_proposal` 経路に乗せる)。
+  `aligned: yes` → 続行。`aligned: no` → **intent-check yaml に `split_proposal:` セクションが含まれているかで分岐**:
+  - **`split_proposal:` あり** (Codex が「粒度違反」= multiple features 混在と判定して分割案を併記した経路) → auto-split ルートに乗せる:
+    ```bash
+    bun .claude/skills/3ailoop/scripts/loop-split-detector.ts process \
+      --review-yaml features/.batch/intent-$N.yaml --parent-issue $N
+    ```
+    → 親 Issue に `blocked-by-split` + 子 Issue 起票 → 本 Issue は skip して次 Issue へ。次サイクルで子 Issue が phase-feature tier で pick 可能になる。
+  - **`split_proposal:` なし** (完了条件曖昧 / 数値モデル欠如 / ADR-実装混在等の refute) → Claude が ROADMAP/ADR でスコープ整合を再確認し、推奨スコープに調整して続行。ただし *Phase/スコープ自体の根本的不整合*（例: 別 Phase 向け Issue など）と判断したら推奨実装せず停止してユーザーにエスカレーション。
+  - `aligned: skip (split-detector parent)` → **yes と等価扱い** (#235: body に `loop-split-detector で分割される想定` か label `splittable` のある起点 Issue は intent-check を skip し、STEP 3 で `split_proposal` 経路に乗せる)。
 
 **対話モード（`batch_arg !== null`）**:
 

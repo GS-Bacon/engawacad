@@ -1,6 +1,11 @@
 // #261: loop-split-detector の milestone 継承を単体テスト
+// intent-check yaml (aligned=no + split_proposal 同居) パーサ回帰テストも本 file 内で管理
 import { describe, expect, test } from "bun:test";
-import { buildCreateChildArgs, fetchParentMilestone } from "./loop-split-detector";
+import {
+  buildCreateChildArgs,
+  fetchParentMilestone,
+  parseSplitProposalYaml,
+} from "./loop-split-detector";
 
 describe("fetchParentMilestone (#261)", () => {
   test("親に milestone が紐付いている → title を返す", async () => {
@@ -73,5 +78,75 @@ describe("buildCreateChildArgs (#261 F02)", () => {
   test("labels が undefined でも parent-blocked-by-split は付与", () => {
     const args = buildCreateChildArgs({ title: "c" }, 99, null, "/tmp/x.md");
     expect(args[args.indexOf("--label") + 1]).toBe("parent-blocked-by-split:99");
+  });
+});
+
+// intent-check auto-split 経路の再現テスト。
+// #275-#278 で観測された「intent-check aligned=no + 粒度違反 → split-detector 未到達」
+// の構造欠陥を修正する PR の一部。intent-check yaml (aligned + reason + split_proposal
+// 同居 format) を既存 codex-final.yaml パーサで消化できることを固定する。
+describe("parseSplitProposalYaml — intent-check yaml 互換性", () => {
+  test("STEP 7.5 codex-final.yaml 相当 (split_proposal のみ) → 全 entry 抽出", () => {
+    const yaml = `
+split_proposal:
+  - title: "Child A"
+    body: "body-a"
+    labels: ["type: feature", "batch:kernel"]
+  - title: "Child B"
+    body: "body-b"
+    labels: ["type: feature", "batch:kernel"]
+`;
+    const entries = parseSplitProposalYaml(yaml);
+    expect(entries).toHaveLength(2);
+    expect(entries.map(e => e.title)).toEqual(["Child A", "Child B"]);
+    expect(entries[0].labels).toEqual(["type: feature", "batch:kernel"]);
+  });
+
+  test("intent-check yaml format: aligned=no + reason + split_proposal 同居 → 子 entry 抽出成功", () => {
+    // #277 実観測相当 (Codex が intent-check で aligned=no + reason + split_proposal 併記した想定)
+    const yaml = `aligned: no
+reason: |
+  Offset / Fillet / Chamfer の 3 機能が 1 Issue に混在しており粒度過大 (ADR-006 §1 違反)。
+  機能ごとに分割すること。
+split_proposal:
+  - title: "Sketch Offset 実装"
+    body: |
+      分割元: #277
+      In-Scope: Sketch Offset のみ
+    labels: ["type: feature", "batch:kernel"]
+  - title: "Sketch Fillet 実装"
+    body: |
+      分割元: #277
+      In-Scope: Sketch Fillet のみ
+    labels: ["type: feature", "batch:kernel"]
+  - title: "Sketch Chamfer 実装"
+    body: |
+      分割元: #277
+      In-Scope: Sketch Chamfer のみ
+    labels: ["type: feature", "batch:kernel"]
+`;
+    const entries = parseSplitProposalYaml(yaml);
+    expect(entries).toHaveLength(3);
+    expect(entries.map(e => e.title)).toEqual([
+      "Sketch Offset 実装",
+      "Sketch Fillet 実装",
+      "Sketch Chamfer 実装",
+    ]);
+    for (const e of entries) {
+      expect(e.labels).toEqual(["type: feature", "batch:kernel"]);
+      expect(e.body).toContain("分割元: #277");
+    }
+  });
+
+  test("aligned=no + reason のみ (粒度違反以外の refute) → 空配列", () => {
+    const yaml = `aligned: no
+reason: |
+  完了条件が「正常に動作する」で計測不能。
+`;
+    expect(parseSplitProposalYaml(yaml)).toEqual([]);
+  });
+
+  test("aligned=yes → 空配列 (通常 pass 経路)", () => {
+    expect(parseSplitProposalYaml("aligned: yes\ncomment: ok\n")).toEqual([]);
   });
 });
