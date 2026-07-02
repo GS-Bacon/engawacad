@@ -1,0 +1,7 @@
+{
+  "issue": 276,
+  "category": "codex-usage-limit-loop",
+  "count": 1,
+  "last_at": "2026-07-01T12:31:19.192Z",
+  "last_reason": "cycle: #276 (Trim + Extend) STEP 7.5 Codex 独立 gate で Codex CLI usage limit が 2 round 連続 (r1: 2/3 usage limit, r2: 1/3 usage limit)。architect は全 round pass、contrarian/migration が usage limit を引きつつ blocking を返す。GLM r3 で trim keep + extend support-line + placeholder 一部修正済 (CI green passed=1409 failed=0)。残 refute (C-F03 test placeholder / C-F02 feature_crud element_id 実在性 / C-F01 Entity extend circle/arc / M-F02 ExtendTarget.ts xtask) は本 Issue 内対応可能だが、M-F01 schema_version bump は plan.md Out-of-Scope。次 cycle で Codex 復旧を待って STEP 7.5 から再開。cycles 71-75, 83 と同じ infra 障害パターン。"
+}

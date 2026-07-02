@@ -1,0 +1,7 @@
+{
+  "issue": 303,
+  "category": "parent-needs-human",
+  "count": 2,
+  "last_at": "2026-07-01T15:32:43.369Z",
+  "last_reason": "cycle 91: 前 cycle 90 と同一構造。bug-batch tier で auto-raise record 4 件 (#303/#304/#305/#306) が pick されたが、parent (#295/#276/#296) がいずれも needs-human で autonomous 解決不能。parent-needs-human streak を 1→2 に進める。もう 1 cycle で count=3 到達で pause-streak tracker が #303-#306 に needs-human 自動付与し、その後 bug-batch tier から自然除外される。それまで sketch batch (#275-#278, #295-#302) と split-batch tier 最優先の他 tier は変化なし。"
+}

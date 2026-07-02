@@ -1,0 +1,7 @@
+{
+  "issue": 306,
+  "category": "parent-needs-human",
+  "count": 3,
+  "last_at": "2026-07-01T15:35:05.376Z",
+  "last_reason": "cycle 92: 前 cycle 90/91 と同一構造の 3 サイクル目。bug-batch tier で auto-raise record 3 件 (#304/#305/#306) が pick されるが、parent (#276/#295/#296) がいずれも needs-human で autonomous 解決不能 (ADR-005 EntityRef scope 議論 / schema_version bump 契約乖離 / closed-loop wrap-around + vertex_ref 依存追跡欠如)。parent-needs-human streak を 2→3 に進めて pause-streak tracker に #304-#306 への needs-human 自動付与を発火させる。次サイクル以降は bug-batch tier から自然除外され、sketch batch (#275-#278, #295-#302) と split-batch tier 最優先の他 tier は変化なし → 全体 needs-human backlog に収束して人間判断待ちになる想定。"
+}

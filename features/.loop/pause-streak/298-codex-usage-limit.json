@@ -1,0 +1,7 @@
+{
+  "issue": 298,
+  "category": "codex-usage-limit",
+  "count": 3,
+  "last_at": "2026-07-01T15:25:48.096Z",
+  "last_reason": "cycle 89: #298 (Sketch Mirror) B-3 Codex intent-check で Codex CLI usage/rate limit を再度検知 (13 サイクル連続 infra 障害)。#299-#302 も同条件 (batch:kernel + intent_check_required + keep_codex_gate) で同結果想定のため全件 skip。cycles 71-75, 83-84, 87-88 と同 pattern。actionable な独立 Issue は他にない (split-batch tier 最優先で他 tier 未 pick)。#298 feature-dir は init 済で次サイクルで再利用可能。Codex usage 復旧待ち。"
+}

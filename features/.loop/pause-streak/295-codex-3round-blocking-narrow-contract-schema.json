@@ -1,0 +1,7 @@
+{
+  "issue": 295,
+  "category": "codex-3round-blocking-narrow-contract-schema",
+  "count": 1,
+  "last_at": "2026-07-01T08:54:57.959Z",
+  "last_reason": "cycle 86: #295 (Sketch Offset) STEP 7.5 で Codex 3 round 連続 blocking (0 critical, 3 high)。M-F01/C-F02 schema_version bump 要否 (additive minor vs breaking) と C-F01 public contract 契約 (selection 允許 vs Circle-only 実装) の乖離、および golden test 追加が ADR 級判断のため autonomous 3-round pause 規則で人間判断待ち。cad/295 branch に WIP commit 済 (CI green、Circle-only build path 動作、Line/Arc は kernel-level pure function unit test カバー済)。escalation Issue #303 起票、#295 に needs-human 付与。"
+}

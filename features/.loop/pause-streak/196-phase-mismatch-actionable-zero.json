@@ -1,0 +1,7 @@
+{
+  "issue": 196,
+  "category": "phase-mismatch-actionable-zero",
+  "count": 1,
+  "last_at": "2026-07-01T15:37:52.916Z",
+  "last_reason": "cycle 94: cycle 93 と同構造の pause 継続。actionable=10 (Phase 11-20 起点 #196-#205) は current_phase=10 と不一致で batch-select は phase-feature tier で 0 candidate 収束。Phase 10 sketch batch (#275-#278 / #295-#302) は全 needs-human/blocked-by-split で stuck。ADR-018 (#294) も gate:adr-review needs-human 滞留。ユーザー判断待ち (Phase 10 sketch 手動 split / ADR-018 accept 判定 / Phase 11 昇格判断)。"
+}

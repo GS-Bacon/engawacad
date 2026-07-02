@@ -1,0 +1,7 @@
+{
+  "issue": 296,
+  "category": "codex-3round-blocking-false-positive-scope",
+  "count": 2,
+  "last_at": "2026-07-01T15:15:07.599Z",
+  "last_reason": "cycle 86: #296 (Sketch Fillet) STEP 7.5 で 3 round 連続 blocking (R1=8, R2=6, R3=3)。architect は R3 で converge (pass) するも、contrarian F01 (closed-loop wrap-around 未対応, high) と F02 (feature_crud vertex_ref 依存追跡欠如, high)、migration F01 (Feature.ts drift 誤読 = 2 round 連続 false positive, critical) で fail。cad/296 branch に WIP 凍結、needs-human 付与、escalation Issue #306 起票。architect 収束済のため対応候補: (a) contrarian F01 wrap-around の Arc 挿入 index を循環順で判定、(b) F02 CRUD vertex_ref 追跡は別 Issue に切り出し、(c) migration F01 false positive は skip として明文化。ADR-006 §1 粒度に照らすと本 Issue のスコープは Line-Line fillet で 4 辺矩形の seg_a+seg_b は動作、残り wrap-around は edge case で別 Issue が妥当。次 cycle で人間判断待ち。"
+}

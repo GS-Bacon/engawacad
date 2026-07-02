@@ -1,229 +1,8 @@
 {
   "loop_start": "2026-06-16T01:31:59.542Z",
-  "cycle": 81,
-  "last_cycle_at": "2026-06-29T11:54:02.274Z",
+  "cycle": 94,
+  "last_cycle_at": "2026-07-01T15:37:50.879Z",
   "recent_cycles": [
-    {
-      "cycle": 62,
-      "started_at": "2026-06-22T06:07:27.784Z",
-      "ended_at": "2026-06-27T01:45:35.452Z",
-      "closed": [
-        281,
-        273,
-        208,
-        207
-      ],
-      "raised": [
-        281
-      ],
-      "merged_commits": 3,
-      "adr_drafts": [],
-      "pause_reason": "codex usage limit at B-3 intent-check (#274 試行で再現、前 12 cycle #49-#60 と同一原因の 13 連続 pause)。Codex CLI 復旧待ち。#275-#278 も同条件のため skip。",
-      "tokens": {
-        "claude": 2646883,
-        "glm": 13765,
-        "codex": 123848
-      }
-    },
-    {
-      "cycle": 63,
-      "started_at": "2026-06-27T01:45:35.452Z",
-      "ended_at": "2026-06-27T01:48:58.623Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "ADR-017 (#279) 滞留 (gate:adr-review + regen_required count=2/3) のため Phase 10 sketch 子 Issue #274-#278 を実装不可。#274 intent-check も aligned:no (Out-of-Scope/Non-Goals/数値モデル不足)。同条件の #275-#278 も skip。先に ADR-017 を確定する必要あり。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 64,
-      "started_at": "2026-06-27T01:48:58.623Z",
-      "ended_at": "2026-06-27T04:03:22.973Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 1,
-      "adr_drafts": [],
-      "pause_reason": "Codex CLI usage/rate limit hit during intent-check for #274. ADR-017 (#279) も regen_required で滞留中。sketch curves batch (#274-#278) は全件 intent_check_required + ADR 未確定で進行不可。Codex 復活と ADR-017 解決を待つ。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 65,
-      "started_at": "2026-06-27T04:03:22.973Z",
-      "ended_at": "2026-06-27T04:19:14.450Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "14 連続 pause: Codex CLI usage limit + ADR-017 (#279) 滞留 (3 persona 全 refute、regen_count=2/3 で停滞、auto-accept tracker が inc せず needs-human 退避もしない)。Phase 10 sketch 子 Issue #274-#278 は ADR-017 確定待ち。L-1.5 rescan 後も verdict 全 refute、ADR-015/016 も同様 stuck。Phase 11+ は milestone 未開始のため pickable 外。構造的デッドロックでユーザー介入が必要。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 66,
-      "started_at": "2026-06-27T04:19:14.450Z",
-      "ended_at": "2026-06-27T04:25:55.750Z",
-      "closed": [],
-      "raised": [
-        282
-      ],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "15 連続 pause: ADR-015/016/017 が token_cap で needs-human 退避済 (regen_count=2/token=270000)。Phase 10 sketch 子 #274-#278 の Codex intent-check は実体ある aligned=no (Out-of-Scope/Non-Goals/数値モデル不足) を返し、ADR-017 確定が前提条件。dashboard 'Pending Gates' は title 由来表示で実ラベル needs-human を反映していない (= 表記バグ、機能影響なし)。Phase 11+ milestone 未開始のため pickable 外。人間が #279/#246/#245 を review/merge → needs-human 削除すれば次サイクル L-1.5 で auto-accept ルートに復帰。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 67,
-      "started_at": "2026-06-27T04:25:55.750Z",
-      "ended_at": "2026-06-27T04:32:44.762Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "ADR-017 (#279) / ADR-015 (#246) / ADR-016 (#245) すべて needs-human 退避中で Phase 10 sketch batch (#274-#278) の前提 scope 確定不能 (16 連続 pause)。#274 intent-check は Codex usage limit に再ヒットし cached aligned=no (Out-of-Scope/Non-Goals/数値モデル不足) を返す = Phase 根本不整合に該当し /3ai 自律モード B-3 仕様で停止判定。actionable な独立 Issue #282 (bug, batch:skill, loop-lock pid liveness check) は存在するが batch-select の split-batch tier 最優先設計のため今 cycle は pick されない。人間アクション: #279/#246/#245 を review/merge → needs-human 削除すれば次サイクル L-1.5 で auto-accept ルートに復帰。または batch-select policy 改善 (ADR 未確定 split 子の自動下位 tier 化) を検討。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 68,
-      "started_at": "2026-06-27T04:32:44.762Z",
-      "ended_at": "2026-06-27T04:35:59.517Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "17 連続 pause: ADR-017 (#279) / ADR-015 (#246) / ADR-016 (#245) すべて needs-human のまま (人間 review 未着手)。#274 intent-check は cached aligned=no (Ellipse+Conic 粒度過大 / Out-of-Scope 未記載 / 数値モデル未記載) を返し、ADR-017 未確定下では scope 調整不能 = Phase 根本不整合に該当し /3ai 自律モード B-3 で停止。actionable な独立 Issue #282 (bug, batch:skill) は存在するが batch-select の split-batch tier 最優先のため pick されない。人間アクション: #279/#246/#245 を review/merge → needs-human 削除すれば次サイクル L-1.5 で auto-accept ルートへ復帰。もしくは batch-select policy 改善 (ADR 未確定 split 子の自動下位 tier 化 / needs-human ADR を持つ split 子の skip) を実装する。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 69,
-      "started_at": "2026-06-27T04:35:59.517Z",
-      "ended_at": "2026-06-27T11:42:57.825Z",
-      "closed": [
-        285,
-        283,
-        284,
-        282
-      ],
-      "raised": [
-        285,
-        283,
-        284
-      ],
-      "merged_commits": 11,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 70,
-      "started_at": "2026-06-27T11:42:57.825Z",
-      "ended_at": "2026-06-28T10:35:55.458Z",
-      "closed": [
-        279,
-        274,
-        246,
-        245,
-        242,
-        240
-      ],
-      "raised": [
-        286
-      ],
-      "merged_commits": 4,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 33070412,
-        "glm": 117696,
-        "codex": 11583499
-      }
-    },
-    {
-      "cycle": 71,
-      "started_at": "2026-06-28T10:35:55.458Z",
-      "ended_at": "2026-06-28T10:39:07.911Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "cycle 71: Codex CLI usage limit at B-3 intent-check (#275 試行で再現)。#276-#278 も同条件のため全件 skip 想定。前 cycle #70 で ADR-017/015/016 が auto-accept で closed され Phase 10 sketch batch (#274 含む) が再開可能になったが、Codex usage 復旧待ち。actionable 独立 Issue は他にない (#286 は intent-check 不要だが batch:kernel の split-batch tier 最優先のため pick されない)。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 72,
-      "started_at": "2026-06-28T10:39:07.911Z",
-      "ended_at": "2026-06-28T10:41:50.300Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "cycle 72: Codex CLI usage limit at B-3 intent-check (#275 試行で再現、前 cycle #71 と同一原因の 2 連続 pause)。#276-#278 も同条件のため全件 skip 想定。前 cycle #70 で ADR-017/015/016 が auto-accept で closed され Phase 10 sketch batch (#274-#278) は scope 確定済だが、Codex usage 復旧待ち。actionable な独立 Issue は他にない (#286 は batch:kernel の split-batch tier 最優先のため pick されない)。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 73,
-      "started_at": "2026-06-28T10:41:50.300Z",
-      "ended_at": "2026-06-28T10:44:29.453Z",
-      "closed": [],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "pause_reason": "cycle 73: Codex CLI usage limit at B-3 intent-check (#276 試行で再現、前 cycle #72 と同一原因の 3 連続 pause)。#277/#278 も同条件のため全件 skip 想定。Phase 10 sketch batch (#274-#278) は scope 確定済だが Codex usage 復旧待ち。actionable な独立 Issue は他にない (#286 は batch:kernel の split-batch tier 最優先のため pick されない)。",
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
-    {
-      "cycle": 74,
-      "started_at": "2026-06-28T10:44:29.453Z",
-      "ended_at": "2026-06-28T10:53:40.066Z",
-      "closed": [
-        286
-      ],
-      "raised": [],
-      "merged_commits": 0,
-      "adr_drafts": [],
-      "tokens": {
-        "claude": 0,
-        "glm": 0,
-        "codex": 0
-      }
-    },
     {
       "cycle": 75,
       "started_at": "2026-06-28T10:53:40.066Z",
@@ -336,15 +115,237 @@
         "glm": 0,
         "codex": 0
       }
+    },
+    {
+      "cycle": 82,
+      "started_at": "2026-06-29T11:54:02.274Z",
+      "ended_at": "2026-07-01T08:54:56.225Z",
+      "closed": [
+        293,
+        292,
+        291,
+        290,
+        289,
+        288,
+        287
+      ],
+      "raised": [
+        303,
+        302,
+        301,
+        300,
+        299,
+        298,
+        297,
+        296,
+        295,
+        294,
+        293
+      ],
+      "merged_commits": 10,
+      "adr_drafts": [
+        "docs/decisions/018-length-tolerance-boundary-convention.md"
+      ],
+      "pause_reason": "cycle 86: #295 (Sketch Offset) STEP 7.5 で Codex 3 round 連続 blocking (0 critical, 3 high)。M-F01/C-F02 schema_version bump 要否 (additive minor vs breaking) と C-F01 public contract 契約 (selection 允許 vs Circle-only 実装) の乖離、および golden test 追加が ADR 級判断のため autonomous 3-round pause 規則で人間判断待ち。cad/295 branch に WIP commit 済 (CI green、Circle-only build path 動作、Line/Arc は kernel-level pure function unit test カバー済)。escalation Issue #303 起票、#295 に needs-human 付与。",
+      "tokens": {
+        "claude": 12329777,
+        "glm": 21406,
+        "codex": 4635564
+      }
+    },
+    {
+      "cycle": 83,
+      "started_at": "2026-07-01T08:54:56.225Z",
+      "ended_at": "2026-07-01T09:02:47.415Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle: #296 (Sketch Fillet) B-3 Codex intent-check aligned=no + Codex CLI usage limit hit。intent-check yaml は refute (radius 比較規約 + FilletRadiusTooLarge 発火条件を本文で明記していない) を返したが、ADR-017 §2 (ε_radius=EPS_LENGTH=1e-9、DegenerateSketchElement で fail-fast) が数値モデルを明確に規定しているため、通常なら B-3 autonomous mode で ADR-017 scope に整合させて続行可能。しかし Codex CLI が usage/rate limit を返しており、STEP 7.5 (Codex 独立ゲート) も同じ Codex に依存しているため、進めても後段で必ず block する。cycles 71-75 と同じ infra 障害パターン (memory: pause_reason \"Codex CLI usage limit at B-3 intent-check\")。#276 は既存 feature dir があるため B-4 スキップルールで先送り、#296 以降の 7 件 (#297-#302) も全て同条件 (batch:kernel + intent_check_required) のため同じ結果になる想定。他 tier の actionable Issue は split-batch tier 最優先設計のため pick されない。次 cycle で Codex usage 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 84,
+      "started_at": "2026-07-01T09:02:47.415Z",
+      "ended_at": "2026-07-01T12:31:17.254Z",
+      "closed": [],
+      "raised": [
+        304
+      ],
+      "merged_commits": 1,
+      "adr_drafts": [],
+      "pause_reason": "cycle: #276 (Trim + Extend) STEP 7.5 Codex 独立 gate で Codex CLI usage limit が 2 round 連続 (r1: 2/3 usage limit, r2: 1/3 usage limit)。architect は全 round pass、contrarian/migration が usage limit を引きつつ blocking を返す。GLM r3 で trim keep + extend support-line + placeholder 一部修正済 (CI green passed=1409 failed=0)。残 refute (C-F03 test placeholder / C-F02 feature_crud element_id 実在性 / C-F01 Entity extend circle/arc / M-F02 ExtendTarget.ts xtask) は本 Issue 内対応可能だが、M-F01 schema_version bump は plan.md Out-of-Scope。次 cycle で Codex 復旧を待って STEP 7.5 から再開。cycles 71-75, 83 と同じ infra 障害パターン。",
+      "tokens": {
+        "claude": 4797606,
+        "glm": 2594,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 85,
+      "started_at": "2026-07-01T12:31:17.254Z",
+      "ended_at": "2026-07-01T12:49:11.815Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 85: #276 STEP 7.5 r3 で 3 round 連続 blocking (r1=5, r2=5, r3=6, architect pass→fail, contrarian 継続 refute, migration usage limit 継続)。architect+migration は Codex CLI usage limit を引きつつも、architect F01 (Extrude が edited profile を再検証しない real bug high) / migration F01 (同 critical) の新規 finding + contrarian 完走で真の refute (F01 T01 決定性 sketch-only 比較不足 critical / F02 SketchExtend Circle/Arc target 未対応 high / F03 T02-T08 placeholder 残存 high) を出した。前 r2 (Codex usage 障害) と違い新規 critical bug が判明。scope 切り出し (Extrude 側の profile 再検証は Phase 3 extrude 領域で ADR 級) vs 本 Issue 完遂の判断が必要な自律モード停止点。cad/276 branch は CI green passed=1409 failed=0 で塩漬け、r3 verdict.json 更新済。次 cycle で人間判断待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 86,
+      "started_at": "2026-07-01T12:49:11.815Z",
+      "ended_at": "2026-07-01T15:15:05.868Z",
+      "closed": [],
+      "raised": [
+        306,
+        305
+      ],
+      "merged_commits": 2,
+      "adr_drafts": [],
+      "pause_reason": "cycle 86: #296 (Sketch Fillet) STEP 7.5 で 3 round 連続 blocking (R1=8, R2=6, R3=3)。architect は R3 で converge (pass) するも、contrarian F01 (closed-loop wrap-around 未対応, high) と F02 (feature_crud vertex_ref 依存追跡欠如, high)、migration F01 (Feature.ts drift 誤読 = 2 round 連続 false positive, critical) で fail。cad/296 branch に WIP 凍結、needs-human 付与、escalation Issue #306 起票。architect 収束済のため対応候補: (a) contrarian F01 wrap-around の Arc 挿入 index を循環順で判定、(b) F02 CRUD vertex_ref 追跡は別 Issue に切り出し、(c) migration F01 false positive は skip として明文化。ADR-006 §1 粒度に照らすと本 Issue のスコープは Line-Line fillet で 4 辺矩形の seg_a+seg_b は動作、残り wrap-around は edge case で別 Issue が妥当。次 cycle で人間判断待ち。",
+      "tokens": {
+        "claude": 8803012,
+        "glm": 12665,
+        "codex": 2886253
+      }
+    },
+    {
+      "cycle": 87,
+      "started_at": "2026-07-01T15:15:05.868Z",
+      "ended_at": "2026-07-01T15:20:21.229Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 87: #297 (Sketch Chamfer) B-3 Codex intent-check で Codex CLI usage/rate limit。#298-#302 も同条件 (batch:kernel + intent_check_required + keep_codex_gate) のため全件 skip 想定。cycles 71-75, 83-84 と同じ infra 障害パターン。actionable 独立 Issue は他にない (split-batch tier 最優先のため他 tier 未 pick)。次 cycle で Codex usage 復旧待ち。#297 feature-dir は init 済 (plan.md fresh) で次 cycle で再利用可能。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 88,
+      "started_at": "2026-07-01T15:20:21.229Z",
+      "ended_at": "2026-07-01T15:23:06.578Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 88: #297 (Sketch Chamfer) B-3 Codex intent-check で Codex CLI usage/rate limit を再度検知 (12 サイクル連続 infra 障害)。#298-#302 も同条件 (batch:kernel + intent_check_required + keep_codex_gate) で同結果想定のため全件 skip。cycles 71-75, 83-84, 87 と同 pattern。actionable な独立 Issue は他にない (split-batch tier 最優先で他 tier 未 pick)。#297 feature-dir は init 済で次サイクルで再利用可能。Codex usage 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 89,
+      "started_at": "2026-07-01T15:23:06.578Z",
+      "ended_at": "2026-07-01T15:25:46.453Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 89: #298 (Sketch Mirror) B-3 Codex intent-check で Codex CLI usage/rate limit を再度検知 (13 サイクル連続 infra 障害)。#299-#302 も同条件 (batch:kernel + intent_check_required + keep_codex_gate) で同結果想定のため全件 skip。cycles 71-75, 83-84, 87-88 と同 pattern。actionable な独立 Issue は他にない (split-batch tier 最優先で他 tier 未 pick)。#298 feature-dir は init 済で次サイクルで再利用可能。Codex usage 復旧待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 90,
+      "started_at": "2026-07-01T15:25:46.453Z",
+      "ended_at": "2026-07-01T15:30:22.378Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 90: bug-batch tier で auto-raise record 4 件 (#303/#304/#305/#306) が pick されたが、いずれも parent Issue (#295, #276, #296) が既に needs-human 状態で ADR 級判断待ち。auto-raise record 自体は情報記録に過ぎず、autonomous モードで解決不能。batch-select.ts は auto-raise record の parent が needs-human の場合に降格すべきだが、それは別 Issue の修正範疇。同 category (parent-needs-human) 連続 3 回で pause-streak tracker が #303-#306 に needs-human を自動付与し、次サイクル以降は bug-batch tier から自然除外される。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 91,
+      "started_at": "2026-07-01T15:30:22.378Z",
+      "ended_at": "2026-07-01T15:32:39.430Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 91: 前 cycle 90 と同一構造。bug-batch tier で auto-raise record 4 件 (#303/#304/#305/#306) が pick されたが、parent (#295/#276/#296) がいずれも needs-human で autonomous 解決不能。parent-needs-human streak を 1→2 に進める。もう 1 cycle で count=3 到達で pause-streak tracker が #303-#306 に needs-human 自動付与し、その後 bug-batch tier から自然除外される。それまで sketch batch (#275-#278, #295-#302) と split-batch tier 最優先の他 tier は変化なし。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 92,
+      "started_at": "2026-07-01T15:32:39.430Z",
+      "ended_at": "2026-07-01T15:34:56.921Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 92: 前 cycle 90/91 と同一構造の 3 サイクル目。bug-batch tier で auto-raise record 3 件 (#304/#305/#306) が pick されるが、parent (#276/#295/#296) がいずれも needs-human で autonomous 解決不能 (ADR-005 EntityRef scope 議論 / schema_version bump 契約乖離 / closed-loop wrap-around + vertex_ref 依存追跡欠如)。parent-needs-human streak を 2→3 に進めて pause-streak tracker に #304-#306 への needs-human 自動付与を発火させる。次サイクル以降は bug-batch tier から自然除外され、sketch batch (#275-#278, #295-#302) と split-batch tier 最優先の他 tier は変化なし → 全体 needs-human backlog に収束して人間判断待ちになる想定。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 93,
+      "started_at": "2026-07-01T15:34:56.921Z",
+      "ended_at": "2026-07-01T15:36:35.012Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 93: 前 cycle 92 の想定通り #304-#306 に needs-human 自動付与済 (parent-needs-human streak 3 到達で pause-streak tracker 発火)。bug-batch tier から自然除外され、残 actionable 10 件はすべて Phase 11-20 起点 Issue (#196-#205) で現行 Phase 10 と一致しないため batch-select が 0 candidate に収束。Phase 10 sketch batch (#275-#278, #295-#302) は全 needs-human/blocked-by-split で stuck、split-batch tier 最優先設計で他 tier も pick されず、全体 needs-human backlog に完全収束した。今後は cycle #94 以降も無変化パターン継続 (auto-raise がない限り記録のみ)、ユーザー判断 (Phase 10 sketch 手動 split / ADR-005 EntityRef scope 決定 / schema_version bump 契約合意 / Codex CLI usage 復旧) 待ち。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
+    },
+    {
+      "cycle": 94,
+      "started_at": "2026-07-01T15:36:35.012Z",
+      "ended_at": "2026-07-01T15:37:50.879Z",
+      "closed": [],
+      "raised": [],
+      "merged_commits": 0,
+      "adr_drafts": [],
+      "pause_reason": "cycle 94: cycle 93 と同構造の pause 継続。actionable=10 (Phase 11-20 起点 #196-#205) は current_phase=10 と不一致で batch-select は phase-feature tier で 0 candidate 収束。Phase 10 sketch batch (#275-#278 / #295-#302) は全 needs-human/blocked-by-split で stuck。ADR-018 (#294) も gate:adr-review needs-human 滞留。ユーザー判断待ち (Phase 10 sketch 手動 split / ADR-018 accept 判定 / Phase 11 昇格判断)。",
+      "tokens": {
+        "claude": 0,
+        "glm": 0,
+        "codex": 0
+      }
     }
   ],
   "cumulative": {
-    "cycles_total": 81,
-    "issues_closed": 197,
+    "cycles_total": 94,
+    "issues_closed": 204,
     "raised_resolved": 0,
-    "adr_total": 17,
-    "token_claude": 241560386,
-    "token_glm": 272923707,
-    "token_codex": 123828713
+    "adr_total": 18,
+    "token_claude": 267490781,
+    "token_glm": 272960372,
+    "token_codex": 131350530
   }
 }

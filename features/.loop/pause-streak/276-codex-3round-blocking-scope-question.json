@@ -1,0 +1,7 @@
+{
+  "issue": 276,
+  "category": "codex-3round-blocking-scope-question",
+  "count": 1,
+  "last_at": "2026-07-01T12:49:15.266Z",
+  "last_reason": "cycle 85: #276 STEP 7.5 r3 で 3 round 連続 blocking (r1=5, r2=5, r3=6, architect pass→fail, contrarian 継続 refute, migration usage limit 継続)。architect+migration は Codex CLI usage limit を引きつつも、architect F01 (Extrude が edited profile を再検証しない real bug high) / migration F01 (同 critical) の新規 finding + contrarian 完走で真の refute (F01 T01 決定性 sketch-only 比較不足 critical / F02 SketchExtend Circle/Arc target 未対応 high / F03 T02-T08 placeholder 残存 high) を出した。前 r2 (Codex usage 障害) と違い新規 critical bug が判明。scope 切り出し (Extrude 側の profile 再検証は Phase 3 extrude 領域で ADR 級) vs 本 Issue 完遂の判断が必要な自律モード停止点。cad/276 branch は CI green passed=1409 failed=0 で塩漬け、r3 verdict.json 更新済。次 cycle で人間判断待ち。"
+}
