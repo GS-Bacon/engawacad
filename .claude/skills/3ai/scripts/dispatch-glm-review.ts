@@ -24,6 +24,7 @@
 //     [--test-summary features/N-SLUG/test-summary.json]
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
+import { resolveGlmModel, buildAnthropicModelEnv } from "./zai-model.ts";
 
 const PERSONA_AGENT: Record<string, string> = {
   scope:     ".claude/skills/3ai/agents/glm-reviewer-scope.md",
@@ -305,14 +306,12 @@ async function main() {
     failClosed("preflight-api-key-missing", `Z_AI_API_KEY not set in ${zaiEnv}`);
   }
 
-  const model = process.env.GLM_MODEL ?? "claude-opus-4-5-20251101";
+  const model = resolveGlmModel(); // #309: GLM_MODEL env 優先、なければ GLM-5.1
   const glmEnv: Record<string, string> = {
     ...(process.env as Record<string, string>),
     ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
     ANTHROPIC_AUTH_TOKEN: envVars.Z_AI_API_KEY,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: model,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: model,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+    ...buildAnthropicModelEnv(model),
     API_TIMEOUT_MS: "3000000",
     CAD_WORKER: "1",
   };

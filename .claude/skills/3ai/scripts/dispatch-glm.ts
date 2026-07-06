@@ -5,6 +5,7 @@
 // --mode (未指定): 実装+テスト一括
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { DEFAULT_GLM_MODEL, buildAnthropicModelEnv } from "./zai-model.ts";
 
 function parseEnvFile(path: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -145,7 +146,7 @@ if (import.meta.main) {
   let featureDir = "";
   let resultFile = "";
   let maxTurns = 80;
-  let model = "GLM-5.1";
+  let model = DEFAULT_GLM_MODEL; // #309: --model 引数で override 可
   let debugSpec = "";
   let glmMode = "";
   let testSpecFile = "";
@@ -194,9 +195,7 @@ if (import.meta.main) {
     ...process.env as Record<string, string>,
     ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
     ANTHROPIC_AUTH_TOKEN: envVars.Z_AI_API_KEY,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: model,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: model,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+    ...buildAnthropicModelEnv(model),
     API_TIMEOUT_MS: "3000000",
     CAD_WORKER: "1",
   };

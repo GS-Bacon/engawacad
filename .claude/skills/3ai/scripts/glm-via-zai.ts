@@ -17,6 +17,7 @@
 
 import { existsSync, readFileSync } from "fs";
 import { runChecked } from "../../3ailoop/scripts/loop-spawn-checked.ts";
+import { buildAnthropicModelEnv } from "./zai-model.ts";
 
 export interface GlmViaZaiOpts {
   /** claude -p に渡す prompt 文字列。 */
@@ -93,9 +94,7 @@ export async function runGlmViaZAI(opts: GlmViaZaiOpts): Promise<GlmViaZaiResult
   const glmEnv: Record<string, string> = {
     ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
     ANTHROPIC_AUTH_TOKEN: envVars.Z_AI_API_KEY,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-4.6",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-4.6",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.6",
+    ...buildAnthropicModelEnv(), // #309: GLM-5.1 に統一 (GLM_MODEL env で override 可)
     API_TIMEOUT_MS: String(opts.apiTimeoutMs ?? 600000),
   };
   // CLAUDECODE が立っていると claude CLI が外側のセッションを引き継いでしまうため削る。
