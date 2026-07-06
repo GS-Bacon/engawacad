@@ -324,6 +324,16 @@ intent-guard は inc されない。同等の状況を捕捉する経路とし�
 で `--pause-issue` + `--pause-category` を渡す** ことで `pause-streak tracker` が連続検出する
 (両者は並行運用)。
 
+### L-5.9: Codex skip 回収 (後払いレビュー)
+
+Codex gate (STEP 3.5 / 7.5) が usage-limit 等でスキップされ台帳 (`features/.loop/codex-skips.jsonl`) に積まれたエントリを、Codex 回復後にまとめて後追いレビューする。1 サイクル最大 2 件、usage-limit 検出で即中断 (残りは次サイクル):
+
+```bash
+bun .claude/skills/3ailoop/scripts/loop-codex-skip-collector.ts
+```
+
+fail-safe 設計で常に RC=0 (処理結果は stdout の JSON ログ)。blocking findings が出たエントリは `bug` Issue を自動起票 (元 batch 継承 or `batch:kernel`) し、`resolved_at` を書き込んで `codex-review-deferred` ラベルを除去する。merge commit が無いエントリ (WIP 凍結等) は no-merge-commit として close 扱い。
+
 ### L-6: Dashboard 更新
 
 ```bash

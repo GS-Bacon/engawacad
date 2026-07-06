@@ -46,6 +46,8 @@ const KNOWN_LABELS = new Set([
   // 3ailoop needs/blocked ラベル
   "needs-triage", "needs-phase", "needs-human", "needs-intent-review",
   "blocked-by-split", "blocked-by-adr-retired",
+  // Codex gate 後払いレビュー (record-codex-skip.ts が付与、collector が回収時に除去)
+  "codex-review-deferred",
   // 既存慣習
   "needs-review",
   "enhancement",

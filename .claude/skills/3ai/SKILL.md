@@ -362,7 +362,12 @@ bun .claude/skills/3ai/scripts/dispatch-codex-design.ts \
 
 **Codex CLI エラー時のフォールバック** (usage limit / rate limit / exit != 0 等):
 - 1 発 gate なのでリトライしない
-- `state.ts set ... codex_design passed` を実行して STEP 4 に進む
+- **スキップを後払い台帳に記録** (Codex 回復後に L-5.9 collector がまとめて後追いレビュー):
+  ```bash
+  bun .claude/skills/3ai/scripts/record-codex-skip.ts \
+    --issue $ISSUE_NUM --slug $ISSUE_SLUG --step 3.5 --reason "<usage-limit / exit!=0 の概要>"
+  ```
+- 続けて `state.ts set ... codex_design passed` を実行して STEP 4 に進む
 - 相関盲点破りが 1 サイクル欠けるが、STEP 7.5 の実装後 gate が保険として機能する
 
 ### 3.5-B: 判定 (`codex-design.yaml.verdict.json` を読む)
@@ -731,7 +736,12 @@ bun .claude/skills/3ai/scripts/dispatch-codex.ts \
 
 **Codex CLI エラー時のフォールバック** (usage limit / rate limit / exit != 0 等):
 - 1 発 gate なのでリトライしない
-- `state.ts set ... codex_review passed` を実行して STEP 8 に進む
+- **スキップを後払い台帳に記録** (Codex 回復後に L-5.9 collector がまとめて後追いレビュー):
+  ```bash
+  bun .claude/skills/3ai/scripts/record-codex-skip.ts \
+    --issue $ISSUE_NUM --slug $ISSUE_SLUG --step 7.5 --reason "<usage-limit / exit!=0 の概要>"
+  ```
+- 続けて `state.ts set ... codex_review passed` を実行して STEP 8 に進む
 - 相関盲点破りが 1 サイクル欠けるが、次サイクルの回帰テストで担保 (STEP 3.5 で既に 1 回 gate 済み)
 
 ### 7.5-C: 判定（`codex-final.yaml.verdict.json` を読む）
