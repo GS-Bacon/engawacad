@@ -8,10 +8,11 @@
 //
 // 利用箇所:
 // - loop-adr-auto-accept.ts (#251 で導入された ADR 3 persona GLM fallback)
-// - dispatch-codex-3persona.ts (#281 で導入する STEP 7.5-B GLM 3 persona fallback)
+// - escalate-glm-adversarial.ts (Codex 削減改修 Task 3 で STEP 6-D の Codex 3 persona → GLM 3 persona に移行)
 //
-// 各 caller は本モジュールの返す result を独自に解釈する (ADR は verdict regex、3p は
-// yaml issues/verdict block の抽出)。本モジュールは「Z.AI 経由 claude -p の生 stdout
+// 各 caller は本モジュールの返す result を独自に解釈する (ADR は verdict regex、
+// escalate-glm-adversarial は architect/contrarian/migration ペルソナごとの verdict:
+// approved/refuted 行を抽出)。本モジュールは「Z.AI 経由 claude -p の生 stdout
 // から JSON の result を取り出すところまで」を共通化する。
 
 import { existsSync, readFileSync } from "fs";

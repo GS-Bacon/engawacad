@@ -3,7 +3,10 @@
 //
 // 動作:
 //   1. ESC_MAX_LOOPS (=3) 到達後の最終ゲート。
-//   2. Codex 3 ペルソナ (architect / contrarian / migration) で adversarial review。
+//   2. GLM 3 ペルソナ (architect / contrarian / migration) で adversarial review。
+//      Codex 3 persona 呼びから GLM (Z.AI 経由 claude -p) 呼びに移行 (Codex 削減改修 Task 3)。
+//      3 persona 名前空間衝突 (STEP 7.5-B と重複) を解消し、Codex 依存を「最終独立ゲート
+//      1 箇所」の設計思想に戻す。
 //      入力: features/<dir>/ci.log の末尾抜粋 + features/<dir>/debug-spec.md。
 //   3. per-Issue tracker (features/.loop/glm-escalation/<issue>.json) に
 //      regen_count / token_used を atomic rename で永続化。
@@ -19,7 +22,8 @@
 //   ESC_TRACKER_ROOT=<path>             tracker 永続化 root を override (テスト用)
 //   ESC_RAISE_ISSUE=0                   raise-issue-on-failure 呼び出しを skip (テスト用)
 //   ESC_DISABLE_GH=1                    gh CLI 呼び出しを skip (テスト用)
-//   CODEX_DRY_RUN=1                     Codex を呼ばず stub (常に approved を返す)
+//   GLM_DRY_RUN=1                       GLM を呼ばず stub (常に approved を返す)
+//   CODEX_DRY_RUN=1                     (後方互換) GLM_DRY_RUN と同等に扱う
 //
 // exit code:
 //   0 = continue (全 approved、caller は再 dispatch 可能)
@@ -28,6 +32,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import { runGlmViaZAI } from "./glm-via-zai.ts";
 
 export const ESCALATION_TOKEN_CAP = 200_000;
 const ESTIMATED_TOKENS_PER_PERSONA = 30_000;
@@ -36,15 +41,15 @@ const CI_LOG_TAIL_LINES = 200;
 const PERSONAS = [
   {
     key: "architect",
-    role: "実装 architect (既存 invariant / API 契約 / B-rep トポロジー保証で refute せよ)",
+    instructionPath: ".claude/skills/3ai/agents/glm-adversarial-architect.md",
   },
   {
     key: "contrarian",
-    role: "実装 contrarian (採用された修正案を refute し、棄却された代替案の利点を強調せよ)",
+    instructionPath: ".claude/skills/3ai/agents/glm-adversarial-contrarian.md",
   },
   {
     key: "migration",
-    role: "実装 migration reviewer (既存テスト互換性 / 後方互換性で refute せよ)",
+    instructionPath: ".claude/skills/3ai/agents/glm-adversarial-migration.md",
   },
 ] as const;
 
@@ -155,22 +160,14 @@ function buildPersonaPrompt(
   debugSpec: string,
   issueNum: number,
 ): string {
+  // agent instruction .md をロード (persona ごとの role 詳細と出力フォーマット)
+  const instruction = existsSync(persona.instructionPath)
+    ? readFileSync(persona.instructionPath, "utf-8").replace(/Issue #N/g, `Issue #${issueNum}`)
+    : `# Role: ${persona.key}\nREFUTE デフォルト。verdict: approved / verdict: refuted で最終行に記載必須。`;
   return [
-    `# Role: ${persona.role}`,
+    instruction,
     "",
-    "## Task",
-    `Issue #${issueNum} の STEP 6-D 自律 escalation。`,
-    "GLM 実装が ESC_MAX_LOOPS=3 まで失敗を繰り返した。Claude オーケストレーターが書いた debug-spec.md と最新の ci.log 抜粋を元に、",
-    "実装方針 (debug-spec.md の「修正方針」) を adversarial に review してください。",
-    "REFUTE を default とし、明確に refute できなければ approved を返してください。",
-    "理由が浅い (1 文以下、根拠なし) refute は失敗判定とし approved を返してください。",
-    "",
-    "## 出力フォーマット (必須)",
-    "最終行に必ず以下のいずれかを記載:",
-    "  verdict: approved",
-    "  verdict: refuted",
-    "",
-    "refuted の場合、その直前に 200 字以上の refute 理由を記載してください。",
+    "---",
     "",
     "## debug-spec.md (Claude が起こした修正仕様)",
     "",
@@ -199,33 +196,25 @@ async function runPersonaReview(
   if (mock === "refute") {
     return { persona: persona.key, approved: false, raw_excerpt: "[mock:refute]" };
   }
-  if (process.env.CODEX_DRY_RUN === "1") {
-    return { persona: persona.key, approved: true, raw_excerpt: "[CODEX_DRY_RUN]" };
+  // GLM_DRY_RUN (新規) / CODEX_DRY_RUN (後方互換) の両方で stub 挙動
+  if (process.env.GLM_DRY_RUN === "1" || process.env.CODEX_DRY_RUN === "1") {
+    return { persona: persona.key, approved: true, raw_excerpt: "[GLM_DRY_RUN]" };
   }
 
   mkdirSync(outDir, { recursive: true });
-  const instructionFile = `${outDir}/persona-${persona.key}.instruction.md`;
+  const promptFile = `${outDir}/persona-${persona.key}.prompt.md`;
   const resultFile = `${outDir}/persona-${persona.key}.result.md`;
   const prompt = buildPersonaPrompt(persona, ciLogExcerpt, debugSpec, issueNum);
-  writeFileSync(instructionFile, prompt, "utf-8");
+  writeFileSync(promptFile, prompt, "utf-8");
 
-  const proc = Bun.spawn(
-    ["codex", "exec", "-c", "sandbox_mode=read-only", "--output-last-message", resultFile, prompt],
-    { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
-  );
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  await proc.exited;
-  writeFileSync(`${resultFile}.log`, stdout + stderr, "utf-8");
+  const r = await runGlmViaZAI({ prompt });
+  const combined = `${r.stdout}\n---STDERR---\n${r.stderr}`;
+  writeFileSync(`${resultFile}.log`, combined, "utf-8");
 
-  let text = "";
-  try {
-    text = readFileSync(resultFile, "utf-8");
-  } catch {
-    text = stdout;
-  }
+  // r.ok = true のとき r.result に GLM の応答が入る。stub / エラー時は combined を使う。
+  const text = r.ok ? r.result : (r.result || combined);
+  writeFileSync(resultFile, text, "utf-8");
+
   const verdictMatch = text.match(/verdict:\s*(approved|refuted)/i);
   const verdict = verdictMatch?.[1].toLowerCase() ?? "unknown";
   return {
@@ -249,7 +238,7 @@ async function retireToHuman(
   await runGh(["issue", "edit", String(issueNum), "--add-label", "needs-human"]);
 
   if (process.env.ESC_RAISE_ISSUE !== "0") {
-    const reasonLabel = reason === "refute" ? "Codex adversarial refute" : `token cap (${state.token_used} > ${ESCALATION_TOKEN_CAP})`;
+    const reasonLabel = reason === "refute" ? "GLM adversarial refute" : `token cap (${state.token_used} > ${ESCALATION_TOKEN_CAP})`;
     const summary = `STEP 6-D escalation → needs-human: ${reasonLabel}. ${details.join(" / ").slice(0, 200)}`;
     const proc = Bun.spawn(
       [

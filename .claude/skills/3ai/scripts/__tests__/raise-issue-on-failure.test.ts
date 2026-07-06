@@ -7,7 +7,12 @@
 // 同 step + 同 parent + 直近 24h で open Issue があれば dedup 対象として返す。
 
 import { describe, expect, test } from "bun:test";
-import { findRecentSameStepIssue, shouldSkipError, shouldSkipStep } from "../raise-issue-on-failure.ts";
+import {
+  checkParentNeedsHuman,
+  findRecentSameStepIssue,
+  shouldSkipError,
+  shouldSkipStep,
+} from "../raise-issue-on-failure.ts";
 
 describe("shouldSkipStep", () => {
   test("T01 (determinism): 同一入力を 2 回呼んで結果が一致", () => {
@@ -170,5 +175,58 @@ describe("findRecentSameStepIssue (#229 dedup ガード)", () => {
     const invalid = [{ number: 999, title: "STEP 6-D #220", createdAt: "not-a-date" }];
     const r = findRecentSameStepIssue("STEP 6-D", 220, invalid, now, 24);
     expect(r.dedupTo).toBeNull();
+  });
+});
+
+describe("checkParentNeedsHuman (Task 7 親 needs-human 子 auto-raise skip)", () => {
+  test("T21 needs-human 含む → hasNeedsHuman=true", async () => {
+    const r = await checkParentNeedsHuman("220", async () => [
+      "type: feature",
+      "batch:kernel",
+      "needs-human",
+    ]);
+    expect(r.hasNeedsHuman).toBe(true);
+  });
+
+  test("T22 needs-human なし → hasNeedsHuman=false", async () => {
+    const r = await checkParentNeedsHuman("220", async () => [
+      "type: feature",
+      "batch:kernel",
+    ]);
+    expect(r.hasNeedsHuman).toBe(false);
+  });
+
+  test("T23 issueNum=unknown → hasNeedsHuman=false (gh 呼びなし)", async () => {
+    let called = false;
+    const r = await checkParentNeedsHuman("unknown", async () => {
+      called = true;
+      return ["needs-human"];
+    });
+    expect(r.hasNeedsHuman).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  test("T24 空文字 issueNum → hasNeedsHuman=false", async () => {
+    const r = await checkParentNeedsHuman("", async () => ["needs-human"]);
+    expect(r.hasNeedsHuman).toBe(false);
+  });
+
+  test("T25 fetchLabels throw → hasNeedsHuman=false (エラー時は安全側)", async () => {
+    const r = await checkParentNeedsHuman("220", async () => {
+      throw new Error("gh CLI failed");
+    });
+    expect(r.hasNeedsHuman).toBe(false);
+  });
+
+  test("T26 空ラベル配列 → hasNeedsHuman=false", async () => {
+    const r = await checkParentNeedsHuman("220", async () => []);
+    expect(r.hasNeedsHuman).toBe(false);
+  });
+
+  test("T27 (determinism): 同一入力を 2 回呼んで結果一致", async () => {
+    const fetch = async () => ["needs-human", "type: feature"];
+    const a = await checkParentNeedsHuman("220", fetch);
+    const b = await checkParentNeedsHuman("220", fetch);
+    expect(a).toEqual(b);
   });
 });

@@ -89,7 +89,7 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
 1. `main` ブランチ上でクリーンな状態を確認する
 2. `bun .claude/skills/3ai/scripts/init-feature.ts --issue $N --slug $SLUG` を実行する  
    （`features/$N-$SLUG/` が既存の場合はスキップ → 完了済みとして continue）
-3. `flow: full` の Issue → 既存 STEP 1（ディレクトリ作成済み、Issue 確定のみ）→ STEP 2 → 2.5 → STEP 3（GLM 設計レビュー収束）まで実行した後:
+3. `flow: full` の Issue → 既存 STEP 1（ディレクトリ作成済み、Issue 確定のみ）→ STEP 2 → 2.5 → STEP 3（GLM 設計レビュー収束）→ **STEP 3.5（Codex 独立設計 gate、1 persona × ループなし）** まで実行した後:
    - **自律モード（`batch_arg === null`）**: STEP 4 の `ExitPlanMode` をスキップ。代わりに STEP 2.5 と同じ「確定 plan の要点を情報共有として表示（待たない）」を行い、そのまま STEP 5 へ進む。
    - **対話モード（`batch_arg !== null`）**: 従来どおり STEP 4 `ExitPlanMode`（唯一の承認点）を実行し、承認後に STEP 5〜8 を自動進行する。
 4. `flow: light` の Issue → **B-5 へ**
@@ -106,9 +106,9 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
 3. **STEP 5.5**: Acceptance Test Skeleton 作成（**保持** — 偽陽性ガード、機械的 Issue でも省略しない）
 4. **STEP 6 / 6.5 / 6.6**: GLM コア実装 → test-spec 作成 → GLM テスト実装（既存フローをそのまま実行）
 5. **STEP 7**: GLM 最終レビュー
-6. **STEP 7.5**: Codex 独立技術ゲート  
+6. **STEP 7.5**: Codex 独立技術ゲート (1 persona × ループなし)
    - `keep_codex_gate: true`（= batch:kernel）→ **STEP 7.5 を保持する**（幾何不変量リスクが高いため）  
-   - `keep_codex_gate: false`（= それ以外の light）→ **STEP 7.5 をスキップし B-6 横断レビューに集約する**  
+   - `keep_codex_gate: false`（= それ以外の light）→ **STEP 7.5 をスキップし B-6 Claude spot check で拾う**（Codex 呼びは行わない）  
    - **state shim**: 7.5 をスキップする Issue は STEP 7 末で以下を実行し STEP 8 の assert ゲートを通す:  
      ```bash
      bun .claude/skills/3ai/scripts/state.ts set \
@@ -116,26 +116,27 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
      ```
 7. **STEP 8**: squash マージ + `finalize-feature.ts`（逐次実行のため単一ツリーで安全）
 
-### B-6: 横断 Codex レビュー（全グループ完了後）
+### B-6: 横断 Claude spot check（全グループ完了後）
 
-`batch_start_sha`（plan.json に記録）を base に全バッチコミットを一括レビューする:
+Codex 削減改修 Task 5 で **Codex 呼びを廃止**。個別 Issue の Codex 独立ゲート (STEP 7.5) 済みなので、バッチ全体横断で新規発見できる領域は少ないため、Claude が commit range を summarize して spot check する軽量経路に置き換える。
+
+`batch_start_sha`（plan.json に記録）を base に:
 
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex.ts \
-  --mode review \
-  --base <batch_start_sha> \
-  --instruction .claude/skills/3ai/agents/codex-final-reviewer.md \
-  --result features/.batch/codex-crosscut.yaml
+# 1) commit range を要約
+git log --oneline "$BATCH_START_SHA..HEAD"
+git diff --stat "$BATCH_START_SHA..HEAD"
+
+# 2) 気になる箇所を Read で spot check (crates/**、tests/**、examples/**)
+#    - 新規 pub API のシグネチャに違和感がないか
+#    - Boolean/Partition 系で退化ケースの防衛が抜けていないか
+#    - golden YAML の差分が意図通りか
 ```
 
-- **自律モード（`batch_arg === null`）の場合**: `blocking ≥ 1` でも Claude が自己判断で修正して続行する:
-  1. 各 critical/high 指摘を「採用」「棄却」「partial」に分類し理由を記録する
-  2. 採用した指摘: F01→F02 dispatch（crates/src/ は GLM、その他は Claude が直接修正）
-  3. 修正後 `cargo xtask ci` green を確認し、Codex 再レビューを実施する（`--result features/.batch/codex-crosscut-r2.yaml`）
-  4. 再レビューで `blocking == 0` になれば完了。再び `blocking ≥ 1` の場合は同ループを繰り返す（上限 2 回）
-  5. 2 回ループ後も critical ≥ 1 が残る場合のみユーザーにエスカレーション; critical = 0 なら Claude 裁量で受け切る
-- **対話モード（`batch_arg !== null`）**: `blocking ≥ 1` → ユーザーに報告（バッチ全体の自動ループはせずエスカレーション）
-- medium/low のみ → `features/.batch/codex-crosscut-findings.md` に記録
+**Claude の判断で必要と感じた場合のみ**、手動で個別 Issue の STEP 7.5 を再走 (`dispatch-codex.ts --mode review`) してよい。デフォルトは Codex 呼びなしで進む。
+
+- 気になる指摘があれば `features/.batch/crosscut-findings.md` に記録して次バッチに引き継ぐ
+- 明確なバグと判断したら `bug` ラベル + `batch:*` 継承で新規 Issue を起票 (`raise-issue-on-failure.ts` の呼び出し規約に従う)
 
 ---
 
@@ -338,6 +339,62 @@ bun .claude/skills/3ai/scripts/state.ts set \
 
 ---
 
+## STEP 3.5: Codex 独立設計 gate (1 persona × ループなし)
+
+**目的**: GLM 多ペルソナ (STEP 3) が Z.AI 同系モデルの分身であることによる相関盲点を、別モデル系 (Codex) の 1 発 gate で破る。実装フェーズに入る前に設計段階で発見することで、実装コストを削減する。
+
+**ゲート:**
+```bash
+bun .claude/skills/3ai/scripts/state.ts assert \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json design_review
+```
+
+### 3.5-A: Codex 独立ゲート dispatch (1 persona, 1 呼び, ループ制御なし)
+
+```bash
+bun .claude/skills/3ai/scripts/dispatch-codex-design.ts \
+  --plan-file <プランファイルパス> \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/codex-design.yaml
+```
+
+内部で `plan.md` + `adr-context.md` + `judgment-summary.md` + `rejection.md` (存在するもの) を連結して Codex 1 persona (`codex-design-reviewer.md`) に投げる。`PRIOR JUDGMENTS` ブロックが存在する場合、Codex は Claude の判定 (採用/棄却) を独立に再検証する (agent 定義の「STEP 3.5 独立 gate モード」参照)。
+
+**Codex CLI エラー時のフォールバック** (usage limit / rate limit / exit != 0 等):
+- 1 発 gate なのでリトライしない
+- `state.ts set ... codex_design passed` を実行して STEP 4 に進む
+- 相関盲点破りが 1 サイクル欠けるが、STEP 7.5 の実装後 gate が保険として機能する
+
+### 3.5-B: 判定 (`codex-design.yaml.verdict.json` を読む)
+
+**`blocking == 0`** (critical/high なし) の場合:
+```bash
+bun .claude/skills/3ai/scripts/state.ts set \
+  features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_design passed
+```
+medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-design-findings.md` に記録のみ (非 block) → **STEP 4 へ**。
+
+**`blocking >= 1`** (critical/high あり) の場合:
+1. 各 critical/high 指摘を Claude が **採用 / 棄却 / partial** に分類し理由を記録:
+   - 採用 → plan.md を直接修正
+   - 棄却 → `rejection.md` に `## STEP 3.5 Codex` セクションで追記
+   - partial → 一部修正 + rejection.md に残件追記
+2. `judgment-summary.md` にも `## STEP 3.5 Codex` セクションで採用/棄却の内訳を追記
+3. **Codex 再呼びなし**。修正版のまま STEP 4 に進む (相関盲点は STEP 7.5 が保険)
+4. state を passed に倒す:
+   ```bash
+   bun .claude/skills/3ai/scripts/state.ts set \
+     features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_design passed
+   ```
+5. **例外: critical で ADR 判断が必要** (Phase 全体の設計方針を疑う必要) と判断した場合のみユーザーへエスカレーション
+
+### 3.5-C: needs-human 判定 (Codex エラー / critical で判断保留)
+
+- Codex 呼びは 1 発 gate。再 dispatch はしないため `pause-streak-tracker` の `codex-design-gate` カテゴリは inc しない。
+- ADR 判断保留での needs-human は Task 手動、`pause-streak-tracker` 経由ではない。
+
+---
+
 ## STEP 4: 確定プラン提出（唯一の承認点）
 
 > **自律バッチモード（引数なし起動, `batch_arg === null`）では本 STEP の `ExitPlanMode` をスキップし、確定 plan の要点を情報共有として表示するのみ（待たない）。B-4 の手順に従ってそのまま STEP 5 へ進む。**  
@@ -465,7 +522,7 @@ bun .claude/skills/3ai/scripts/maybe-commit-generated-ts.ts --issue $ISSUE_NUM
 
 ### 6-D: ESC_MAX_LOOPS 到達時の adversarial review
 
-ESC 試行 3 回でも `status: failed` のまま → Codex 3 ペルソナ adversarial review にエスカレートする:
+ESC 試行 3 回でも `status: failed` のまま → **GLM 3 ペルソナ** adversarial review にエスカレートする (Codex 3 persona から移行、Codex 削減改修 Task 3):
 
 ```bash
 bun .claude/skills/3ai/scripts/escalate-glm-adversarial.ts \
@@ -474,14 +531,16 @@ bun .claude/skills/3ai/scripts/escalate-glm-adversarial.ts \
 RC=$?
 ```
 
-ペルソナ: **architect** (既存 invariant との整合で refute) / **contrarian** (実装案を refute、棄却案の利点を強調) / **migration** (テスト互換性で refute)。refute デフォルト。
+ペルソナ: **architect** (`glm-adversarial-architect.md` / 既存 invariant / API 契約で refute) / **contrarian** (`glm-adversarial-contrarian.md` / 採用方針を refute、代替案の優位性を提示) / **migration** (`glm-adversarial-migration.md` / 既存テスト互換で refute)。refute デフォルト。GLM (Z.AI 経由 claude -p) を 3 persona 並列で spawn。
+
+**なぜ Codex から GLM に移行したか**: STEP 7.5-B の Codex 3 persona と名前空間が衝突していた (両者とも architect/contrarian/migration)。設計思想 (skill description) は「Codex = 独立技術レビューの 1 箇所」であり、実装フェーズ中間の adversarial review は同系モデル (GLM) で十分。7.5 の独立ゲート 1 発と役割を明確に分離する。
 
 判定 (exit code + stdout JSON):
 - `RC=0` (kind=continue, 全 approved): Claude が debug-spec.md にさらに新しい仮説を追記し、6-A に戻って **追加** dispatch する（ESC counter は継続、`ESCALATION_TOKEN_CAP=200_000` 越えで自動退避）
 - `RC=3` (kind=needs_human, reason=refute): 1 ペルソナでも refute → escalate スクリプトが Issue に `needs-human` 自動付与 + `raise-issue-on-failure.ts` を呼んで起票 → loop は他 Issue に進む
 - `RC=3` (kind=needs_human, reason=token_cap): per-Issue 累積 token 200k 越え → 同じく `needs-human` 自動退避
 
-`debug-spec.md` はユーザーが手動改稿して再投入できる。Anthropic claude への自動フォールバックは禁止。
+`debug-spec.md` はユーザーが手動改稿して再投入できる。Anthropic claude への自動フォールバックは禁止 (Z.AI 経由の GLM は禁止対象外)。
 
 ---
 
@@ -549,9 +608,9 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
 **ゲート:** `features/$ISSUE_NUM-$ISSUE_SLUG/glm-self-review.md` が存在すること
 (STEP 6 の GLM core 実装が完了直前に出力)。
 
-Codex 7.5 で走る 3 persona (architect / contrarian / migration) と同じ観点を
-**Codex を呼ぶ前に Claude が自己適用**する。これにより Codex round 2 (= retry) が
-不要になり、Codex usage limit を圧迫しない。
+Codex 7.5 で走る 3 観点 (architect / contrarian / migration) と同じ観点を
+**Codex を呼ぶ前に Claude が自己適用**する。7.5 は 1 persona × ループなしの 1 発 gate
+なので、6.7 で 3 観点をシフトレフト完了させることが 7.5 通過率を上げる鍵となる。
 
 Claude が実行する手順:
 
@@ -658,18 +717,22 @@ bun .claude/skills/3ai/scripts/build-codex-input.ts \
   --output features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
 ```
 
-### 7.5-B: Codex 技術レビュー dispatch (3 ペルソナ並列, #231)
+### 7.5-B: Codex 技術レビュー dispatch (1 persona × ループなし)
 
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex-3persona.ts \
+bun .claude/skills/3ai/scripts/dispatch-codex.ts \
+  --mode review \
   --instruction .claude/skills/3ai/agents/codex-final-reviewer.md \
   --result features/$ISSUE_NUM-$ISSUE_SLUG/codex-final.yaml \
   --extra-input features/$ISSUE_NUM-$ISSUE_SLUG/codex-input.md
 ```
 
-3 ペルソナ (architect / contrarian / migration) を `Promise.all` で並列実行し、各 persona の指摘を統合した `codex-final.yaml` と `codex-final.yaml.verdict.json` を生成する。1 つでも persona が critical/high を返せば aggregate `blocking >= 1` (#231)。`base` は `origin/HEAD` から自動検出し、`git diff <base>...HEAD` を各 Codex 呼び出しに渡す。
+**単一 persona 1 呼び**。従来の 3 persona 並列 (architect/contrarian/migration) は、`codex-final-reviewer.md` の「3 観点統合チェックリスト」セクションで **1 persona 内でカバー** させる。3 観点は Claude self-review (STEP 6.7) で既にシフトレフト済みなので、Codex は 1 発 gate で十分。`base` は `origin/HEAD` から自動検出し `git diff <base>...HEAD` を渡す。
 
-per persona の生 yaml は `codex-final-architect.yaml` / `codex-final-contrarian.yaml` / `codex-final-migration.yaml` に書き出され、統合 yaml の issue id には persona プレフィックス (`A-` / `C-` / `M-`) が付与される。
+**Codex CLI エラー時のフォールバック** (usage limit / rate limit / exit != 0 等):
+- 1 発 gate なのでリトライしない
+- `state.ts set ... codex_review passed` を実行して STEP 8 に進む
+- 相関盲点破りが 1 サイクル欠けるが、次サイクルの回帰テストで担保 (STEP 3.5 で既に 1 回 gate 済み)
 
 ### 7.5-C: 判定（`codex-final.yaml.verdict.json` を読む）
 
@@ -680,29 +743,18 @@ bun .claude/skills/3ai/scripts/state.ts set \
 ```
 medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-findings.md` に記録のみ（非 block）→ **STEP 8 へ**。
 
-**`blocking >= 1`**（critical/high あり）の場合:
-```bash
-bun .claude/skills/3ai/scripts/state.ts inc \
-  features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_loops \
-  --raise-at 6 \
-  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
-  --step "STEP 7.5 codex_review"
-```
-`codex-final.yaml` の critical/high 指摘を `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` に転記し、GLM 実装へ再 dispatch（指摘内容がコア実装なら `--mode core`、テスト関連なら `--mode test`）→ `cargo xtask ci` green 確認 → **7.5-A に戻って Codex 再レビュー**（`codex_loops` 上限 5、#152 で上限緩和）。
+**`blocking >= 1`**（critical/high あり）の場合 (**Codex 再呼びなし**、1 発 gate ポリシー):
+1. `codex-final.yaml` の critical/high 指摘を `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` に転記
+2. GLM 実装へ再 dispatch (指摘内容がコア実装なら `--mode core`、テスト関連なら `--mode test`)
+3. `cargo xtask ci` green を確認
+4. **Codex 再レビューは行わない**。修正が指摘 id に対応しているかは Claude が `codex-final.yaml` の issue id と修正 diff を突き合わせて確認する
+5. `state.ts set ... codex_review passed` → **STEP 8 へ**
 
-**自律モード (`batch_arg === null`) の追加判定**: `codex_loops` が 3 以上で **3 round 連続 blocking ≥ 1** が続いた場合 (前 3 round の `codex-final-r*.yaml` をすべて確認して critical/high 残存)、**ユーザーに「続行 or scope 切り出し」を確認** する停止点を設ける。同系統の指摘が無限ループする兆候のため。
+**修正しきれない (Claude が判断保留する必要がある) critical 指摘のみ**、停止してユーザーへエスカレーション。この場合は `raise-issue-on-failure.ts` で起票してから報告する。
 
-### 7.5-D: ループ上限超過フォールバック（`codex_loops > 5`、#152 で上限緩和）
+### 7.5-D: (削除)
 
-```bash
-bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
-  features/$ISSUE_NUM-$ISSUE_SLUG/state.json \
-  features/$ISSUE_NUM-$ISSUE_SLUG/codex-final.yaml.verdict.json
-```
-
-- **critical ≥ 1** → 停止してユーザーにエスカレーション。
-- **critical = 0** かつ残 high が docs-only（コードファイル変更を伴わない）→ Claude 裁量で受け切る: 残 high/medium を直接修正（docs への Edit/Write）または棄却 → `cargo xtask ci` green 確認 → `state.ts set ... codex_review passed` → 内訳報告して STEP 8 へ。
-- **critical = 0** だが code 系 high が残る → 停止してユーザーにエスカレーション。
+従来の `codex_loops` カウンタ + 5 loops フォールバック分岐は、1 発 gate 化により廃止。ループ制御が消えたため `state.ts inc ... codex_loops` の呼び出しも不要。
 
 ---
 

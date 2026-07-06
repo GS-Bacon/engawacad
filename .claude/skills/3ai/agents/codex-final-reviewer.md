@@ -52,6 +52,32 @@
 
 ---
 
+## 3 観点統合チェックリスト (1 persona で 3 lens をカバー)
+
+本エージェントは **単一 persona** で呼ばれ、以下の 3 観点を **明示的に順番に**チェックする。かつては persona ごとに並列 dispatch していたが、Claude self-review (STEP 6.7) で 3 観点シフトレフト済み前提のため、Codex は 1 発 gate に統合する。各観点で見落としがないよう出力前に自己確認すること。
+
+### Lens A — architect (既存 invariant / API 契約 / B-rep トポロジー保証)
+- 決定性 (§1) が保たれているか
+- B-rep トポロジー (§2) の Euler-Poincaré / HalfEdge 整合性が保たれているか
+- 幾何不変量 (Boolean/Partition/Assemble 系のトポロジー保存) が壊れていないか
+- public API のシグネチャが既存 invariant を守っているか
+
+### Lens B — contrarian (採用方針の反論可能性 / defensive semantics 退化)
+- 直前 Issue や同 Phase で確立された defensive semantics (退化排除・境界処理) が本 diff で退化していないか
+- 「別の実装方針の方が simpler だった」と言える強い根拠があるか (根拠がなければ挙げない)
+- スコープ内の代替実装で「今より安全」なものが見えるか
+- **注意**: 単なる好みの違いや gold-plating の指摘は禁止。実害を伴う退化のみ挙げる
+
+### Lens C — migration (既存テスト互換 / 後方互換性 / public API 破壊)
+- 既存の `#[test]` / integration test / golden YAML が壊れていないか
+- 依存 crate の major version 変更や feature-flag 変更で他 crate に副作用がないか
+- public API (`pub fn` / `pub struct`) のシグネチャ変更が下流に及ぼす影響
+- Serialize/Deserialize 対象型のフィールド変更で golden YAML が break していないか
+
+**出力時**: 各 issue の `id` に lens プレフィックスを付ける (`A01` / `C01` / `M01` 等)。同一論点が複数 lens で発火する場合は最も severity が高い lens 1 個に統合する。
+
+---
+
 ## 出力フォーマット（厳守）
 
 ```yaml

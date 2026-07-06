@@ -2,7 +2,9 @@
 // check-issue-granularity.ts — Issue 起票時の粒度 gate (Claude 内製、Codex 呼びなし)
 // ADR-006 §1 の粒度チェックリストを決定的ルールで実装する。
 //
-// 出力 yaml フォーマットは dispatch-codex-intent.ts のそれと互換:
+// 出力 yaml フォーマットは (旧) dispatch-codex-intent.ts のそれと互換 (Codex 削減改修
+// Task 1 で置換、Task 8 で本体削除)。/3ailoop L-5.8 の消化ルート (aligned/split_proposal
+// grep) を無変更で流用するために互換フォーマットを保つ。
 //   aligned: yes / no / skip
 //   reason: |
 //     ...
@@ -17,7 +19,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
 
-// split-detector 想定 Issue の skip マーカー (dispatch-codex-intent.ts から継承)
+// split-detector 想定 Issue の skip マーカー (旧 dispatch-codex-intent.ts から継承、
+// #235 で導入。marker/label 二重チェックは既存 Issue 群 (#194-#206) の文言バリアントに対応)
 export const SPLIT_DETECTOR_MARKER = "loop-split-detector で分割される想定";
 export const SPLIT_DETECTOR_TERMS = ["loop-split-detector", "分割される想定"] as const;
 export const SPLIT_DETECTOR_LABEL = "splittable";
@@ -187,7 +190,7 @@ export function checkGranularity(meta: IssueMeta): CheckResult {
 
 /**
  * CheckResult を yaml として resultFile に書き出す。
- * 出力形式は dispatch-codex-intent.ts の結果 yaml と互換で、
+ * 出力形式は (旧) dispatch-codex-intent.ts の結果 yaml と互換で、
  * L-5.8 の grep '^aligned:' / grep '^split_proposal:' がそのまま消化できる。
  */
 export function writeResult(resultFile: string, result: CheckResult): void {

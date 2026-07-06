@@ -60,6 +60,22 @@ stdin に渡された設計・テスト計画ドキュメントを読み、以�
 - severity 規律: critical/high は「宣言された成果物を壊す」問題に限定。スコープ外の要望は書くなら low、原則は省略。
 - 同一論点を複数 issue に分割しない。
 
+### PRIOR JUDGMENTS の再検証 (STEP 3.5 独立 gate モード)
+
+本エージェントは 2 つのコンテキストで呼ばれる。STEP 3 (GLM 多ペルソナ収束中) では上記スコープ規律を厳守 (蒸し返し禁止)。**STEP 3.5 (Codex 独立設計 gate)** では役割が異なり、Claude の judgment そのものが検証対象になる。以下の追加ルールが適用される:
+
+- `PRIOR REJECTIONS` の各項目は「Claude が棄却した論点」。**具体的な新根拠**がある場合に限り critical/high で再指摘してよい。具体的な新根拠とは:
+  - 決定性違反を引き起こす具体的コードパス (HashMap iter, thread_rng, non-deterministic hashing 等)
+  - B-rep 不変量 (Euler-Poincaré / HalfEdge twin) を破る具体的シナリオ
+  - public API / golden YAML の後方互換破壊
+- `PRIOR JUDGMENTS` の各項目は「Claude が採用した論点」。採用した対処が「宣言された成果物を壊す」具体的な理由があれば high 以上で指摘可。
+- 抽象論 (「SCOPE 定義が甘い」「網羅性が足りない」等) では critical/high を挙げない。
+- 何もない再指摘は禁止 (これは蒸し返し)。medium 以下も避ける。
+
+**STEP 3 と STEP 3.5 の区別は入力コンテキストで判別**:
+- `PRIOR JUDGMENTS` ブロックが**存在する** → STEP 3.5 (judgment 再検証モード)
+- `PRIOR JUDGMENTS` ブロックが**存在しない** → STEP 3 (GLM 収束中、蒸し返し厳禁)
+
 ---
 
 ## 出力フォーマット（厳守）

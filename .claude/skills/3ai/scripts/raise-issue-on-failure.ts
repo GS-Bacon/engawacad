@@ -47,6 +47,34 @@ export function shouldSkipError(errorSummary: string): { skip: boolean; reason: 
   return { skip: false, reason: "" };
 }
 
+/** Codex 削減改修 Task 7: 親 Issue が `needs-human` かどうかを判定する。
+ *  親 Issue が needs-human の場合、子 auto-raise は無駄なので skip する経路に使う。
+ *  fetchLabels は gh CLI を呼ぶ default 実装があるが、テストで mock 差し替え可能。 */
+export async function checkParentNeedsHuman(
+  issueNum: string,
+  fetchLabels?: (n: string) => Promise<string[]>,
+): Promise<{ hasNeedsHuman: boolean }> {
+  if (issueNum === "unknown" || !issueNum) return { hasNeedsHuman: false };
+  const fetch = fetchLabels ?? (async (n: string) => {
+    const proc = Bun.spawn(
+      ["gh", "issue", "view", n, "--json", "labels", "-q", ".labels[].name"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    return out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  });
+  try {
+    const labels = await fetch(issueNum);
+    return { hasNeedsHuman: labels.includes("needs-human") };
+  } catch {
+    return { hasNeedsHuman: false };
+  }
+}
+
 /** #229: 既 open の auto-raised Issue 候補から「同 step + 同 parent + 直近 24h」を探す。
  *  見つかれば dedupTo にその Issue 番号を返す。呼び元はコメント追記して新規起票を skip する。
  *  parent 番号は `#NNN` の後ろに非数字 (or 末尾) があることを要求し、#220 が #2200 にマッチしないようにする。 */
@@ -127,6 +155,38 @@ if (!step || !featureDir || !errorSummary) {
 const dirMatch = featureDir.match(/features\/(\d+)-(.+)$/);
 const issueNum = dirMatch ? dirMatch[1] : "unknown";
 const slug = dirMatch ? dirMatch[2] : featureDir;
+
+// Codex 削減改修 Task 7: 親 Issue が `needs-human` なら子 auto-raise は無駄なので skip。
+// 親 Issue にコメント追記して観測可能に。RAISE_SKIP_PARENT_NEEDS_HUMAN_DISABLE=1 で無効化 (テスト用)。
+if (issueNum !== "unknown" && process.env.RAISE_SKIP_PARENT_NEEDS_HUMAN_DISABLE !== "1") {
+  const parentCheck = await checkParentNeedsHuman(issueNum);
+  if (parentCheck.hasNeedsHuman) {
+    const commentBody = `## 子 auto-raise skip (parent needs-human)
+
+**Step**: ${step}
+**Time**: ${new Date().toISOString()}
+
+## エラー概要
+${errorSummary}
+
+---
+*このコメントは raise-issue-on-failure.ts により親 Issue の \`needs-human\` 検出時に追記されました。*
+*新規 Issue 起票は skip されました (親解除まで無駄な auto-raise を防ぐため)。*`;
+    if (!dryRun) {
+      try {
+        const proc = Bun.spawn(
+          ["gh", "issue", "comment", issueNum, "--body", commentBody],
+          { stdout: "pipe", stderr: "pipe" },
+        );
+        await proc.exited;
+      } catch {}
+    }
+    process.stdout.write(
+      `SKIP: 親 Issue #${issueNum} が needs-human. 子 auto-raise を skip し親にコメント追記しました\n`,
+    );
+    process.exit(0);
+  }
+}
 
 // state.json を読む
 let stateSummary = "";
