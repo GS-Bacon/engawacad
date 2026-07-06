@@ -57,26 +57,28 @@ bun .claude/skills/3ai/scripts/batch-select.ts [--batch fixes|phase]
 **自律モード（`batch_arg === null`）**:
 
 - **`needs-review` ラベルあり / ambiguous** → ユーザーに確認する前に **Claude が ROADMAP・関連 ADR・関連 Issue・既存コードを Read/grep して要件を確定する**。確定できた場合は *推奨設計* で続行し、曖昧点と採った判断を `features/$N-$SLUG/plan.md` の冒頭に「自律判断ログ」として明記する。どうしても確定できない（情報が存在しない / 複数選択肢が等価で根拠なし）場合のみ停止してユーザーにエスカレーション。
-- **`intent_check_required: true`** → Codex intent-check を実行:
+- **`intent_check_required: true`** → **Claude 内製の粒度チェック** を実行 (Codex 呼び撤廃、ADR-006 §1 の粒度チェックリストを決定的ルールで判定):
   ```bash
-  bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
+  bun .claude/skills/3ai/scripts/check-issue-granularity.ts \
     --issue $N \
     --result features/.batch/intent-$N.yaml
   ```
+  出力 yaml は Codex intent-check 時代のフォーマットと互換 (`aligned: yes/no/skip` + optional `reason:` + optional `split_proposal:`)。判定ルールは type 軸ラベル / In-Scope 記載 / enhancement 禁止 / タイトル内機能列挙 3+ の 4 種類。
+
   `aligned: yes` → 続行。`aligned: no` → **intent-check yaml に `split_proposal:` セクションが含まれているかで分岐**:
-  - **`split_proposal:` あり** (Codex が「粒度違反」= multiple features 混在と判定して分割案を併記した経路) → auto-split ルートに乗せる:
+  - **`split_proposal:` あり** (タイトル内で 3 個以上の機能が列挙された粒度過大ケース) → auto-split ルートに乗せる:
     ```bash
     bun .claude/skills/3ailoop/scripts/loop-split-detector.ts process \
       --review-yaml features/.batch/intent-$N.yaml --parent-issue $N
     ```
     → 親 Issue に `blocked-by-split` + 子 Issue 起票 → 本 Issue は skip して次 Issue へ。次サイクルで子 Issue が phase-feature tier で pick 可能になる。
-  - **`split_proposal:` なし** (完了条件曖昧 / 数値モデル欠如 / ADR-実装混在等の refute) → Claude が ROADMAP/ADR でスコープ整合を再確認し、推奨スコープに調整して続行。ただし *Phase/スコープ自体の根本的不整合*（例: 別 Phase 向け Issue など）と判断したら推奨実装せず停止してユーザーにエスカレーション。
-  - `aligned: skip (split-detector parent)` → **yes と等価扱い** (#235: body に `loop-split-detector で分割される想定` か label `splittable` のある起点 Issue は intent-check を skip し、STEP 3 で `split_proposal` 経路に乗せる)。
+  - **`split_proposal:` なし** (type 軸ラベル欠如 / In-Scope 欠如 / enhancement 使用等の refute) → Claude が Issue を修正 (ラベル追加 / In-Scope 表追記) して続行。ただし *Phase/スコープ自体の根本的不整合* と判断したら推奨実装せず停止してユーザーにエスカレーション。
+  - `aligned: skip (split-detector parent)` → **yes と等価扱い** (#235: body に `loop-split-detector で分割される想定` か label `splittable` のある起点 Issue は粒度チェックを skip し、STEP 3 で `split_proposal` 経路に乗せる)。
 
 **対話モード（`batch_arg !== null`）**:
 
 - **`needs-review` ラベルあり / ambiguous** → ユーザーに要件を確認。解決したら続行、解決しなければバッチから除外する
-- **`intent_check_required: true`** → Codex intent-check を実行し `aligned: no` → ユーザーと相談し、スコープ修正またはバッチから除外する
+- **`intent_check_required: true`** → Claude 内製の粒度チェック (`check-issue-granularity.ts`) を実行し `aligned: no` → ユーザーと相談し、スコープ修正またはバッチから除外する
 
 **B-3 完了後の残 Issue は無人で自動進行する。**
 
