@@ -159,7 +159,7 @@ Phase 6 では WebSocket を導入しない（複雑さを最小化）。
 
 ## Issue 分解マトリクス
 
-ADR-006 §3 に従い、実装 Issue を「1 軸 × 1–2 op」に分解する。起票は Codex intent-check 後。
+ADR-006 §3 に従い、実装 Issue を「1 軸 × 1–2 op」に分解する。起票は `check-issue-granularity.ts` の粒度チェック (d6f103b で Codex intent-check から移行) 後。
 
 | Issue | スラグ | ラベル | 内容 |
 |---|---|---|---|

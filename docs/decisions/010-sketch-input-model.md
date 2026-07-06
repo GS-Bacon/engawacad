@@ -186,7 +186,7 @@ Phase 7 開始時点で既に揃っている基盤:
 
 ## Issue 分解マトリクス
 
-ADR-006 §1 の粒度ガードに沿い、Issue を「1 軸 × 1〜2 op」に分解する。起票は各 Issue ごとに `dispatch-codex-intent.ts` で `aligned: yes` を取り、`gh issue create --label "<type>,<batch>"` 後に `bun .claude/skills/3ai/scripts/lint-issue-labels.ts --issue <N>` で検証する。
+ADR-006 §1 の粒度ガードに沿い、Issue を「1 軸 × 1〜2 op」に分解する。起票は各 Issue ごとに `check-issue-granularity.ts` (d6f103b で `dispatch-codex-intent.ts` から移行) で `aligned: yes` を取り、`gh issue create --label "<type>,<batch>"` 後に `bun .claude/skills/3ai/scripts/lint-issue-labels.ts --issue <N>` で検証する。
 
 | # | スラグ | ラベル | 内容 | 依存 |
 |---|---|---|---|---|

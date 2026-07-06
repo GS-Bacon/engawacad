@@ -23,9 +23,13 @@
 主なルール: 1 Issue = GLM 1 サイクルで通せるサイズ / ADR 決定と実装を混在させない / 軸 × op マトリクスで分解する。
 
 1. ADR-006 §1 の粒度チェックリストを全項目 ✓ にする
-2. `dispatch-codex-intent.ts` で Codex intent-check を実施:
+2. `check-issue-granularity.ts` で Claude 内製の粒度チェックを実施 (d6f103b で Codex 呼びを撤廃、ADR-006 §1 を決定的ルール化。判定は type 軸ラベル / In-Scope 記載 / enhancement 禁止 / タイトル内機能列挙 3+):
+   ```bash
+   bun .claude/skills/3ai/scripts/check-issue-granularity.ts --issue-draft <draft.md> --result <intent.yaml>
+   ```
+   出力 yaml は旧 Codex 版と互換 (`aligned: yes/no/skip` + optional `reason:` / `split_proposal:`)。
    - `aligned: yes` → 次の step 3 (ラベル決定) へ
-   - `aligned: no` → ユーザーと相談して Issue 案を修正 → 再チェック
+   - `aligned: no` → 出力 yaml に `split_proposal:` があれば機能ごとに分割、なければ Issue 案を修正 (type 軸ラベル追加 / In-Scope 表追記 / enhancement 除去) → 再チェック
 3. **ラベルを 2 軸決定する** (ADR-002 / ADR-006 §1):
    - **type 軸 (必須・1 つ)**: `type: feature` / `type: refactor` / `type: foundation` / `bug` / `docs` のいずれか
    - **batch 軸**: `type: feature` 以外なら `batch:kernel` / `batch:data` / `batch:viewer` / `batch:skill` のいずれかを**必ず**追加

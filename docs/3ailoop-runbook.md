@@ -86,7 +86,7 @@ watcher daemon は 10 秒間隔で `features/.loop/state.json` を polling し�
 | 24h Activity | Closed / Merged / 起票 / 新 ADR / token |
 | Pending Gates | gate:human-feel / gate:adr-review の Issue 一覧 |
 | Needs-Human Backlog | 失敗退避 Issue + failure count |
-| Cumulative Stats | 累積トータル、token 100M 近い? |
+| Cumulative Stats | 累積トータル、token 10億 (CUM_PAUSE) 近い? |
 | Recent Activity | 直近 20 件のサイクル結果 |
 | Decision Log | ADR draft / Issue 分割 / 退避 / Phase 切替 履歴 |
 
@@ -123,14 +123,14 @@ bun .claude/skills/3ailoop/scripts/loop-failure-tracker.ts reset --issue <N>
 
 ### 3-4. needs-intent-review
 
-- `dispatch-codex-intent.ts` の aligned:no が 3 回累積 = 要望と Issue の方向ズレ
+- `check-issue-granularity.ts` (d6f103b で `dispatch-codex-intent.ts` から移行) の aligned:no が 3 回累積 = 要望と Issue の方向ズレ
 - Issue 本文を見直す / ユーザー意図を再確認 / 必要なら起票し直す
 - 解決後:
 ```bash
 bun .claude/skills/3ailoop/scripts/loop-intent-guard.ts reset --issue <N>
 ```
 
-### 3-5. token 累積閾値 (100M) 超過
+### 3-5. token 累積閾値 (10億, CUM_PAUSE) 超過
 
 - `features/.loop/state.json` の `cumulative.token_*` を確認
 - 想定範囲なら閾値を上げる (`loop-token-meter.ts` の `CUM_PAUSE` 定数編集)

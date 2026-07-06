@@ -7,6 +7,12 @@
 
 ---
 
+## 追記 (2026-07-06, d6f103b)
+
+本 ADR の「Issue 起票時 intent-check」ゲート (§4 / §5 / §「Codex の役割」①) は当初 Codex dispatch (`dispatch-codex-intent.ts`) で実施していたが、**d6f103b で Claude 内製の決定的粒度チェック `check-issue-granularity.ts` に置換**した (Codex 削減改修 Task 1、旧スクリプトは 197a50d で削除)。ゲートの Decision (「起票前に §1 粒度チェックリストを通す」) は不変で、実行者だけが Codex → Claude 内製に移った。判定は ADR-006 §1 の粒度チェックリストを決定的ルール化したもの (type 軸ラベル / In-Scope 記載 / enhancement 禁止 / タイトル内機能列挙 3+)。出力 yaml は旧 Codex 版と互換 (`aligned: yes/no/skip` + optional `reason:` / `split_proposal:`)。以下の該当節は本追記の観点で読むこと。
+
+---
+
 ## 背景
 
 Phase 4 (Boolean) の作業データを分析した結果、以下の法則が観測された:
@@ -69,18 +75,18 @@ Cyl×Sph    | (A3)|      |
 
 1. Phase のロードマップと完了条件を読む (`ROADMAP.md`)
 2. 当 Phase の ADR が存在するか確認 (なければ最初に ADR-only Issue を起票)
-3. Issue 分解マトリクスを草案 (Claude が作成、Codex intent-check を通す)
+3. Issue 分解マトリクスを草案 (Claude が作成、`check-issue-granularity.ts` の粒度チェックを通す)
 4. 各 Issue を起票: §1 の粒度チェックリストを全項目 ✓ にしてから `gh issue create`
 5. Milestone に紐付ける
-6. Codex intent-check: `aligned: yes` → 起票確定。`aligned: no` → Claude がユーザーと再設計
+6. 粒度チェック: `aligned: yes` → 起票確定。`aligned: no` → `split_proposal` があれば機能ごとに分割、なければ Claude が Issue を修正 (ラベル / In-Scope 追記)、根本的不整合ならユーザーと再設計
 
-Codex intent-check の実施:
+粒度チェックの実施 (Claude 内製、Codex 呼びなし。d6f103b で `dispatch-codex-intent.ts` から移行):
 ```bash
-bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
+bun .claude/skills/3ai/scripts/check-issue-granularity.ts \
   --issue <N> \
-  --issue-draft <issue-draft.md> \
   --result <issue-N-intent.yaml>
 ```
+(起票前 draft は `--issue-draft <file>` で検査可。出力 yaml は旧 Codex 版と互換)
 
 ### 5. Issue 更新プロトコル
 
@@ -89,7 +95,7 @@ bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
 | 変更の重さ | 内容例 | 対応 |
 |---|---|---|
 | 軽微 (実装詳細の決定) | ε 値の選定、関数名の確定 | Issue 本文末尾「実装中追記」セクションに追記。Claude 判断で追加可。Codex 再投入不要 |
-| 中 (scope 内の追加判断) | 想定外のエッジケース処理方針 | Issue 本文を編集して scope 内であることを明記。Codex intent-check を再実施 |
+| 中 (scope 内の追加判断) | 想定外のエッジケース処理方針 | Issue 本文を編集して scope 内であることを明記。`check-issue-granularity.ts` を再実施 |
 | 重大 (scope 境界の変更) | 当初 Out-of-Scope だったケースを追加 | Issue を close → sub-Issue を再起票 (§4 Phase 着手と同じ手順) |
 
 ---
@@ -152,16 +158,16 @@ bun .claude/skills/3ai/scripts/dispatch-codex-intent.ts \
 
 ---
 
-## Codex の役割
+## intent-check / 最終レビューのゲート
 
-Codex は以下の **2 つの独立ゲート** を担当する:
+かつては Codex が 2 つの独立ゲート (① 起票時 intent-check + ② マージ前最終レビュー) を担当していたが、**d6f103b で ① は Claude 内製 `check-issue-granularity.ts` に移行**した。現在の分担:
 
-### ① Issue 起票時の intent-check（従来通り）
+### ① Issue 起票時の粒度チェック（d6f103b で Codex → Claude 内製に移行）
 
 1. Claude が Issue 案を作成 (§1 粒度チェックを確認済み)
-2. Codex に「Issue 本文の意図・スコープが明確か」だけを判定させる
+2. `check-issue-granularity.ts` が §1 粒度チェックリスト (type 軸ラベル / In-Scope 記載 / enhancement 禁止 / タイトル内機能列挙 3+) を決定的ルールで判定 (Codex 呼びなし)
 3. `aligned: yes` → 自動起票
-4. `aligned: no` → Claude がユーザーに相談 → Issue 修正 → Codex 再投入
+4. `aligned: no` → `split_proposal` があれば分割、なければ Claude が Issue を修正 (ラベル / In-Scope 追記) or ユーザーと再設計
 
 ### ② STEP 7.5 マージ前の独立技術最終レビュー（Phase 4 教訓から追加）
 
@@ -186,7 +192,7 @@ dispatch: `dispatch-codex.ts --mode review --instruction agents/codex-final-revi
 |---|---|
 | GLM SCOPE が Issue ↔ plan drift を見逃す | SCOPE テンプレに「Issue 本文の核と In-Scope 表が一致しているか」を明示項目化 |
 | NUMERIC ペルソナが plan テンプレ不備で空振り | plan.md の `### 数値モデル` セクション必須化 |
-| Phase オプションペルソナの追加忘れ | Codex intent-check に「数値判断を含むか」チェックを追加。yes なら NUMERIC 強制 |
+| Phase オプションペルソナの追加忘れ | `check-issue-granularity.ts` に「数値判断を含むか」チェックを追加。yes なら NUMERIC 強制 |
 | Issue 更新の軽微/中の判定が曖昧 | 本 ADR の §5 表を参照。迷ったら中 (Codex 再投入) を選ぶ |
 | Codex 最終ゲートで throughput 低下 | severity 閾値 block (critical/high のみ) と `codex_loops` 上限 2 で抑制 |
 | バッチモードで粒度ガードが崩れる | バッチモードは機械的 Issue に light フロー、`type:feature` に full フローを適用し、**§1 粒度ガード (1 Issue = GLM 1 サイクル) を Issue 単位で維持する**。batch:kernel の light Issue は STEP 7.5 (Codex 個別ゲート) を保持し幾何不変量を守る |

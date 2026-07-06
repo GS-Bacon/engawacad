@@ -368,7 +368,7 @@ RC=$?
 ```
 
 - `RC=0`: 続行
-- `RC=1` (累積 100M 超): `loop-cycle-record record --pause-reason "token threshold"` で記録 → `bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind token-limit --text "[STOP] token limit reached (累積 100M 超) — paused"` で通知 → release → 終了
+- `RC=1` (累積 10億 超): `loop-cycle-record record --pause-reason "token threshold"` で記録 → `bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind token-limit --text "[STOP] token limit reached (累積 10億 超) — paused"` で通知 → release → 終了
 
 ### L-8: サイクル末尾 (tmux 自走モード)
 
@@ -416,7 +416,7 @@ memory `project-3ailoop-known-races` に詳細。loop-lock の stale takeover ra
 - `loop-should-stop.ts` (#170) — gate/needs-* のみで pause 判定
 - `loop-cycle-record.ts` (#171) — サイクル集計を state.json に追記
 - `loop-dashboard.ts` (#171) — features/.dashboard.md 累積俯瞰型生成
-- `loop-token-meter.ts` (#171) — token 閾値 (累積 100M / 24h 5M)
+- `loop-token-meter.ts` (#171) — token 閾値 (累積 10億 pause / 24h 100M warning)
 - `loop-decision-log.ts` (#171) — 重要判断の時系列追記
 - `loop-failure-tracker.ts` (#172) — 連続失敗 N=3 で needs-human
 - `loop-pause-streak-tracker.ts` (#284) — Issue × Category 2 軸の連続 pause カウンタ。L-5 の `loop-cycle-record record --pause-issue --pause-category` から呼ばれ N=3 で needs-human

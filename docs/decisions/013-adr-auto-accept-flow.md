@@ -79,8 +79,8 @@ GLM 自身もコケた (Z.AI outage 等) 場合は 3 persona 全 fail で refute
 無限ループ・コスト暴走を防ぐ:
 
 - **再生成 cap = 3 回**: draft 再生成が 3 回を超えたら該当 ADR Issue に `needs-human` を付与して退避。loop 全体は止めず、batch-select は次 Issue へ進む。
-- **1 ADR あたり token 上限 = 200k**: draft + review の累積 token が 200k を超えたら同じく `needs-human` 退避。
-- **token-meter 累積 100M pause**: 既存機構 (`loop-token-meter`) はそのまま残す。loop 全体の token 暴走に対する最終 line of defense。
+- **1 ADR あたり token 上限 = 350k**: draft + review の累積 token が 350k を超えたら同じく `needs-human` 退避。(当初 200k。2d92837 で auto-accept フローに cross-ref check + refute overrider を追加し 1 ADR あたりの実用 token が増えたため 350k に引き上げ。実装は `loop-adr-regen-tracker.ts` の `TOKEN_CAP`。)
+- **token-meter 累積 10億 (1B) pause**: 既存機構 (`loop-token-meter`) はそのまま残す。loop 全体の token 暴走に対する最終 line of defense。(#228 で claude/glm 集計を修復し実測が ~10x になったため、`CUM_PAUSE` を旧 100M → 10億 に引き上げ済み。24h window の warning は別枠 100M。)
 
 カウンタは `features/.loop/adr-regen-count/<adr-slug>.json` に永続化:
 
@@ -119,7 +119,7 @@ trigger 発火時は loop 一時停止 + 本 ADR の見直し Issue を起票。
 ### 既存 ADR との関係
 
 - **ADR-002 (ロードマップ・ラベル運用)**: `gate:adr-review` ラベル自体は廃止せず残す。auto-accept フローが何らかの理由で動かなくなった fallback として使う (Codex + GLM 両方が同時に不在の場合は手動 accept)。
-- **ADR-006 (Issue 粒度)**: 「1 ADR = 1 cycle で扱える粒度」は維持。再生成 cap 3 と token 上限 200k はこれを担保する。
+- **ADR-006 (Issue 粒度)**: 「1 ADR = 1 cycle で扱える粒度」は維持。再生成 cap 3 と token 上限 350k (当初 200k、2d92837 で引き上げ) はこれを担保する。
 - **ADR-012 (tmux ランタイム)**: L-5.6 の挙動を本 ADR が上書きする。SKILL.md を併せて更新する。
 
 ---
@@ -167,7 +167,7 @@ ADR 品質は最高。しかし完全自律方針と矛盾。Phase 8-20 で 10+ 
 - ADR 1 件: draft 30k + review (3 × 30k) + 再生成平均 2 回 = ~150k token (~$2-3)
 - Phase 8-20 全体 12 件 = ~$25-40
 - Fable 5 監査 4 回 = ~$150
-- **合計 ~$200 程度** (token-meter 100M 上限の数% 以内、許容範囲)
+- **合計 ~$200 程度** (token-meter 累積 10億 上限に対し十分小さく、許容範囲)
 
 ### 移行手順
 
@@ -175,7 +175,7 @@ ADR 品質は最高。しかし完全自律方針と矛盾。Phase 8-20 で 10+ 
 
 1. **#190**: `loop-adr-pause-detector.ts` 改修 + auto-accept フロー骨格 (`type: foundation` / `batch:skill`)
 2. **#191**: `loop-adr-decision-matrix-lint.ts` 新規 + テスト (`type: feature` / `batch:skill`)
-3. **#192**: 再生成 cap 3 + token 200k 上限実装 (`type: foundation` / `batch:skill`)
+3. **#192**: 再生成 cap 3 + token 上限実装 (`type: foundation` / `batch:skill`) — 当初 200k、後に 2d92837 で 350k へ引き上げ
 4. **#193**: `loop-phase-close-check.ts` Fable 5 トリガー追加 (`type: feature` / `batch:skill`)
 
 並列化はしない。直列実行で 1 PR 1 Issue 1 cycle 原則を維持する。
