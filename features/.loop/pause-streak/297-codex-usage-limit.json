@@ -1,7 +1,0 @@
-{
-  "issue": 297,
-  "category": "codex-usage-limit",
-  "count": 2,
-  "last_at": "2026-07-01T15:23:10.211Z",
-  "last_reason": "cycle 88: #297 (Sketch Chamfer) B-3 Codex intent-check で Codex CLI usage/rate limit を再度検知 (12 サイクル連続 infra 障害)。#298-#302 も同条件 (batch:kernel + intent_check_required + keep_codex_gate) で同結果想定のため全件 skip。cycles 71-75, 83-84, 87 と同 pattern。actionable な独立 Issue は他にない (split-batch tier 最優先で他 tier 未 pick)。#297 feature-dir は init 済で次サイクルで再利用可能。Codex usage 復旧待ち。"
-}

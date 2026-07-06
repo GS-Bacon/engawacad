@@ -1,7 +1,0 @@
-{
-  "issue": 296,
-  "category": "codex-usage-limit",
-  "count": 1,
-  "last_at": "2026-07-01T09:02:49.009Z",
-  "last_reason": "cycle: #296 (Sketch Fillet) B-3 Codex intent-check aligned=no + Codex CLI usage limit hit。intent-check yaml は refute (radius 比較規約 + FilletRadiusTooLarge 発火条件を本文で明記していない) を返したが、ADR-017 §2 (ε_radius=EPS_LENGTH=1e-9、DegenerateSketchElement で fail-fast) が数値モデルを明確に規定しているため、通常なら B-3 autonomous mode で ADR-017 scope に整合させて続行可能。しかし Codex CLI が usage/rate limit を返しており、STEP 7.5 (Codex 独立ゲート) も同じ Codex に依存しているため、進めても後段で必ず block する。cycles 71-75 と同じ infra 障害パターン (memory: pause_reason \"Codex CLI usage limit at B-3 intent-check\")。#276 は既存 feature dir があるため B-4 スキップルールで先送り、#296 以降の 7 件 (#297-#302) も全て同条件 (batch:kernel + intent_check_required) のため同じ結果になる想定。他 tier の actionable Issue は split-batch tier 最優先設計のため pick されない。次 cycle で Codex usage 復旧待ち。"
-}
