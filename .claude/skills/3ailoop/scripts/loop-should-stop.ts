@@ -34,7 +34,7 @@ const LOOP_EXCLUDE_LABELS = new Set([
   "blocked-by-split",
 ]);
 
-interface IssueSummary {
+export interface IssueSummary {
   number: number;
   title: string;
   labels: string[];
@@ -105,26 +105,28 @@ async function runBatchSelectLoop(): Promise<BatchPlan | null> {
   }
 }
 
-async function main() {
-  // #253: halt 条件を先に判定 (Phase 21 到達 / kill switch)
-  if (detectHaltSwitch()) {
-    console.log(`halt: kill switch file present (${HALT_SWITCH_PATH})`);
-    process.exit(2);
-  }
-  if (detectPhase21Reached()) {
-    console.log("halt: Phase 21 (UI 期) 到達 — 人間判断要 (完全自律期終端)");
-    process.exit(2);
-  }
+/** 3 段階の停止判定結果。code は process.exit() にそのまま渡す (0=proceed / 1=pause / 2=halt)。 */
+export interface StopDecision {
+  code: 0 | 1 | 2;
+  message: string;
+}
 
-  const issues = await fetchOpenIssues();
+/**
+ * open Issue 一覧と batch-select プランから停止判定を導く純粋関数 (halt 検知は呼び元)。
+ *
+ * @param issues fetchOpenIssues() の結果。null = gh 呼び出し失敗。
+ * @param plan   runBatchSelectLoop() の結果。null = batch-select 不調 (script 欠落 / exit≠0 / parse 失敗)。
+ */
+export function decideStopFromCandidates(
+  issues: IssueSummary[] | null,
+  plan: BatchPlan | null,
+): StopDecision {
   if (issues === null) {
-    console.log("pause: gh issue list failed (offline or auth error)");
-    process.exit(1);
+    return { code: 1, message: "pause: gh issue list failed (offline or auth error)" };
   }
 
   if (issues.length === 0) {
-    console.log("pause: no open issues");
-    process.exit(1);
+    return { code: 1, message: "pause: no open issues" };
   }
 
   const actionable = issues.filter(i => isLoopActionable(i.labels));
@@ -142,32 +144,77 @@ async function main() {
     const breakdown: string[] = [];
     for (const [k, v] of Object.entries(gateCount)) breakdown.push(`${k}=${v}`);
     for (const [k, v] of Object.entries(needsCount)) breakdown.push(`${k}=${v}`);
-    console.log(`pause: all ${issues.length} open issues are gated/needs-* (${breakdown.join(", ")})`);
-    process.exit(1);
+    return {
+      code: 1,
+      message: `pause: all ${issues.length} open issues are gated/needs-* (${breakdown.join(", ")})`,
+    };
   }
 
-  // batch-select --loop --dry-run で実際の候補集合を確認
-  const plan = await runBatchSelectLoop();
   if (plan === null) {
-    // batch-select 不調の場合は actionable があれば fail-open で続行
-    console.log(`proceed: actionable=${actionable.length} (batch-select unavailable)`);
-    process.exit(0);
+    // #310: batch-select 不調のとき、以前は actionable があれば fail-open で proceed していたが、
+    // サイクル内の実 batch-select も同条件で失敗/0 件になる公算が高く、Claude 固定費が空回りする。
+    // fail-closed (pause) にして watcher の sleep+retry に委ねる。
+    return { code: 1, message: `pause: batch-select unavailable (actionable=${actionable.length})` };
   }
 
-  const planIssueCount = plan.groups.reduce((acc, g) => acc + g.issues.length, 0);
+  const allCandidates = plan.groups.flatMap(g => g.issues);
+  const planIssueCount = allCandidates.length;
   if (planIssueCount === 0) {
-    console.log(`pause: batch-select returned 0 candidates (open=${issues.length}, actionable=${actionable.length})`);
-    process.exit(1);
+    return {
+      code: 1,
+      message: `pause: batch-select returned 0 candidates (open=${issues.length}, actionable=${actionable.length})`,
+    };
+  }
+
+  // #310: 全候補が pause_reasons 非空 (needs-review / ambiguous 等) なら、そのサイクルは
+  // gate=pause 確定で自律進行できない。Claude を起動する前に front-load して pause する。
+  // 1 件でも pause_reasons が空の候補があれば proceed (現行どおり)。
+  // plan JSON は無検証信頼のため pause_reasons 欠損は空配列扱い (= pause 理由なし = proceed 候補)。
+  // ここで crash すると watcher が想定外 RC でループ全体を停止してしまう。
+  if (allCandidates.every(i => (i.pause_reasons ?? []).length > 0)) {
+    const reasonCount: Record<string, number> = {};
+    for (const i of allCandidates) {
+      for (const r of i.pause_reasons ?? []) reasonCount[r] = (reasonCount[r] ?? 0) + 1;
+    }
+    const breakdown = Object.entries(reasonCount).map(([k, v]) => `${k}=${v}`).join(", ");
+    return {
+      code: 1,
+      message: `pause: all ${planIssueCount} candidates have pause_reasons (${breakdown})`,
+    };
   }
 
   // 続行: 最優先 group の最初の Issue を提示
   const firstIssue = plan.groups[0]?.issues[0];
   if (firstIssue) {
-    console.log(`proceed: #${firstIssue.number} (tier=${plan.tier}, group=${plan.groups[0].group}, candidates=${planIssueCount})`);
-  } else {
-    console.log(`proceed: candidates=${planIssueCount}`);
+    return {
+      code: 0,
+      message: `proceed: #${firstIssue.number} (tier=${plan.tier}, group=${plan.groups[0].group}, candidates=${planIssueCount})`,
+    };
   }
-  process.exit(0);
+  return { code: 0, message: `proceed: candidates=${planIssueCount}` };
+}
+
+async function main() {
+  // #253: halt 条件を先に判定 (Phase 21 到達 / kill switch)
+  if (detectHaltSwitch()) {
+    console.log(`halt: kill switch file present (${HALT_SWITCH_PATH})`);
+    process.exit(2);
+  }
+  if (detectPhase21Reached()) {
+    console.log("halt: Phase 21 (UI 期) 到達 — 人間判断要 (完全自律期終端)");
+    process.exit(2);
+  }
+
+  const issues = await fetchOpenIssues();
+  // batch-select --loop --dry-run で実際の候補集合を確認。
+  // actionable が 0 件 (全 gate/needs-*) のときは decide 側で plan を見ずに pause するため、
+  // 無駄な spawn を避けて batch-select を呼ばない (deep pause 中の steady state を軽くする)。
+  const hasActionable = issues?.some(i => isLoopActionable(i.labels)) ?? false;
+  const plan = hasActionable ? await runBatchSelectLoop() : null;
+
+  const decision = decideStopFromCandidates(issues, plan);
+  console.log(decision.message);
+  process.exit(decision.code);
 }
 
 // #253: テストから import される場合は main を起動しない
