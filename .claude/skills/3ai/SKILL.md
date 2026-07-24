@@ -631,6 +631,21 @@ Claude が以下を実行する（crates/** の **Read のみ**）:
    - **乖離なし時**: 手順 5 へ進む
 5. `features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md` を **Write** する（セクション: **不足テスト（plan 計画分） / 実装差分から追加すべきテスト / エッジケース・退化入力 / 数値境界 / 決定性**）
 
+6. **#318 Phase C: Property test 存在確認** (Phase 11+ or Boolean/Tessellation Issue で blocking、他は warn):
+
+```bash
+bun .claude/skills/3ai/scripts/check-proptest-required.ts \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --phase $PHASE_NUM
+RC=$?
+```
+
+- `RC=0`: OK (T_PROP_ ID あり or 非必須)、STEP 6.6 へ
+- `RC=1`: **blocking** (Phase 11+ or Boolean-系で T_PROP_ 不足)。Claude が test-spec.md に `T_PROP_<invariant>` を最低 1 件追記してから再実行
+- `RC=2`: 環境エラー (test-spec.md 未存在 = STEP 6.5 未実行)
+
+Boolean / Tessellation を触る Issue は Phase 10 でも必須。Property test は Euler-Poincaré / manifold / 決定性の不変量検証に必須。
+
 ---
 
 ## STEP 6.6: GLM-5.1 テスト実装（背景実行）
@@ -791,6 +806,20 @@ bun .claude/skills/3ai/scripts/dispatch-glm-review.ts \
 
 **完了通知を待つ（ポーリングしない）。**
 
+**#318 Phase C: diff coverage 検査** (GLM final review と並行 or 直前で実行、Phase 11+ で blocking):
+
+```bash
+bun .claude/skills/3ai/scripts/check-diff-coverage.ts \
+  --phase $PHASE_NUM \
+  --threshold 70
+RC=$?
+```
+
+- `RC=0`: OK (閾値以上 or Phase 10 以下の warn / cargo-llvm-cov 未 install の warn)
+- `RC=1`: **blocking** (Phase 11+ かつ実装差分 line coverage < 70%)。テスト追加を要求
+
+Phase 10 現在は cargo-llvm-cov 未導入のため常に warn + exit 0。Phase 11 の品質基盤導入後に blocking として機能する。
+
 `final-review.yaml.verdict.json` を読んで `blocking` が 0 かつ `verdict: pass` なら:
 ```bash
 bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review passed
@@ -926,6 +955,14 @@ bun .claude/skills/3ai/scripts/maybe-commit-generated-ts.ts --issue $ISSUE_NUM
 # crates/ の unstaged/untracked ファイルを検出（git add 漏れ防止）
 bun .claude/skills/3ai/scripts/pre-step8-check.ts \
   --auto-raise --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG
+
+# #318 Phase C: fuzz corpus 更新確認 (YAML schema 変更時のみ効く、fuzz/ 未セットアップなら warn)
+bun .claude/skills/3ai/scripts/lint-fuzz-corpus-updated.ts
+FUZZ_RC=$?
+# FUZZ_RC=1 (blocking): YAML schema に新 enum variant/field を追加したのに fuzz/corpus/parser/ に seed が無い
+# → Claude が Feature の最小 example を fuzz corpus に追加してから再実行
+# FUZZ_RC=0: OK (schema 未変更 or seed 追加済み or fuzz/ 未セットアップ warn)
+
 cargo xtask ci   # 最終 green 確認
 git checkout main
 git merge --squash cad/$ISSUE_NUM-$ISSUE_SLUG
