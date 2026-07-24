@@ -288,9 +288,26 @@ bun .claude/skills/3ai/scripts/dispatch-glm-review.ts \
 
 ### 3-D: 集約・棄却 gate（毎 round 必須）
 
+**#315 Phase B: Opus 4.7 委譲**（worker pane は Sonnet 5 化のため、判断が重い本 STEP は Agent tool で Opus 4.7 subagent に委譲する）:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 3-D: GLM 指摘を採用/棄却",
+  prompt: "以下の GLM 4 persona review 出力を読み、各 issue を採用/棄却/部分採用に判定してください..."
+)
+```
+
+`model: "opus"` は Anthropic の Opus 4.7 (`claude-opus-4-7`) に解決される。Opus 4.8 は tool call 破壊のため禁止 (memory: opus-4-8-banned)。Sonnet 5 で走ると Non-Goals 防衛が甘くなり STEP 3 loop 回数が増える。
+
+subagent の返答フォーマット: 各 issue の `{finding_id, verdict: adopted|rejected|partial, reason, plan_edit_diff}` を JSON で返させる。orchestrator (Sonnet 5) がそれを受けて plan.md 修正 / rejection.md 追記を実行する。
+
+---
+
 1. 全ペルソナの `review-*-rN.yaml` を読む
 2. **重複除去**: 同一論点を複数ペルソナが指摘している場合、最も高 severity の 1 件に統合
-3. 各 issue を Claude が判定:
+3. 各 issue を Opus 4.7 subagent が判定:
    - **採用** → plan を直接修正
    - **棄却** → `features/$ISSUE_NUM-$ISSUE_SLUG/rejection.md` に `## Round N` で追記
    - **部分採用** → plan 一部修正 + rejection.md に残り件を追記
@@ -380,7 +397,19 @@ bun .claude/skills/3ai/scripts/state.ts set \
 medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-design-findings.md` に記録のみ (非 block) → **STEP 4 へ**。
 
 **`blocking >= 1`** (critical/high あり) の場合:
-1. 各 critical/high 指摘を Claude が **採用 / 棄却 / partial** に分類し理由を記録:
+
+**#315 Phase B: Opus 4.7 委譲**（Codex 独立指摘の採用/棄却は相関盲点破りの最重要ポイント、Sonnet 5 で判断させると gate が形骸化する。Agent tool で Opus 4.7 subagent に委譲する）:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 3.5-B: Codex 指摘採用/棄却",
+  prompt: "Codex が別モデル系として plan.md をレビューし critical/high の指摘を出した。各指摘を採用/棄却/partial で判定し理由を記録..."
+)
+```
+
+1. Opus 4.7 subagent が各 critical/high 指摘を **採用 / 棄却 / partial** に分類し理由を記録:
    - 採用 → plan.md を直接修正
    - 棄却 → `rejection.md` に `## STEP 3.5 Codex` セクションで追記
    - partial → 一部修正 + rejection.md に残件追記
@@ -391,7 +420,7 @@ medium/low の指摘があれば `features/$ISSUE_NUM-$ISSUE_SLUG/codex-design-f
    bun .claude/skills/3ai/scripts/state.ts set \
      features/$ISSUE_NUM-$ISSUE_SLUG/state.json codex_design passed
    ```
-5. **例外: critical で ADR 判断が必要** (Phase 全体の設計方針を疑う必要) と判断した場合のみユーザーへエスカレーション
+5. **例外: critical で ADR 判断が必要** (Phase 全体の設計方針を疑う必要) と subagent が判断した場合のみユーザーへエスカレーション
 
 ### 3.5-C: needs-human 判定 (Codex エラー / critical で判断保留)
 
@@ -528,10 +557,21 @@ bun .claude/skills/3ai/scripts/maybe-commit-generated-ts.ts --issue $ISSUE_NUM
 
 ### 6-C: Claude デバッグアシスト（debug-spec 作成・追記）
 
-`features/$ISSUE_NUM-$ISSUE_SLUG/ci.log` と `crates/**` の関連ファイルを **Read** して根本原因を分析する。  
+**#315 Phase B: Opus 4.7 委譲**（CI ログ + crates/** の根本原因分析は Sonnet 5 では推論力が足りない場面が多い。Agent tool で Opus 4.7 subagent に委譲する）:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 6-C: debug-spec 追記",
+  prompt: "以下の ci.log と関連コードを読み、失敗の根本原因を分析して debug-spec.md に仮説/修正方針を追記..."
+)
+```
+
+subagent は `features/$ISSUE_NUM-$ISSUE_SLUG/ci.log` と `crates/**` の関連ファイルを **Read** して根本原因を分析する。  
 `features/$ISSUE_NUM-$ISSUE_SLUG/debug-spec.md` を **追記** する（2 回目以降は既存内容を保持して `試した修正と結果` のチェックをつける）。セクション: **仮説 / 関連ファイル / 修正方針 / 試した修正と結果 / 次にやること / 追加で書いてほしいテスト**
 
-**自律モード（`batch_arg === null`）では Claude が自力で debug-spec を追記してよい**。`ESC_MAX_LOOPS=3` までの再 dispatch ループ内なら都度追記が前提（過去の保守解釈「ESC 越権で書けない」は誤り — #225 で明文化）。
+**自律モード（`batch_arg === null`）では Opus 4.7 subagent が自力で debug-spec を追記してよい**。`ESC_MAX_LOOPS=3` までの再 dispatch ループ内なら都度追記が前提（過去の保守解釈「ESC 越権で書けない」は誤り — #225 で明文化）。
 
 6-A に戻り `--debug-spec` 付きで dispatch（ESC_MAX_LOOPS=3 のため最大 3 回まで）。
 
@@ -627,7 +667,18 @@ Codex 7.5 で走る 3 観点 (architect / contrarian / migration) と同じ観�
 **Codex を呼ぶ前に Claude が自己適用**する。7.5 は 1 persona × ループなしの 1 発 gate
 なので、6.7 で 3 観点をシフトレフト完了させることが 7.5 通過率を上げる鍵となる。
 
-Claude が実行する手順:
+**#315 Phase B: Opus 4.7 委譲**（Sonnet 5 で self-review すると Codex 7.5 finding 率が上がりコスト増。judgment 力の高い Opus 4.7 で shift-left を効かせる）:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 6.7: 3 観点 self-review",
+  prompt: "git diff main..HEAD の実装差分と glm-self-review.md を読み、architect/contrarian/migration の 3 観点で GLM が見落とした弱点を探して claude-self-review.md に記録..."
+)
+```
+
+subagent が実行する手順:
 
 1. `git diff main..HEAD` で実装差分を読む (CI green の最終状態)
 2. `glm-self-review.md` を読み、GLM が認めた弱点を把握
@@ -698,6 +749,19 @@ bun .claude/skills/3ai/scripts/state.ts set \
 起票・state 更新後は **STEP 7.5 (Codex 独立技術ゲート) に進める**。STEP 7.5 で blocking=0 なら次へ、critical/high が出たらそちらの通常エスカレーション経路に従う。`needs-human` 退避は行わない (STEP 7.5 が独立 review 軸を担うため)。
 
 Critical/High があれば (= `blocking >= 1` かつ `verdict != "error"`) GLM 修正 dispatch → GLM final 再レビュー（ループ +1、上限 2）。
+
+**#315 Phase B: Opus 4.7 委譲**（critical エスカレ判定は「ユーザーに投げるか / Claude 裁量で棄却するか」の重要判断。Sonnet 5 では甘くなりがちなので Agent tool で Opus 4.7 subagent に委譲する）:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 7: critical エスカレ判定",
+  prompt: "以下の GLM final review critical/high findings と Codex final review (7.5) の結果を読み、ユーザーエスカレするか裁量棄却するかを判定..."
+)
+```
+
+`raise-issue-on-failure.ts` を呼ぶ or `state.ts set ... final_review passed` に倒すかは subagent の判定に従う。
 
 **ループ上限超過フォールバック** (`final_loops` が 2 を超えた場合):
 ```bash

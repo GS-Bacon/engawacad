@@ -104,6 +104,58 @@ phase-close-check は内部で **split parent auto-close** (#271) も実施す�
   かつ `parent-blocked-by-split:N` 子 Issue が全 closed なら、親を auto-close
 - これがないと #194/#195/#206 系の split 親が永遠に open で Phase 完了判定が失敗する
 
+### L-1.65: Phase retrospective (#315)
+
+L-1.6 で Phase 完了が確定した cycle のみ発火。Phase 11/14/17/20 は 3 系統 adversarial audit (別枠) と重複するため **skip**、それ以外の Phase で loop 運用メトリクスを自動振り返り。
+
+```bash
+# L-1.6 の apply が成功して Phase N が closed になった場合のみ
+if [ "$PHASE_CLOSED" = "true" ] && ! [[ "$CLOSED_PHASE" =~ ^(11|14|17|20)$ ]]; then
+  bun .claude/skills/3ailoop/scripts/loop-phase-retrospective.ts --phase "$CLOSED_PHASE"
+  # dry-run で確認したい場合は --dry-run を追加
+fi
+```
+
+集計する 4 メトリクス (すべて pure-script、LLM 呼び出しなし):
+1. **pause 率**: cycle-journal.log から `pause_reason != null` の割合と top 5 reasons
+2. **needs-human 発生数**: 該当 Phase 期間中に raised された Issue で `needs-human` 付与された数
+3. **codex-skip 累積**: `features/.loop/codex-skips.jsonl` の created / resolved / pending
+4. **Skill 改修投資効果**: `.claude/skills/*` の commit 前後の cycle 平均時間 delta
+
+判定ルール:
+- pause 率 > 30% → 「pause 率が高い」Issue 起票
+- needs-human >= 3 → 「needs-human 多発」Issue 起票
+- codex-skip pending >= 5 → 「Codex skip 滞留」Issue 起票
+- Skill 改修後に cycle 時間悪化 → 「Skill 改修後の劣化」Issue 起票
+- 常に: 「retro(phaseN): 概要」baseline Issue を 1 件起票
+
+Issue 起票上限は 5 件 (概要 1 + 4 topic)。全て `type: foundation, batch:skill`、milestone 無し。
+
+### L-1.7: Phase seeder (#315)
+
+L-1.6 で current_phase が bump された cycle のみ発火。ROADMAP.md の Phase N 完了条件を読んで起点 Issue を自動起票し、Phase 昇格直後の「actionable=0 で loop 停止」を防ぐ (Phase 10 で 2026-07-01 → 07-06 の 5 日間停止を招いた構造的問題)。
+
+```bash
+# L-1.6 の apply が current_phase を N → N+1 に進めた場合のみ
+if [ "$PHASE_BUMPED" = "true" ]; then
+  bun .claude/skills/3ailoop/scripts/loop-phase-seeder.ts --phase "$NEW_PHASE"
+fi
+```
+
+動作:
+1. ROADMAP.md の `## Phase N: ...` セクションから完了条件を M 個抽出
+2. 各条件を Issue draft に展開 (pure-script templating、LLM 未使用)
+3. `check-issue-granularity.ts` で全 draft 検証 (in-process import)
+4. 粒度 OK → `gh issue create --milestone "Phase N: <title>"` で起票
+5. 粒度 NG → `split_proposal` を消費して子 draft に展開 (1 round 限定)、それでも NG なら `needs-human` フラグ付きでスキップ
+6. `lint-issue-labels.ts` で label 検証 (in-process)
+7. ログ: `features/.loop/phase-seeder-log.jsonl` に append
+
+**設計上の注意**:
+- ✅ Phase (`## ✅ Phase N`) を対象にすると exit 2 で拒否 (誤って完了済み Phase を seed しないため)
+- Milestone は事前に存在している前提 (L-1.6 の close 処理で next phase milestone は残る)
+- 生成される Issue の body は minimal templating。詳細は Claude が STEP 2 で plan.md に落とす
+
 ### L-2: 停止条件チェック
 
 ```bash
