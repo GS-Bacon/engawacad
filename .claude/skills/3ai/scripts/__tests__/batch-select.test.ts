@@ -94,6 +94,195 @@ describe("isParentAdrInactive (歪み #1)", () => {
   });
 });
 
+// N=3 parallel worker 割り当て用 crate_groups 推定
+import {
+  estimateCrateGroup,
+  computeCrateGroupsForBatch,
+  type GhIssue,
+} from "../batch-select.ts";
+
+function makeIssue(overrides: Partial<GhIssue> = {}): GhIssue {
+  return {
+    number: 1,
+    title: "",
+    labels: [],
+    body: "",
+    milestone: null,
+    ...overrides,
+  };
+}
+
+describe("estimateCrateGroup (crate 推定ヒューリスティック)", () => {
+  test("Sketch + Offset → engawa-format/src/sketch", () => {
+    const r = estimateCrateGroup(makeIssue({
+      title: "feat(format): Sketch Offset を追加",
+      labels: [{ name: "batch:kernel" }],
+    }));
+    expect(r.touched).toEqual(["engawa-format/src/sketch"]);
+    expect(r.path).toBe("engawa-format/src/sketch");
+  });
+
+  test("Sketch + Fillet → engawa-format/src/sketch (sketch 側優先、kernel/fillet に流さない)", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat: Sketch Fillet 実装" }));
+    expect(r.touched).toEqual(["engawa-format/src/sketch"]);
+  });
+
+  test("Sketch + Chamfer → engawa-format/src/sketch", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "Sketch Chamfer" }));
+    expect(r.touched).toEqual(["engawa-format/src/sketch"]);
+  });
+
+  test("Boolean X → engawa-kernel/src/boolean", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat(kernel): Boolean Union の CSG 実装" }));
+    expect(r.touched).toEqual(["engawa-kernel/src/boolean"]);
+  });
+
+  test("Tessellation Y → engawa-kernel/src/tessellation", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "Tessellation の三角形化精度改善" }));
+    expect(r.touched).toEqual(["engawa-kernel/src/tessellation"]);
+  });
+
+  test("拘束 → engawa-kernel/src/solver (Phase 11+)", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat: 拘束ソルバの初期実装" }));
+    expect(r.touched).toEqual(["engawa-kernel/src/solver"]);
+  });
+
+  test("Solver 英語表記 → engawa-kernel/src/solver", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat: Solver 数値安定化" }));
+    expect(r.touched).toEqual(["engawa-kernel/src/solver"]);
+  });
+
+  test("body-op Fillet (Sketch 修飾なし) → engawa-kernel/src/fillet", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat(kernel): Fillet エッジ丸め" }));
+    expect(r.touched).toEqual(["engawa-kernel/src/fillet"]);
+  });
+
+  test("Extrude → engawa-format/src/feature + engawa-build/src/feature (multi-hit)", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat: ExtrudeCut を追加" }));
+    expect(r.touched).toEqual([
+      "engawa-build/src/feature",
+      "engawa-format/src/feature",
+    ]);
+  });
+
+  test("misc improvement (キーワード無し) → touched 空", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "misc improvement" }));
+    expect(r.touched).toEqual([]);
+    expect(r.path).toBe("");
+  });
+
+  test("Rectangle 単独 (Sketch 修飾なし) → engawa-format/src/sketch", () => {
+    // Phase 10 の実 Issue #300 "Rectangle を engawa-format / engawa-build に実装" 相当
+    const r = estimateCrateGroup(makeIssue({
+      title: "feat(phase10): Rectangle を engawa-format / engawa-build に実装",
+    }));
+    expect(r.touched).toEqual(["engawa-format/src/sketch"]);
+  });
+
+  test("Polygon 単独 → engawa-format/src/sketch", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "feat: Polygon を engawa-format に実装" }));
+    expect(r.touched).toEqual(["engawa-format/src/sketch"]);
+  });
+
+  test("Slot 単独 → engawa-format/src/sketch", () => {
+    const r = estimateCrateGroup(makeIssue({ title: "Slot 実装" }));
+    expect(r.touched).toEqual(["engawa-format/src/sketch"]);
+  });
+
+  test("batch:skill + 3ailoop タイトル → .claude/skills/3ailoop", () => {
+    const r = estimateCrateGroup(makeIssue({
+      title: "3ailoop watcher の polling 間隔調整",
+      labels: [{ name: "batch:skill" }],
+    }));
+    expect(r.touched).toEqual([".claude/skills/3ailoop"]);
+  });
+});
+
+describe("computeCrateGroupsForBatch (grouping algorithm)", () => {
+  test("T01: 3 Sketch Issue (Offset/Fillet/Chamfer) → 1 crate_group serial", () => {
+    const issues = [
+      { number: 295, touched: ["engawa-format/src/sketch"] },
+      { number: 296, touched: ["engawa-format/src/sketch"] },
+      { number: 297, touched: ["engawa-format/src/sketch"] },
+    ];
+    const groups = computeCrateGroupsForBatch("batch:kernel", issues);
+    expect(groups.length).toBe(1);
+    expect(groups[0].id).toBe("engawa-format-sketch");
+    expect(groups[0].issues).toEqual([295, 296, 297]);
+    expect(groups[0].parallel_safe).toBe(false);
+    expect(groups[0].reason).toContain("engawa-format/src/sketch");
+  });
+
+  test("T02: kernel Boolean と kernel Tessellation → 2 crate_groups, 各 parallel_safe: true", () => {
+    const issues = [
+      { number: 400, touched: ["engawa-kernel/src/boolean"] },
+      { number: 401, touched: ["engawa-kernel/src/tessellation"] },
+    ];
+    const groups = computeCrateGroupsForBatch("batch:kernel", issues);
+    expect(groups.length).toBe(2);
+    expect(groups.every(g => g.parallel_safe)).toBe(true);
+    expect(groups.map(g => g.id).sort()).toEqual(
+      ["engawa-kernel-boolean", "engawa-kernel-tessellation"],
+    );
+  });
+
+  test("T03: 5 Issue mixed (3 Sketch + 2 Boolean) → 2 crate_groups (sketch:3 / boolean:2)", () => {
+    const issues = [
+      { number: 500, touched: ["engawa-format/src/sketch"] },
+      { number: 501, touched: ["engawa-format/src/sketch"] },
+      { number: 502, touched: ["engawa-format/src/sketch"] },
+      { number: 503, touched: ["engawa-kernel/src/boolean"] },
+      { number: 504, touched: ["engawa-kernel/src/boolean"] },
+    ];
+    const groups = computeCrateGroupsForBatch("batch:kernel", issues);
+    expect(groups.length).toBe(2);
+    const byId = new Map(groups.map(g => [g.id, g]));
+    expect(byId.get("engawa-format-sketch")?.issues).toEqual([500, 501, 502]);
+    expect(byId.get("engawa-format-sketch")?.parallel_safe).toBe(false);
+    expect(byId.get("engawa-kernel-boolean")?.issues).toEqual([503, 504]);
+    expect(byId.get("engawa-kernel-boolean")?.parallel_safe).toBe(false);
+  });
+
+  test("T_DEG: ヒント無し Issue → fallback id <batch>-misc, singleton は parallel_safe: true", () => {
+    const issues = [
+      { number: 999, touched: [] },
+    ];
+    const groups = computeCrateGroupsForBatch("batch:kernel", issues);
+    expect(groups.length).toBe(1);
+    expect(groups[0].id).toBe("batch:kernel-misc");
+    expect(groups[0].parallel_safe).toBe(true);
+    expect(groups[0].reason).toContain("推定不能");
+  });
+
+  test("T_bonus_solver: 拘束 → engawa-kernel-solver singleton parallel_safe: true", () => {
+    const issues = [
+      { number: 700, touched: estimateCrateGroup(makeIssue({ title: "feat: 拘束ソルバ導入" })).touched },
+    ];
+    const groups = computeCrateGroupsForBatch("batch:kernel", issues);
+    expect(groups.length).toBe(1);
+    expect(groups[0].id).toBe("engawa-kernel-solver");
+    expect(groups[0].parallel_safe).toBe(true);
+  });
+
+  test("空配列 → 空 crate_groups", () => {
+    expect(computeCrateGroupsForBatch("batch:kernel", [])).toEqual([]);
+  });
+
+  test("multi-hit Extrude 2 件 → touched 交差で 1 crate_group にマージ", () => {
+    const t = estimateCrateGroup(makeIssue({ title: "feat: Extrude 実装" })).touched;
+    const issues = [
+      { number: 800, touched: t },
+      { number: 801, touched: t },
+    ];
+    const groups = computeCrateGroupsForBatch("batch:data", issues);
+    expect(groups.length).toBe(1);
+    expect(groups[0].issues).toEqual([800, 801]);
+    expect(groups[0].parallel_safe).toBe(false);
+    // touched 複数 → mixed id
+    expect(groups[0].id).toBe("batch:data-mixed");
+  });
+});
+
 // #254: refactor-batch tier が BatchTierType に追加されていることを型で確認
 import type { BatchTierType } from "../types.ts";
 

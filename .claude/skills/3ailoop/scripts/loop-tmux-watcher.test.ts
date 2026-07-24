@@ -1,14 +1,23 @@
 // loop-tmux-watcher.test.ts — pure 関数の単体テスト
 // 副作用 (tmux/gh/fs) は除外し、差分検知・アクション決定ロジックのみ検証。
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
 import {
   decideAction,
   decideWatcherPauseWarning,
   detectCycleCompleted,
+  emptyFanoutState,
   extractLastEndedAt,
+  flattenPlan,
   isPaneActive,
+  nextEnqueuable,
+  planFanout,
+  selectWatcherMode,
+  updateFanoutStateFromRegistry,
   WATCHER_PAUSE_WARNING_THRESHOLDS,
+  type FanoutPlan,
+  type PanesJson,
+  type WatcherRegistryEntry,
 } from "./loop-tmux-watcher.ts";
 
 describe("extractLastEndedAt", () => {
@@ -258,3 +267,256 @@ describe("decideWatcherPauseWarning (#285)", () => {
     expect(decideWatcherPauseWarning(50, [10, 50])).toBe(50);
   });
 });
+
+// --- Phase D-1: fan-out mode の pure logic ---
+
+describe("selectWatcherMode (Phase D-1)", () => {
+  test("panes.json 不在 → legacy", () => {
+    expect(selectWatcherMode(null)).toBe("legacy");
+  });
+
+  test("workers=1 で merge なし → legacy (N=1 backward compat)", () => {
+    const panes: PanesJson = {
+      workers: [{ id: "worker-1", pane_id: "%10", worktree: "" }],
+      max_workers: 1,
+      saved_at: "2026-07-24T00:00:00Z",
+    };
+    expect(selectWatcherMode(panes)).toBe("legacy");
+  });
+
+  test("workers>=2 + merge あり → fanout", () => {
+    const panes: PanesJson = {
+      merge: { pane_id: "%11" },
+      workers: [
+        { id: "worker-1", pane_id: "%12", worktree: "/w1" },
+        { id: "worker-2", pane_id: "%13", worktree: "/w2" },
+      ],
+      max_workers: 2,
+      saved_at: "2026-07-24T00:00:00Z",
+    };
+    expect(selectWatcherMode(panes)).toBe("fanout");
+  });
+
+  test("workers>=2 だが merge 欠落 → legacy (保険的にフォールバック)", () => {
+    const panes: PanesJson = {
+      workers: [
+        { id: "worker-1", pane_id: "%12", worktree: "/w1" },
+        { id: "worker-2", pane_id: "%13", worktree: "/w2" },
+      ],
+      max_workers: 2,
+      saved_at: "2026-07-24T00:00:00Z",
+    };
+    expect(selectWatcherMode(panes)).toBe("legacy");
+  });
+});
+
+describe("flattenPlan (Phase D-1)", () => {
+  test("null / undefined → 空", () => {
+    expect(flattenPlan(null).crate_groups).toHaveLength(0);
+    expect(flattenPlan(undefined).crate_groups).toHaveLength(0);
+    expect(flattenPlan({}).crate_groups).toHaveLength(0);
+  });
+
+  test("batch group をまたいで順序を保持", () => {
+    const raw = {
+      groups: [
+        {
+          crate_groups: [
+            { id: "cg-a", issues: [100], parallel_safe: true, reason: "" },
+            { id: "cg-b", issues: [101, 102], parallel_safe: false, reason: "" },
+          ],
+        },
+        {
+          crate_groups: [
+            { id: "cg-c", issues: [200], parallel_safe: true, reason: "" },
+          ],
+        },
+      ],
+    };
+    const p = flattenPlan(raw);
+    expect(p.crate_groups.map(g => g.id)).toEqual(["cg-a", "cg-b", "cg-c"]);
+    expect(p.crate_groups[1].parallel_safe).toBe(false);
+    expect(p.crate_groups[1].issues).toEqual([101, 102]);
+  });
+
+  test("破損 entry (issues 非配列 / id なし) は skip", () => {
+    const raw = {
+      groups: [
+        { crate_groups: [{ id: "cg-x", issues: "bad" }, { issues: [1] }] },
+      ],
+    };
+    expect(flattenPlan(raw).crate_groups).toHaveLength(0);
+  });
+});
+
+describe("nextEnqueuable (Phase D-1)", () => {
+  test("plan 空 → null", () => {
+    expect(nextEnqueuable({ crate_groups: [] }, new Map())).toBeNull();
+  });
+
+  test("最初の空き group から最小番号の Issue を返す", () => {
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-a", parallel_safe: true, issues: [100] },
+        { id: "cg-b", parallel_safe: false, issues: [200, 201] },
+      ],
+    };
+    expect(nextEnqueuable(plan, new Map())).toEqual({ issue: 100, groupId: "cg-a" });
+  });
+
+  test("cg-a in-flight → 次は cg-b から", () => {
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-a", parallel_safe: true, issues: [100] },
+        { id: "cg-b", parallel_safe: false, issues: [200, 201] },
+      ],
+    };
+    expect(nextEnqueuable(plan, new Map([["cg-a", 100]]))).toEqual({ issue: 200, groupId: "cg-b" });
+  });
+
+  test("全 group in-flight → null (2 idle worker あっても割り当てできない)", () => {
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-a", parallel_safe: false, issues: [100, 101] },
+      ],
+    };
+    expect(nextEnqueuable(plan, new Map([["cg-a", 100]]))).toBeNull();
+  });
+
+  test("completed の Issue は skip", () => {
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-a", parallel_safe: false, issues: [100, 101, 102] },
+      ],
+    };
+    expect(nextEnqueuable(plan, new Map(), new Set([100]))).toEqual({ issue: 101, groupId: "cg-a" });
+  });
+
+  test("group 内全 Issue completed → 次 group へ", () => {
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-a", parallel_safe: false, issues: [100, 101] },
+        { id: "cg-b", parallel_safe: true, issues: [200] },
+      ],
+    };
+    expect(nextEnqueuable(plan, new Map(), new Set([100, 101]))).toEqual({ issue: 200, groupId: "cg-b" });
+  });
+});
+
+describe("T_bonus_watcher_fanout_idle_worker (Phase D-1)", () => {
+  test("registry 2 idle + 1 busy、plan 3 parallel-safe → 2 assign", () => {
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "idle", current_issue: null },
+      "worker-2": { state: "idle", current_issue: null },
+      "worker-3": { state: "busy", current_issue: 300 },
+    };
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-a", parallel_safe: true, issues: [100] },
+        { id: "cg-b", parallel_safe: true, issues: [101] },
+        { id: "cg-c", parallel_safe: true, issues: [102] },
+      ],
+    };
+    const assignments = planFanout(registry, plan, emptyFanoutState());
+    expect(assignments).toHaveLength(2);
+    expect(assignments[0].workerId).toBe("worker-1");
+    expect(assignments[0].issue).toBe(100);
+    expect(assignments[1].workerId).toBe("worker-2");
+    expect(assignments[1].issue).toBe(101);
+    // worker-3 は busy なのでスキップ、cg-c は未割当
+  });
+});
+
+describe("T_bonus_watcher_fanout_serial_group (Phase D-1)", () => {
+  test("2 idle worker、serial group 1 個 (3 Issue) → 1 assign のみ (rest wait)", () => {
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "idle", current_issue: null },
+      "worker-2": { state: "idle", current_issue: null },
+    };
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-serial", parallel_safe: false, issues: [500, 501, 502] },
+      ],
+    };
+    const assignments = planFanout(registry, plan, emptyFanoutState());
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].workerId).toBe("worker-1");
+    expect(assignments[0].issue).toBe(500);
+    // worker-2 は 2 番目の idle だが cg-serial が in-flight になったので待機
+  });
+
+  test("serial group の 1 件目完了 (busy→idle) 後、次 Issue が pick される", () => {
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "idle", current_issue: null },
+    };
+    const plan: FanoutPlan = {
+      crate_groups: [
+        { id: "cg-serial", parallel_safe: false, issues: [500, 501] },
+      ],
+    };
+    // 1 件目 assign
+    let state = emptyFanoutState();
+    const a1 = planFanout(registry, plan, state);
+    expect(a1[0].issue).toBe(500);
+    // 疑似: registry で 500 が busy 状態になり、その後 idle に戻る (worker released)
+    state.inflight.set(a1[0].groupId, a1[0].issue);
+    const registryAfterMerge: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "idle", current_issue: null }, // released 後
+    };
+    state = updateFanoutStateFromRegistry(state, registryAfterMerge);
+    // 500 が completed に移り、次に 501 が pick される
+    expect(state.completed.has(500)).toBe(true);
+    const a2 = planFanout(registryAfterMerge, plan, state);
+    expect(a2).toHaveLength(1);
+    expect(a2[0].issue).toBe(501);
+  });
+});
+
+describe("updateFanoutStateFromRegistry (Phase D-1)", () => {
+  test("in-flight worker が引き続き busy → 状態変化なし", () => {
+    const state = emptyFanoutState();
+    state.inflight.set("cg-a", 100);
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "busy", current_issue: 100 },
+    };
+    const next = updateFanoutStateFromRegistry(state, registry);
+    expect(next.inflight.get("cg-a")).toBe(100);
+    expect(next.completed.has(100)).toBe(false);
+  });
+
+  test("in-flight worker が idle に戻った → completed へ移動", () => {
+    const state = emptyFanoutState();
+    state.inflight.set("cg-a", 100);
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "idle", current_issue: null },
+    };
+    const next = updateFanoutStateFromRegistry(state, registry);
+    expect(next.inflight.has("cg-a")).toBe(false);
+    expect(next.completed.has(100)).toBe(true);
+  });
+
+  test("merging 状態も継続 in-flight 扱い (merge 完了までは占有)", () => {
+    const state = emptyFanoutState();
+    state.inflight.set("cg-a", 100);
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "merging", current_issue: 100 },
+    };
+    const next = updateFanoutStateFromRegistry(state, registry);
+    expect(next.inflight.get("cg-a")).toBe(100);
+    expect(next.completed.has(100)).toBe(false);
+  });
+});
+
+describe("T_bonus_watcher_n1_backward (Phase D-1)", () => {
+  test("N=1 panes.json → legacy モード判定 (single /clear /3ailoop 経路)", () => {
+    const panes: PanesJson = {
+      workers: [{ id: "worker-1", pane_id: "%10", worktree: "" }],
+      max_workers: 1,
+      saved_at: "2026-07-24T00:00:00Z",
+    };
+    expect(selectWatcherMode(panes)).toBe("legacy");
+    // fan-out ルートに乗らないので、既存 legacy コードパス (decideAction ベース) が動く。
+    // 実際の /clear /3ailoop 送信は runDaemon の legacy 経路で扱われる。
+  });
+});
+

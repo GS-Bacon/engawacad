@@ -35,6 +35,12 @@ const LOG_PATH = join(TMUX_DIR, "watcher.log");
 const RING_LOG_PATH = join(TMUX_DIR, "watcher.ring.log");
 const LAST_ENDED_PATH = join(TMUX_DIR, "last-cycle-ended-at");
 const PANE_PATH = join(TMUX_DIR, "worker.pane");
+const PANES_PATH = join(TMUX_DIR, "panes.json");
+// Phase D-1: fan-out mode 用の外部スクリプト
+const BATCH_SELECT_PATH = join(REPO_ROOT, ".claude/skills/3ai/scripts/batch-select.ts");
+const PLAN_PATH = join(REPO_ROOT, "features/.batch/plan.json");
+const REGISTRY_PATH_JSON = join(REPO_ROOT, "features/.loop/worker-registry.json");
+const REGISTRY_CLI_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-worker-registry.ts");
 
 // #233: heartbeat 専用 ring buffer の最大件数。
 // POLL_SEC=30s × 60 件 = 30 min 分 (stuck 閾値 45min の 2/3)。
@@ -182,6 +188,172 @@ export function decideAction(input: DecideInput): WatcherAction {
   return { kind: "wait" };
 }
 
+// --- Phase D-1 fan-out mode (pure logic) ---
+
+/** panes.json の型。start.ts と共有 (start.ts が書き込み、watcher が読む)。 */
+export interface PanesJsonWorker {
+  id: string;
+  pane_id: string;
+  worktree: string;
+}
+
+export interface PanesJson {
+  orchestrator?: { pane_id: string | null };
+  merge?: { pane_id: string };
+  workers: PanesJsonWorker[];
+  max_workers: number;
+  saved_at: string;
+}
+
+/** panes.json + merge pane の有無で fan-out / legacy を選ぶ。 */
+export function selectWatcherMode(panes: PanesJson | null): "fanout" | "legacy" {
+  if (!panes) return "legacy";
+  if (panes.workers.length >= 2 && panes.merge?.pane_id) return "fanout";
+  return "legacy";
+}
+
+/** batch-select の plan.json から crate_groups を flat な配列に取り出す。
+ *  batch group をまたいで順序を保持。unsafe 型はスキップ。 */
+export interface FanoutPlanCrateGroup {
+  id: string;
+  parallel_safe: boolean;
+  issues: number[];
+}
+
+export interface FanoutPlan {
+  crate_groups: FanoutPlanCrateGroup[];
+}
+
+export function flattenPlan(rawPlan: unknown): FanoutPlan {
+  const out: FanoutPlanCrateGroup[] = [];
+  const p = rawPlan as {
+    groups?: Array<{
+      crate_groups?: Array<{ id?: unknown; issues?: unknown; parallel_safe?: unknown }>;
+    }>;
+  };
+  if (!p?.groups) return { crate_groups: out };
+  for (const g of p.groups) {
+    if (!Array.isArray(g?.crate_groups)) continue;
+    for (const cg of g.crate_groups) {
+      if (typeof cg?.id !== "string") continue;
+      if (!Array.isArray(cg.issues)) continue;
+      const issues = cg.issues.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      if (issues.length === 0) continue;
+      out.push({
+        id: cg.id,
+        parallel_safe: Boolean(cg.parallel_safe),
+        issues,
+      });
+    }
+  }
+  return { crate_groups: out };
+}
+
+/** watcher が in-memory で持つ fan-out 状態。
+ *  - inflight: crate_group_id → 現在割り当て中の Issue 番号 (1 group = 1 in-flight)
+ *  - completed: 既に一度 enqueue した Issue 番号 (再割当て回避)
+ */
+export interface FanoutState {
+  inflight: Map<string, number>;
+  completed: Set<number>;
+}
+
+export function emptyFanoutState(): FanoutState {
+  return { inflight: new Map(), completed: new Set() };
+}
+
+/** plan 内から今 enqueue できる 1 Issue を返す。
+ *  ルール:
+ *   - group に in-flight あり → skip (1 group あたり 1 in-flight = serial 保証)
+ *   - group 内で最も番号が小さい未完了 Issue を pick
+ *   - 全 group に空きなし → null
+ *
+ *  serial group (parallel_safe=false): 内部に複数 Issue があっても 1 度に 1 件のみ
+ *    (前の Issue が merge → completed に入った次の poll で次 Issue が pick される)
+ *  parallel_safe=true: そもそも group=1 Issue なので同じ扱いで動く
+ */
+export function nextEnqueuable(
+  plan: FanoutPlan,
+  inflight: ReadonlyMap<string, number>,
+  completed: ReadonlySet<number> = new Set(),
+): { issue: number; groupId: string } | null {
+  for (const g of plan.crate_groups) {
+    if (inflight.has(g.id)) continue;
+    const next = g.issues.find(n => !completed.has(n));
+    if (next !== undefined) return { issue: next, groupId: g.id };
+  }
+  return null;
+}
+
+/** worker-registry の JSON 表現 (watcher が読む用の subset)。 */
+export interface WatcherRegistryEntry {
+  state: "idle" | "busy" | "merging" | "error";
+  current_issue: number | null;
+}
+
+export interface FanoutAssignment {
+  workerId: string;
+  issue: number;
+  groupId: string;
+}
+
+/** 現在の registry + plan + fanoutState から「今どの worker に何を割り当てるか」を決める。
+ *  呼び出し側は返 assignments に対して registry.assignIssue + tmux send-keys を実行する。
+ *
+ *  merging / busy / error 状態の worker はスキップ。idle のみ埋める。
+ *  次に enqueue すべき Issue が尽きたら残りの idle は待機のまま。 */
+export function planFanout(
+  registry: Record<string, WatcherRegistryEntry>,
+  plan: FanoutPlan,
+  fanoutState: FanoutState,
+): FanoutAssignment[] {
+  const idle = Object.entries(registry)
+    .filter(([, w]) => w.state === "idle")
+    .map(([id]) => id)
+    .sort();
+  const virtualInflight = new Map(fanoutState.inflight);
+  const assignments: FanoutAssignment[] = [];
+  for (const workerId of idle) {
+    const next = nextEnqueuable(plan, virtualInflight, fanoutState.completed);
+    if (!next) break;
+    assignments.push({ workerId, issue: next.issue, groupId: next.groupId });
+    virtualInflight.set(next.groupId, next.issue);
+  }
+  return assignments;
+}
+
+/** fan-out 状態を registry の遷移で更新。busy から idle に戻った worker の Issue を
+ *  inflight から外し、completed に入れる。呼び出し側は state を破壊的に更新する。
+ *  - registryPrev / registryCurr は同じ worker set 前提。
+ *  - 追加: inflight にあるのに registry 上その worker が別 Issue を持っている場合は
+ *    古い Issue を completed 送りにする (worker が assign → done → assign と 1 poll で
+ *    複数状態変化した場合の防護)。 */
+export function updateFanoutStateFromRegistry(
+  state: FanoutState,
+  registry: Record<string, WatcherRegistryEntry>,
+): FanoutState {
+  const next: FanoutState = {
+    inflight: new Map(state.inflight),
+    completed: new Set(state.completed),
+  };
+  // 逆引き: issue → groupId
+  const issueToGroup = new Map<number, string>();
+  for (const [gid, issue] of next.inflight) issueToGroup.set(issue, gid);
+  const stillActive = new Set<number>();
+  for (const w of Object.values(registry)) {
+    if (w.current_issue !== null && (w.state === "busy" || w.state === "merging")) {
+      stillActive.add(w.current_issue);
+    }
+  }
+  for (const [gid, issue] of Array.from(next.inflight.entries())) {
+    if (!stillActive.has(issue)) {
+      next.inflight.delete(gid);
+      next.completed.add(issue);
+    }
+  }
+  return next;
+}
+
 // --- 副作用 layer ---
 
 function nowIso(): string {
@@ -262,6 +434,73 @@ export function readPaneInfo(path: string = PANE_PATH): PaneInfo | null {
     return obj as PaneInfo;
   } catch {
     return null;
+  }
+}
+
+/** Phase D-1: panes.json を読む。壊れていれば null (呼び出し側は legacy にフォールバック)。 */
+export function readPanesJson(path: string = PANES_PATH): PanesJson | null {
+  if (!existsSync(path)) return null;
+  try {
+    const txt = readFileSync(path, "utf-8").trim();
+    if (!txt.startsWith("{")) return null;
+    const obj = JSON.parse(txt) as Partial<PanesJson>;
+    if (!Array.isArray(obj.workers)) return null;
+    const workers: PanesJsonWorker[] = [];
+    for (const w of obj.workers) {
+      if (typeof w?.id !== "string") continue;
+      if (typeof w?.pane_id !== "string") continue;
+      workers.push({
+        id: w.id,
+        pane_id: w.pane_id,
+        worktree: typeof w.worktree === "string" ? w.worktree : "",
+      });
+    }
+    return {
+      orchestrator: obj.orchestrator && typeof obj.orchestrator === "object"
+        ? { pane_id: typeof (obj.orchestrator as { pane_id?: unknown }).pane_id === "string"
+            ? (obj.orchestrator as { pane_id: string }).pane_id
+            : null }
+        : undefined,
+      merge: obj.merge && typeof (obj.merge as { pane_id?: unknown }).pane_id === "string"
+        ? { pane_id: (obj.merge as { pane_id: string }).pane_id }
+        : undefined,
+      workers,
+      max_workers: typeof obj.max_workers === "number" ? obj.max_workers : workers.length,
+      saved_at: typeof obj.saved_at === "string" ? obj.saved_at : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Phase D-1: worker-registry.json を読む subset。存在しないなら空 object。 */
+export function readWorkerRegistryFromDisk(path: string = REGISTRY_PATH_JSON): Record<string, WatcherRegistryEntry> {
+  if (!existsSync(path)) return {};
+  try {
+    const obj = JSON.parse(readFileSync(path, "utf-8")) as {
+      workers?: Record<string, { state?: string; current_issue?: unknown }>;
+    };
+    const out: Record<string, WatcherRegistryEntry> = {};
+    for (const [id, w] of Object.entries(obj.workers ?? {})) {
+      const state = ((): WatcherRegistryEntry["state"] => {
+        switch (w?.state) {
+          case "idle":
+          case "busy":
+          case "merging":
+          case "error":
+            return w.state;
+          default:
+            return "idle";
+        }
+      })();
+      out[id] = {
+        state,
+        current_issue: typeof w?.current_issue === "number" ? w.current_issue : null,
+      };
+    }
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -484,7 +723,199 @@ async function performRestart(paneId: string, dryRun: boolean): Promise<void> {
   await sendKeysToWorker(paneId, "/3ailoop", dryRun);
 }
 
-// --- main loop ---
+// --- Phase D-1 fan-out mode runtime ---
+
+/** tmux list-panes -a を叩いて生存 pane_id の集合を返す。失敗時は null。 */
+async function listAllPaneIds(): Promise<Set<string> | null> {
+  try {
+    const proc = Bun.spawn(
+      ["tmux", "list-panes", "-a", "-F", "#{pane_id}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    if (proc.exitCode !== 0) return null;
+    return new Set(out.split("\n").map(s => s.trim()).filter(Boolean));
+  } catch {
+    return null;
+  }
+}
+
+/** batch-select --loop を起動して plan.json を再生成 (fan-out で queue 補充時に呼ぶ)。 */
+async function refreshPlan(): Promise<void> {
+  try {
+    const proc = Bun.spawn(["bun", BATCH_SELECT_PATH, "--loop"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: REPO_ROOT,
+    });
+    await proc.exited;
+  } catch (e) {
+    log(`refreshPlan: batch-select failed: ${(e as Error).message}`);
+  }
+}
+
+/** plan.json を読み flatten する (存在しなければ空 plan)。 */
+function readCurrentPlan(): FanoutPlan {
+  if (!existsSync(PLAN_PATH)) return { crate_groups: [] };
+  try {
+    const raw = JSON.parse(readFileSync(PLAN_PATH, "utf-8"));
+    return flattenPlan(raw);
+  } catch {
+    return { crate_groups: [] };
+  }
+}
+
+/** worker-registry.ts assign を CLI 経由で呼ぶ (mutate は registry 側で lock 済み)。 */
+async function registryAssign(workerId: string, issue: number): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(
+      ["bun", REGISTRY_CLI_PATH, "assign", "--worker-id", workerId, "--issue", String(issue)],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    await proc.exited;
+    return proc.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** fan-out mode の main loop。
+ *  - 全 worker pane + merge pane の存在確認
+ *  - 各 worker の pane_current_command で heartbeat + per-worker stuck 判定
+ *  - registry 読み → fanout state 更新 → planFanout で idle worker に割り当て
+ *  - assign 後: worker pane に `/clear` + `/3ai --issue N` を送信 */
+export async function runFanoutDaemon(
+  panes: PanesJson,
+  dryRun: boolean,
+  mockAlive: boolean,
+  cleanup: (reason: string) => void,
+): Promise<void> {
+  let tmuxQueryFailures = 0;
+  const TMUX_QUERY_FAIL_LIMIT = 3;
+  const workerIds = panes.workers.map(w => w.id);
+  const workerPaneById = new Map<string, string>();
+  for (const w of panes.workers) workerPaneById.set(w.id, w.pane_id);
+  const mergePaneId = panes.merge!.pane_id;
+
+  const lastActivity = new Map<string, number>();
+  const now0 = Date.now();
+  for (const id of workerIds) lastActivity.set(id, now0);
+
+  let fanoutState = emptyFanoutState();
+
+  log(`fan-out watcher: workers=${workerIds.join(",")} merge=${mergePaneId} poll=${POLL_SEC}s stuck=${STUCK_MIN}min`);
+
+  while (true) {
+    try {
+      // --- 1. pane health ---
+      if (!mockAlive) {
+        const alive = await listAllPaneIds();
+        if (alive === null) {
+          tmuxQueryFailures++;
+          log(`tmux query failed (${tmuxQueryFailures}/${TMUX_QUERY_FAIL_LIMIT})`);
+          if (tmuxQueryFailures >= TMUX_QUERY_FAIL_LIMIT) {
+            await notify(
+              "loop-tmux-query-failed",
+              `[STOP] fan-out watcher: tmux list-panes が ${tmuxQueryFailures} 連続で失敗`,
+            );
+            cleanup(`tmux query failed ${tmuxQueryFailures} times`);
+            return;
+          }
+          await sleepMs(POLL_SEC * 1000);
+          continue;
+        }
+        tmuxQueryFailures = 0;
+        // merge pane 消失 → halt
+        if (!alive.has(mergePaneId)) {
+          await notify(
+            "loop-tmux-merge-gone",
+            `[STOP] fan-out watcher: merge pane '${mergePaneId}' が tmux から消失`,
+          );
+          cleanup("merge pane gone");
+          return;
+        }
+        // worker pane の消失 → halt (1 つでも欠けたら停止)
+        const missing = workerIds.filter(id => !alive.has(workerPaneById.get(id)!));
+        if (missing.length > 0) {
+          await notify(
+            "loop-tmux-worker-gone",
+            `[STOP] fan-out watcher: worker pane が消失 (${missing.join(",")})`,
+          );
+          cleanup(`worker pane(s) gone: ${missing.join(",")}`);
+          return;
+        }
+      }
+
+      // --- 2. heartbeat + per-worker stuck 判定 ---
+      if (!mockAlive) {
+        for (const id of workerIds) {
+          const pid = workerPaneById.get(id)!;
+          const cmd = await tmuxPaneCurrentCommand(pid);
+          if (isPaneActive(cmd)) lastActivity.set(id, Date.now());
+        }
+        const nowT = Date.now();
+        for (const id of workerIds) {
+          const idleMin = (nowT - (lastActivity.get(id) ?? nowT)) / 60000;
+          if (idleMin >= STUCK_MIN) {
+            await notify(
+              "loop-tmux-stuck",
+              `[STOP] fan-out watcher: worker ${id} が ${idleMin.toFixed(0)}min アクティブでない (threshold ${STUCK_MIN}min)`,
+            );
+            cleanup(`worker ${id} stuck ${idleMin.toFixed(0)}min`);
+            return;
+          }
+          ringLog(`heartbeat: ${id} idle=${idleMin.toFixed(1)}min`);
+        }
+      }
+
+      // --- 3. fan-out ---
+      const registry = readWorkerRegistryFromDisk();
+      fanoutState = updateFanoutStateFromRegistry(fanoutState, registry);
+
+      // idle worker の有無を確認
+      const anyIdle = Object.values(registry).some(w => w.state === "idle");
+      let plan = readCurrentPlan();
+      if (anyIdle && plan.crate_groups.length === 0) {
+        // plan が空 → refresh を試みる
+        if (!dryRun) {
+          log(`plan.json empty, refreshing via batch-select --loop`);
+          await refreshPlan();
+          plan = readCurrentPlan();
+        }
+      }
+
+      const assignments = planFanout(registry, plan, fanoutState);
+      for (const a of assignments) {
+        const pid = workerPaneById.get(a.workerId);
+        if (!pid) {
+          log(`WARN: assignment for unknown worker ${a.workerId}`);
+          continue;
+        }
+        log(`assign: ${a.workerId} → Issue #${a.issue} (group=${a.groupId})`);
+        if (!dryRun) {
+          const ok = await registryAssign(a.workerId, a.issue);
+          if (!ok) {
+            log(`WARN: registry assign failed for ${a.workerId} #${a.issue}, skipping send-keys`);
+            continue;
+          }
+        }
+        await sendKeysToWorker(pid, "/clear", dryRun);
+        // /clear 後の pane 復帰は fan-out では待たず送信 (worker Claude が buffering する)
+        await sendKeysToWorker(pid, `/3ai --issue ${a.issue}`, dryRun);
+        fanoutState.inflight.set(a.groupId, a.issue);
+        lastActivity.set(a.workerId, Date.now());
+      }
+    } catch (e) {
+      log(`fan-out loop error: ${(e as Error).message}`);
+    }
+    await sleepMs(POLL_SEC * 1000);
+    if (dryRun) {
+      cleanup("dry-run: single fan-out iteration complete");
+      return;
+    }
+  }
+}
 
 async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: boolean): Promise<void> {
   // #181 R2-F01: 残置 last-cycle-ended-at による誤検知を防ぐため、起動時に必ず破棄。
@@ -512,6 +943,17 @@ async function runDaemon(dryRun: boolean, mockAlive: boolean, keepBaseline: bool
     cleanup("SIGINT");
     process.exit(0);
   });
+
+  // Phase D-1: panes.json を先に読み、fan-out モード条件を満たすなら fan-out ルートへ。
+  // 満たさない (= N=1 or 単一 worker.pane しかない) 場合は legacy 経路で継続 = 後方互換。
+  const panes = readPanesJson();
+  const mode = selectWatcherMode(panes);
+  if (mode === "fanout" && panes) {
+    log(`fan-out mode detected: workers=${panes.workers.length} merge=${panes.merge?.pane_id}`);
+    await runFanoutDaemon(panes, dryRun, mockAlive, cleanup);
+    return;
+  }
+  log(`legacy mode (single worker) — panes.json ${panes ? "present but not fan-out" : "absent"}`);
 
   const paneInfo = readPaneInfo();
   if (!paneInfo && !mockAlive) {

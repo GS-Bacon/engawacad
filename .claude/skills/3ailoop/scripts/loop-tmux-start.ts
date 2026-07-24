@@ -4,15 +4,22 @@
 // 設計 (ADR-012):
 // - TMUX 環境変数を検査。tmux session 外なら exit 2 で拒否
 // - 既存 watcher PID が live なら多重起動拒否
-// - tmux new-window -d -n 3ailoop-worker でワーカー pane を生成
-// - ワーカー pane で `claude` を起動し、capture-pane で起動完了マーカーを待機
+// - N=1 (LOOP_MAX_WORKERS=1): 従来の 2 pane 構成 (orchestrator + 1 worker)
+// - N>=2 (default 3): Phase D-1 の (2+N) pane 構成
+//     orchestrator + merge dispatcher + worker × N (別 worktree)
+// - 各 worker pane は `claude` を起動し、capture-pane で起動完了マーカーを待機
 //   (デフォルト 60 秒タイムアウト、LOOP_TMUX_BOOT_TIMEOUT_SEC で上書き可)
-// - tmux send-keys '/3ailoop' Enter で初回サイクル開始
+// - N=1: worker pane に `/3ailoop` を投入して初回サイクル開始
+// - N>=2: worker pane は idle のまま待機。watcher が Issue を fan-out する
 // - loop-tmux-watcher.ts を nohup で daemonize し PID を記録
 //
 // 使い方:
-//   bun loop-tmux-start.ts                # 通常起動
-//   bun loop-tmux-start.ts --dry-run      # tmux コマンド列を stdout に echo するのみ
+//   bun loop-tmux-start.ts                        # 通常起動 (N=3)
+//   bun loop-tmux-start.ts --n 3                  # N を明示指定
+//   bun loop-tmux-start.ts --n 1                  # 従来 2 pane モード
+//   bun loop-tmux-start.ts --dry-run              # 計画を stdout に echo するのみ
+//   bun loop-tmux-start.ts --dry-run --n 3        # N=3 の計画を表示
+//   bun loop-tmux-start.ts --worktree-base /path  # worktree base を上書き
 //   bun loop-tmux-start.ts --claude-cmd "claude --dangerously-skip-permissions --model sonnet"
 //
 // worker pane のデフォルト model は Sonnet 5:
@@ -21,7 +28,7 @@
 //     /3ai 内から Agent tool 経由で Opus 4.7 subagent に委譲する
 //   - Opus 4.8 は tool call 破壊のため禁止 (memory: opus-4-8-banned)
 //
-// 関連: ADR-012, Issue #181
+// 関連: ADR-012, Issue #181, Phase D-1 (parsed-wiggling-newt)
 
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
@@ -32,8 +39,12 @@ const REPO_ROOT = resolve(import.meta.dir, "../../../..");
 const TMUX_DIR = join(REPO_ROOT, "features/.loop/tmux");
 const PID_PATH = join(TMUX_DIR, "watcher.pid");
 const PANE_PATH = join(TMUX_DIR, "worker.pane");
+const PANES_PATH = join(TMUX_DIR, "panes.json");
 const WATCHER_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-tmux-watcher.ts");
+const MERGE_DISPATCHER_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-tmux-merge-dispatcher.ts");
+const REGISTRY_PATH = join(REPO_ROOT, ".claude/skills/3ailoop/scripts/loop-worker-registry.ts");
 const DEFAULT_SPLIT_PCT = parseInt(process.env.LOOP_TMUX_PANE_PCT ?? "50", 10);
+const DEFAULT_WORKTREE_BASE = process.env.LOOP_WORKTREE_BASE ?? "/home/bacon/worktrees";
 
 const BOOT_TIMEOUT_SEC = parseInt(process.env.LOOP_TMUX_BOOT_TIMEOUT_SEC ?? "60", 10);
 const BOOT_POLL_MS = 1000;
@@ -101,27 +112,166 @@ async function checkExistingWorkerPane(): Promise<void> {
   }
 }
 
-interface TmuxCmd {
-  args: string[];
+/** dry-run で出力する 1 step。phase は grep / test 検証用の識別子。 */
+export interface PlannedStep {
+  phase:
+    | "worktree-init"
+    | "merge-split"
+    | "merge-launch"
+    | "worker-split"
+    | "worktree-add"
+    | "worker-cd"
+    | "worker-claude"
+    | "worker-register"
+    | "worker-initial-3ailoop"
+    | "layout"
+    | "panes-json"
+    | "watcher-daemon"
+    | "wait-ready"
+    | "select-title";
   desc: string;
+  args?: string[];
 }
 
-/** dry-run 表示用のコマンド列。実際は splitPane() / sendKeys() を直接呼ぶ。 */
-function plan(claudeCmd: string): TmuxCmd[] {
-  return [
-    {
+export interface PlanOptions {
+  n: number;
+  claudeCmd: string;
+  worktreeBase: string;
+}
+
+/** N ワーカー構成の計画を返す (dry-run 表示用 + 実起動時の順序参照用)。 */
+export function buildPlan(opts: PlanOptions): PlannedStep[] {
+  const { n, claudeCmd, worktreeBase } = opts;
+  const steps: PlannedStep[] = [];
+
+  if (n === 1) {
+    // --- 従来の 2 pane 構成 (backward compat) ---
+    steps.push({
+      phase: "worker-split",
+      desc: `ワーカー pane を現 window の右に split (幅 ${DEFAULT_SPLIT_PCT}%、session_id+window_id+pane_id 取得)`,
       args: [
         "tmux", "split-window", "-h", "-P", "-F",
         "#{session_id}|#{window_id}|#{pane_id}",
         "-l", `${DEFAULT_SPLIT_PCT}%`,
       ],
-      desc: `ワーカー pane を現 window の右に split (幅 ${DEFAULT_SPLIT_PCT}%、session_id+window_id+pane_id 取得)`,
-    },
-    {
-      args: ["tmux", "send-keys", "-t", "<pane_id>", claudeCmd, "Enter"],
+    });
+    steps.push({
+      phase: "select-title",
+      desc: `worker pane に pane_title を設定 (metadata 欠落時 fallback)`,
+      args: ["tmux", "select-pane", "-t", "<worker-1-pane>", "-T", WORKER_PANE_TITLE],
+    });
+    steps.push({
+      phase: "worker-claude",
       desc: `ワーカー pane で claude を起動: ${claudeCmd}`,
-    },
-  ];
+      args: ["tmux", "send-keys", "-t", "<worker-1-pane>", claudeCmd, "Enter"],
+    });
+    steps.push({
+      phase: "wait-ready",
+      desc: `Claude 起動完了を capture-pane で待機 (timeout ${BOOT_TIMEOUT_SEC}s)`,
+    });
+    steps.push({
+      phase: "worker-initial-3ailoop",
+      desc: `worker pane に初回 /3ailoop を送信`,
+      args: ["tmux", "send-keys", "-t", "<worker-1-pane>", "/3ailoop", "Enter"],
+    });
+    steps.push({
+      phase: "panes-json",
+      desc: `panes.json を書き込む (workers=1, merge=null)`,
+      args: ["writeFile", PANES_PATH],
+    });
+    steps.push({
+      phase: "watcher-daemon",
+      desc: `watcher daemon を nohup で起動`,
+      args: ["nohup", "bun", WATCHER_PATH, "run", "&"],
+    });
+    return steps;
+  }
+
+  // --- N >= 2: (2+N) pane 構成 ---
+  steps.push({
+    phase: "worktree-init",
+    desc: `worktree base ディレクトリを準備: ${worktreeBase}`,
+    args: ["mkdir", "-p", worktreeBase],
+  });
+  steps.push({
+    phase: "merge-split",
+    desc: `merge pane を現 window の右に split (幅 ${DEFAULT_SPLIT_PCT}%)`,
+    args: [
+      "tmux", "split-window", "-h", "-P", "-F",
+      "#{session_id}|#{window_id}|#{pane_id}",
+      "-l", `${DEFAULT_SPLIT_PCT}%`,
+    ],
+  });
+  steps.push({
+    phase: "merge-launch",
+    desc: `merge pane で merge dispatcher を起動 (--watch)`,
+    args: [
+      "tmux", "send-keys", "-t", "<merge-pane>",
+      `cd ${REPO_ROOT} && bun ${MERGE_DISPATCHER_PATH} --watch`, "Enter",
+    ],
+  });
+
+  for (let i = 1; i <= n; i++) {
+    const wt = `${worktreeBase}/w${i}`;
+    const workerId = `worker-${i}`;
+    steps.push({
+      phase: "worker-split",
+      desc: `${workerId} pane を split (幅 ${DEFAULT_SPLIT_PCT}%、session_id+window_id+pane_id 取得)`,
+      args: [
+        "tmux", "split-window", "-h", "-P", "-F",
+        "#{session_id}|#{window_id}|#{pane_id}",
+        "-l", `${DEFAULT_SPLIT_PCT}%`,
+      ],
+    });
+    steps.push({
+      phase: "select-title",
+      desc: `${workerId} pane に pane_title を設定 (metadata 欠落時 fallback)`,
+      args: ["tmux", "select-pane", "-t", `<${workerId}-pane>`, "-T", WORKER_PANE_TITLE],
+    });
+    steps.push({
+      phase: "worktree-add",
+      desc: `${workerId} 用 worktree を作成: ${wt}`,
+      args: ["git", "-C", REPO_ROOT, "worktree", "add", wt, "HEAD"],
+    });
+    steps.push({
+      phase: "worker-cd",
+      desc: `${workerId} pane を worktree に cd`,
+      args: ["tmux", "send-keys", "-t", `<${workerId}-pane>`, `cd ${wt}`, "Enter"],
+    });
+    steps.push({
+      phase: "worker-claude",
+      desc: `${workerId} pane で claude を起動: ${claudeCmd}`,
+      args: ["tmux", "send-keys", "-t", `<${workerId}-pane>`, claudeCmd, "Enter"],
+    });
+    steps.push({
+      phase: "worker-register",
+      desc: `worker-registry に ${workerId} を登録 (pane_id, worktree=${wt})`,
+      args: [
+        "bun", REGISTRY_PATH, "register",
+        "--worker-id", workerId,
+        "--pane-id", `<${workerId}-pane>`,
+        "--worktree", wt,
+      ],
+    });
+  }
+
+  steps.push({
+    phase: "layout",
+    desc: `tmux select-layout even-horizontal で pane 幅を整える`,
+    args: ["tmux", "select-layout", "even-horizontal"],
+  });
+  steps.push({
+    phase: "panes-json",
+    desc: `panes.json を書き込む (workers=${n}, merge pane あり)`,
+    args: ["writeFile", PANES_PATH],
+  });
+  steps.push({
+    phase: "watcher-daemon",
+    desc: `watcher daemon を nohup で起動 (fan-out モード)`,
+    args: ["nohup", "bun", WATCHER_PATH, "run", "&"],
+  });
+
+  return steps;
 }
 
 interface PaneTriple {
@@ -163,6 +313,16 @@ async function runTmux(args: string[]): Promise<{ ok: boolean; stderr: string }>
   return { ok: proc.exitCode === 0, stderr: err };
 }
 
+async function runCmd(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  await proc.exited;
+  return { ok: proc.exitCode === 0, stdout: out, stderr: err };
+}
+
 async function capturePane(paneId: string): Promise<string> {
   const proc = Bun.spawn(["tmux", "capture-pane", "-t", paneId, "-p"], {
     stdout: "pipe",
@@ -199,6 +359,38 @@ function writePaneInfo(triple: PaneTriple): void {
   renameSync(tmp, PANE_PATH);
 }
 
+export interface PanesJsonWorker {
+  id: string;
+  pane_id: string;
+  worktree: string;
+}
+
+export interface PanesJson {
+  orchestrator: { pane_id: string | null };
+  merge?: { pane_id: string };
+  workers: PanesJsonWorker[];
+  max_workers: number;
+  saved_at: string;
+}
+
+function writePanesJson(payload: PanesJson): void {
+  mkdirSync(dirname(PANES_PATH), { recursive: true });
+  const tmp = `${PANES_PATH}.tmp.${process.pid}.${Date.now()}`;
+  writeFileSync(tmp, JSON.stringify(payload, null, 2), "utf-8");
+  renameSync(tmp, PANES_PATH);
+}
+
+async function currentPaneId(): Promise<string | null> {
+  try {
+    const r = await runCmd(["tmux", "display", "-p", "#{pane_id}"]);
+    if (!r.ok) return null;
+    const raw = r.stdout.trim();
+    return /^%\d+$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 function spawnWatcherDaemon(): number {
   // nohup 相当: detached child を起動し PID を返す
   const logPath = join(TMUX_DIR, "watcher.log");
@@ -215,6 +407,30 @@ function spawnWatcherDaemon(): number {
   return proc.pid;
 }
 
+function parseIntArg(args: string[], name: string): number | null {
+  const i = args.indexOf(name);
+  if (i < 0 || !args[i + 1]) return null;
+  const v = parseInt(args[i + 1], 10);
+  return Number.isFinite(v) ? v : null;
+}
+
+function stringArg(args: string[], name: string): string | null {
+  const i = args.indexOf(name);
+  if (i < 0 || !args[i + 1]) return null;
+  return args[i + 1];
+}
+
+/** N の解決順序: --n > $LOOP_MAX_WORKERS > 3 (default)。 */
+export function resolveN(cliN: number | null, env: NodeJS.ProcessEnv = process.env): number {
+  if (cliN !== null && cliN > 0) return cliN;
+  const envRaw = env.LOOP_MAX_WORKERS;
+  if (envRaw !== undefined) {
+    const parsed = parseInt(envRaw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 3;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
@@ -225,26 +441,37 @@ async function main(): Promise<void> {
   const ccIdx = args.indexOf("--claude-cmd");
   if (ccIdx >= 0 && args[ccIdx + 1]) claudeCmd = args[ccIdx + 1];
 
+  const cliN = parseIntArg(args, "--n");
+  const n = resolveN(cliN);
+  const worktreeBase = stringArg(args, "--worktree-base") ?? DEFAULT_WORKTREE_BASE;
+
   checkTmuxEnv();
   checkExistingWatcher();
   if (!dryRun) await checkExistingWorkerPane();
 
-  const steps = plan(claudeCmd);
+  const steps = buildPlan({ n, claudeCmd, worktreeBase });
 
   if (dryRun) {
+    process.stdout.write(`DRY-RUN: N=${n} worktree_base=${worktreeBase}\n`);
     for (const s of steps) {
-      process.stdout.write(`DRY-RUN: ${s.desc}\n`);
-      process.stdout.write(`         ${s.args.map(a => JSON.stringify(a)).join(" ")}\n`);
+      process.stdout.write(`DRY-RUN[${s.phase}]: ${s.desc}\n`);
+      if (s.args) {
+        process.stdout.write(`             ${s.args.map(a => JSON.stringify(a)).join(" ")}\n`);
+      }
     }
-    process.stdout.write(`DRY-RUN: wait Claude ready (capture-pane, timeout ${BOOT_TIMEOUT_SEC}s)\n`);
-    process.stdout.write(`DRY-RUN: tmux send-keys -t <pane_id> "/3ailoop" Enter\n`);
-    process.stdout.write(`DRY-RUN: nohup bun ${WATCHER_PATH} run & (PID は実起動時に記録)\n`);
-    process.stdout.write(`DRY-RUN: writeFile ${PANE_PATH} = {pane_id, session_id, window_id, saved_at} JSON\n`);
     return;
   }
 
-  // 実起動: pane を split で生成し 3 つ組を取得
-  process.stderr.write(`STEP: ${steps[0].desc}\n`);
+  if (n === 1) {
+    await runN1(claudeCmd);
+    return;
+  }
+  await runNMulti(n, claudeCmd, worktreeBase);
+}
+
+/** N=1 backward-compat 経路。従来の worker.pane 書き込み + 初回 /3ailoop 投入。 */
+async function runN1(claudeCmd: string): Promise<void> {
+  process.stderr.write(`STEP: worker pane を split (N=1 backward-compat モード)\n`);
   let triple: PaneTriple;
   try {
     triple = await splitPane();
@@ -279,9 +506,113 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // N=1 でも panes.json を書いておく (watcher の判定用)
+  const orchId = await currentPaneId();
+  writePanesJson({
+    orchestrator: { pane_id: orchId },
+    workers: [{ id: "worker-1", pane_id: triple.pane_id, worktree: "" }],
+    max_workers: 1,
+    saved_at: new Date().toISOString(),
+  });
+
   const watcherPid = spawnWatcherDaemon();
   process.stderr.write(`STEP: watcher daemon spawned pid=${watcherPid}\n`);
   console.log(JSON.stringify({ ok: true, pane: triple, watcher_pid: watcherPid }, null, 2));
+}
+
+/** N>=2 の (2+N) pane 経路。merge pane + N worker pane を worktree 付きで生成。 */
+async function runNMulti(n: number, claudeCmd: string, worktreeBase: string): Promise<void> {
+  process.stderr.write(`STEP: worktree base を準備: ${worktreeBase}\n`);
+  mkdirSync(worktreeBase, { recursive: true });
+
+  process.stderr.write(`STEP: merge pane を split\n`);
+  const mergeTriple = await splitPane();
+  process.stderr.write(`  merge pane_id=${mergeTriple.pane_id}\n`);
+
+  process.stderr.write(`STEP: merge dispatcher を起動\n`);
+  const mergeCmd = `cd ${REPO_ROOT} && bun ${MERGE_DISPATCHER_PATH} --watch`;
+  const mergeR = await runTmux(["tmux", "send-keys", "-t", mergeTriple.pane_id, mergeCmd, "Enter"]);
+  if (!mergeR.ok) {
+    console.error(`FAIL: send-keys merge-dispatcher: ${mergeR.stderr.trim()}`);
+    process.exit(1);
+  }
+
+  const workers: PanesJsonWorker[] = [];
+  for (let i = 1; i <= n; i++) {
+    const workerId = `worker-${i}`;
+    const wt = `${worktreeBase}/w${i}`;
+
+    process.stderr.write(`STEP: ${workerId} pane を split\n`);
+    const wTriple = await splitPane();
+    process.stderr.write(`  ${workerId} pane_id=${wTriple.pane_id}\n`);
+    await runTmux(["tmux", "select-pane", "-t", wTriple.pane_id, "-T", WORKER_PANE_TITLE]);
+
+    process.stderr.write(`STEP: ${workerId} worktree add: ${wt}\n`);
+    const wtR = await runCmd(["git", "-C", REPO_ROOT, "worktree", "add", wt, "HEAD"]);
+    if (!wtR.ok) {
+      // 既存 worktree があれば警告のみ (再利用)
+      const stderrTrim = wtR.stderr.trim();
+      if (!/already exists/.test(stderrTrim)) {
+        console.error(`FAIL: worktree add ${wt}: ${stderrTrim}`);
+        process.exit(1);
+      }
+      process.stderr.write(`  (worktree 既存を再利用: ${wt})\n`);
+    }
+
+    process.stderr.write(`STEP: ${workerId} pane を worktree に cd\n`);
+    await runTmux(["tmux", "send-keys", "-t", wTriple.pane_id, `cd ${wt}`, "Enter"]);
+
+    process.stderr.write(`STEP: ${workerId} pane で claude を起動: ${claudeCmd}\n`);
+    const cmdR = await runTmux(["tmux", "send-keys", "-t", wTriple.pane_id, claudeCmd, "Enter"]);
+    if (!cmdR.ok) {
+      console.error(`FAIL: send-keys claude on ${workerId}: ${cmdR.stderr.trim()}`);
+      process.exit(1);
+    }
+
+    process.stderr.write(`STEP: worker-registry に ${workerId} を登録\n`);
+    const regR = await runCmd([
+      "bun", REGISTRY_PATH, "register",
+      "--worker-id", workerId,
+      "--pane-id", wTriple.pane_id,
+      "--worktree", wt,
+    ]);
+    if (!regR.ok) {
+      console.error(`FAIL: register ${workerId}: ${regR.stderr.trim()}`);
+      process.exit(1);
+    }
+    workers.push({ id: workerId, pane_id: wTriple.pane_id, worktree: wt });
+  }
+
+  process.stderr.write(`STEP: tmux select-layout even-horizontal\n`);
+  await runTmux(["tmux", "select-layout", "even-horizontal"]);
+
+  // legacy worker.pane も worker-1 を指すよう書いておく (stop.ts / dispatch.ts 用)
+  if (workers.length > 0) {
+    writePaneInfo({
+      pane_id: workers[0].pane_id,
+      session_id: mergeTriple.session_id, // best-effort: merge pane と同 session/window
+      window_id: mergeTriple.window_id,
+    });
+  }
+
+  const orchId = await currentPaneId();
+  writePanesJson({
+    orchestrator: { pane_id: orchId },
+    merge: { pane_id: mergeTriple.pane_id },
+    workers,
+    max_workers: n,
+    saved_at: new Date().toISOString(),
+  });
+
+  const watcherPid = spawnWatcherDaemon();
+  process.stderr.write(`STEP: watcher daemon spawned pid=${watcherPid} (fan-out mode)\n`);
+  console.log(JSON.stringify({
+    ok: true,
+    n,
+    merge_pane: mergeTriple.pane_id,
+    workers,
+    watcher_pid: watcherPid,
+  }, null, 2));
 }
 
 if (import.meta.main) {

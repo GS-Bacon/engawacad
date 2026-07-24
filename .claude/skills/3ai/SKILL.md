@@ -658,7 +658,69 @@ bun .claude/skills/3ai/scripts/state.ts inc features/$ISSUE_NUM-$ISSUE_SLUG/stat
 
 ---
 
+## STEP 6.6.5: 3 並列 dispatch (#317 Phase D-2)
+
+STEP 6.6 完了後、**STEP 6.7 / 7 / 7.5 は独立した 3 種類の final review** なので **3 並列 dispatch → barrier で合流** する。逐次実行に比べ wall-clock を短縮 (1 Issue あたり ~5-10 分削減見込み)。
+
+### 並列 dispatch パターン
+
+```bash
+# 3 種類の final review を並列起動 (Sonnet 5 が orchestrator)
+
+# 6.7: Opus 4.7 subagent (Agent tool)
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 6.7: 3 観点 self-review",
+  prompt: "..."
+) &   # background
+
+# 7: GLM final review dispatch
+bun .claude/skills/3ai/scripts/dispatch-glm-review.ts \
+  --persona final --issue $ISSUE_NUM \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/final-review.yaml \
+  --test-summary features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json &
+
+# 7.5: Codex final gate dispatch
+bun .claude/skills/3ai/scripts/dispatch-codex.ts \
+  --mode final-review --issue $ISSUE_NUM \
+  --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG \
+  --result features/$ISSUE_NUM-$ISSUE_SLUG/codex-final.yaml &
+
+wait   # barrier: 全 3 完了待ち
+```
+
+(Agent tool は shell の `&` ではなく `run_in_background: true` で発行、GLM/Codex dispatch は shell `&`)
+
+### barrier 合流時の結果集約
+
+3 者完了後、以下の優先順で判定:
+
+1. **STEP 6.7 critical/high 検出** → 実装ループ (STEP 6.x) に戻す。**STEP 7 と 7.5 の結果は破棄**する (実装が変わるので再 review が必要)
+2. **STEP 7 critical/high 検出** → GLM 修正 dispatch → GLM final 再レビュー (ループ +1、上限 2)。STEP 7.5 結果は保持 (次 loop で使う)
+3. **STEP 7.5 critical/high 検出** → Codex は 1 発 gate なので再 dispatch なし。Claude (Opus 4.7 委譲) が採用/棄却判定
+4. **全て pass** → STEP 8 (merge pane へ enqueue) へ
+
+### Test-summary の準備
+
+STEP 7 と 7.5 は `test-summary.json` を入力とするため、並列 dispatch 前に生成しておく:
+
+```bash
+bun .claude/skills/3ai/scripts/extract-test-summary.ts \
+  --ci-log features/$ISSUE_NUM-$ISSUE_SLUG/ci.log \
+  --output features/$ISSUE_NUM-$ISSUE_SLUG/test-summary.json
+```
+
+### 逐次実行 (fallback)
+
+3 並列を試して問題が出たら、fallback として逐次実行に戻せるように STEP 6.7 / 7 / 7.5 の従来記述は残す。並列化は最適化であって semantics は逐次と同じ。
+
+---
+
 ## STEP 6.7: Claude self-review (#280 — Codex 往復削減 shift-left)
+
+**並列 dispatch (#317 Phase D-2)**: 本 STEP は STEP 7 / 7.5 と 3 並列で起動される。barrier 合流時に critical/high が検出されたら STEP 6.x へ戻し、7 / 7.5 の結果は破棄する。
 
 **ゲート:** `features/$ISSUE_NUM-$ISSUE_SLUG/glm-self-review.md` が存在すること
 (STEP 6 の GLM core 実装が完了直前に出力)。
@@ -703,12 +765,14 @@ GLM 実装が反証できるか考えること。Codex 7.5 finding 率を下げ�
 
 ## STEP 7: GLM 最終レビュー（背景実行・完了通知）
 
+**並列 dispatch (#317 Phase D-2)**: 本 STEP は STEP 6.7 / 7.5 と 3 並列で起動される。barrier 合流時、7 だけで critical/high 検出時は GLM 修正 dispatch ループに入る。6.7 critical/high なら本 STEP の結果は破棄される。
+
 **ゲート:**
 ```bash
 bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
 ```
 
-**dispatch 前に test-summary.json を生成する:**
+**dispatch 前に test-summary.json を生成する** (並列起動前に必須):
 ```bash
 bun .claude/skills/3ai/scripts/extract-test-summary.ts \
   --ci-log features/$ISSUE_NUM-$ISSUE_SLUG/ci.log \
@@ -779,7 +843,14 @@ bun .claude/skills/3ai/scripts/state.ts assert-critical-zero \
 
 **目的**: 実装者 GLM とレビュアー GLM が同系であることによる相関盲点を、別モデル系 (Codex/gpt-5.4) の独立視点で破る。diff 全体を技術的観点でレビューし、critical/high は merge 前にブロックする。
 
-**ゲート:**
+**並列 dispatch (#317 Phase D-2)**: 本 STEP は STEP 6.7 / 7 と 3 並列で起動される。barrier 合流時、7.5 だけで critical/high 検出時は Opus 4.7 subagent が採用/棄却判定 (Codex は 1 発 gate なので再 dispatch なし)。6.7 critical/high なら本 STEP の結果は破棄される。
+
+**ゲート**: 3 並列 dispatch では `glm_impl` の gate assert のみ、`final_review` gate は barrier 合流後に判定する:
+```bash
+bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json glm_impl
+```
+
+(逐次 fallback モードでは以下を使う:)
 ```bash
 bun .claude/skills/3ai/scripts/state.ts assert features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review
 ```

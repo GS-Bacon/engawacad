@@ -9,7 +9,7 @@
 //   通常時: stdout + features/.batch/plan.json
 
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from "fs";
-import type { Deliverable, BatchPlan, BatchGroup, BatchIssue } from "./types.ts";
+import type { Deliverable, BatchPlan, BatchGroup, BatchIssue, CrateGroup } from "./types.ts";
 
 // --- 定数 ---
 
@@ -207,6 +207,162 @@ function parseIssueRefs(body: string): number[] {
   return [...seen];
 }
 
+// --- crate_groups 推定 (N=3 parallel worker 割り当て用) ---
+//
+// Issue が触ると推定される crate/module パスをタイトルとラベルから算出し、
+// touched_paths が交差する Issue を union-find で 1 crate_group にまとめる。
+// LLM 呼び出しなしのルールベース、決定的。
+
+/** タイトル内で Sketch 系サブ機能を示すキーワード群 */
+const SKETCH_SUB_KEYWORDS = /\b(Offset|Fillet|Chamfer|Mirror|Pattern|Rectangle|Polygon|Slot|Trim|Extend)\b/i;
+
+/** "Sketch" 修飾なしでも sketch entity と特定できるキーワード (この codebase で名詞的に一意) */
+const SKETCH_ENTITY_KEYWORDS = /\b(Rectangle|Polygon|Slot)\b/i;
+
+/**
+ * Issue 1 件が触ると推定される module パスを返す (ルールベース、決定的、LLM 不要)。
+ * - path: 主要パス (touched の先頭ソート結果 or "")
+ * - touched: 触ると推定される全 module path のソート済みユニーク配列
+ */
+export function estimateCrateGroup(issue: GhIssue): { path: string; touched: string[] } {
+  const title = issue.title ?? "";
+  const labels = (issue.labels ?? []).map(l => l.name);
+  const batchLabels = labels.filter(l => l.startsWith("batch:"));
+  const primaryBatch = batchLabels[0] ?? "";
+
+  const touched = new Set<string>();
+
+  // Title keyword rules (specific first)
+  const hasSketch = /\bSketch\b/i.test(title) || /スケッチ/.test(title);
+  if (hasSketch && SKETCH_SUB_KEYWORDS.test(title)) {
+    touched.add("engawa-format/src/sketch");
+  }
+  // Rectangle/Polygon/Slot は名詞的に sketch entity 特定できる (Sketch 修飾不要)
+  if (SKETCH_ENTITY_KEYWORDS.test(title)) {
+    touched.add("engawa-format/src/sketch");
+  }
+  if (/\bboolean\b/i.test(title) || /ブーリアン/.test(title)) {
+    touched.add("engawa-kernel/src/boolean");
+  }
+  if (/\btessell?ation\b/i.test(title) || /\btessellate\b/i.test(title)) {
+    touched.add("engawa-kernel/src/tessellation");
+  }
+  if (/\bExtrude(Cut)?\b/i.test(title)) {
+    touched.add("engawa-format/src/feature");
+    touched.add("engawa-build/src/feature");
+  }
+  if (/\bSolver\b/i.test(title) || /拘束/.test(title)) {
+    touched.add("engawa-kernel/src/solver");
+  }
+  // body-op Fillet (Sketch 修飾なし) は kernel 側
+  if (/\bFillet\b/i.test(title) && !hasSketch) {
+    touched.add("engawa-kernel/src/fillet");
+  }
+
+  // batch:skill は Rust crate ではない。ヒントがあれば skill パスを touched に入れる。
+  if (touched.size === 0 && primaryBatch === "batch:skill") {
+    const slugFromTitle = /3ailoop/i.test(title)
+      ? ".claude/skills/3ailoop"
+      : /3ai/i.test(title)
+      ? ".claude/skills/3ai"
+      : "";
+    if (slugFromTitle) touched.add(slugFromTitle);
+  }
+
+  const touchedList = [...touched].sort();
+  const path = touchedList[0] ?? "";
+  return { path, touched: touchedList };
+}
+
+/** "engawa-format/src/sketch" → "engawa-format-sketch" */
+function pathToGroupId(path: string): string {
+  const parts = path.split("/").filter(p => p.length > 0 && p !== "src");
+  if (parts.length === 0) return path;
+  if (parts.length === 1) return parts[0];
+  // crate + 末尾 module 名
+  return `${parts[0]}-${parts[parts.length - 1]}`;
+}
+
+/** 2 つの touched 配列に共通要素があるか */
+function touchedIntersect(a: string[], b: string[]): boolean {
+  const set = new Set(a);
+  for (const x of b) if (set.has(x)) return true;
+  return false;
+}
+
+/**
+ * batch:* group 内の Issue 群を crate_groups へ細分割する。
+ *
+ * アルゴリズム:
+ *   1. 各 Issue の touched_paths を用意 (呼び出し側で estimateCrateGroup 済み)
+ *   2. touched が交差する Issue 同士を union-find で結合
+ *   3. root ごとに CrateGroup を組み立てる
+ *   4. parallel_safe = (Issue 数 == 1)
+ */
+export function computeCrateGroupsForBatch(
+  batchLabel: string,
+  issues: Array<{ number: number; touched: string[] }>,
+): CrateGroup[] {
+  const n = issues.length;
+  if (n === 0) return [];
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  const union = (i: number, j: number) => {
+    const ri = find(i), rj = find(j);
+    if (ri !== rj) parent[ri] = rj;
+  };
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (touchedIntersect(issues[i].touched, issues[j].touched)) union(i, j);
+    }
+  }
+
+  const buckets = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    if (!buckets.has(r)) buckets.set(r, []);
+    buckets.get(r)!.push(i);
+  }
+
+  const groups: CrateGroup[] = [];
+  for (const idxs of buckets.values()) {
+    const members = idxs.map(i => issues[i]);
+    const nums = members.map(m => m.number).sort((a, b) => a - b);
+    const allTouched = [...new Set(members.flatMap(m => m.touched))].sort();
+
+    let id: string;
+    let reason: string;
+    if (allTouched.length === 0) {
+      id = `${batchLabel}-misc`;
+      reason = "推定不能 (タイトルに crate/module ヒント無し)";
+    } else if (allTouched.length === 1) {
+      id = pathToGroupId(allTouched[0]);
+      reason = `全 Issue が ${allTouched[0]}/* を触ると推定`;
+    } else {
+      // 複数モジュール — Issue 群の touched が交差した結果なので mixed
+      id = `${batchLabel}-mixed`;
+      reason = `複数モジュール (${allTouched.join(", ")}) が交差`;
+    }
+
+    groups.push({
+      id,
+      issues: nums,
+      parallel_safe: nums.length === 1,
+      reason,
+    });
+  }
+
+  return groups.sort((a, b) => a.issues[0] - b.issues[0]);
+}
+
 /**
  * Kahn 法によるトポロジカルソート
  * @param depsMap n → n が依存するノード一覧 (先に処理されるべきもの)
@@ -248,9 +404,9 @@ function kahnSort(
 
 // --- gh Issue 型 ---
 
-interface GhLabel { name: string }
-interface GhMilestone { title: string; number: number }
-interface GhIssue {
+export interface GhLabel { name: string }
+export interface GhMilestone { title: string; number: number }
+export interface GhIssue {
   number: number;
   title: string;
   labels: GhLabel[];
@@ -495,6 +651,12 @@ async function main() {
     (a, b) => (GROUP_ORDER[a] ?? 99) - (GROUP_ORDER[b] ?? 99),
   );
 
+  // 全 selected Issue の touched_paths を先に算出 (crate_groups 用)
+  const touchedByNumber = new Map<number, string[]>();
+  for (const issue of selected) {
+    touchedByNumber.set(issue.number, estimateCrateGroup(issue).touched);
+  }
+
   const groups: BatchGroup[] = [];
 
   for (let gIdx = 0; gIdx < sortedGroupNames.length; gIdx++) {
@@ -553,7 +715,20 @@ async function main() {
       };
     });
 
-    groups.push({ group: groupName, order: gIdx, issues: batchIssues });
+    const crateGroups = computeCrateGroupsForBatch(
+      groupName,
+      groupIssues.map(i => ({
+        number: i.number,
+        touched: touchedByNumber.get(i.number) ?? [],
+      })),
+    );
+
+    groups.push({
+      group: groupName,
+      order: gIdx,
+      issues: batchIssues,
+      crate_groups: crateGroups,
+    });
   }
 
   // --- プラン構築 ---

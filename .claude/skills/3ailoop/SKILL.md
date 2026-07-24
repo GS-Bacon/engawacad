@@ -1,12 +1,12 @@
 ---
 name: 3ailoop
-description: /3ai を常時自律モードで回し続ける無人ループ。tmux 2 ペイン構成 (オーケストレーター pane に watcher daemon、ワーカー pane で Claude が /3ailoop を実行) で、サイクル完了次第ただちに /clear → /3ailoop を再投入する自走モデル。停止条件 = 候補 Issue が gate:* / needs-* のみになったとき。
+description: /3ai を常時自律モードで回し続ける無人ループ。tmux (2+N) pane 構成 (N=3 default、LOOP_MAX_WORKERS=1 で従来 2 pane): orchestrator + merge dispatcher + worker × N (各 worktree)。watcher が fan-out で Issue を割当、worker が並列 /3ai、merge pane が serial rebase → CI → push。サイクル完了ごとに /clear → /3ai --issue N。停止条件 = 候補 Issue が gate:* / needs-* のみになったとき。
 tools: Read, Bash, Glob, Grep, Skill
 ---
 
-# /3ailoop — 自走ループ本体
+# /3ailoop — 自走ループ本体 (N=3 並列 default)
 
-EngawaCAD の Issue を **無人で連続消化** する Skill。サイクル完了ごとに `/clear` で context をリセットし、文脈劣化を構造的に防ぐ (ADR-012)。
+EngawaCAD の Issue を **無人で並列消化** する Skill。サイクル完了ごとに `/clear` で context をリセットし、文脈劣化を構造的に防ぐ (ADR-012)。Phase D-1 で N=3 tmux worker pane 並列化に拡張 (#316)、backward compat として N=1 の従来 2 pane モードも保持。
 
 **前提**:
 - 関連 plan: `/home/bacon/.claude/plans/3ai-loop-ui-ux-jaunty-ember.md`
@@ -19,16 +19,16 @@ EngawaCAD の Issue を **無人で連続消化** する Skill。サイクル完
 
 各 STEP は **bun TS スクリプト** を 1 つ呼ぶだけ。Claude は薄い orchestrator として stdout に従う (判定は TS 側)。
 
-### L-A: tmux 自動 dispatch (#185)
+### L-A: tmux 自動 dispatch (#185, #316 Phase D-1)
 
-`/3ailoop` を tmux session 内で素打ちしたとき、watcher 未起動なら自動で右ペイン自走モードに乗る。worker pane 内で動いている場合や非 tmux 環境ではこのステップは no-op で L-0 へ。
+`/3ailoop` を tmux session 内で素打ちしたとき、watcher 未起動なら自動で (2+N) pane 自走モードに乗る (N=3 default、`LOOP_MAX_WORKERS=1` で従来 2-pane モード)。worker pane 内で動いている場合や非 tmux 環境ではこのステップは no-op で L-0 へ。
 
 ```bash
 MODE=$(bun .claude/skills/3ailoop/scripts/loop-tmux-dispatch.ts)
 case "$MODE" in
   start)
     bun .claude/skills/3ailoop/scripts/loop-tmux-start.ts \
-      --claude-cmd "claude --dangerously-skip-permissions"
+      --claude-cmd "claude --dangerously-skip-permissions --model sonnet"
     exit 0
     ;;
   already-running)
@@ -41,9 +41,26 @@ case "$MODE" in
 esac
 ```
 
-- `start`           — `$TMUX` set + watcher 未起動。`loop-tmux-start.ts` を呼ぶ ⇒ 右ペインが split で開き、claude 起動 → `/3ailoop` 自動投入 → watcher daemon spawn。**Claude 本体はここで終了** (= ユーザーが打った pane はオーケストレーター pane として解放される)
-- `continue`        — `$TMUX` 未設定、または worker pane 内で /clear → /3ailoop で再投入された経路。L-0 へ進む
+- `start`           — `$TMUX` set + watcher 未起動。`loop-tmux-start.ts` を呼ぶ ⇒:
+  - **N=1 (backward compat)**: 右ペインが split で開き、claude 起動 → `/3ailoop` 自動投入 → watcher daemon spawn
+  - **N>=2 (default 3)**: merge pane + worker × N の (2+N) pane split → 各 worker に worktree 割当 (`git worktree add /home/bacon/worktrees/wN HEAD`) → claude 起動 → worker-registry に登録 → watcher daemon spawn (fan-out mode)
+  - どちらも **Claude 本体はここで終了** (= ユーザーが打った pane はオーケストレーター pane として解放される)
+- `continue`        — `$TMUX` 未設定、または worker pane 内で /clear → /3ai --issue N で再投入された経路。L-0 へ進む
 - `already-running` — `$TMUX` あり + watcher 生存 + 自分は worker pane 以外。手動 /3ailoop の二重実行を避けるため何もせず終了 (#185 R4-F01)
+
+**tmux 構成 (N>=2)**:
+
+```
+tmux window
+├─ orchestrator pane          (ユーザーが素打ちした pane、start.ts 終了後は解放)
+├─ merge pane                 (loop-tmux-merge-dispatcher.ts --watch が常駐)
+├─ worker-1 pane (worktree A) Claude Sonnet 5、watcher の指示で /3ai --issue N を実行
+├─ worker-2 pane (worktree B) 同上
+└─ worker-3 pane (worktree C) 同上
+```
+
+- worker-registry.json (`features/.loop/worker-registry.json`) が各 worker の state (idle/busy/merging/error) と current_issue を管理
+- watcher daemon が空 worker を検出して次の Issue を assign + `/clear`+`/3ai --issue N` を send-keys で投入
 
 ### L-0: lock 取得
 
@@ -188,20 +205,61 @@ bun .claude/skills/3ai/scripts/batch-select.ts --loop
 
 - `features/.batch/plan.json` に loop 用プラン生成
 - split-batch tier 最優先、gate/needs-* / blocked-by-split は除外
-- 次に着手する Issue を plan.json から取り出して通知:
-  ```bash
-  ISSUE_N=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync("features/.batch/plan.json","utf-8")).issues?.[0]?.number ?? "")')
-  ISSUE_TITLE=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync("features/.batch/plan.json","utf-8")).issues?.[0]?.title ?? "")')
-  if [ -n "$ISSUE_N" ]; then
-    bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-start --text "[START] #${ISSUE_N} 着手: ${ISSUE_TITLE}"
-  fi
-  ```
+- **#316 Phase D-1: crate_group 出力** — 各 group に `crate_groups: [{id, issues, parallel_safe, reason}]` が付与される。同 crate group は serial、別 crate group は parallel dispatch 可能
+
+次に着手する Issue の取り出し方は tmux モードで異なる:
+
+**N=1 (backward compat)**: 従来通り 1 Issue pop:
+```bash
+ISSUE_N=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync("features/.batch/plan.json","utf-8")).issues?.[0]?.number ?? "")')
+ISSUE_TITLE=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync("features/.batch/plan.json","utf-8")).issues?.[0]?.title ?? "")')
+if [ -n "$ISSUE_N" ]; then
+  bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind issue-start --text "[START] #${ISSUE_N} 着手: ${ISSUE_TITLE}"
+fi
+```
+
+**N>=2**: L-3.5 の fan-out で watcher が代行 (このステップでは plan.json 生成のみ、Issue の pop は watcher 側の責務)。
+
+### L-3.5: Fan-out to N workers (#316 Phase D-1、N>=2 のみ)
+
+watcher daemon が polling で発火する処理 (Claude orchestrator は直接実行しない):
+
+1. worker-registry.json を読み、`state: idle` の worker を列挙
+2. plan.json の `crate_groups` をフラット化して `worker-queue.jsonl` (未実装で in-memory) に enqueue
+   - `parallel_safe: true` group → 全 Issue を並列 enqueue OK
+   - `parallel_safe: false` group → group 内は同時 in-flight 上限 1
+3. 各 idle worker に 1 Issue を assign:
+   ```bash
+   bun .claude/skills/3ailoop/scripts/loop-worker-registry.ts assign --worker-id worker-N --issue $ISSUE_N
+   ```
+4. 該当 worker pane に slash command を投入:
+   ```bash
+   tmux send-keys -t <worker-N-pane_id> "/clear" Enter
+   tmux send-keys -t <worker-N-pane_id> "/3ai --issue $ISSUE_N" Enter
+   ```
+
+N=1 モードでは L-3.5 は no-op、L-4 に進む。
 
 ### L-4: /3ai 自律モード起動
 
-Skill ツールで `/3ai` を **引数なし** で起動 (自律モードで動作、STEP 2.5/4 で ExitPlanMode skip、B-3/B-6 で自動判断)。
+**N=1**: Skill ツールで `/3ai` を **引数なし** で起動 (自律モードで動作、STEP 2.5/4 で ExitPlanMode skip、B-3/B-6 で自動判断)。/3ai 内部で 1 Issue を消化 → 自動 commit + push (Closes #N)、自動 close。
 
-/3ai 内部で 1 Issue を消化 → 自動 commit + push (Closes #N)、自動 close。
+**N>=2**: 各 worker pane で並列に `/3ai --issue N` が起動される (watcher が L-3.5 で送信済み)。各 worker は独立 worktree で動作、STEP 8 で main に直接 push せず、代わりに:
+
+1. `bun loop-worker-registry.ts mark-merging --worker-id worker-N`
+2. `bun loop-tmux-merge-dispatcher.ts --enqueue --issue N --worker-id worker-N --worktree <path> --commit-sha $(git rev-parse HEAD)`
+3. worker pane は次の Issue 割当を待つ (idle 状態に遷移)
+
+merge pane が serial 処理:
+- merge lock 取得 → rebase → cargo xtask ci → push → Issue close → worker release
+
+### L-4.5: Barrier + per-worker cycle-record (#316 Phase D-1、N>=2 のみ)
+
+watcher daemon が polling で発火:
+
+- merge pane の `merge-history.jsonl` を tail して完了した Issue を検出
+- 各完了 Issue ごとに L-5 (cycle-record) を発火 (worker 単位ではなく Issue 単位)
+- 全 worker 完了を待つ barrier ではなく、**完了順に発火** (先に終わった Issue から dashboard 更新)
 
 ### L-5: サイクル記録
 

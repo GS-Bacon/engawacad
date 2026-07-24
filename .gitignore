@@ -17,4 +17,11 @@ features/.batch/
 features/.loop/tmux/
 features/.loop/issue-cache.json
 features/.loop/context-cache.json
+# Phase D-1 (#316): transient runtime artifacts (test artifacts and lock files)
+features/.loop/merge-dispatcher.lock-target
+features/.loop/merge-errors.jsonl
+features/.loop/merge-history.jsonl
+features/.loop/worker-registry.json
+features/.loop/worker-queue.jsonl
+features/.loop/fanout-state.json
 .claude/scheduled_tasks.lock

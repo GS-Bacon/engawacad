@@ -75,10 +75,28 @@ export interface BatchIssue {
   raw_refs: number[];
 }
 
+/**
+ * 同一 crate/module を触ると推定される Issue の serial 実行単位。
+ * `parallel_safe: true` の group は他 group の worker と並列可、
+ * `false` の group は内部の Issue を単一 worker で serial 実行する。
+ */
+export interface CrateGroup {
+  /** グループ識別子 (例: "engawa-format-sketch", "batch:kernel-misc") */
+  id: string;
+  /** グループに属する Issue 番号 (昇順) */
+  issues: number[];
+  /** 他 crate_group と並列実行しても衝突しないか (singleton は true) */
+  parallel_safe: boolean;
+  /** 判定の根拠 (人間向けメモ) */
+  reason: string;
+}
+
 export interface BatchGroup {
   group: string;
   order: number;
   issues: BatchIssue[];
+  /** N=3 parallel worker 割り当て用の細粒度グルーピング (additive、未算出なら省略) */
+  crate_groups?: CrateGroup[];
 }
 
 export interface BatchPlan {
