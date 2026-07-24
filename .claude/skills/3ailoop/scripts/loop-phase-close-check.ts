@@ -17,57 +17,41 @@
 //   bun loop-phase-close-check.ts apply [--phase N] [--dry-run]
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { dirname } from "path";
 
 const ROADMAP_PATH = "ROADMAP.md";
 
-// ADR-013: 3 Phase ごとの Fable 5 全体監査トリガー
+// ADR-013 + #319 Phase E: 3 Phase ごとの Phase audit トリガー
+// (旧 Fable 5 監査 → 3 系統独立 adversarial audit に置換、Fable 5 は禁止 memory:fable-5-banned)
+// export 名は backward compat のため FABLE5_AUDIT_PHASES を維持、alias で PHASE_AUDIT_PHASES も export。
 export const FABLE5_AUDIT_PHASES = new Set([11, 14, 17, 20]);
+export const PHASE_AUDIT_PHASES = FABLE5_AUDIT_PHASES;
 
-async function raiseFable5AuditIssue(phase: number): Promise<{ ok: boolean; issue?: number; error?: string }> {
-  const title = `audit(fable5): Phase ${phase} 完了監査 — 直近 3 Phase の ADR + 実装乖離 + 過去 ADR 矛盾`;
-  const body = [
-    `## 概要`,
-    "",
-    `ADR-013 の規定により、Phase ${phase} 完了時に Fable 5 で全体監査を実施する。`,
-    "",
-    `## 監査対象`,
-    "",
-    `直近 3 Phase (Phase ${phase - 2}〜${phase}) の以下を Fable 5 で審査:`,
-    "",
-    `- 新規 / 改訂 ADR の整合性 (過去 ADR との矛盾、採用前提崩壊 trigger の発火可能性)`,
-    `- 実装と ADR の乖離 (ADR で決めた性質を破る実装)`,
-    `- 過去 ADR の前提崩壊 (Phase 進行で前提が変わった可能性)`,
-    `- ADR 自動 accept フロー (ADR-013) の判定品質 (Phase ${phase - 2}〜${phase} で accept された ADR の事後妥当性)`,
-    "",
-    `## 出力`,
-    "",
-    `- critical: 即座に修正 Issue 起票 (loop が消化)`,
-    `- high / medium: 別 Issue 起票して Phase ${phase + 1} 中に消化`,
-    `- low: ADR-013 採用前提崩壊 trigger の発火判定材料として記録`,
-    "",
-    `## 関連`,
-    "",
-    `- ADR-013 (ADR 自動 accept フロー)`,
-    `- memory: feedback_fable5_strategy`,
-  ].join("\n");
-
+/** #319 Phase E: 3 系統独立 adversarial audit を invoke (Fable 5 単一 Issue 起票を置換)。
+ *  loop-phase-audit.ts が Opus 4.7 (集約役) + Codex 3 persona + GLM 3 persona を並列 dispatch し、
+ *  findings 集約後に critical/high/medium を Issue 化する (cap 5)。 */
+async function invokePhaseAudit(phase: number): Promise<{ ok: boolean; issues?: number[]; error?: string }> {
+  const scriptPath = `${dirname(new URL(import.meta.url).pathname)}/loop-phase-audit.ts`;
   const proc = Bun.spawn(
-    [
-      "gh", "issue", "create",
-      "--title", title,
-      "--body", body,
-      "--label", "type: foundation,batch:kernel",
-    ],
+    ["bun", scriptPath, "--phase", String(phase)],
     { stdout: "pipe", stderr: "pipe" },
   );
   const out = (await new Response(proc.stdout).text()).trim();
   const err = (await new Response(proc.stderr).text()).trim();
   await proc.exited;
   if (proc.exitCode !== 0) {
-    return { ok: false, error: err || `gh exit ${proc.exitCode}` };
+    return { ok: false, error: err || `loop-phase-audit exit ${proc.exitCode}` };
   }
-  const m = out.match(/\/issues\/(\d+)$/);
-  return { ok: true, issue: m ? parseInt(m[1]) : undefined };
+  // loop-phase-audit.ts の stdout 末尾に JSON 結果を出す想定
+  // フォーマット: {"phase": N, "created_issues": [401, 402], ...}
+  const lastLine = out.split("\n").filter(l => l.trim().startsWith("{")).pop();
+  if (!lastLine) return { ok: true, issues: [] };
+  try {
+    const parsed = JSON.parse(lastLine);
+    return { ok: true, issues: parsed.created_issues ?? [] };
+  } catch {
+    return { ok: true, issues: [] };
+  }
 }
 
 function detectCurrentPhase(): number | null {
@@ -295,14 +279,16 @@ async function apply(phase: number, dryRun: boolean): Promise<{ ok: boolean; act
   await recordDecision(`Phase ${phase} 完了 (milestone closed, ROADMAP ✅化)`);
   actions.push(`appended decision-log`);
 
-  // ADR-013: Phase 11/14/17/20 完了時に Fable 5 監査 Issue を起票
-  if (FABLE5_AUDIT_PHASES.has(phase)) {
-    const audit = await raiseFable5AuditIssue(phase);
+  // #319 Phase E: Phase 11/14/17/20 完了時に 3 系統 adversarial audit を invoke
+  // (旧 Fable 5 監査から置換、memory:fable-5-banned)
+  if (PHASE_AUDIT_PHASES.has(phase)) {
+    const audit = await invokePhaseAudit(phase);
     if (audit.ok) {
-      actions.push(`raised Fable 5 audit issue #${audit.issue ?? "?"}`);
-      await recordDecision(`Phase ${phase} Fable 5 監査 Issue #${audit.issue ?? "?"} を起票 (ADR-013)`);
+      const issueList = (audit.issues ?? []).map(n => `#${n}`).join(", ") || "0 件";
+      actions.push(`invoked 3-系統 phase audit → ${issueList}`);
+      await recordDecision(`Phase ${phase} 3 系統 adversarial audit 実行 (created: ${issueList})`);
     } else {
-      actions.push(`WARNING: Fable 5 audit issue create failed: ${audit.error}`);
+      actions.push(`WARNING: phase audit invoke failed: ${audit.error}`);
     }
   }
 

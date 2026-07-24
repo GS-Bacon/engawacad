@@ -94,14 +94,22 @@ GLM 自身もコケた (Z.AI outage 等) 場合は 3 persona 全 fail で refute
 }
 ```
 
-#### 4. Fable 5 全体監査 (3 Phase ごと)
+#### 4. 3 系統独立 adversarial audit (3 Phase ごと) — #319 Phase E で改訂
 
-memory: `feedback_fable5_strategy` で「2 倍コストの主な投入先は『3 Phase ごと全体監査』」と決めている。本 ADR ではこれを **Phase 11 / 14 / 17 / 20 完了時に自動起票** する:
+**改訂履歴** (2026-07-24): 旧版では Fable 5 単一 audit を採用していたが、Fable 5 は Opus 4.8 auto-fallback ([[opus-4-8-banned]]) が観測されたため使用禁止 ([[fable-5-banned]])。**3 系統独立 adversarial review** に置換した。
 
-- `loop-phase-close-check.ts apply` が Phase N 完了処理を実行する直後 (N ∈ {11, 14, 17, 20}) に、Fable 5 監査 Issue を 1 件起票
-- Body: 「直近 3 Phase の ADR + 実装乖離 + 過去 ADR 矛盾を Fable 5 で全体審査」
-- Labels: `type: foundation`, `batch:kernel` (Fable 5 が消化可能、batch-select で次 cycle に pick される)
-- Findings は監査 Issue 消化中に Codex review の `split_proposal` で別 Issue に派生 → loop が順次消化
+本 ADR では **Phase 11 / 14 / 17 / 20 完了時に自動 invoke** する:
+
+- `loop-phase-close-check.ts apply` が Phase N 完了処理を実行する直後 (N ∈ {11, 14, 17, 20}) に、内部で `invokePhaseAudit(N)` → `loop-phase-audit.ts --phase N` を spawn
+- **3 系統 dispatch** (並列): Opus 4.7 (Anthropic 系 audit + 集約役) / Codex 3 persona (OpenAI 系: architect/contrarian/migration) / GLM 3 persona (Z.AI 系: impl-detail)
+- **入力**: 直近 3 Phase (N-2..N) の ADR 変更 / 実装 diff / cycle-journal → `features/.loop/phase-audit-N/input.md` に集約
+- **集約** (Opus 4.7): findings dedupe + severity 統一 → critical/high/medium/low に分類
+- **Issue 起票**: critical (即修正、loop が消化) / high, medium (`defer:phase-N+1` ラベル) / low (record only)、上限 5 (retrospective と同じキャップ)
+- **ログ**: `features/.loop/phase-audit-log.jsonl` に append
+
+**現状 (MVP)**: 3 系統 dispatch は pure-script stub 実装 ([[project-3ailoop-implementation-style]] の Anthropic 側 subagent 課金配慮)。Phase 11 approaching 時に real LLM wiring に切り替える (TODO: `loop-phase-audit.ts` の `defaultDispatchDeps()` 参照)。
+
+**なぜ 3 系統 (相関盲点破り)**: Fable 5 単一よりも 3 モデルファミリ独立 adversarial の方が blind spot 破りの理論的強度が高い。特に ADR ↔ 実装乖離のような "same-blind-spot" 検出は独立系統の対比が必須。
 
 これにより 3 Phase 内で設計ドリフトが検知され、Phase 20 ゲート (UI 期前) に到達した時点では監査済みの ADR 群となる。
 

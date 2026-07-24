@@ -121,6 +121,25 @@ phase-close-check は内部で **split parent auto-close** (#271) も実施す�
   かつ `parent-blocked-by-split:N` 子 Issue が全 closed なら、親を auto-close
 - これがないと #194/#195/#206 系の split 親が永遠に open で Phase 完了判定が失敗する
 
+**#319 Phase E: 3 系統 adversarial audit** (Phase 11/14/17/20 完了時のみ、旧 Fable 5 監査から置換):
+
+`loop-phase-close-check.ts apply` が Phase 11/14/17/20 の完了処理を成功させた直後、内部で `loop-phase-audit.ts --phase N` を invoke する (関数名 `invokePhaseAudit`)。
+
+`loop-phase-audit.ts` の動作:
+1. 直近 3 Phase (N-2..N) の ADR 変更 / 実装 diff / cycle-journal をまとめて `features/.loop/phase-audit-N/input.md` に集約
+2. **3 系統独立 adversarial dispatch** (並列):
+   - **Opus 4.7** (Anthropic 系): Anthropic 系 audit + 集約役
+   - **Codex 3 persona** (OpenAI 系): architect / contrarian / migration
+   - **GLM 3 persona** (Z.AI 系): impl-detail 系
+3. **barrier** で 3 系統完了待ち
+4. **集約** (Opus 4.7): 各系統の findings を dedupe + severity 統一 → critical/high/medium/low に分類
+5. **Issue 起票**: critical (即修正、loop 消化) / high, medium (defer:phase-N+1) / low (record only)。上限 5
+6. **ログ**: `features/.loop/phase-audit-log.jsonl` に append
+
+**現状 (MVP)**: 3 系統 dispatch は **pure-script stub** (`feedback_3ai_billing` の Anthropic claude -p 禁止に配慮)。Phase 11 approaching 時に実 LLM wiring に切り替える TODO を code コメントに明記。
+
+**Fable 5 が使えない理由**: [[fable-5-banned]] — Opus 4.8 auto-fallback あり (tool call 破壊 [[opus-4-8-banned]])。3 系統独立 adversarial は Fable 5 単一よりも correlation blind spot 破りの観点で強い。
+
 ### L-1.65: Phase retrospective (#315)
 
 L-1.6 で Phase 完了が確定した cycle のみ発火。Phase 11/14/17/20 は 3 系統 adversarial audit (別枠) と重複するため **skip**、それ以外の Phase で loop 運用メトリクスを自動振り返り。
