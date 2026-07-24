@@ -7,5 +7,5 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-engawa-kernel = { path = "../engawa-kernel" }
-engawa-format = { path = "../engawa-format" }
+engawa-kernel = { workspace = true }
+engawa-format = { workspace = true }
