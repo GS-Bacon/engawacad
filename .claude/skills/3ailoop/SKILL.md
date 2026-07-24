@@ -254,7 +254,8 @@ watcher daemon が polling で発火する処理 (Claude orchestrator は直接�
 4. 該当 worker pane に slash command を投入:
    ```bash
    tmux send-keys -t <worker-N-pane_id> "/clear" Enter
-   tmux send-keys -t <worker-N-pane_id> "/3ai --issue $ISSUE_N" Enter
+   tmux send-keys -t <worker-N-pane_id> "/3ai --issue $ISSUE_N --autonomous" Enter
+   # #320: --autonomous 必須。/3ai --issue N 単独は対話モード (STEP 4 ExitPlanMode 承認待ち)
    ```
 
 N=1 モードでは L-3.5 は no-op、L-4 に進む。

@@ -902,7 +902,8 @@ export async function runFanoutDaemon(
         }
         await sendKeysToWorker(pid, "/clear", dryRun);
         // /clear 後の pane 復帰は fan-out では待たず送信 (worker Claude が buffering する)
-        await sendKeysToWorker(pid, `/3ai --issue ${a.issue}`, dryRun);
+        // #320: --autonomous フラグ必須。/3ai --issue N は対話モードで STEP 4 承認待ちになる
+        await sendKeysToWorker(pid, `/3ai --issue ${a.issue} --autonomous`, dryRun);
         fanoutState.inflight.set(a.groupId, a.issue);
         lastActivity.set(a.workerId, Date.now());
       }

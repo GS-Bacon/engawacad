@@ -12,10 +12,23 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 
 ## 引数解釈（最初に判定）
 
-- `/3ai --issue N` → **単一 Issue モード**。STEP 0 へ直行（既存フロー、変更なし）。  
-- `/3ai`（引数なし）→ **自律バッチモード**（承認待ちなし・無人進行）。STEP B へ。`plan.json.batch_arg === null` がスイッチ。  
-- `/3ai --batch fixes` → **対話バッチモード**（bug+batch:* に絞る、従来どおりユーザー確認あり）。STEP B へ。  
-- `/3ai --batch phase` → **対話バッチモード**（現 Phase milestone の type:feature に絞る、従来どおりユーザー確認あり）。STEP B へ。  
+- `/3ai --issue N` → **単一 Issue モード** (対話)。STEP 0 へ直行。承認待ちあり (STEP 4 ExitPlanMode 実行)。
+- `/3ai --issue N --autonomous` → **単一 Issue 自律モード** (#320 Phase D-1 対応)。STEP 0 へ直行、STEP 4 ExitPlanMode skip + 各種 escalation は Opus 4.7 subagent 判定に委譲。**watcher fan-out (L-3.5) が使う経路**。
+- `/3ai`（引数なし）→ **自律バッチモード**（承認待ちなし・無人進行）。STEP B へ。`plan.json.batch_arg === null` がスイッチ。
+- `/3ai --batch fixes` → **対話バッチモード**（bug+batch:* に絞る、従来どおりユーザー確認あり）。STEP B へ。
+- `/3ai --batch phase` → **対話バッチモード**（現 Phase milestone の type:feature に絞る、従来どおりユーザー確認あり）。STEP B へ。
+
+### 自律モード判定 (STEP 内で参照)
+
+以下のいずれかを満たすとき **自律モード**:
+1. `--batch` 付き起動で `batch_arg === null` (引数なし起動、自律バッチ)
+2. `--issue N --autonomous` (単一 Issue 自律)
+
+自律モードで skip / 委譲される STEP:
+- STEP 4 ExitPlanMode → skip (情報共有のみ、待たない)
+- STEP 6.5 期待値乖離エスカレ → Opus 4.7 subagent 判定に委譲 (memory: [[opus-delegation-for-implementation]])
+- STEP 6-D adversarial refute エスカレ → Opus 4.7 subagent 判定に委譲
+- STEP 7 critical エスカレ → Opus 4.7 subagent 判定に委譲
 
 ---
 
@@ -431,10 +444,11 @@ Agent(
 
 ## STEP 4: 確定プラン提出（唯一の承認点）
 
-> **自律バッチモード（引数なし起動, `batch_arg === null`）では本 STEP の `ExitPlanMode` をスキップし、確定 plan の要点を情報共有として表示するのみ（待たない）。B-4 の手順に従ってそのまま STEP 5 へ進む。**  
-> 対話バッチモード（`batch_arg !== null`）および単一 Issue モードでは下記のとおり唯一の承認点として維持する。
+> **自律モードでは本 STEP の `ExitPlanMode` をスキップし、確定 plan の要点を情報共有として表示するのみ（待たない）。そのまま STEP 5 へ進む。**  
+> 自律モード = 「引数なし起動 (`batch_arg === null`)」または「`--issue N --autonomous` 起動 (#320)」。
+> 対話バッチモード（`batch_arg !== null`）および単一 Issue 対話モード (`--issue N` 単独) では下記のとおり唯一の承認点として維持する。
 
-**`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点（対話/単一 Issue モード）。**
+**`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点（対話/単一 Issue 対話モード）。**
 
 GLM レビュー反映後の plan を提示しユーザーに承認を求める。
 
