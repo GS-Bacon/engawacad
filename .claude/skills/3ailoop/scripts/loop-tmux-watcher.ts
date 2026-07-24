@@ -331,24 +331,39 @@ export function planFanout(
 export function updateFanoutStateFromRegistry(
   state: FanoutState,
   registry: Record<string, WatcherRegistryEntry>,
+  plan?: BatchPlan | null,
 ): FanoutState {
   const next: FanoutState = {
     inflight: new Map(state.inflight),
     completed: new Set(state.completed),
   };
-  // 逆引き: issue → groupId
-  const issueToGroup = new Map<number, string>();
-  for (const [gid, issue] of next.inflight) issueToGroup.set(issue, gid);
   const stillActive = new Set<number>();
   for (const w of Object.values(registry)) {
     if (w.current_issue !== null && (w.state === "busy" || w.state === "merging")) {
       stillActive.add(w.current_issue);
     }
   }
+  // 既存 inflight のうち registry から消えた entry を completed に昇格
   for (const [gid, issue] of Array.from(next.inflight.entries())) {
     if (!stillActive.has(issue)) {
       next.inflight.delete(gid);
       next.completed.add(issue);
+    }
+  }
+  // #320: registry で busy/merging だが inflight に載ってない Issue を seed する。
+  // watcher restart 時に in-memory state が飛ぶと、同 group の別 worker に
+  // 二重 assign する race がここで塞げる。plan.json の crate_groups を参照して
+  // Issue → group を逆引きする。
+  if (plan) {
+    const issueToGroup = new Map<number, string>();
+    for (const g of plan.crate_groups) {
+      for (const issue of g.issues) issueToGroup.set(issue, g.id);
+    }
+    for (const issue of stillActive) {
+      const gid = issueToGroup.get(issue);
+      if (gid !== undefined && !next.inflight.has(gid)) {
+        next.inflight.set(gid, issue);
+      }
     }
   }
   return next;
@@ -871,7 +886,6 @@ export async function runFanoutDaemon(
 
       // --- 3. fan-out ---
       const registry = readWorkerRegistryFromDisk();
-      fanoutState = updateFanoutStateFromRegistry(fanoutState, registry);
 
       // idle worker の有無を確認
       const anyIdle = Object.values(registry).some(w => w.state === "idle");
@@ -884,6 +898,9 @@ export async function runFanoutDaemon(
           plan = readCurrentPlan();
         }
       }
+
+      // #320: registry + plan を反映 (busy Issue の crate_group を inflight に seed)
+      fanoutState = updateFanoutStateFromRegistry(fanoutState, registry, plan);
 
       const assignments = planFanout(registry, plan, fanoutState);
       for (const a of assignments) {

@@ -505,6 +505,45 @@ describe("updateFanoutStateFromRegistry (Phase D-1)", () => {
     expect(next.inflight.get("cg-a")).toBe(100);
     expect(next.completed.has(100)).toBe(false);
   });
+
+  test("#320: watcher restart 想定 — in-memory inflight 空 + registry busy → plan 参照で seed", () => {
+    // watcher が SIGTERM → 新 watcher が起動、in-memory state は空。
+    // ただし worker-1 は #295 で busy 継続。plan.crate_groups で逆引きして
+    // inflight に seed し直すべき (これがないと worker-2 に #295 二重 assign)
+    const state = emptyFanoutState(); // empty in-flight
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "busy", current_issue: 295 },
+      "worker-2": { state: "idle", current_issue: null },
+    };
+    const plan: BatchPlan = {
+      crate_groups: [
+        { id: "engawa-format-sketch", parallel_safe: false, issues: [295, 296, 297] },
+      ],
+    };
+    const next = updateFanoutStateFromRegistry(state, registry, plan);
+    expect(next.inflight.get("engawa-format-sketch")).toBe(295);
+  });
+
+  test("#320: plan なしの場合は seed しない (backward compat)", () => {
+    const state = emptyFanoutState();
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "busy", current_issue: 100 },
+    };
+    const next = updateFanoutStateFromRegistry(state, registry);
+    expect(next.inflight.size).toBe(0);
+  });
+
+  test("#320: busy Issue が plan.crate_groups に見つからない → seed しない (skip)", () => {
+    const state = emptyFanoutState();
+    const registry: Record<string, WatcherRegistryEntry> = {
+      "worker-1": { state: "busy", current_issue: 999 }, // plan に無い
+    };
+    const plan: BatchPlan = {
+      crate_groups: [{ id: "cg-a", parallel_safe: false, issues: [100, 200] }],
+    };
+    const next = updateFanoutStateFromRegistry(state, registry, plan);
+    expect(next.inflight.size).toBe(0);
+  });
 });
 
 describe("T_bonus_watcher_n1_backward (Phase D-1)", () => {
