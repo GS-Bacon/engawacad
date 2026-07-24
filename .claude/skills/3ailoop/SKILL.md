@@ -171,6 +171,21 @@ echo "$RECORD_JSON" | bun -e '
 done
 ```
 
+**#313 Phase A: workspace.dependencies 集約 lint** (CLAUDE.md の依存管理原則を機械検査):
+
+```bash
+WD_OUT=$(bun .claude/skills/3ai/scripts/lint-workspace-deps.ts 2>&1)
+WD_RC=$?
+echo "$WD_OUT" | tail -20
+if [ $WD_RC -ne 0 ]; then
+  # 非 blocking: warn を Discord に流すのみ (loop は継続)
+  VIOLATIONS=$(echo "$WD_OUT" | grep -c "^ERROR:")
+  bun .claude/skills/3ailoop/scripts/loop-notify.ts --kind cruft --text "[WARN] workspace.dependencies 非集約 dep 検出 (詳細は loop 出力)"
+fi
+```
+
+このステップは warn のみ (blocking gate 化は Phase C 以降で判断)。
+
 ### L-5.5: Decision log 追記 (条件付き)
 
 サイクル中に重要判断 (ADR draft / Issue 分割 / 失敗退避) があれば手動で:
@@ -341,6 +356,19 @@ bun .claude/skills/3ailoop/scripts/loop-dashboard.ts
 ```
 
 `features/.dashboard.md` を累積俯瞰型で上書き。
+
+**#313 Phase A: cruft トレンド snapshot + render** (`#[ignore]` / `#[allow(clippy::)]` / regression test file 数の推移):
+
+```bash
+# 1. 現在の cruft 数を features/.loop/cruft-trend.jsonl に append
+bun .claude/skills/3ailoop/scripts/dashboard-cruft-trend.ts snapshot
+
+# 2. dashboard 末尾に「## Cruft Trend」セクションを append (3 snapshot 前との差分)
+CRUFT_MD=$(bun .claude/skills/3ailoop/scripts/dashboard-cruft-trend.ts render)
+printf '\n---\n\n%s\n' "$CRUFT_MD" >> features/.dashboard.md
+```
+
+累積傾向を可視化するだけで blocking はしない。`#[ignore]` / `#[allow(clippy::)]` が silently 増え続ける「loop 自体が bad state を生む」構造の早期検知に使う。
 
 ### L-7: 失敗ループ検出
 

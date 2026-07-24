@@ -13,7 +13,13 @@
 // 使い方:
 //   bun loop-tmux-start.ts                # 通常起動
 //   bun loop-tmux-start.ts --dry-run      # tmux コマンド列を stdout に echo するのみ
-//   bun loop-tmux-start.ts --claude-cmd "claude --dangerously-skip-permissions"
+//   bun loop-tmux-start.ts --claude-cmd "claude --dangerously-skip-permissions --model sonnet"
+//
+// worker pane のデフォルト model は Sonnet 5:
+//   - Phase A (#313) で Opus 4.7 → Sonnet 5 に変更
+//   - 判断が重い STEP (STEP 3-D / 3.5-B / 6-C / 6.7 / 7 critical) は
+//     /3ai 内から Agent tool 経由で Opus 4.7 subagent に委譲する
+//   - Opus 4.8 は tool call 破壊のため禁止 (memory: opus-4-8-banned)
 //
 // 関連: ADR-012, Issue #181
 
@@ -212,7 +218,10 @@ function spawnWatcherDaemon(): number {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  let claudeCmd = "claude";
+  // Phase A (#313): worker pane 起動 model を Sonnet 5 に変更。
+  // Opus 4.7 は Agent tool 経由で個別 STEP 委譲時に使う。
+  // Opus 4.8 は tool call 破壊のため禁止 (memory: opus-4-8-banned)。
+  let claudeCmd = "claude --model sonnet";
   const ccIdx = args.indexOf("--claude-cmd");
   if (ccIdx >= 0 && args[ccIdx + 1]) claudeCmd = args[ccIdx + 1];
 

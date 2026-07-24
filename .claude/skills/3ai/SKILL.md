@@ -468,7 +468,17 @@ fn t02_build_manifold_euler() { todo!() }
    - 変更のみ（既存 example の修正）: 既存テストがあれば追加不要
    - このステップで追加したテストを `cargo test -p engawa-build --test examples_smoke` で確認する
    - 現時点で build が通らないことが既知の場合は `#[ignore = "known bug: #<N>"]` を付ける
-7. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
+
+7. **#313 Phase A: regression test 削除検知** — 過去バグの再発防止テスト (`crates/**/tests/regression_*.rs`) を silently 削除していないか差分検査:
+   ```bash
+   bun .claude/skills/3ai/scripts/lint-regression-preserved.ts
+   RC=$?
+   ```
+   - `RC=0`: 削除なし、次へ
+   - `RC=1`: **blocking**。削除された regression test を復元するか、意図的削除なら plan.md の該当セクションに「Regression test 削除: <理由>」を明記してから再実行
+   - `RC=2`: 環境エラー (git repo でない / base ref 不明)、ユーザーへエスカレ
+
+8. `bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json acceptance_skeleton passed`
 
 ---
 
