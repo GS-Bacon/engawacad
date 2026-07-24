@@ -1,0 +1,192 @@
+# plan: #295 Sketch Offset を engawa-format / engawa-build に実装
+
+## 自律判断ログ (autonomous mode, cycle 86)
+
+- Issue 本文の `SketchEdit::Offset { target_id, distance }` は ADR-017 §3 表 (`SketchOffset { sketch_ref, selection: Vec<element_id>, distance }`) と齟齬。ADR-017 が accepted 済で authoritative なので ADR-017 に従う。
+- ADR-017 §3 の `sketch_ref: EntityRef` は cycle 77 で Codex architect が「EntityRef は B-rep Face/Edge/Vertex 専用 (ADR-005 契約)」として refute し、#276 が同理由で block した経路。既存 `Feature::Extrude.sketch: String` の慣習に合わせ **`sketch: String`** を採用 (ADR-005 EntityRef scope 遵守 + Extrude/ExtrudeCut と対称)。
+- selection は `Vec<String>` (element ID)。**空 = 全要素選択** (ADR-006 スコープ内で CAD 通例に合わせる)。
+- Ellipse / Conic の offset は数値反復解法が要る (代数的表現できない) ため Out-of-Scope。選択に含まれた場合 `KernelError::UnsupportedFeature { kind: "sketch_offset_of_ellipse_or_conic" }` で fail-fast。
+
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `Feature::SketchOffset { id, sketch, selection, distance, suppressed }` の YAML 型定義 + serde tagged (`type: sketch_offset`) | Sketch Fillet (#296) / Sketch Chamfer (#297) — 別 Issue |
+| serialize → deserialize roundtrip | Trim / Extend (#276) — 別 Issue |
+| `Line` の平行 offset (垂直方向 90° CCW 平行移動) | Ellipse / Conic の offset — 数値反復解法要 (別 Issue 提案) |
+| `Circle` の signed offset (radius ± distance) | Multi-contour profile ([lint 側で reject 済み](../../crates/engawa-build/src/lib.rs)) |
+| `Arc` の signed offset (radius ± distance, angle 保持) | `Vec<element_id>` per-element の split (element を 2 つに分けるケース — Trim 系の議論) |
+| `distance ≈ 0` (`abs(distance) <= EPS_LENGTH`) → no-op で入力 profile を保持 | Constraint solver との整合 (Phase 11 以降) |
+| 退化検出: offset 結果の element 長 / radius が `<= EPS_LENGTH` なら fail-fast (`DegenerateSketchElement`) | 履歴ロールバック / 削除時の SketchRef 解決失敗経路 (別 Issue) |
+| Ellipse / Conic を selection に含む場合の explicit refuse (`UnsupportedFeature`) | 3D offset (本 Issue は sketch = 2D 平面内) |
+| `engawa-build` dispatch: `built_sketch_profiles: HashMap<String, Vec<SketchElement>>` 導入 → Extrude/ExtrudeCut が offset 適用後の profile を読む | `SelfIntersection` 検出 (Issue 本文の完了条件だが今回は "collapse = DegenerateSketchElement" として代替、self intersection の一般判定は Trim/Fillet と一緒に別 Issue) |
+| `examples/sketch_offset.engawa` 追加 + `examples_smoke.rs` に entry | Non-uniform selection の順序保証 (ADR-005 派生 ID 議論、本 Issue は selection 順に線形適用) |
+| Golden YAML fixture 1 件 (CreateSketch → SketchOffset → Extrude で offset が反映されることを assert) | |
+
+## Non-Goals
+- Sketch Fillet / Chamfer / Trim / Extend (別 Issue で個別実装)
+- Ellipse / Conic の signed offset (数値反復解法必要 = 独立 ADR + Issue 提案)
+- `SelfIntersection` 判定の一般化 (本 Issue は「退化 (=長さ/半径が閾値以下) → 拒否」で代替)
+- Multi-contour offset 適用 (Phase 11+ で対応)
+- SketchOffset の property test 網羅 (本 Issue は fixed input のテストのみ、property test は Refactor Pass で追加)
+
+## 実装対象
+- 影響クレート/ファイル:
+  - `crates/engawa-format/src/feature.rs` — `Feature::SketchOffset` variant 追加、`id()` / suppressed 対応の match arm 拡張
+  - `crates/engawa-format/tests/` (inline test か既存 test file 追記) — YAML roundtrip test
+  - `crates/engawa-kernel/src/error.rs` — 既存 `DegenerateSketchElement` を再利用。新規 error variant は導入しない (`SketchNotFound` / `UnsupportedFeature` / `DegenerateSketchElement` の 3 種で足りる)
+  - `crates/engawa-kernel/src/tessellation/sketch.rs` (or 新規 `crates/engawa-kernel/src/geometry/sketch_offset.rs`) — `offset_line` / `offset_circle` / `offset_arc` 純関数 (SketchElement → Result<SketchElement, KernelError>)
+  - `crates/engawa-build/src/lib.rs` — `Feature::SketchOffset` dispatch。`built_sketch_profiles: HashMap<String, Vec<SketchElement>>` 状態を build ループに追加、Extrude/ExtrudeCut は `built_sketch_profiles.get(sketch)` を優先し `None` なら `entry.profile` にフォールバック
+  - `examples/sketch_offset.engawa` — 新規 fixture
+  - `crates/engawa-build/tests/examples_smoke.rs` — 上記 fixture の smoke entry 追加
+  - `crates/engawa-build/tests/sketch_offset_acceptance.rs` (新規) — acceptance test skeleton (STEP 5.5 で作成) → STEP 6 で本実装
+- 変更する型・関数のシグネチャ:
+
+```rust
+// engawa-format/src/feature.rs
+pub enum Feature {
+    // ... 既存 variant ...
+    #[serde(rename = "sketch_offset")]
+    SketchOffset {
+        id: String,
+        sketch: String,                  // 対象 CreateSketch.id
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        selection: Vec<String>,          // element ID; 空 = 全要素
+        distance: f64,                   // signed
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
+}
+```
+
+- 変更する Extrude 経路 (before / after):
+
+**before** (`crates/engawa-build/src/lib.rs:243`):
+```rust
+Feature::Extrude { id: _, sketch, depth, fuse_target, suppressed: _ } => {
+    let entry = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    let plane = resolve_plane(entry, ref_planes, &built)?;
+    validate_sketch_profile_contours(entry.profile)?;
+    // ... tessellate entry.profile ...
+}
+```
+
+**after**:
+```rust
+Feature::Extrude { id: _, sketch, depth, fuse_target, suppressed: _ } => {
+    let entry = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    let plane = resolve_plane(entry, ref_planes, &built)?;
+    // effective profile: offset 適用済があればそちらを使う (ADR-017 §3 dispatch 順序)
+    let effective_profile: &[SketchElement] = built_sketch_profiles
+        .get(sketch.as_str())
+        .map(|v| v.as_slice())
+        .unwrap_or(entry.profile);
+    validate_sketch_profile_contours(effective_profile)?;
+    // ... tessellate effective_profile ...
+}
+```
+
+- 新規 dispatch (`Feature::SketchOffset`):
+```rust
+Feature::SketchOffset { id, sketch, selection, distance, suppressed: _ } => {
+    let entry = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    // 起点 profile: 過去の offset 蓄積があればそれ、なければ CreateSketch.profile
+    let source: Vec<SketchElement> = built_sketch_profiles
+        .get(sketch.as_str())
+        .cloned()
+        .unwrap_or_else(|| entry.profile.to_vec());
+    let out = apply_sketch_offset(&source, selection, *distance)?; // 純関数
+    built_sketch_profiles.insert(sketch.clone(), out);
+    // id は Feature id として feature history に残るのみ (body 生成なし)
+}
+```
+
+- 新規純関数 `apply_sketch_offset` (`crates/engawa-kernel/src/geometry/sketch_offset.rs`):
+```rust
+pub fn apply_sketch_offset(
+    source: &[SketchElement],
+    selection: &[String],
+    distance: f64,
+) -> Result<Vec<SketchElement>, KernelError> {
+    if distance.abs() <= EPS_LENGTH {
+        return Ok(source.to_vec()); // no-op
+    }
+    let selected: HashSet<&str> = if selection.is_empty() {
+        source.iter().map(|e| e.id()).collect()
+    } else {
+        selection.iter().map(String::as_str).collect()
+    };
+    source.iter().map(|elem| {
+        if !selected.contains(elem.id()) { return Ok(elem.clone()); }
+        offset_element(elem, distance)
+    }).collect()
+}
+
+fn offset_element(elem: &SketchElement, distance: f64) -> Result<SketchElement, KernelError> {
+    match elem {
+        SketchElement::Line { id, from, to } => offset_line(id, from, to, distance),
+        SketchElement::Circle { id, center, radius } => offset_circle(id, center, *radius, distance),
+        SketchElement::Arc { id, center, radius, start_angle, end_angle } =>
+            offset_arc(id, center, *radius, *start_angle, *end_angle, distance),
+        SketchElement::Ellipse { id, .. } | SketchElement::Conic { id, .. } =>
+            Err(KernelError::UnsupportedFeature { kind: "sketch_offset_of_ellipse_or_conic" }),
+    }
+}
+```
+
+## 設計方針
+
+- **決定性**: `apply_sketch_offset` は純関数。入力の順序を保存 (source Vec の順で出力)。selection の重複や順序も deterministic に処理 (HashSet lookup は集合演算のみ)。同一入力 → 同一出力を T01 で検証。
+- **B-rep トポロジー妥当性**: 本 Issue は 2D sketch 編集で B-rep には触れない。ただし Extrude/ExtrudeCut 経由で最終 Solid が Euler-Poincaré 成立するか (V-E+F=2) は既存 `make_extrusion` テストが担保する。offset 反映後の profile が既存 `validate_sketch_profile_contours` を通ることを確認。
+- **退化幾何の扱い**:
+  - `|distance| <= EPS_LENGTH` (ADR-018) → no-op (入力 profile を identity で返す)
+  - offset 適用後の `Line.from == Line.to` (length `<= EPS_LENGTH`) → `DegenerateSketchElement { element_id, reason: "collapsed_offset_zero_length" }`
+  - offset 適用後の `Circle/Arc.radius <= EPS_LENGTH` → `DegenerateSketchElement { element_id, reason: "collapsed_offset_negative_radius" }`
+- **derive 規約**: `Feature::SketchOffset` は既存 `Feature` enum に variant を追加するので既存の Debug/Clone/Serialize/Deserialize/JsonSchema/TS derive を継承。
+- **エラーハンドリング**: `thiserror` の `KernelError` を既存のまま使う。新規 variant は追加せず (`SketchNotFound` / `UnsupportedFeature` / `DegenerateSketchElement` の 3 種で全経路を表現)。
+- **workspace.dependencies**: 追加不要 (既存の serde / thiserror / ts-rs / schemars で足りる)。
+
+### 数値モデル
+
+- 使用 tolerance:
+  - `EPS_LENGTH = 1e-9` (`crates/engawa-kernel/src/geometry/tolerances.rs::EPS_LENGTH`, ADR-004 / ADR-018)
+    - `distance` の no-op 判定: `distance.abs() <= EPS_LENGTH` (ADR-018 `<=` 統一規約)
+    - offset 適用後の Line 長 / Circle・Arc radius の退化判定: `<= EPS_LENGTH` (同)
+- 符号規約:
+  - **Line**: `direction = normalize(to - from)`。offset 方向 = `R90CCW(direction)` = `(-direction.y, direction.x)`。`new_from = from + distance * R90CCW(direction)`、`new_to = to + distance * R90CCW(direction)`。**正 distance = 左手側 (sketch 平面 +z 上から見て CCW 側)**。
+  - **Circle** (CCW convention): `new_radius = radius + distance`。**正 distance = 外側 (radius 増加)**。center は不変。
+  - **Arc** (CCW, start_angle → end_angle, 単純弧): `new_radius = radius + distance`。**正 distance = 外側**。center / start_angle / end_angle は不変。
+- 数値判定:
+  - `EPS_LENGTH` 比較は `<=` で統一 (ADR-018)
+  - NaN / Inf の distance は `Feature::SketchOffset` を deserialize する際に serde で受理される (f64) が、`apply_sketch_offset` 入口で `!distance.is_finite()` なら `KernelError::InvalidParameter { kind: "distance" }` で fail-fast
+  - selection 内に source に存在しない element ID があった場合: 現状は無視 (empty match) — Refactor Pass で `SketchElementNotFound` を導入する余地を残す (Non-Goal)
+- ADR-004 準拠方針: **tolerant** (`EPS_LENGTH` 相対誤差以内は同一扱い)。exact 算術は本 Issue で使わない。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | Line + Circle を含む sketch に SketchOffset を 2 回適用し、生成 element の ID / 座標が完全一致 | `assert_eq!` |
+| T02 | 正常系 (Line) | `Line((0,0)→(10,0))` に `distance=+1.0` の offset → `Line((0,1)→(10,1))` | `assert_eq!` on element |
+| T03 | 正常系 (Circle) | `Circle(center=(0,0), r=5)` に `distance=+2.0` の offset → `Circle(r=7)` | `assert_eq!` on radius |
+| T04 | 正常系 (Arc) | `Arc(center=(0,0), r=5, θ=0..π/2)` に `distance=-1.0` → `Arc(r=4, θ=0..π/2)` | `assert_eq!` |
+| T05 | Roundtrip | `Feature::SketchOffset` を YAML serialize → deserialize → 完全一致 | `assert_eq!` |
+| T06 | 統合 (Extrude 経由) | `examples/sketch_offset.engawa` を build → Extrude 高さから offset 適用後の profile が反映されている (`built_sketch_profiles` パス確認) | build 成功 + solid の V/E/F count が offset 前と異なる |
+| T07 | selection 部分適用 | 2 Line の sketch で selection=[line_0] のみ → line_0 だけ offset、line_1 は不変 | 個別 assert |
+| T08 | selection 空 = 全適用 | selection=[] で 3 element sketch 全部 offset される | 全 3 element の変換確認 |
+| T_DEG_zero_distance | 退化 (境界) | `distance=1e-10 < EPS_LENGTH` → no-op で入力 profile 完全一致 | `assert_eq!(input, output)` |
+| T_DEG_zero_distance_boundary | 退化 (境界) | `distance = EPS_LENGTH` ちょうど → `<=` 規約で no-op (ADR-018) | `assert_eq!(input, output)` |
+| T_DEG_offset_collapse_circle | 退化 (数値) | `Circle(r=3)` に `distance=-3.0 - EPS_LENGTH*0.1` → 結果 radius `<= EPS_LENGTH` で `DegenerateSketchElement` | `assert_matches!(err, KernelError::DegenerateSketchElement { .. })` |
+| T_DEG_offset_collapse_line | 退化 (数値) | 長さ `EPS_LENGTH*0.5` の Line (退化) を含む sketch を offset 対象に → `DegenerateSketchElement` | 同 |
+| T_DEG_ellipse_reject | 退化 (仕様) | `Ellipse` を selection に含む → `UnsupportedFeature { kind: "sketch_offset_of_ellipse_or_conic" }` | `assert_matches!` |
+| T_DEG_nan_distance | 退化 (数値入力) | `distance=f64::NAN` → `InvalidParameter { kind: "distance" }` | `assert_matches!` |
+| T_DEG_sketch_ref_not_found | 参照 | 存在しない sketch id を指す SketchOffset を build → `SketchNotFound` | `assert_matches!` |
+
+## 幾何的不変条件チェックリスト
+- [ ] N/A: partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか (Boolean 系のみ)
+- [ ] N/A: 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか (Boolean 系のみ)
+- [ ] N/A: flip_normals / same_sense の意味論が明確か (Boolean 系のみ)
+- [ ] N/A: pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか (partition 系のみ)
+
+本 Issue はスケッチ (2D) 編集のため上記 4 項目はすべて N/A。既存 `validate_sketch_profile_contours` と `make_extrusion` の hardening が下流で integrity を担保する。

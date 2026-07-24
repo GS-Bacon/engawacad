@@ -1,0 +1,8 @@
+issues:
+  - id: SC02
+    severity: medium
+    section: "Non-Goals"
+    finding: "SCOPE DEFENSE: SelfIntersection → DegenerateSketchElement 代替の説明が plan.md 本文中の独立節として存在するが、Non-Goals 節の「SelfIntersection 判定の一般化」との対応関係が明示されていない"
+    suggestion: "Non-Goals の「SelfIntersection 判定の一般化」項目に括弧書きで（本 Issue は collapse を DegenerateSketchElement で代替、SCOPE DEFENSE 節参照）と追記し、両者の関連を明確にすること"
+
+verdict: pass

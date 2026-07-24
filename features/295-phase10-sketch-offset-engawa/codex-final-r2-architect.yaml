@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: critical
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 269
+    finding: "SketchOffset 後の `effective_profile` には `validate_sketch_profile_contours()` しか掛からず、閉じた `Line`+`Arc` 輪郭がそのまま Extrude/ExtrudeCut に流れます。`offset_line()`/`offset_arc()` は各要素を独立に動かすだけなので共有端点が外れ、押し出し時には別ポリゴンとして解釈されて誤形状を静かに生成します。"
+    suggestion: "`effective_profile` に対して連結性・閉ループ検証を再実行し、join/trim が未実装の connected `Line`/`Arc` 輪郭は明示的に reject してください。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-kernel/src/geometry/sketch_offset.rs"
+    line_hint: 178
+    finding: "`offset_arc()` が常に `radius + distance` を使うため、既存カーネルが受理している負 sweep (`end_angle < start_angle`) の Arc では正距離が反対側の offset になります。現在の signed-distance 契約 (`positive = left/outer`) を満たさないまま成功してしまいます。"
+    suggestion: "`SketchOffset` では負 sweep Arc を reject するか、Arc の向きごとに符号規約を明確化して `offset_arc()` と対応テストをそれに合わせてください。"
+
+verdict: fail

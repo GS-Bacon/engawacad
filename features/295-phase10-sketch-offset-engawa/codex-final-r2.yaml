@@ -1,0 +1,49 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  - id: A-F01
+    severity: critical
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 269
+    finding: "SketchOffset 後の `effective_profile` には `validate_sketch_profile_contours()` しか掛からず、閉じた `Line`+`Arc` 輪郭がそのまま Extrude/ExtrudeCut に流れます。`offset_line()`/`offset_arc()` は各要素を独立に動かすだけなので共有端点が外れ、押し出し時には別ポリゴンとして解釈されて誤形状を静かに生成します。"
+    suggestion: "`effective_profile` に対して連結性・閉ループ検証を再実行し、join/trim が未実装の connected `Line`/`Arc` 輪郭は明示的に reject してください。"
+  - id: A-F02
+    severity: high
+    file: "crates/engawa-kernel/src/geometry/sketch_offset.rs"
+    line_hint: 178
+    finding: "`offset_arc()` が常に `radius + distance` を使うため、既存カーネルが受理している負 sweep (`end_angle < start_angle`) の Arc では正距離が反対側の offset になります。現在の signed-distance 契約 (`positive = left/outer`) を満たさないまま成功してしまいます。"
+    suggestion: "`SketchOffset` では負 sweep Arc を reject するか、Arc の向きごとに符号規約を明確化して `offset_arc()` と対応テストをそれに合わせてください。"
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-kernel/src/geometry/sketch_offset.rs"
+    line_hint: 33
+    finding: "C-F01 回避として `all(Line) && len >= 2` を一律 reject しているため、`selection` を持つ `SketchOffset` でも有効な line ループ上の部分 offset がすべて `UnsupportedFeature` になります。現 plan/T07 と public contract は line 要素の部分適用を含んでおり、実装が宣言スコープより狭いです。"
+    suggestion: "corner join/trim を実装して line ループの部分適用を成立させるか、少なくとも line ループ offset を別 Issue に降格し、plan/test-spec/acceptance の契約を circle/arc 限定へ揃える。"
+  - id: C-F02
+    severity: medium
+    file: "crates/engawa-build/tests/sketch_offset_acceptance.rs"
+    line_hint: 11
+    finding: "`built_sketch_profiles` の新しい build 経路に対する acceptance が弱すぎます。T01 は 2 回 build して頂点数しか比較しておらず、T02/T07 は空テストのままなので、結果の完全一致や line/partial-selection の統合回帰を検出できません。"
+    suggestion: "T01 は body/solid 全体の equality を assert し、T02/T07 は実アサーション付きの統合テストに置き換えるか、kernel unit のみで担保するなら acceptance 側の T ID/名称を削除して coverage claim を合わせる。"
+  - id: C-F03
+    severity: medium
+    file: "crates/engawa-format/tests/golden_examples.rs"
+    line_hint: 265
+    finding: "`examples/sketch_offset.engawa` を追加したのに exact golden が増えていません。現状の roundtrip テストだけでは `schema_version` の正規化、`selection: []` の省略、field order など canonical YAML の drift を固定できません。"
+    suggestion: "`golden_sketch_offset` を追加し、`Document::to_yaml()` の canonical v2 出力を byte-identical で固定する。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 522
+    finding: "公開 wire schema に `sketch_offset` を追加しているのに `CURRENT_SCHEMA_VERSION` は 2 のままで、`examples/sketch_offset.engawa` も `schema_version: 1` を名乗っています。旧 reader から見ると「既知 version の文書なのに未知 `Feature.type` が来る」状態になり、schema_version で future feature を遮断する既存契約を破ります。"
+    suggestion: "`sketch_offset` 導入に合わせて schema version を上げ、旧 version ではこの variant を emit/accept しないよう migration を追加し、fixture の `schema_version` も更新する。"
+  - id: M-F02
+    severity: medium
+    file: "crates/engawa-format/tests/golden_examples.rs"
+    line_hint: 247
+    finding: "Phase 10 の golden は `circle_arc` / `ellipse_conic` までで、新しい `sketch_offset` 例の byte-identical YAML が固定されていません。roundtrip だけだと field 順序や omit 規約の drift を検知できず、migration / public API 監視として弱いです。"
+    suggestion: "`examples/sketch_offset.engawa` を `golden_examples.rs` に追加して、`type: sketch_offset`・`selection`・`distance` の YAML 表現を fixture ベースで固定する。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=1, high=3, medium=3, low=0
+# blocking: 4

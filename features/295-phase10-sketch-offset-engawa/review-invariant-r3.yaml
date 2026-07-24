@@ -1,0 +1,9 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "設計方針 > 決定性"
+    finding: "distance の NaN/Inf チェックが `apply_sketch_offset` 入口で `!distance.is_finite()` によって行われているが、serde 側で f64 の nan/inf を reject する仕様 (`serde(default)` + カスタム deserializer) にしない理由が明記されていない。nullable な distance や Inf を許容する要件がない現状では、schema レベルで不正値を弾く方が fail-fast の原則に整合する。"
+    suggestion: "future work 段階ではあるが、serde 側の validation を導入する余地を残す (Non-Goals に \"serde 側の f64 nan/inf validation は本 scope 外\" と明記する)。本設計は runtime check で妥当と判断する。"
+
+verdict: pass
+# IN01 は medium であり、verdict に影響しない（critical/high が存在しないため）

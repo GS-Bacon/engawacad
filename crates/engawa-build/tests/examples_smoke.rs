@@ -187,3 +187,9 @@ fn circle_arc() {
 fn ellipse_conic() {
     smoke(include_str!("../../../examples/ellipse_conic.engawa"));
 }
+
+/// Issue #295: Phase 10 Sketch Offset smoke テスト
+#[test]
+fn sketch_offset() {
+    smoke(include_str!("../../../examples/sketch_offset.engawa"));
+}

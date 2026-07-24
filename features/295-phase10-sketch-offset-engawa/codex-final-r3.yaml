@@ -1,0 +1,38 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  # [architect] issues: [] (verdict=pass)
+  - id: C-F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 509
+    finding: "公開 `Feature::SketchOffset` は `selection` 付きの汎用 sketch edit として wire schema に追加されているのに、実 build 経路は `apply_sketch_offset_build()` に固定されており single Circle 以外をすべて `UnsupportedFeature` で拒否します。結果として Line/Arc offset は kernel helper 直呼びの単体テストでしか到達できず、実際の feature pipeline の契約が公開 API より狭くなっています。"
+    suggestion: "`SketchOffset` の public contract を circle-only に明示して ADR/plan/test 名称まで揃えるか、build 経路でも line/arc を通した上で offset 後の閉輪郭検証で安全に reject してください。"
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 521
+    finding: "新しい `sketch_offset` discriminant を `schema_version: 2` のまま公開しています。`CURRENT_SCHEMA_VERSION` も 2 のままなので、旧 schema-2 reader は version gate を通過した後に unknown feature で落ち、`schema_version` が future feature を遮断する既存契約が壊れます。"
+    suggestion: "`sketch_offset` 導入に合わせて schema version を上げ、旧 version ではこの variant を emit/accept しない migration と golden を追加してください。"
+  - id: C-F03
+    severity: medium
+    file: "examples/sketch_offset.engawa"
+    line_hint: 20
+    finding: "新規 fixture が `selection: []` を明示していますが、`Feature::SketchOffset.selection` は空配列を serialize 時に省略する実装です。対応する exact golden も追加されていないため、この example の canonical YAML が即座に drift しても検知できません。"
+    suggestion: "`golden_sketch_offset` を追加し、`Document::to_yaml()` の canonical v2 出力を byte-identical で固定してください。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 522
+    finding: "公開 `Feature` wire-format に `sketch_offset` variant を追加していますが、今回 `CURRENT_SCHEMA_VERSION` / migration 境界は増えていません。schema v2 はこの差分以前から使われているため、旧 v2 reader には `schema_version: 2` のまま未知 `type: sketch_offset` が流れ込み、future-feature を version で遮断する既存契約を破ります。Rust/TypeScript の exhaustive match も同じ surface で破壊的に広がります。"
+    suggestion: "`sketch_offset` を breaking な schema/API 追加として扱い、schema version を新設して migration と version-gated 回帰テストを追加してください。公開 `Feature` surface もその version/major boundary でのみ広げるべきです。"
+  - id: M-F02
+    severity: medium
+    file: "examples/sketch_offset.engawa"
+    line_hint: 20
+    finding: "新規 example は `selection: []` を含みますが、`Feature::SketchOffset.selection` は空配列を `skip_serializing_if = \"Vec::is_empty\"` で省略する定義です。今回追加されているのは smoke/serde roundtrip だけで document-level exact golden がないため、この example が serializer の canonical YAML と既に食い違っていても検出できません。"
+    suggestion: "`examples/sketch_offset.engawa` を canonical 出力に合わせ、`Document::to_yaml()` か golden fixture の byte-identical テストで `sketch_offset` の field order / omit 規約 / schema_version を固定してください。"
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=0, high=3, medium=2, low=0
+# blocking: 3

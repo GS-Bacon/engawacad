@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 509
+    finding: "公開 `Feature::SketchOffset` は `selection` 付きの汎用 sketch edit として wire schema に追加されているのに、実 build 経路は `apply_sketch_offset_build()` に固定されており single Circle 以外をすべて `UnsupportedFeature` で拒否します。結果として Line/Arc offset は kernel helper 直呼びの単体テストでしか到達できず、実際の feature pipeline の契約が公開 API より狭くなっています。"
+    suggestion: "`SketchOffset` の public contract を circle-only に明示して ADR/plan/test 名称まで揃えるか、build 経路でも line/arc を通した上で offset 後の閉輪郭検証で安全に reject してください。"
+  - id: F02
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 521
+    finding: "新しい `sketch_offset` discriminant を `schema_version: 2` のまま公開しています。`CURRENT_SCHEMA_VERSION` も 2 のままなので、旧 schema-2 reader は version gate を通過した後に unknown feature で落ち、`schema_version` が future feature を遮断する既存契約が壊れます。"
+    suggestion: "`sketch_offset` 導入に合わせて schema version を上げ、旧 version ではこの variant を emit/accept しない migration と golden を追加してください。"
+  - id: F03
+    severity: medium
+    file: "examples/sketch_offset.engawa"
+    line_hint: 20
+    finding: "新規 fixture が `selection: []` を明示していますが、`Feature::SketchOffset.selection` は空配列を serialize 時に省略する実装です。対応する exact golden も追加されていないため、この example の canonical YAML が即座に drift しても検知できません。"
+    suggestion: "`golden_sketch_offset` を追加し、`Document::to_yaml()` の canonical v2 出力を byte-identical で固定してください。"
+
+verdict: fail

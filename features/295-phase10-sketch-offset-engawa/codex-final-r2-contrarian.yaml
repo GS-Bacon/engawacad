@@ -1,0 +1,21 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-kernel/src/geometry/sketch_offset.rs"
+    line_hint: 33
+    finding: "C-F01 回避として `all(Line) && len >= 2` を一律 reject しているため、`selection` を持つ `SketchOffset` でも有効な line ループ上の部分 offset がすべて `UnsupportedFeature` になります。現 plan/T07 と public contract は line 要素の部分適用を含んでおり、実装が宣言スコープより狭いです。"
+    suggestion: "corner join/trim を実装して line ループの部分適用を成立させるか、少なくとも line ループ offset を別 Issue に降格し、plan/test-spec/acceptance の契約を circle/arc 限定へ揃える。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-build/tests/sketch_offset_acceptance.rs"
+    line_hint: 11
+    finding: "`built_sketch_profiles` の新しい build 経路に対する acceptance が弱すぎます。T01 は 2 回 build して頂点数しか比較しておらず、T02/T07 は空テストのままなので、結果の完全一致や line/partial-selection の統合回帰を検出できません。"
+    suggestion: "T01 は body/solid 全体の equality を assert し、T02/T07 は実アサーション付きの統合テストに置き換えるか、kernel unit のみで担保するなら acceptance 側の T ID/名称を削除して coverage claim を合わせる。"
+  - id: F03
+    severity: medium
+    file: "crates/engawa-format/tests/golden_examples.rs"
+    line_hint: 265
+    finding: "`examples/sketch_offset.engawa` を追加したのに exact golden が増えていません。現状の roundtrip テストだけでは `schema_version` の正規化、`selection: []` の省略、field order など canonical YAML の drift を固定できません。"
+    suggestion: "`golden_sketch_offset` を追加し、`Document::to_yaml()` の canonical v2 出力を byte-identical で固定する。"
+
+verdict: fail

@@ -1,0 +1,9 @@
+issues:
+  - id: FN01
+    severity: medium
+    file: "crates/engawa-format/tests/sketch_offset_roundtrip.rs"
+    line_hint: 1
+    finding: "T05 roundtrip テストが `#[ignore]` 付き `todo!()` のまま未実装。feature.rs 側では T05-T05d が実装済みで、roundtrip は完了条件の golden YAML fixture 検証に必要。"
+    suggestion: " STEP 5-6 で予定されていた実装を完了し、`#[ignore]` を解除するか、feature.rs 側のテストで十分な場合はファイルを削除する。"
+
+verdict: pass

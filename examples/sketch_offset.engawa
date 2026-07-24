@@ -1,0 +1,25 @@
+schema_version: 2
+version: "0.1.0"
+root_component:
+  name: "Sketch Offset Example (Phase 10 #295)"
+  features:
+    # Create a circle profile on XY plane
+    - type: create_sketch
+      id: sketch_0
+      plane: xy
+      offset: 0.0
+      profile:
+        - id: circle_1
+          kind: circle
+          center: [5.0, 5.0]
+          radius: 3.0
+    # Offset the entire profile outward by 1.0 (selection omitted = all elements)
+    - type: sketch_offset
+      id: offset_1
+      sketch: sketch_0
+      distance: 1.0
+    # Extrude the offset profile
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_0
+      depth: 5.0

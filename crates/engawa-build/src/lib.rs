@@ -121,6 +121,8 @@ pub fn build_bodies_from_features(
     }
 
     let mut sketches: HashMap<&str, SketchEntry> = HashMap::new();
+    let mut built_sketch_profiles: HashMap<String, Vec<engawa_format::SketchElement>> =
+        HashMap::new();
     let mut built = BuiltBodies::default();
     let mut seen_ids: HashMap<&str, ()> = HashMap::new();
 
@@ -256,14 +258,19 @@ pub fn build_bodies_from_features(
 
                 let plane = resolve_plane(entry, ref_planes, &built)?;
 
+                // Effective profile: use offset-applied profile if available (ADR-017 §3 dispatch order).
+                let effective_profile: &[engawa_format::SketchElement] = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .map(|v| v.as_slice())
+                    .unwrap_or(entry.profile);
+
                 // Reject multi-element profiles that include a closed primitive (Phase 10 scope).
                 // Multi-contour profiles are deferred to Phase 11+ (#288).
-                validate_sketch_profile_contours(entry.profile)?;
+                validate_sketch_profile_contours(effective_profile)?;
 
                 // Tessellate each sketch element into polyline points.
                 const BASE_SEGMENTS: usize = 32;
-                let profile_uv: Vec<(f64, f64)> = entry
-                    .profile
+                let profile_uv: Vec<(f64, f64)> = effective_profile
                     .iter()
                     .map(|elem| {
                         engawa_kernel::tessellation::sketch::tessellate_sketch_element(
@@ -362,13 +369,18 @@ pub fn build_bodies_from_features(
                     }
                 };
 
+                // Effective profile: use offset-applied profile if available (ADR-017 §3 dispatch order).
+                let effective_profile: &[engawa_format::SketchElement] = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .map(|v| v.as_slice())
+                    .unwrap_or(entry.profile);
+
                 // Reject multi-element profiles that include a closed primitive (Phase 10 scope).
                 // Multi-contour profiles are deferred to Phase 11+ (#288).
-                validate_sketch_profile_contours(entry.profile)?;
+                validate_sketch_profile_contours(effective_profile)?;
 
                 const BASE_SEGMENTS: usize = 32;
-                let profile_uv: Vec<(f64, f64)> = entry
-                    .profile
+                let profile_uv: Vec<(f64, f64)> = effective_profile
                     .iter()
                     .map(|elem| {
                         engawa_kernel::tessellation::sketch::tessellate_sketch_element(
@@ -473,6 +485,33 @@ pub fn build_bodies_from_features(
                 built.consume(target);
                 built.consume(tool);
                 built.register(id.to_string(), result);
+            }
+            Feature::SketchOffset {
+                id: _,
+                sketch,
+                selection,
+                distance,
+                suppressed: _,
+            } => {
+                let entry =
+                    sketches
+                        .get(sketch.as_str())
+                        .ok_or_else(|| KernelError::SketchNotFound {
+                            sketch: sketch.clone(),
+                        })?;
+
+                // Source profile: use previously accumulated offsets, or fall back to CreateSketch.profile
+                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| entry.profile.to_vec());
+
+                // Build-level contract: Circle single-element only (Phase 10 scope defense)
+                let out = engawa_kernel::geometry::sketch_offset::apply_sketch_offset_build(
+                    &source, selection, *distance,
+                )?;
+                built_sketch_profiles.insert(sketch.clone(), out);
+                // id remains in feature history only (no body generation)
             }
         }
     }

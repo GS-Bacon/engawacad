@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "テスト計画 > T06"
+    finding: "期待結果が「solid の V/E/F count が offset 前と異なる」とのみ書かれており、計測条件が曖昧（offset 前の何と比較するか不明）"
+    suggestion: "「offset 前の同一 fixture (CreateSketch→Extrude) と比較し、offset 適用後の V/E/F count が変化していることを assert する」等の具体的比較条件を記述すること"
+
+verdict: pass

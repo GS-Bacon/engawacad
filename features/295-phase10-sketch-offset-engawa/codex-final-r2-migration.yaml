@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 522
+    finding: "公開 wire schema に `sketch_offset` を追加しているのに `CURRENT_SCHEMA_VERSION` は 2 のままで、`examples/sketch_offset.engawa` も `schema_version: 1` を名乗っています。旧 reader から見ると「既知 version の文書なのに未知 `Feature.type` が来る」状態になり、schema_version で future feature を遮断する既存契約を破ります。"
+    suggestion: "`sketch_offset` 導入に合わせて schema version を上げ、旧 version ではこの variant を emit/accept しないよう migration を追加し、fixture の `schema_version` も更新する。"
+  - id: F02
+    severity: medium
+    file: "crates/engawa-format/tests/golden_examples.rs"
+    line_hint: 247
+    finding: "Phase 10 の golden は `circle_arc` / `ellipse_conic` までで、新しい `sketch_offset` 例の byte-identical YAML が固定されていません。roundtrip だけだと field 順序や omit 規約の drift を検知できず、migration / public API 監視として弱いです。"
+    suggestion: "`examples/sketch_offset.engawa` を `golden_examples.rs` に追加して、`type: sketch_offset`・`selection`・`distance` の YAML 表現を fixture ベースで固定する。"
+
+verdict: fail

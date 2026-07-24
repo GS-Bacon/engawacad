@@ -276,3 +276,33 @@ fn golden_ellipse_conic() {
         ),
     );
 }
+
+#[test]
+fn golden_sketch_offset() {
+    assert_golden(
+        "sketch_offset.engawa",
+        concat!(
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n",
+            "  name: 'Sketch Offset Example (Phase 10 #295)'\n",
+            "  features:\n",
+            "  - type: create_sketch\n",
+            "    id: sketch_0\n",
+            "    plane: xy\n",
+            "    profile:\n",
+            "    - kind: circle\n",
+            "      id: circle_1\n",
+            "      center:\n",
+            "      - 5.0\n",
+            "      - 5.0\n",
+            "      radius: 3.0\n",
+            "  - type: sketch_offset\n",
+            "    id: offset_1\n",
+            "    sketch: sketch_0\n",
+            "    distance: 1.0\n",
+            "  - type: extrude\n",
+            "    id: extrude_1\n",
+            "    sketch: sketch_0\n",
+            "    depth: 5.0\n",
+        ),
+    );
+}

@@ -1,0 +1,8 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "Issue 整合"
+    finding: "Issue 本文の完了条件に「collapse 時の `SelfIntersection` エラー」があるが、plan.md は「退化検出 `DegenerateSketchElement`」で代替し、`SelfIntersection` 検出を Out-of-Scope / Non-Goals に含めている。対応方針の変更がある。"
+    suggestion: "Issue 本文の完了条件を更新するか、plan.md に SCOPE DEFENSE 補足として「SelfIntersection 一般判定は Trim/Fillet と別 Issue、本 Issue は退化のみで代替」を明記すること。"
+
+verdict: pass

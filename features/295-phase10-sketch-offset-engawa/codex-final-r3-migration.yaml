@@ -1,0 +1,15 @@
+issues:
+  - id: F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 522
+    finding: "公開 `Feature` wire-format に `sketch_offset` variant を追加していますが、今回 `CURRENT_SCHEMA_VERSION` / migration 境界は増えていません。schema v2 はこの差分以前から使われているため、旧 v2 reader には `schema_version: 2` のまま未知 `type: sketch_offset` が流れ込み、future-feature を version で遮断する既存契約を破ります。Rust/TypeScript の exhaustive match も同じ surface で破壊的に広がります。"
+    suggestion: "`sketch_offset` を breaking な schema/API 追加として扱い、schema version を新設して migration と version-gated 回帰テストを追加してください。公開 `Feature` surface もその version/major boundary でのみ広げるべきです。"
+  - id: F02
+    severity: medium
+    file: "examples/sketch_offset.engawa"
+    line_hint: 20
+    finding: "新規 example は `selection: []` を含みますが、`Feature::SketchOffset.selection` は空配列を `skip_serializing_if = \"Vec::is_empty\"` で省略する定義です。今回追加されているのは smoke/serde roundtrip だけで document-level exact golden がないため、この example が serializer の canonical YAML と既に食い違っていても検出できません。"
+    suggestion: "`examples/sketch_offset.engawa` を canonical 出力に合わせ、`Document::to_yaml()` か golden fixture の byte-identical テストで `sketch_offset` の field order / omit 規約 / schema_version を固定してください。"
+
+verdict: fail

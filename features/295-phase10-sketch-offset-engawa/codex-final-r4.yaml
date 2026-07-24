@@ -1,0 +1,9 @@
+issues:
+  - id: A01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 233
+    finding: "`refs_resolve_in_state()` / `simulate_history()` は `Feature::SketchOffset` を「参照 sketch が存在する」だけで実行可能扱いしますが、実際の build 経路はその sketch が単一 `Circle` でないと `UnsupportedFeature { kind: \"sketch_offset_only_circle\" }` で失敗します。CRUD 各操作はこの擬似実行結果と `next.validate()` だけを信用しているため、line ループ sketch への `SketchOffset` 挿入や、downstream `SketchOffset` を残したまま upstream sketch を line/arc profile に edit する操作を受理し、後段の `build_bodies_from_features()` でしか落ちない unbuildable history を作れてしまいます。"
+    suggestion: "`SketchOffset` を含む history では CRUD 側でも `sketch_offset_only_circle` 契約を検証してください。少なくとも post-mutation の prefix/build 検証を追加し、non-circle sketch への insert と upstream sketch の edit が即座に reject される回帰テストを追加してください。"
+
+verdict: fail

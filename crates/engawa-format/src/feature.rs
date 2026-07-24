@@ -265,7 +265,7 @@ pub enum PlaneRef {
 /// A sketch element — a primitive curve in a 2D profile.
 /// Tagged serialization with `kind` field; legacy untagged `Line` (without `kind`)
 /// falls back to `Line` variant for backward compatibility.
-#[derive(Debug, Clone, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchElement {
     /// Line segment from `from` to `to`.
@@ -517,6 +517,34 @@ pub enum Feature {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         suppressed: bool,
     },
+
+    /// Offset sketch elements (2D profile edit).
+    ///
+    /// # Build-level contract (Phase 10)
+    /// The `sketch` referenced by this feature must resolve to a profile containing
+    /// exactly one `SketchElement::Circle`; anything else fails with
+    /// `KernelError::UnsupportedFeature { kind: "sketch_offset_only_circle" }`
+    /// (see `engawa_kernel::geometry::sketch_offset::apply_sketch_offset_build`).
+    /// `Line`/`Arc` offset math exists at the kernel pure-function level
+    /// (`apply_sketch_offset`, unit-tested) but is not yet wired into the build
+    /// pipeline — planned for a Phase 11+ refactor pass once corner join/trim
+    /// (Trim/Extend, #276) lands. `selection` is forward-looking wiring for that
+    /// future multi-element support; today it is effectively a no-op beyond the
+    /// sole Circle's own id (empty selection = offset it; a non-matching id is a
+    /// silent no-op, documented as a Non-Goal in plan.md).
+    #[serde(rename = "sketch_offset")]
+    SketchOffset {
+        id: String,
+        /// Reference to CreateSketch.id
+        sketch: String,
+        /// Element IDs to offset; empty = all elements
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        selection: Vec<String>,
+        /// Signed offset distance (positive = left/outer, negative = right/inner)
+        distance: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
 }
 
 fn is_origin(p: &[f64; 3]) -> bool {
@@ -539,7 +567,8 @@ impl Feature {
             | Feature::ExtrudeCut { id, .. }
             | Feature::Cut { id, .. }
             | Feature::Fuse { id, .. }
-            | Feature::Intersect { id, .. } => id,
+            | Feature::Intersect { id, .. }
+            | Feature::SketchOffset { id, .. } => id,
         }
     }
 
@@ -554,7 +583,8 @@ impl Feature {
             | Feature::ExtrudeCut { suppressed, .. }
             | Feature::Cut { suppressed, .. }
             | Feature::Fuse { suppressed, .. }
-            | Feature::Intersect { suppressed, .. } => *suppressed,
+            | Feature::Intersect { suppressed, .. }
+            | Feature::SketchOffset { suppressed, .. } => *suppressed,
         }
     }
 }
@@ -1581,5 +1611,105 @@ mod tests {
             }
             _ => panic!("Conic did not roundtrip"),
         }
+    }
+
+    /// T05: SketchOffset YAML roundtrip.
+    #[test]
+    fn t_sketch_offset_roundtrip() {
+        let f = Feature::SketchOffset {
+            id: "off1".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec!["l1".to_string(), "c1".to_string()],
+            distance: 1.5,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match (f, back) {
+            (
+                Feature::SketchOffset {
+                    id: id1,
+                    sketch: sk1,
+                    selection: sel1,
+                    distance: d1,
+                    suppressed: sup1,
+                },
+                Feature::SketchOffset {
+                    id: id2,
+                    sketch: sk2,
+                    selection: sel2,
+                    distance: d2,
+                    suppressed: sup2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(sk1, sk2);
+                assert_eq!(sel1, sel2);
+                assert!((d1 - d2).abs() < 1e-12);
+                assert_eq!(sup1, sup2);
+            }
+            _ => panic!("SketchOffset did not roundtrip"),
+        }
+    }
+
+    /// T05b: SketchOffset with empty selection roundtrips.
+    #[test]
+    fn t_sketch_offset_empty_selection_roundtrip() {
+        let f = Feature::SketchOffset {
+            id: "off2".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec![],
+            distance: -2.0,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match (f, back) {
+            (
+                Feature::SketchOffset {
+                    selection: sel1, ..
+                },
+                Feature::SketchOffset {
+                    selection: sel2, ..
+                },
+            ) => {
+                assert!(sel1.is_empty());
+                assert!(sel2.is_empty());
+            }
+            _ => panic!("SketchOffset did not roundtrip"),
+        }
+    }
+
+    /// T05c: SketchOffset suppressed field skip_serializing_if works.
+    #[test]
+    fn t_sketch_offset_suppressed_skipped_when_false() {
+        let f = Feature::SketchOffset {
+            id: "off3".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec![],
+            distance: 1.0,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        // suppressed: false should be skipped
+        assert!(!yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(!back.is_suppressed());
+    }
+
+    /// T05d: SketchOffset suppressed=true is serialized.
+    #[test]
+    fn t_sketch_offset_suppressed_true_serialized() {
+        let f = Feature::SketchOffset {
+            id: "off4".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec![],
+            distance: 1.0,
+            suppressed: true,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(back.is_suppressed());
     }
 }

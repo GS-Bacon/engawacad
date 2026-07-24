@@ -7,4 +7,16 @@ import type { Variable } from "./Variable";
 /**
  * A feature — one step in the operation history.
  */
-export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, suppressed?: boolean, } | { "type": "create_cylinder", id: string, radius: number, height: number, origin?: [number, number, number], suppressed?: boolean, } | { "type": "create_sphere", id: string, radius: number, center?: [number, number, number], suppressed?: boolean, } | { "type": "create_sketch", id: string, plane: SketchPlane, offset?: number, variables?: Array<Variable>, profile: Array<SketchElement>, plane_ref?: PlaneRef | null, suppressed?: boolean, } | { "type": "extrude", id: string, sketch: string, depth: number, fuse_target?: string | null, suppressed?: boolean, } | { "type": "extrude_cut", id: string, sketch: string, depth: number, target: string, suppressed?: boolean, } | { "type": "cut", id: string, target: string, tool: string, suppressed?: boolean, } | { "type": "fuse", id: string, target: string, tool: string, suppressed?: boolean, } | { "type": "intersect", id: string, target: string, tool: string, suppressed?: boolean, };
+export type Feature = { "type": "create_box", id: string, width: number, height: number, depth: number, suppressed?: boolean, } | { "type": "create_cylinder", id: string, radius: number, height: number, origin?: [number, number, number], suppressed?: boolean, } | { "type": "create_sphere", id: string, radius: number, center?: [number, number, number], suppressed?: boolean, } | { "type": "create_sketch", id: string, plane: SketchPlane, offset?: number, variables?: Array<Variable>, profile: Array<SketchElement>, plane_ref?: PlaneRef | null, suppressed?: boolean, } | { "type": "extrude", id: string, sketch: string, depth: number, fuse_target?: string | null, suppressed?: boolean, } | { "type": "extrude_cut", id: string, sketch: string, depth: number, target: string, suppressed?: boolean, } | { "type": "cut", id: string, target: string, tool: string, suppressed?: boolean, } | { "type": "fuse", id: string, target: string, tool: string, suppressed?: boolean, } | { "type": "intersect", id: string, target: string, tool: string, suppressed?: boolean, } | { "type": "sketch_offset", id: string, 
+/**
+ * Reference to CreateSketch.id
+ */
+sketch: string, 
+/**
+ * Element IDs to offset; empty = all elements
+ */
+selection?: Array<string>, 
+/**
+ * Signed offset distance (positive = left/outer, negative = right/inner)
+ */
+distance: number, suppressed?: boolean, };

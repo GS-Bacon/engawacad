@@ -1,0 +1,7 @@
+issues:
+  - id: SC01
+    severity: medium
+    section: "In-Scope / Out-of-Scope"
+    finding: "## In-Scope / Out-of-Scope セクションが存在しない"
+    suggestion: "ADR-006 §plan.md 必須セクションに従って表を追加すること"
+verdict: pass

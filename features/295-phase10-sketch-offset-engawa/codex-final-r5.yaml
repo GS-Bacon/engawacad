@@ -1,0 +1,9 @@
+issues:
+  - id: A01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 269
+    finding: "`simulate_history()` は sketch/body の存在しか追跡せず、`SketchOffset` を参照解決できた時点で executed 扱いにしています。しかし実 build は `built_sketch_profiles` 上で offset を逐次適用し、`apply_sketch_offset_build()` で accumulated profile に対して失敗し得ます。たとえば同じ円スケッチに inward offset を2回重ねて半径が 0 以下になるケースや、build-time に unsupported になる profile を CRUD が受理してしまい、`FeatureCrud` では通る履歴が `build_bodies_from_features()` で後から落ちます。"
+    suggestion: "`simulate_history()` に `built_sketch_profiles` 相当の状態を持たせ、`SketchOffset` 実行判定時に `apply_sketch_offset_build()` と同じ build-level 検証を simulated profile に対して行ってください。あわせて multi-offset collapse を含む CRUD 回帰テストを追加してください。"
+
+verdict: fail

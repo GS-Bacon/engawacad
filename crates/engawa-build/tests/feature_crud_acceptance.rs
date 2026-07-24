@@ -492,3 +492,63 @@ fn t17_sketch_back_search_excludes_non_sketch_producer() {
         result
     );
 }
+
+/// C-F02/M-F02: SketchOffset sketch ref validation.
+#[test]
+fn t18_sketch_offset_sketch_not_found() {
+    let doc = Document::new("Test");
+    let feature = Feature::SketchOffset {
+        id: "off1".to_string(),
+        sketch: "unknown".to_string(),
+        selection: vec![],
+        distance: 1.0,
+        suppressed: false,
+    };
+    let result = FeatureCrud::insert(&doc, feature, 0);
+    assert!(matches!(
+        result,
+        Err(FeatureCrudError::SketchNotFound {
+            feature_id,
+            sketch_ref
+        }) if feature_id == "off1" && sketch_ref == "unknown"
+    ));
+}
+
+/// A01 fix (round 4): SketchOffset with Line profile is rejected.
+/// Build-level contract requires single Circle; Line profile fails refs_resolve_in_state.
+#[test]
+fn t19_sketch_offset_line_profile_rejected() {
+    let mut doc = Document::new("Test");
+    doc.root_component.features.push(Feature::CreateSketch {
+        id: "sketch_line".to_string(),
+        plane: SketchPlane::Xy,
+        offset: 0.0,
+        suppressed: false,
+        variables: vec![],
+        profile: vec![SketchElement::Line {
+            id: "l1".to_string(),
+            from: [0.0, 0.0],
+            to: [10.0, 0.0],
+        }],
+        plane_ref: None,
+    });
+    let feature = Feature::SketchOffset {
+        id: "off1".to_string(),
+        sketch: "sketch_line".to_string(),
+        selection: vec![],
+        distance: 1.0,
+        suppressed: false,
+    };
+    let result = FeatureCrud::insert(&doc, feature, 1);
+    // refs_resolve_in_state returns false for Line profile → treated as sketch not found
+    match result {
+        Err(FeatureCrudError::SketchNotFound {
+            feature_id,
+            sketch_ref,
+        }) => {
+            assert_eq!(feature_id, "off1");
+            assert_eq!(sketch_ref, "sketch_line");
+        }
+        other => panic!("expected SketchNotFound but got: {:?}", other),
+    }
+}

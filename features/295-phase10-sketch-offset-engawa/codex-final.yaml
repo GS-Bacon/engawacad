@@ -1,0 +1,32 @@
+# Merged Codex review (3 persona parallel, #231)
+issues:
+  # [architect] issues: [] (verdict=pass)
+  - id: C-F01
+    severity: critical
+    file: "crates/engawa-build/src/lib.rs"
+    line_hint: 261
+    finding: "SketchOffset 後の `effective_profile` に対して `validate_profile_closed()` を再適用していないため、閉じた Line ループでもそのまま押し出しに流れます。`sketch_offset::offset_line()` は各辺を独立に平行移動するだけなので、正方形のような輪郭は角で非連結になり、Extrude/ExtrudeCut は真のオフセット輪郭ではない形状を生成します。"
+    suggestion: "offset 後の profile を再度 closed-loop 検証し、corner join/trim を実装するまで連結 Line/Arc ループの SketchOffset は明示的に reject してください。"
+  - id: C-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 214
+    finding: "`refs_resolve_in_state()` が `Feature::SketchOffset` の sketch 参照を検証していないため、`simulate_history()` は sketch 未生成の SketchOffset も executed 扱いにします。結果として `FeatureCrud::reorder` などで `CreateSketch` を `SketchOffset` の後ろへ動かしても受理され、実 build では `SketchNotFound` で落ちる無効 history を生成できます。"
+    suggestion: "`refs_resolve_in_state()` に `Feature::SketchOffset { sketch, .. } => sketches_at.contains_key(sketch)` を追加し、reorder/suppress/delete で SketchOffset を含む history が build 成功を維持する acceptance test を加えてください。"
+  - id: M-F01
+    severity: high
+    file: "crates/engawa-format/src/feature.rs"
+    line_hint: 522
+    finding: "Public `Feature` was widened in place with a new `sketch_offset` discriminant, but the format/API version boundary was not revised. `CURRENT_SCHEMA_VERSION` still stays at 2, so new `.engawa` files can carry an unknown tag while still advertising schema 2 to older readers, and downstream exhaustive Rust/TypeScript matches over `Feature` become source-incompatible."
+    suggestion: "Treat `sketch_offset` as a breaking schema/API addition: bump the document schema version, add migration/golden coverage for the new version, and only expose the widened enum/union on an explicitly versioned or major-release boundary."
+  - id: M-F02
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 214
+    finding: "`refs_resolve_in_state()` never validates `Feature::SketchOffset { sketch, .. }`, yet `simulate_history()` uses it to decide whether downstream features are still valid. As a result, `delete`/`reorder`/`suppress` can leave a `SketchOffset` pointing at a removed or moved `CreateSketch`, and `next.validate()` will still accept the document until `build_bodies_from_features()` fails later with `SketchNotFound`."
+    suggestion: "Handle `SketchOffset` like other sketch consumers in `refs_resolve_in_state()` (check `sketches_at.contains_key(sketch)`) and add CRUD regression tests for deleting, reordering, and suppressing a sketch that is referenced by `SketchOffset`."
+
+verdict: fail
+fallback_used: false
+# severity_counts: critical=1, high=3, medium=0, low=0
+# blocking: 4

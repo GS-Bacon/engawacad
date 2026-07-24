@@ -1,0 +1,13 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "apply_sketch_offset は純関数だが、選択要素の順序が非決定的になる可能性がある。HashSet は iteration order が決定的でないため、selection に重複がある場合や順序依存のロジックがあると問題になる"
+    suggestion: "HashSet の代わりに IndexMap または順序を決定的に保つデータ構造を使用するか、あるいは selection の順序が結果に影響しないことを明確に保証すること。T01 決定性テストで selection の順序を入れ替えて同一結果になることを検証する"
+  - id: IN02
+    severity: high
+    section: "テスト計画"
+    finding: "T01 決定性テストで同一入力を 2 回適用しているが、selection の順序を入れ替えたケースが含まれていない。HashSet 使用時の順序非決定性を検証できない"
+    suggestion: "T01 に selection 順序を逆順にしたケースを追加し、同一出力になることを assert する"
+
+verdict: fail

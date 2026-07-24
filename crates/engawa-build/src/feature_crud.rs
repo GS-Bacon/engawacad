@@ -4,7 +4,7 @@
 //! the feature history of a Document. Each operation returns a new Document
 //! and preserves input Document immutability (ID-stable).
 
-use engawa_format::{Document, EntityRef, Feature, PlaneRef};
+use engawa_format::{Document, EntityRef, Feature, PlaneRef, SketchElement};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -101,6 +101,7 @@ fn feature_sketch_refs(f: &Feature) -> Vec<&str> {
     match f {
         Feature::Extrude { sketch, .. } => vec![sketch.as_str()],
         Feature::ExtrudeCut { sketch, .. } => vec![sketch.as_str()],
+        Feature::SketchOffset { sketch, .. } => vec![sketch.as_str()],
         _ => vec![],
     }
 }
@@ -129,6 +130,7 @@ fn feature_variant_name(f: &Feature) -> &'static str {
         Feature::Cut { .. } => "Cut",
         Feature::Fuse { .. } => "Fuse",
         Feature::Intersect { .. } => "Intersect",
+        Feature::SketchOffset { .. } => "SketchOffset",
     }
 }
 
@@ -227,6 +229,20 @@ fn refs_resolve_in_state(
         | Feature::Fuse { target, tool, .. }
         | Feature::Intersect { target, tool, .. } => {
             live_bodies_at.contains_key(target) && live_bodies_at.contains_key(tool)
+        }
+        Feature::SketchOffset { sketch, .. } => {
+            // A01: SketchOffset build-level contract requires single Circle profile.
+            // Check that referenced CreateSketch.profile is exactly one Circle.
+            match sketches_at.get(sketch.as_str()) {
+                Some(&idx) => {
+                    if let Feature::CreateSketch { profile, .. } = &features[idx] {
+                        profile.len() == 1 && matches!(profile[0], SketchElement::Circle { .. })
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            }
         }
         // CreateSketch の直接 plane_ref も上の transitive ループでカバーされる
         // (feature_implicit_body_refs が CreateSketch 自身の plane_ref を返す)
@@ -374,6 +390,19 @@ fn simulate_history(
                 live_bodies_at.remove(target);
                 live_bodies_at.remove(tool);
                 live_bodies_at.insert(id.clone(), i);
+                executed_at.insert(i);
+            }
+            Feature::SketchOffset {
+                id: _, suppressed, ..
+            } => {
+                if *suppressed {
+                    continue;
+                }
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
+                // SketchOffset modifies sketch profile but does not produce a body.
+                // It is recorded as executed but does not register to live_bodies_at.
                 executed_at.insert(i);
             }
         }
@@ -557,6 +586,23 @@ fn check_refs_resolve_before(
                     feature_id: fid.to_string(),
                     body_ref: implicit_ref,
                 });
+            }
+        }
+    }
+
+    // A01 fix (round 4): SketchOffset requires single Circle profile.
+    // Even if sketch ref resolves in sketches_at, verify the profile is Circle-only.
+    if let Feature::SketchOffset { sketch, .. } = f {
+        if let Some(&idx) = sketches_at.get(sketch.as_str()) {
+            if let Feature::CreateSketch { profile, .. } = &features[idx] {
+                let is_circle_only =
+                    profile.len() == 1 && matches!(profile[0], SketchElement::Circle { .. });
+                if !is_circle_only {
+                    return Err(FeatureCrudError::SketchNotFound {
+                        feature_id: fid.to_string(),
+                        sketch_ref: sketch.clone(),
+                    });
+                }
             }
         }
     }
@@ -830,7 +876,8 @@ fn set_feature_suppressed(f: &mut Feature, on: bool) {
         | Feature::ExtrudeCut { suppressed, .. }
         | Feature::Cut { suppressed, .. }
         | Feature::Fuse { suppressed, .. }
-        | Feature::Intersect { suppressed, .. } => {
+        | Feature::Intersect { suppressed, .. }
+        | Feature::SketchOffset { suppressed, .. } => {
             *suppressed = on;
         }
     }
