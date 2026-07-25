@@ -24,7 +24,57 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 1. `--batch` 付き起動で `batch_arg === null` (引数なし起動、自律バッチ)
 2. `--issue N --autonomous` (単一 Issue 自律)
 
-自律モードで skip / 委譲される STEP:
+---
+
+## 🚨 AUTONOMOUS MODE 禁止事項 (#323 systemic rule)
+
+**自律モードでは以下を絶対に守る**。SKILL.md の個別 STEP に記述が無くても、このルールが優先する。
+
+### 1. `AskUserQuestion` を絶対に呼ばない
+
+曖昧場面 (branch 衝突、cargo warning 解釈、git rebase conflict、tests flake、any judgment call) に遭遇したら:
+
+**3 段階判定** (順に試す):
+1. **Claude 自力判断**: plan.md / Non-Goals / ADR / 直近 commit log / test 出力を Read/grep して自己判断。判断根拠を `features/$N-$SLUG/plan.md` の「自律判断ログ」セクションに append
+2. **Opus 4.7 subagent 委譲**: 上記で決まらない場合、Agent tool で subagent 起動:
+   ```
+   Agent(
+     subagent_type: "general-purpose",
+     model: "opus",
+     description: "<judgment 内容>",
+     prompt: "<状況説明 + 選択肢 + 判断基準>"
+   )
+   ```
+   subagent の返答に従って進行
+3. **needs-human 退避**: 上記でも決まらない = 本当に人間判断必要:
+   ```bash
+   bun .claude/skills/3ai/scripts/raise-issue-on-failure.ts \
+     --step "<現 STEP>" --feature-dir features/$N-$SLUG \
+     --error-summary "<状況説明>"
+   ```
+   起票後、**その場で /3ai 終了**。worker pane は idle に戻る (watcher が次 Issue を fan-out)。
+
+### 2. Plan mode に入ったら即 `ExitPlanMode`
+
+Plan mode は承認プロンプトを構造的に含む。autonomous mode ではまず入らないよう努める。入ってしまった場合は情報共有として plan を stdout に流し、即 ExitPlanMode を呼ぶ (これは承認取得ではなく mode 遷移だけの用途)。
+
+### 3. 個別 STEP の記述と衝突した場合
+
+各 STEP に「ユーザーへエスカレーション」「停止して確認」と書いてあっても、autonomous mode ではこの systemic rule が優先する = 3 段階判定に流す。SKILL.md 個別記述は対話モード用のフォールバック。
+
+### 4. なぜこのルールが必要か
+
+Claude Code (worker pane の Claude) は SKILL.md に書いてない曖昧場面で AskUserQuestion を **自主的に呼ぶ**。これは runtime 動作で SKILL.md の個別 STEP 追記では防げない (無限モグラ叩き、#320/#322 で観測)。**冒頭に systemic rule を置くことで Claude の判断傾向自体を変える**。
+
+### 5. 例外
+
+- Bash 実行の permission prompt は `--dangerously-skip-permissions` で既に bypass 済
+- 本ルールは AskUserQuestion tool 呼び出しに限る
+- MCP tool の連携で外部からユーザー確認要求が来る場合は別扱い (現状該当なし)
+
+---
+
+自律モードで skip / 委譲される STEP (個別記述):
 - STEP 4 ExitPlanMode → skip (情報共有のみ、待たない)
 - STEP 6.5 期待値乖離エスカレ → Opus 4.7 subagent 判定に委譲 (memory: [[opus-delegation-for-implementation]])
 - STEP 6-D adversarial refute エスカレ → Opus 4.7 subagent 判定に委譲
