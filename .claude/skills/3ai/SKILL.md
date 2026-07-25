@@ -339,18 +339,35 @@ bun .claude/skills/3ai/scripts/state.ts judge \
 bun .claude/skills/3ai/scripts/state.ts check-early-stop \
   features/$ISSUE_NUM-$ISSUE_SLUG/state.json
 ```
-exit 1 が返った場合（2 round 連続で全指摘を棄却）は **停止してユーザーにエスカレーション**:
-> 2 round 連続で全 GLM 指摘を棄却しています。設計そのものに問題がある可能性があります。  
+exit 1 が返った場合（2 round 連続で全指摘を棄却）:
+
+**#322 対話モード**: **停止してユーザーにエスカレーション**:
+> 2 round 連続で全 GLM 指摘を棄却しています。設計そのものに問題がある可能性があります。
 > rejection.md を提示します。設計を見直してから再開してください。
+
+**#322 autonomous モード**: **Opus 4.7 subagent 判定に委譲** (--autonomous or batch_arg === null):
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "STEP 3-D early-stop 判定",
+  prompt: "2 round 連続で全 GLM 指摘を棄却した。rejection.md と plan.md を読み、以下の 3 択で判定してください: (a) 収束続行 (棄却根拠が妥当) (b) round 追加実行 (念のため) (c) needs-human 退避 (設計そのものに問題)。判定根拠を返してください。"
+)
+```
+subagent の返答が (a) → 3-F 進行、(b) → 3-C 再 dispatch、(c) → `raise-issue-on-failure.ts` で needs-human 起票して次 Issue へ。
 
 **全採用警告チェック**（次 round dispatch 前に必ず実行）:
 ```bash
 bun .claude/skills/3ai/scripts/state.ts check-full-adoption-warning \
   features/$ISSUE_NUM-$ISSUE_SLUG/state.json
 ```
-exit 1 が返った場合は停止してユーザーへ表示:
-> 2 round 連続で棄却が 0 件です。scope 防衛できていますか?  
+exit 1 が返った場合:
+
+**#322 対話モード**: 停止してユーザーへ表示:
+> 2 round 連続で棄却が 0 件です。scope 防衛できていますか?
 > Non-Goals に含まれる指摘や medium 以下で受容すべき指摘は棄却 log に記録してから次 round に進んでください。
+
+**#322 autonomous モード**: Opus 4.7 subagent が rejection.md / Non-Goals を読み、scope 防衛不足なら次 round dispatch 前に指摘を棄却リストに追加、防衛済みなら round 続行。
 
 ### 3-E: 収束判定・再 dispatch
 
@@ -358,7 +375,7 @@ exit 1 が返った場合は停止してユーザーへ表示:
 - **Critical/High が残る** → 3-C に戻って再 dispatch（N++）
 - **design_loops が上限超過** → Critical の数を確認:
   - critical = 0: Claude 裁量で残 high/medium を「採用→修正」「棄却→rejection.md」で処理 → 3-F へ
-  - critical ≥ 1: 停止してユーザーにエスカレーション
+  - critical ≥ 1: **#322 対話モード**: 停止してユーザーにエスカレーション / **autonomous モード**: Opus 4.7 subagent が残 critical を「plan 修正で吸収 / needs-human 退避」で判定
 
 ### 3-F: 通過
 
@@ -641,7 +658,15 @@ Claude が以下を実行する（crates/** の **Read のみ**）:
      --feature-dir features/$ISSUE_NUM-$ISSUE_SLUG
    ```
    出力を読み、各 T ID で plan の期待値と実装 assertion が一致するか Claude が判定する。
-   - **乖離検出時**: test-spec.md に「## 期待値乖離」セクションを追加 + **停止してユーザーへエスカレーション**（STEP 6.6 に進まない）
+   - **乖離検出時**:
+     - **#322 対話モード**: test-spec.md に「## 期待値乖離」セクションを追加 + **停止してユーザーへエスカレーション**（STEP 6.6 に進まない）
+     - **#322 autonomous モード**: Opus 4.7 subagent が乖離を「(a) 実装 assertion が正・plan 期待値を修正 / (b) plan 期待値が正・実装を修正 / (c) 本質的乖離で needs-human 退避」の 3 択で判定:
+       ```
+       Agent(subagent_type: "general-purpose", model: "opus",
+             description: "STEP 6.5 期待値乖離判定",
+             prompt: "plan の T ID 期待値と実装 assertion の乖離を 3 択で判定...")
+       ```
+       subagent 返答が (a) → plan.md 修正 / (b) → 実装差戻し (STEP 6.x) / (c) → `raise-issue-on-failure.ts` で needs-human 起票
    - **乖離なし時**: 手順 5 へ進む
 5. `features/$ISSUE_NUM-$ISSUE_SLUG/test-spec.md` を **Write** する（セクション: **不足テスト（plan 計画分） / 実装差分から追加すべきテスト / エッジケース・退化入力 / 数値境界 / 決定性**）
 
