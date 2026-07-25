@@ -978,19 +978,81 @@ FUZZ_RC=$?
 # FUZZ_RC=0: OK (schema 未変更 or seed 追加済み or fuzz/ 未セットアップ warn)
 
 cargo xtask ci   # 最終 green 確認
-git checkout main
-git merge --squash cad/$ISSUE_NUM-$ISSUE_SLUG
-git commit -m "feat: <内容の一行要約>
+```
+
+### STEP 8 分岐: loop-mode vs 単体 mode (#321 Phase D-1 補完)
+
+worktree 内 (`$PWD` が `/home/bacon/worktrees/wN`) かつ worker-registry にエントリがあれば **loop-mode**、それ以外は **単体 mode** (従来直接 push)。
+
+```bash
+LOOP_WORKTREE_BASE=${LOOP_WORKTREE_BASE:-/home/bacon/worktrees}
+WORKER_ID=""
+if [[ "$PWD" == "$LOOP_WORKTREE_BASE"/* ]] && [ -f features/.loop/worker-registry.json ]; then
+  # worktree path から worker-id を registry で逆引き
+  WORKER_ID=$(bun -e '
+    const r = JSON.parse(require("fs").readFileSync("features/.loop/worker-registry.json","utf-8"));
+    const pwd = process.env.PWD;
+    for (const [id, w] of Object.entries(r.workers)) {
+      if (w.worktree === pwd) { console.log(id); process.exit(0); }
+    }
+    process.exit(1);
+  ' 2>/dev/null || true)
+fi
+```
+
+**loop-mode (worker-id 検出時)** — merge pane 経由で serial 化 (直接 push しない):
+
+```bash
+if [ -n "$WORKER_ID" ]; then
+  # 1. worktree branch にコミット (現在 branch にそのまま)
+  git add -A
+  git commit -m "feat: <内容の一行要約>
 
 <詳細（任意）>
 
 Closes #$ISSUE_NUM
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
-git push origin main
-git branch -d cad/$ISSUE_NUM-$ISSUE_SLUG
-bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json merge passed
-bun .claude/skills/3ai/scripts/finalize-feature.ts --issue $ISSUE_NUM --slug $ISSUE_SLUG
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+  COMMIT_SHA=$(git rev-parse HEAD)
+
+  # 2. worker-registry を merging に遷移
+  bun .claude/skills/3ailoop/scripts/loop-worker-registry.ts mark-merging \
+    --worker-id "$WORKER_ID"
+
+  # 3. merge-queue に enqueue (merge pane が拾って rebase → CI → push → close → release)
+  bun .claude/skills/3ailoop/scripts/loop-tmux-merge-dispatcher.ts --enqueue \
+    --issue "$ISSUE_NUM" \
+    --worker-id "$WORKER_ID" \
+    --worktree "$PWD" \
+    --commit-sha "$COMMIT_SHA"
+
+  # 4. state を merge_enqueued に倒す (finalize は merge pane 側)
+  bun .claude/skills/3ai/scripts/state.ts set \
+    features/$ISSUE_NUM-$ISSUE_SLUG/state.json merge enqueued
+  bun .claude/skills/3ai/scripts/finalize-feature.ts \
+    --issue $ISSUE_NUM --slug $ISSUE_SLUG
+  # worker Claude session は STEP 8 完了で idle 待機に戻る (watcher が次 Issue を fan-out)
+fi
+```
+
+**単体 mode (worker-id なし = 通常 /3ai --issue N 起動 or ローカル開発)** — 従来通り直接 push:
+
+```bash
+if [ -z "$WORKER_ID" ]; then
+  git checkout main
+  git merge --squash cad/$ISSUE_NUM-$ISSUE_SLUG
+  git commit -m "feat: <内容の一行要約>
+
+<詳細（任意）>
+
+Closes #$ISSUE_NUM
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+  git push origin main
+  git branch -d cad/$ISSUE_NUM-$ISSUE_SLUG
+  bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json merge passed
+  bun .claude/skills/3ai/scripts/finalize-feature.ts --issue $ISSUE_NUM --slug $ISSUE_SLUG
+fi
 ```
 
 > `finalize-feature.ts` は `features/$ISSUE_NUM-$ISSUE_SLUG/` を git に追加してコミットする。
