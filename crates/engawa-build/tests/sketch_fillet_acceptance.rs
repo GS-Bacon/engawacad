@@ -328,6 +328,49 @@ fn t12_crud_gate_rejects_reorder_breaking_adjacency() {
     ));
 }
 
+// === T13: CRUD gate boundary — coordinate-only edit is accepted by the gate but
+// rejected later by build's own profile-closure check (Codex round2 A01, partial-adopt).
+// The gate intentionally does not re-validate shared-corner geometry (see plan.md
+// "検証範囲の分離"); this test fixes that boundary as an executable assertion instead
+// of leaving it as prose.
+#[test]
+fn t13_crud_gate_accepts_coordinate_edit_then_build_rejects_broken_profile() {
+    let mut doc = Document::new("t");
+    doc.root_component.features = fillet_rect_features("sk", "f1", "ext", 1.0);
+
+    // Move l1's endpoint so it no longer shares a corner with l2 — same IDs, same order.
+    let moved_profile = vec![
+        line("l1", [0.0, 0.0], [11.0, 0.0]),
+        line("l2", [10.0, 0.0], [10.0, 5.0]),
+        line("l3", [10.0, 5.0], [0.0, 5.0]),
+        line("l4", [0.0, 5.0], [0.0, 0.0]),
+    ];
+    let new_sketch = Feature::CreateSketch {
+        id: "sk".to_string(),
+        plane: SketchPlane::Xy,
+        offset: 0.0,
+        variables: vec![],
+        profile: moved_profile,
+        plane_ref: None,
+        suppressed: false,
+    };
+
+    // (a) The CRUD gate accepts the edit — it only checks ID resolution and array
+    // adjacency, not corner-point coordinates (plan.md 検証範囲の分離).
+    let edited = FeatureCrud::edit(&doc, "sk", new_sketch).expect("gate should accept edit");
+
+    // (b) build rejects it — but via `validate_profile_closed` (whole-profile closure,
+    // triggered before SketchFillet dispatch), not `sketch_fillet_no_shared_corner`.
+    let ref_planes = RefPlane::default_canonical_three();
+    let mut gen = IdGenerator::new(0);
+    let err = build_bodies_from_features(&edited.root_component.features, &ref_planes, &mut gen)
+        .unwrap_err();
+    assert!(
+        matches!(err, KernelError::InvalidParameter { kind: "profile" }),
+        "expected profile-closure rejection, got {err:?}"
+    );
+}
+
 // === T_DEG_fillet_too_large: radius exceeds tangent length budget ===
 #[test]
 fn t_deg_fillet_too_large() {
