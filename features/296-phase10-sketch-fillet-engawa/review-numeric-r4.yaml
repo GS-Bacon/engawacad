@@ -1,0 +1,14 @@
+issues:
+  - id: NU01
+    severity: medium
+    section: "設計方針 > 数値モデル"
+    finding: "plan.md に '### 数値モデル' セクションが存在しない (Phase 4 では必須)"
+    suggestion: "ADR-006 §plan.md 必須セクションに従って '### 数値モデル' を追加し、ε_snap, ε_len, ε_area を明記すること"
+  - id: NU02
+    severity: medium
+    section: "設計方針 > 退化幾何の扱い"
+    finding: "共面する 2 面 (dihedral angle ≈ 0) の処理が未定義。ADR-004 では KernelError::DegenerateInput を返すと定義されているが plan に記載なし"
+    suggestion: "設計方針に「共面 face ペアは KernelError::DegenerateInput を返す (ADR-004 §3.2)」を追加すること"
+
+verdict: pass  # pass | fail
+# fail = Critical または High が 1 件以上ある

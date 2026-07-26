@@ -1,0 +1,9 @@
+issues:
+  - id: A01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 270
+    finding: "`SketchFillet` の CRUD gate は `find_adjacent_pair` と Line 判定しか見ておらず、共有コーナー (`a.to` と `b.from` の一致) を検証していません。`CreateSketch` の endpoint だけを編集して `elem1_id` / `elem2_id` の ID と並び順を保ったまま接続を外すと、`simulate_history` 上は fillet が実行可能のままになって編集が通り、次回 build で初めて `sketch_fillet_no_shared_corner` で落ちます。"
+    suggestion: "`refs_resolve_in_state` と `check_refs_resolve_before` の両方で共有端点も確認し、このケースを `EditBreaksConsumer` / `SketchElementNotResolved` で reject する回帰テストを追加してください。"
+
+verdict: fail

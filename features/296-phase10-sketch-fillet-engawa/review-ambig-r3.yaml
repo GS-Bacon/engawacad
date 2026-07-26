@@ -1,0 +1,18 @@
+issues:
+  - id: AM03
+    severity: low
+    section: "設計方針 > 退化幾何の扱い"
+    finding: "`theta` の判定条件に `<= ANGLE_TOLERANCE` と `>= π - ANGLE_TOLERANCE` が使われているが、`ANGLE_TOLERANCE = 1e-9` (rad) の妥当性に関する根拠記述が plan 内にない。ただし、数値モデル節で値は固定されており、実装者が値を決める必要はないため判断の丸投げではない。"
+    suggestion: "値は固定済みのため、指摘の必要はない。AMBIG 観点での問題はない。"
+  - id: AM04
+    severity: low
+    section: "Non-Goals"
+    finding: "「Fillet 適用後の profile に対する再 fillet (elem1_id/elem2_id は常に Line である前提。既に fillet 済みの Arc を挟んだ状態からの再 fillet は対象外)」と記載されているが、`apply_sketch_fillet_build` に対応するガード条件がコード例に見当たらない。"
+    suggestion: "コード例の `as_line` 呼び出しで `UnsupportedFeature { kind: \"sketch_fillet_only_line_line\" }` が返るため、実装レベルで担保済み。問題ではない。"
+  - id: AM05
+    severity: medium
+    section: "実装対象 > 新規 kernel module"
+    finding: "「上記の helper (...) は **すべて `sketch_fillet.rs` 内の新規 private fn として実装する** (GLM round 1 IN01/AM01 判定、Opus 4.7 subagent 確認済み)。既存 `geometry/math.rs` にはこのうち1つも存在しない」とあるが、実装時に GLM が独自判断で `geometry/math.rs` への切り出しを再提案する可能性を排除する記述がない。"
+    suggestion: "「却下: `geometry/math.rs` への切り出し。」と理由が明記されているため、再提案は不適切。ただし、より明確にするために 'geometry/math.rs への切り出しは本 Issue の scope 外。rule of three 適用済み判定の対象外' と記載してもよいが、既に '実装時に判断を委ねない、確定事項' と明記されているため必須ではない。"
+
+verdict: pass

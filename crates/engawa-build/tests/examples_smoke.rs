@@ -193,3 +193,9 @@ fn ellipse_conic() {
 fn sketch_offset() {
     smoke(include_str!("../../../examples/sketch_offset.engawa"));
 }
+
+/// Issue #296: Phase 10 Sketch Fillet smoke テスト
+#[test]
+fn sketch_fillet() {
+    smoke(include_str!("../../../examples/sketch_fillet.engawa"));
+}

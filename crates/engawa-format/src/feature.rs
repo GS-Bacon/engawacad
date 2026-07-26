@@ -545,6 +545,33 @@ pub enum Feature {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         suppressed: bool,
     },
+
+    /// Fillet (round) a corner where two sketch elements meet (2D profile edit).
+    ///
+    /// Phase 10 (#296): Line-Line only. Arc-Arc / Line-Arc / Circle / Ellipse / Conic
+    /// are Out-of-Scope (tangent-circle construction has distinct math; separate Issue).
+    ///
+    /// The two referenced elements must be adjacent in the CreateSketch profile array
+    /// (including the closed-loop wraparound pair `[last, first]`) and share a corner
+    /// point. The fillet inserts a tangent `SketchElement::Arc` between them and shortens
+    /// both Lines to their respective tangent points.
+    ///
+    /// Derived Arc id is deterministic: `"{a_id}_{b_id}_fillet_arc"` (ADR-017 §3 stable
+    /// naming). Input order of `elem1_id` / `elem2_id` does not affect the result.
+    #[serde(rename = "sketch_fillet")]
+    SketchFillet {
+        id: String,
+        /// Reference to CreateSketch.id
+        sketch: String,
+        /// First element ID (any of the two adjacent elements)
+        elem1_id: String,
+        /// Second element ID (any of the two adjacent elements)
+        elem2_id: String,
+        /// Fillet radius (positive)
+        radius: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
 }
 
 fn is_origin(p: &[f64; 3]) -> bool {
@@ -568,7 +595,8 @@ impl Feature {
             | Feature::Cut { id, .. }
             | Feature::Fuse { id, .. }
             | Feature::Intersect { id, .. }
-            | Feature::SketchOffset { id, .. } => id,
+            | Feature::SketchOffset { id, .. }
+            | Feature::SketchFillet { id, .. } => id,
         }
     }
 
@@ -584,7 +612,8 @@ impl Feature {
             | Feature::Cut { suppressed, .. }
             | Feature::Fuse { suppressed, .. }
             | Feature::Intersect { suppressed, .. }
-            | Feature::SketchOffset { suppressed, .. } => *suppressed,
+            | Feature::SketchOffset { suppressed, .. }
+            | Feature::SketchFillet { suppressed, .. } => *suppressed,
         }
     }
 }
@@ -1705,6 +1734,89 @@ mod tests {
             sketch: "sketch_0".to_string(),
             selection: vec![],
             distance: 1.0,
+            suppressed: true,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(back.is_suppressed());
+    }
+
+    /// T05: SketchFillet YAML roundtrip (Issue #296).
+    #[test]
+    fn t_sketch_fillet_roundtrip() {
+        let f = Feature::SketchFillet {
+            id: "fillet1".to_string(),
+            sketch: "sketch_0".to_string(),
+            elem1_id: "l1".to_string(),
+            elem2_id: "l2".to_string(),
+            radius: 1.5,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("type: sketch_fillet"), "tag missing: {yaml}");
+        assert!(yaml.contains("id: fillet1"), "id missing: {yaml}");
+        assert!(yaml.contains("sketch: sketch_0"), "sketch missing: {yaml}");
+        assert!(yaml.contains("elem1_id: l1"), "elem1_id missing: {yaml}");
+        assert!(yaml.contains("elem2_id: l2"), "elem2_id missing: {yaml}");
+        assert!(yaml.contains("radius: 1.5"), "radius missing: {yaml}");
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match (f, back) {
+            (
+                Feature::SketchFillet {
+                    id: id1,
+                    sketch: sk1,
+                    elem1_id: e1_a,
+                    elem2_id: e2_a,
+                    radius: r1,
+                    suppressed: sup1,
+                },
+                Feature::SketchFillet {
+                    id: id2,
+                    sketch: sk2,
+                    elem1_id: e1_b,
+                    elem2_id: e2_b,
+                    radius: r2,
+                    suppressed: sup2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(sk1, sk2);
+                assert_eq!(e1_a, e1_b);
+                assert_eq!(e2_a, e2_b);
+                assert!((r1 - r2).abs() < 1e-12);
+                assert_eq!(sup1, sup2);
+            }
+            _ => panic!("SketchFillet did not roundtrip"),
+        }
+    }
+
+    /// T05b: SketchFillet suppressed=false is omitted from YAML.
+    #[test]
+    fn t_sketch_fillet_suppressed_skipped_when_false() {
+        let f = Feature::SketchFillet {
+            id: "fillet2".to_string(),
+            sketch: "sketch_0".to_string(),
+            elem1_id: "l1".to_string(),
+            elem2_id: "l2".to_string(),
+            radius: 1.0,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(!yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(!back.is_suppressed());
+    }
+
+    /// T05c: SketchFillet suppressed=true is serialized.
+    #[test]
+    fn t_sketch_fillet_suppressed_true_serialized() {
+        let f = Feature::SketchFillet {
+            id: "fillet3".to_string(),
+            sketch: "sketch_0".to_string(),
+            elem1_id: "l1".to_string(),
+            elem2_id: "l2".to_string(),
+            radius: 1.0,
             suppressed: true,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
