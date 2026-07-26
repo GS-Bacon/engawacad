@@ -245,10 +245,24 @@ bun .claude/skills/3ai/scripts/resolve-issues.ts --sweep
 
 ## STEP 0: プランモードへ移行
 
+### 対話モード (`--issue N` 単独 or `--batch fixes/phase`)
+
 **`EnterPlanMode` を呼ぶ。**
 
-> プランモードでも **Bash dispatch は通る**（Edit/Write 等のファイル変更のみ deny）。  
+> プランモードでも **Bash dispatch は通る**（Edit/Write 等のファイル変更のみ deny）。
 > STEP 3 の GLM 設計レビューは ExitPlanMode 前に実行すること（後ろ倒し禁止）。
+
+### 🚨 autonomous モード (`--issue N --autonomous` or 引数なし) — #328
+
+**`EnterPlanMode` を呼ばない**。理由:
+
+- Plan mode 中は Edit/Write 制限、STEP 5+ で解除に `ExitPlanMode` が必須
+- `ExitPlanMode` 呼び出し自体が Claude Code の runtime で **"Would you like to proceed?" 承認 UI を必ず表示**する (autonomous mode でも回避不可、実観測 2026-07-26 worker-1 #297)
+- SKILL.md instruction では suppress できない (Claude Code built-in behavior)
+
+代替: **通常モードのまま STEP 1-8 を実行**。STEP 2 の plan.md 執筆は Write tool で直接ファイル作成 (Plan mode 不要)。STEP 3-D 等の判断は AUTONOMOUS MODE 禁止事項 (§1-6) に従って進める。
+
+対話モードでは Plan mode + ExitPlanMode 承認が「唯一のユーザー承認点」として機能する。autonomous mode はこの承認点自体を持たない設計 (代わりに Opus 4.7 subagent 委譲 + needs-human 退避で判断)。
 
 ---
 
@@ -525,11 +539,10 @@ Agent(
 
 ## STEP 4: 確定プラン提出（唯一の承認点）
 
-> **自律モードでは本 STEP の `ExitPlanMode` をスキップし、確定 plan の要点を情報共有として表示するのみ（待たない）。そのまま STEP 5 へ進む。**  
-> 自律モード = 「引数なし起動 (`batch_arg === null`)」または「`--issue N --autonomous` 起動 (#320)」。
-> 対話バッチモード（`batch_arg !== null`）および単一 Issue 対話モード (`--issue N` 単独) では下記のとおり唯一の承認点として維持する。
+> **🚨 autonomous モード (`--issue N --autonomous` or `batch_arg === null`) では `ExitPlanMode` を絶対に呼ばない (#328)**。理由: そもそも STEP 0 で Plan mode に入っていないため exit 不要。加えて ExitPlanMode 呼び出し自体が Claude Code の承認 UI を必ず表示するため、autonomous mode の設計に反する。plan.md の要点を情報共有として stdout に出すのみ (待たない)、そのまま STEP 5 へ進む。
+> 対話バッチモード（`batch_arg !== null`）および単一 Issue 対話モード (`--issue N` 単独) では Plan mode に入っている前提で下記の唯一の承認点として維持する。
 
-**`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点（対話/単一 Issue 対話モード）。**
+**対話モード**: **`ExitPlanMode` を呼ぶ。これがフロー全体で唯一の承認点。**
 
 GLM レビュー反映後の plan を提示しユーザーに承認を求める。
 
