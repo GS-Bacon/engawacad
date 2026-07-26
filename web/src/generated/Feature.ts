@@ -19,4 +19,20 @@ selection?: Array<string>,
 /**
  * Signed offset distance (positive = left/outer, negative = right/inner)
  */
-distance: number, suppressed?: boolean, };
+distance: number, suppressed?: boolean, } | { "type": "sketch_fillet", id: string, 
+/**
+ * Reference to CreateSketch.id
+ */
+sketch: string, 
+/**
+ * First element ID (any of the two adjacent elements)
+ */
+elem1_id: string, 
+/**
+ * Second element ID (any of the two adjacent elements)
+ */
+elem2_id: string, 
+/**
+ * Fillet radius (positive)
+ */
+radius: number, suppressed?: boolean, };
