@@ -9,15 +9,6 @@
             "command": "bun /home/bacon/engawacad/.claude/skills/3ai/scripts/guard-crates.ts"
           }
         ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun /home/bacon/engawacad/.claude/skills/3ai/scripts/guard-crates.ts"
-          }
-        ]
       }
     ],
     "PostToolUse": [

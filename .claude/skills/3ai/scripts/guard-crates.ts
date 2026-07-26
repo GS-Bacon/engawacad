@@ -3,6 +3,14 @@
 // Claude(オーケストレーター)が crates/** を直接編集・revert しようとしたら deny する。
 // CAD_WORKER=1 の環境（dispatch-glm.ts 経由の子プロセス）は allow する。
 // tests/ 配下のみ Claude による Write が許可される（STEP 5.5 acceptance skeleton 用）。
+//
+// #325 (2026-07-26): settings.json の matcher を Edit|Write|NotebookEdit のみに narrow。
+// Bash 系操作 (git reset / stash pop / rebase) は素通り。理由:
+//   - loop-mode worker が git ツリー整合を保つのに必須
+//   - Bash 引数の文字列 pattern match は Issue body 等の説明テキストも
+//     誤爆する (2026-07-26 に本 Issue #325 起票時に発火して観測)
+//   - 本来目的は Claude の Edit/Write による直接編集の防止であり、Bash は対象外
+// Bash 系のブロックロジックは互換のため残置 (matcher で Bash が来なくなるので dead code)。
 
 if (process.env.CAD_WORKER) process.exit(0);
 

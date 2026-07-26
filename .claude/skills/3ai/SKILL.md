@@ -72,6 +72,20 @@ Claude Code (worker pane の Claude) は SKILL.md に書いてない曖昧場面
 - 本ルールは AskUserQuestion tool 呼び出しに限る
 - MCP tool の連携で外部からユーザー確認要求が来る場合は別扱い (現状該当なし)
 
+### 6. #324 git stash 禁止 (autonomous mode)
+
+**autonomous mode の worker では git stash を呼ばない**。
+
+理由:
+- git stash はリポジトリ全体で共有される (worktree 単位で isolate されない)
+- N=3 worker が並列で走る場合、他 worker の stash が自 worktree に降ってくる race がある (2026-07-26 に worker-1 で観測)
+- rebase / reset で意図しない変更が反映されるリスク
+
+代替:
+- 一時退避したい場合は **branch を切って commit**、後で cherry-pick or 破棄
+- rebase 中断時は `git rebase --abort` (stash 不要)
+- 汚染された作業木の回復は `git reset --hard HEAD` (自分の branch HEAD に戻すだけ)
+
 ---
 
 自律モードで skip / 委譲される STEP (個別記述):
