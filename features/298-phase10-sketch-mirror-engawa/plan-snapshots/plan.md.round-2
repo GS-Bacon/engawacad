@@ -30,9 +30,7 @@ Issue #298 本文と ADR-017 の間に以下の乖離があったため、Claude
 - 軸を `EntityRef`（既存 sketch 要素）で指定する機能: 2 点直接指定のみ対応。ADR-017 の `MirrorLine::EntityRef` variant は非採用
 - Trim/Extend との連携（mirror 後の要素を既存ループにトリム結合する等）: #307/#308 が未実装のため対象外
 - mirror 結果を用いた自動 extrude・閉ループ検証: golden example は `create_sketch` + `sketch_mirror` のみで完結させ、`extrude` を含めない（Non-Goal として明記。ミラー単体は閉ループを保証しないため）
-- `SketchMirror` → `SketchOffset` のチェーン: Mirror は Arc の sweep 符号を必ず反転させるため、Mirror 結果に Arc が含まれる状態でさらに `SketchOffset` を適用すると常に `KernelError::InvalidParameter { kind: "arc_negative_sweep" }` になる（STEP 3.5 Codex R01 修正の副作用、Opus 4.7 確認済み）。符号正規化や Offset 側の緩和は follow-up Issue で検討
-- **mirror の連鎖（N 回対称）**: 派生 id が `"{elem_id}_mirror"` に固定されているため、同じ要素を 2 回目の `SketchMirror` で再度対象にすると必ず `mirror_duplicate_id` で fail する（例: y 軸 mirror → x 軸 mirror で 4 回対称プロファイルを作る、という一般的な CAD ワークフローが本 Issue の実装では実現できない）。STEP 6.7 self-review C1 で判明。回避不能な既知の制約として受容し、派生 id 命名を feature id 込みに拡張する対応は follow-up Issue (#332) に委譲する
-- **CRUD gate の element-level 検証は元の `CreateSketch.profile` 基準**（build 側は先行編集を逐次適用した current profile 基準）: 先行 `SketchFillet`/`SketchChamfer` が挿入した派生要素を `SketchMirror` の `selection` で指定すると、build では成功するが `FeatureCrud::insert` は元 profile に該当 id が無いため拒否する（false-reject）。これは `SketchFillet`/`SketchChamfer` (#296/#297) で既に文書化・テスト固定済みの既知アーキテクチャ制約と同型（STEP 7.5 Codex round2 A01 / STEP 6.7 self-review round2 R2-2 で検出）。根本修正は Issue #331（Fillet/Chamfer/Offset 横断の element-level gate 再構築）に Mirror を統合して追跡する
+- 該当なし以外に追加なし
 
 ## 実装対象
 
@@ -93,9 +91,7 @@ pub fn apply_sketch_mirror(
     axis_p2: [f64; 2],
     selection: &[String],
 ) -> Result<Vec<SketchElement>, KernelError> {
-    // 1. axis 退化チェック（Codex R02: NaN/Inf も同じ kind でまとめて拒否、sketch_fillet.rs の
-    //    `!radius.is_finite() || radius <= LENGTH_TOLERANCE` と同じ合成パターン）:
-    //    axis_p1/axis_p2 のいずれかの成分が !is_finite()、または dist(axis_p1, axis_p2) <= LENGTH_TOLERANCE
+    // 1. axis 退化チェック: dist(axis_p1, axis_p2) <= LENGTH_TOLERANCE
     //    → Err(InvalidParameter { kind: "sketch_mirror_axis_degenerate" })
     // 2. selection 解決（空 = 全 element、重複除去は BTreeSet で SketchOffset に倣う）
     //    存在しない id があれば Err(InvalidParameter { kind: "sketch_mirror_unknown_element_id" })
@@ -155,20 +151,16 @@ Feature::SketchMirror {
   （`R` は原点通過・方向 `d` に関する反射行列 `[[2dx²-1, 2dxdy], [2dxdy, 2dy²-1]]` の作用と等価）
 - **Line** `{from, to}` → `{from: reflect(from), to: reflect(to)}`（順序保持、from/to の意味的な入れ替えは不要）
 - **Circle** `{center, radius}` → `{center: reflect(center), radius: radius}`（半径不変）
-- **Arc** `{center, radius, start_angle, end_angle}`（**STEP 3.5 Codex R01 で修正 — 旧式は Line-Arc-Line 連結の連続性を壊すため不採用**）:
+- **Arc** `{center, radius, start_angle, end_angle}`:
   - `center' = reflect(center)`, `radius' = radius`
-  - `p_start = center + radius*(cos(start_angle), sin(start_angle))` を計算し `p_start' = reflect(p_start)`
-  - `new_start_angle = atan2(p_start'.y - center'.y, p_start'.x - center'.x)`
-  - `new_end_angle = new_start_angle - (end_angle - start_angle)`（**減算**。sweep の大きさは保存されるが符号は反転する — 反射は向きを反転させる等長変換であるため）
-  - 導出根拠: 軸方向角を `φ` とすると反射は中心まわりの角度を `θ ↦ 2φ - θ` に写す等長変換。よって `new_start = 2φ - start_angle`, `new_end = 2φ - end_angle`, 差 `new_end - new_start = -(end_angle - start_angle)` となり上式と一致（Opus 4.7 検証: 数値誤差 4.4e-16、Line→Arc→Line 連結の反射後連続性を斜め軸込みで確認済み、multi-turn Arc (`|sweep| > 2π`) でも回転数を保存することを確認済み）
-  - **この式は Line と同じ「start 点は new_start に、end 点は new_end に対応する」という対応関係を保つ**（`new_start` の位置 = `reflect(p_start)`、`new_end` の位置 = `reflect(p_end)`）。これにより隣接 Line が `from'=reflect(from), to'=reflect(to)` で保持する対応関係と整合し、`Line -> Arc -> Line` のような連結 profile を mirror しても反射後の端点が一致する（Codex R01 が指摘した契約違反を解消）
-  - **negative sweep は許容される**: `new_end_angle < new_start_angle`（負 sweep）になり得るが、これは `engawa-kernel` の Arc 型・tessellation にとってグローバルな不変条件違反ではない。`tessellation/sketch.rs` は `sweep.abs()` でのみ退化判定し符号を問わない（既存テスト `t_edge_negative_sweep_arc_succeeds` が負 sweep を明示的に許容）。`sketch_offset.rs::apply_sketch_offset` が負 sweep を拒否するのは **Offset 固有の制約**（ファイル冒頭コメント「符号規約が正 sweep 前提」）であり、Arc 型自体の制約ではない
-  - **既知の副作用 (Non-Goals に追記)**: Mirror は Arc の sweep 符号を必ず反転させるため、`SketchMirror` の出力に `SketchOffset` をチェーンすると Arc を含む限り常に `KernelError::InvalidParameter { kind: "arc_negative_sweep" }` になる。この組み合わせは本 Issue の対象外（follow-up で符号正規化 or Offset 側の緩和を検討）
+  - `p_end = center + radius*(cos(end_angle), sin(end_angle))` を計算し `p_end' = reflect(p_end)`
+  - `new_start_angle = atan2(p_end'.y - center'.y, p_end'.x - center'.x)`
+  - `new_end_angle = new_start_angle + (end_angle - start_angle)`（sweep の大きさ・符号は保存。反射は向きを反転させるため、始点/終点の反射点が入れ替わる — 導出は plan-snapshots に残す検証済み: 軸=x軸、start=0/end=π/2 の Arc → 反射後 start=-π/2/end=0 で一致確認済み）
 - **on-axis 自己一致判定**（`T_DEG_mirror_on_axis`）: 各 element について mirror 変換後の結果 `mirrored` を算出し、**変換前の元 element と幾何的に一致するか**を判定する:
   - Line: `(mirrored.from ≈ original.from && mirrored.to ≈ original.to) || (mirrored.from ≈ original.to && mirrored.to ≈ original.from)`（`LENGTH_TOLERANCE`）
   - Circle: `dist(mirrored.center, original.center) <= LENGTH_TOLERANCE`（radius は不変なので比較不要）
-  - Arc: `dist(mirrored.center, original.center) <= LENGTH_TOLERANCE` かつ **`mirrored.start_angle ≈ original.end_angle` かつ `mirrored.end_angle ≈ original.start_angle`（`mod 2π`, `ANGLE_TOLERANCE` 以内の swapped 比較）**。
-    - **swapped 比較が必須**（STEP 3.5 Codex R01 で Arc 反射式を「start 点対応 + sweep 符号反転」に修正した副作用として、GLM numeric round 1 の NU01 判断も更新: 順序付き比較 → swapped 比較）。反射で sweep 符号が必ず反転するため、真に軸対称な Arc は `new_start ≈ original.end` かつ `new_end ≈ original.start`（ラベルが入れ替わって一致）という形になる。例: `start=-π/4, end=π/4` を x 軸で mirror すると `new_start=π/4 (≈ original.end)`, `new_end=-π/4 (≈ original.start)` となり swapped 比較で一致検出される。一方、半円 (`start=0, end=π`) を mirror すると `new_start=0, new_end=-π` となり、swapped 比較でも `new_start(0) ≈ original.end(π)` は不一致 → 正しく非一致（block しない）と判定される。Opus 4.7 による fuzz 検証（20000 ケース、点サンプリングによる真の幾何的自己一致との比較）で swapped 比較の mismatch 0 を確認済み
+  - Arc: `dist(mirrored.center, original.center) <= LENGTH_TOLERANCE` かつ **`mirrored.start_angle ≈ original.start_angle` かつ `mirrored.end_angle ≈ original.end_angle`（`mod 2π`, `ANGLE_TOLERANCE` 以内の順序付き比較）**。
+    - **順序付き比較が必須**（GLM numeric round 1 指摘 NU01 で判明）: `{start, end}` の非順序 set 比較だと、半円 (`start=0, end=π`) を軸が中心を通る mirror にかけた場合に **擬陽性** を起こす。例: center=`(0,0)`, radius=1, start=0, end=π (上半円) を x 軸で mirror すると `new_start=π, new_end=2π(≡0)` となり、非順序 set `{0,π}` は元の `{0,π}` と一致してしまうが、実際には下半円という**別要素**であり mirror 操作は正常に新規 Arc を追加すべき（block してはいけない）。順序付き比較なら `new_start(π) ≠ original.start(0)` で正しく非一致と判定される。一方、真に軸対称な Arc（例: `start=-π/4, end=π/4` を x 軸で mirror）は順序付き比較でも `new_start(-π/4) ≈ original.start(-π/4)`, `new_end(π/4) ≈ original.end(π/4)` で正しく一致検出される
   - 一致した場合 → `Err(KernelError::DegenerateSketchElement { element_id, reason: "mirror_axis_coincident" })`（fail-fast、自律判断ログ §3 参照）
 
 ## テスト計画（ID 付き）
@@ -178,13 +170,12 @@ Feature::SketchMirror {
 | T01 | 決定性 | 同一 `sketch_mirror` Feature を含む Document を 2 回 build し、結果 profile の id・座標が完全一致 | `assert_eq!` |
 | T02 | 正常系 (Line) | Line `(2,0)-(2,3)` を y 軸 (`axis_p1=(0,0)`, `axis_p2=(0,1)`) で mirror | 新規 `"l1_mirror"` が `(-2,0)-(-2,3)` で追加、元 `l1` は不変 |
 | T03 | 正常系 (Circle) | Circle `center=(3,4), radius=2` を x 軸 (`axis_p1=(0,0)`, `axis_p2=(1,0)`) で mirror | 新規 Circle `center=(3,-4), radius=2` |
-| T04 | 正常系 (Arc, 数値モデル検証) | Arc `center=(0,0), radius=5, start=0, end=π/2` を x 軸で mirror | 新規 Arc `center=(0,0), radius=5, start=0, end=-π/2`（STEP 3.5 Codex R01 修正後の期待値） |
+| T04 | 正常系 (Arc, 数値モデル検証) | Arc `center=(0,0), radius=5, start=0, end=π/2` を x 軸で mirror | 新規 Arc `center=(0,0), radius=5, start=-π/2, end=0` |
 | T05 | 境界 | `selection` 空配列 → profile 内の全 element (Line/Circle/Arc) が mirror される | 元 element 数の 2 倍の profile 長 |
 | T_DEG_mirror_on_axis | 退化 | axis と完全一致する Line (`axis`=x軸, line `(0,0)-(5,0)`) を選択して mirror | `Err(DegenerateSketchElement { reason: "mirror_axis_coincident", .. })` |
 | T_DEG_mirror_on_axis_arc | 退化 | 軸対称な Arc (`center=(0,0), radius=1, start=-π/4, end=π/4`) を x 軸で mirror | `Err(DegenerateSketchElement { reason: "mirror_axis_coincident", .. })` |
-| T_boundary_arc_endpoints_on_axis | 境界 (GLM NU01 regression) | 半円 Arc (`center=(0,0), radius=1, start=0, end=π`、両端点のみ軸上) を x 軸で mirror | **Err にならない** — 新規 Arc `center=(0,0), radius=1, start=0, end=-π` が追加される（STEP 3.5 修正後の期待値） |
-| T_DEG_axis_degenerate | 退化 | `axis_p1 == axis_p2`（距離退化）、または `axis_p1`/`axis_p2` の成分に `NaN`/`Inf` を含む（Codex R02） | `Err(InvalidParameter { kind: "sketch_mirror_axis_degenerate" })` |
-| T_SERDE_roundtrip | 単体 (Codex R03) | `Feature::SketchMirror` の YAML roundtrip（`selection` 省略時デフォルト空、`suppressed=false` は非出力、`suppressed=true` は出力）を `crates/engawa-format/src/feature.rs` に追加 | 既存 `SketchOffset`/`SketchFillet`/`SketchChamfer` の roundtrip テストと同型で pass |
+| T_boundary_arc_endpoints_on_axis | 境界 (GLM NU01 regression) | 半円 Arc (`center=(0,0), radius=1, start=0, end=π`、両端点のみ軸上) を x 軸で mirror | **Err にならない** — 新規 Arc `center=(0,0), radius=1, start=π, end=2π` が追加される |
+| T_DEG_axis_degenerate | 退化 | `axis_p1 == axis_p2` | `Err(InvalidParameter { kind: "sketch_mirror_axis_degenerate" })` |
 | T_DEG_unknown_element | 退化 | `selection` に profile 内に存在しない id を指定 | `Err(InvalidParameter { kind: "sketch_mirror_unknown_element_id" })` |
 | T_DEG_unsupported_type | 退化 | `selection` に `Ellipse`/`Conic` 要素の id を指定 | `Err(UnsupportedFeature { kind: "sketch_mirror_of_ellipse_or_conic" })` |
 | T_DEG_duplicate_id | 退化 | 派生 id `"{elem_id}_mirror"` が既に profile 内に存在する状態で同じ element を再度 mirror | `Err(DegenerateSketchElement { reason: "mirror_duplicate_id", .. })` |

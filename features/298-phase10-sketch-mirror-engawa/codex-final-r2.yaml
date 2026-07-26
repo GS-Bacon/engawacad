@@ -1,0 +1,15 @@
+issues:
+  - id: A01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 333
+    finding: "`SketchMirror` の CRUD gate が build 側の current profile と同期していない。`refs_resolve_in_state` は sketch の存在しか見ない一方、`check_refs_resolve_before` は `selection` を original `CreateSketch.profile` に対してしか解決しないため、選択要素を rename/remove する edit が `EditBreaksConsumer` にならず後段 build で `sketch_mirror_unknown_element_id` に落ちる。また逆に、先行 Fillet/Chamfer で生成された派生要素の mirror は build では可能でも insert 時に誤拒否される。"
+    suggestion: "`SketchMirror` も build と同じ current profile 基準で検証するようにし、少なくとも `selection` 非空時は history simulation 側でも選択 id を再解決すること。`selection:[\"c1\"]` の後で `c1 -> c2` に rename する edit が `EditBreaksConsumer` になる回帰テストも追加する。"
+  - id: M01
+    severity: medium
+    file: "crates/engawa-build/tests/sketch_chamfer_acceptance.rs"
+    line_hint: 269
+    finding: "`t10_crud_gate_known_limitation_false_reject` の build 側は 2 個目の `SketchChamfer` を `push` して `Extrude` の後ろで実行しているため、CRUD 側が検証している `[CreateSketch, c1, c2, Extrude]` と同じ履歴形を固定できていない。現状のテストは派生 Line ID が build で解決できることしか証明せず、pre-Extrude の current-profile 経路が壊れても緑のまま残る。"
+    suggestion: "`features_build.push(...)` を `features_build.insert(2, ...)` に変え、build 側も CRUD 側と同じ位置で `c2` を適用する形にそろえる。"
+
+verdict: fail

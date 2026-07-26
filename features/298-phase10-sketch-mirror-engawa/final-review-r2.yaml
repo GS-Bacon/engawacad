@@ -1,0 +1,8 @@
+issues:
+  - id: FN01
+    severity: low
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 122
+    finding: "element_id_of の doc comment が『matches SketchElement::id helper on the format crate』と参照するが、engawa-format に SketchElement::id() は存在しない (Feature::id() のみ)。sketch_mirror.rs 側にも同名の element_id helper が重複定義されており、3 重化の既存負債 (#297 時点で 2 重化) を本 Issue でさらに悪化させている"
+    suggestion: " engawa-format::SketchElement に pub fn id(&self) -> &str を実装して両 crate から再利用するか、doc comment の誤参照を削除すること。本 Issue では後続対応可 (機能は正しい)"
+verdict: pass

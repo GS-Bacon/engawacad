@@ -1,0 +1,70 @@
+{
+  "totals": {
+    "passed": 1567,
+    "failed": 0,
+    "ignored": 17
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_determinism",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_analytic_90deg_corner",
+      "kind": "other"
+    },
+    {
+      "name": "t03_analytic_60deg_corner",
+      "kind": "other"
+    },
+    {
+      "name": "t05_normal_l_shape_chamfer",
+      "kind": "other"
+    },
+    {
+      "name": "t06_profile_chain_continuity",
+      "kind": "other"
+    },
+    {
+      "name": "t07_crud_gate_rename_breaks_consumer",
+      "kind": "other"
+    },
+    {
+      "name": "t08_crud_gate_insert_nonexistent_element",
+      "kind": "other"
+    },
+    {
+      "name": "t09_crud_gate_coordinate_only_edit_boundary",
+      "kind": "degenerate"
+    },
+    {
+      "name": "t10_crud_gate_known_limitation_false_reject",
+      "kind": "other"
+    },
+    {
+      "name": "t11_crud_gate_known_limitation_false_accept",
+      "kind": "other"
+    },
+    {
+      "name": "t12_chain_fillet_then_chamfer",
+      "kind": "other"
+    },
+    {
+      "name": "t01_determinism_and_derived_line_id",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_normal_90deg",
+      "kind": "other"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 13,
+    "determinism": 2,
+    "degenerate": 1,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

@@ -1,0 +1,14 @@
+issues:
+  - id: A01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 504
+    finding: "`SketchMirror` is now treated as executable in history simulation once the sketch exists, but its `selection` is never revalidated against the referenced profile. `apply_sketch_mirror()` hard-fails on unknown element IDs and on unsupported `Ellipse`/`Conic` when they are selected (including `selection=[]`, which means mirror-all), so `FeatureCrud::insert`/`edit` can accept histories that later fail only at build time instead of tripping the CRUD gate."
+    suggestion: "Add a `SketchMirror` element-level gate in `refs_resolve_in_state` and `check_refs_resolve_before`, validating selected IDs and supported element kinds against the referenced `CreateSketch.profile` (treat `selection=[]` as 'all elements'), analogous to the existing Fillet/Chamfer gates."
+  - id: M01
+    severity: medium
+    file: "crates/engawa-build/tests/sketch_chamfer_acceptance.rs"
+    line_hint: 269
+    finding: "T10's positive half appends the second `SketchChamfer` after `Extrude`, so the build path never exercises the same `[CreateSketch, c1, c2, Extrude]` history position that the CRUD half rejects at index 2. As written, the test only proves that a post-Extrude chamfer can resolve `l1_l2_chamfer_line`; a regression in the pre-Extrude current-profile path would still stay green."
+    suggestion: "Insert `c2` at index 2 instead of `push`ing it, so both halves of T10 cover the same history shape."
+verdict: fail

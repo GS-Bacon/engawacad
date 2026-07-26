@@ -1,0 +1,8 @@
+issues:
+  - id: NU01
+    severity: high
+    section: "数値モデル > on-axis 自己一致判定 (Arc)"
+    finding: "Arc の on-axis 自己一致判定が『mirrored.start_angle と mirrored.end_angle の角度集合』を『original.start_angle と original.end_angle の角度集合』と比較する形で書かれているが、Arc の sweep 方向(向き)を無視しているため sweep = π (半円) で endpoints が mirror axis 上にある Arc で擬陽性を生む。具体例: center=(0,0), radius=1, start=0, end=π (上半円) を x 軸で mirror すると、plan §反射変換の数式 通りに計算すると new_start_angle=π, new_end_angle=2π(≡0) となり、角度集合 {π, 0} と原集合 {0, π} が一致すると誤判定される。しかし幾何学的には mirror 結果は下半円であり元 Arc とは別要素のため新規 Arc として出力されるべきだが、plan 通りに実装すると Err(DegenerateSketchElement { reason: \"mirror_axis_coincident\" }) が返り mirror 操作が-block される。Line は `(from,to) || (to,from)` の順序無し比較で正当(線分に方向はない)だが、Arc は sweep 方向を持つため set 比較は不可。さらに T_DEG_mirror_on_axis は Line `(0,0)-(5,0)` のみを対象とし Arc の on-axis ケースのテストが存在しないため、この擬陽性は CI で検出されない"
+    suggestion: "Arc の自己一致判定を順序付き比較に変更すること: `mirrored.start_angle ≈ original.start_angle (mod 2π, ANGLE_TOLERANCE)` かつ `mirrored.end_angle ≈ original.end_angle (mod 2π, ANGLE_TOLERANCE)` (sweep は反射で保存されるため順序付き比較で十分)。あわせて T_DEG_mirror_on_axis_arc として『start=0, end=π の上半円を x 軸で mirror すると Err ではなく新規下半円 Arc が追加されること』を検証するテストを追加すること"
+
+verdict: fail

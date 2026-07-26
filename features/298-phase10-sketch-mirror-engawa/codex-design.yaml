@@ -1,0 +1,18 @@
+issues:
+  - id: R01
+    severity: high
+    section: "数値モデル > Arc"
+    finding: "Arc の反射で `new_start_angle` を『反射後の元 end 点』から求め、sweep 符号をそのまま保持する設計は、`SketchElement::Arc` の `start_angle -> end_angle` が有向始終点である既存契約と衝突します。Line は from/to 順序を保持する一方で Arc だけ始終点が入れ替わるため、元 profile の `Line -> Arc -> Line` 連鎖を mirror すると、追記された mirror 側で `prev.endpoint == next.startpoint` が崩れ、後続 `Extrude` が読む profile 順序の連続性を壊します。"
+    suggestion: "Arc も Line と同様に『元 start 点を反射した点を新 start』『元 end 点を反射した点を新 end』として保持し、必要なら sweep 符号を反転させて `start'=reflect(start), end'=reflect(end)` を表現してください。少なくとも Line-Arc-Line の連結 profile を mirror してそのまま Extrude できる回帰テストを追加すること。"
+  - id: R02
+    severity: medium
+    section: "退化幾何の扱い > axis 入力検証"
+    finding: "`axis_p1/axis_p2` の検証が『2 点間距離 <= LENGTH_TOLERANCE』だけだと、どちらかに `NaN/Inf` を含むケースを弾けません。`NaN` は距離比較を素通りし、その後の normalize / reflect / `atan2` で `NaN` 座標・角度を生成して `Ok` 返却する経路が残ります。Mirror は body 非生成 feature なので、sketch-only build では壊れた profile を状態に残せます。"
+    suggestion: "`axis_p1`/`axis_p2` の全成分に `is_finite()` ガードを入れ、非 finite は `InvalidParameter` で fail-fast にしてください。`NaN`, `+Inf`, `-Inf` の axis 入力テストも追加すること。"
+  - id: R03
+    severity: medium
+    section: "テスト計画 > YAML roundtrip"
+    finding: "新しい public variant `Feature::SketchMirror` を `engawa-format` に追加する計画なのに、`SketchOffset` / `SketchFillet` / `SketchChamfer` と同等の YAML roundtrip テストがありません。`examples_smoke.rs` の build 成功だけでは `type: sketch_mirror` の tag、`selection` の default/omit、`suppressed` の skip/serialize が壊れても検出できません。"
+    suggestion: "`crates/engawa-format/src/feature.rs` に `SketchMirror` の roundtrip、空 `selection` roundtrip、`suppressed=false` omission、`suppressed=true` serialization の単体テストを追加してください。"
+
+verdict: fail
