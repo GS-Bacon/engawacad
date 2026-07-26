@@ -76,7 +76,7 @@ fn t01d_build_determinism_with_id_generator() {
     assert_eq!(yaml_a, yaml_b);
 }
 
-// === T04: rectangle corner fillet → Extrude → manifold ===
+// === T04: rectangle corner fillet → Extrude → manifold + vertex coordinate asserts ===
 #[test]
 fn t04_build_rectangle_corner_fillet() {
     let features = fillet_rect_features("sk", "f1", "ext", 1.0);
@@ -86,21 +86,41 @@ fn t04_build_rectangle_corner_fillet() {
     assert_eq!(built.all().len(), 1);
     let solid = &built.all()[0].solid;
     assert_eq!(solid.euler_poincare(), 0);
+
+    // The original corner (10,0,*) must be gone — replaced by tangent points (9,0,*)
+    // and (10,1,*). Extrude depth=3.0 on XY plane, so check both z=0 and z=3 layers.
+    for z in [0.0, 3.0] {
+        let corner_present = solid.vertices.iter().any(|v| {
+            (v.point.x - 10.0).abs() < LENGTH_TOLERANCE
+                && (v.point.y - 0.0).abs() < LENGTH_TOLERANCE
+                && (v.point.z - z).abs() < LENGTH_TOLERANCE
+        });
+        assert!(
+            !corner_present,
+            "old corner (10,0,{z}) should be removed by fillet"
+        );
+
+        let tangent_a_present = solid.vertices.iter().any(|v| {
+            (v.point.x - 9.0).abs() < LENGTH_TOLERANCE
+                && (v.point.y - 0.0).abs() < LENGTH_TOLERANCE
+                && (v.point.z - z).abs() < LENGTH_TOLERANCE
+        });
+        assert!(
+            tangent_a_present,
+            "tangent point (9,0,{z}) should be present after fillet"
+        );
+
+        let tangent_b_present = solid.vertices.iter().any(|v| {
+            (v.point.x - 10.0).abs() < LENGTH_TOLERANCE
+                && (v.point.y - 1.0).abs() < LENGTH_TOLERANCE
+                && (v.point.z - z).abs() < LENGTH_TOLERANCE
+        });
+        assert!(
+            tangent_b_present,
+            "tangent point (10,1,{z}) should be present after fillet"
+        );
+    }
 }
-
-/// T02/T03: 90°/60° corner analytic solutions are covered at kernel level
-/// (`crates/engawa-kernel/src/geometry/sketch_fillet.rs::tests`).
-#[test]
-fn t02_normal_90deg_covered_at_kernel_level() {}
-
-/// T03 ditto.
-#[test]
-fn t03_normal_60deg_covered_at_kernel_level() {}
-
-// === T05: Feature::SketchFillet YAML roundtrip covered at format level ===
-/// (`crates/engawa-format/src/feature.rs::tests::t_sketch_fillet_roundtrip`).
-#[test]
-fn t05_roundtrip_covered_at_format_level() {}
 
 // === T06: fillet inserts Arc → V/E counts grow vs baseline rectangle ===
 #[test]
@@ -142,7 +162,7 @@ fn t07_closed_loop_wraparound_corner() {
     assert_eq!(built.all()[0].solid.euler_poincare(), 0);
 }
 
-// === T08: CW-wound profile → negative sweep Arc ===
+// === T08: CW-wound profile → negative sweep Arc; build path must include the fillet ===
 #[test]
 fn t08_cw_profile_negative_sweep() {
     let cw = cw_rect_profile();
@@ -160,6 +180,10 @@ fn t08_cw_profile_negative_sweep() {
         .expect("arc present");
     assert!(end < start, "CW profile → negative sweep (end < start)");
 
+    // Critical: feature list must include SketchFillet so the build path actually
+    // exercises the negative-sweep Arc end-to-end (tessellate_sketch_element →
+    // make_extrusion). Using `cw` directly without the fillet feature would build
+    // the raw rectangle and leave the assertion above as the only check.
     let features = vec![
         Feature::CreateSketch {
             id: "sk".into(),
@@ -168,6 +192,14 @@ fn t08_cw_profile_negative_sweep() {
             variables: vec![],
             profile: cw,
             plane_ref: None,
+            suppressed: false,
+        },
+        Feature::SketchFillet {
+            id: "f1".into(),
+            sketch: "sk".into(),
+            elem1_id: "l1".into(),
+            elem2_id: "l2".into(),
+            radius: 1.0,
             suppressed: false,
         },
         Feature::Extrude {
@@ -182,6 +214,7 @@ fn t08_cw_profile_negative_sweep() {
     let mut gen = IdGenerator::new(0);
     let built = build_bodies_from_features(&features, &ref_planes, &mut gen).unwrap();
     assert_eq!(built.all().len(), 1);
+    assert_eq!(built.all()[0].solid.euler_poincare(), 0);
 }
 
 // === T09: profile chain continuity (Line.to / Arc endpoints connect) ===

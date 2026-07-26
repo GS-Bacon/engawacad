@@ -54,9 +54,15 @@ pub fn compute_fillet(
 
     let len_a = dist(&a_from, &a_to);
     let len_b = dist(&b_from, &b_to);
-    if len_a <= LENGTH_TOLERANCE || len_b <= LENGTH_TOLERANCE {
+    if len_a <= LENGTH_TOLERANCE {
         return Err(KernelError::DegenerateSketchElement {
             element_id: a_id.to_string(),
+            reason: "fillet_zero_length_input_line",
+        });
+    }
+    if len_b <= LENGTH_TOLERANCE {
+        return Err(KernelError::DegenerateSketchElement {
+            element_id: b_id.to_string(),
             reason: "fillet_zero_length_input_line",
         });
     }
@@ -243,9 +249,13 @@ fn dot(a: &[f64; 2], b: &[f64; 2]) -> f64 {
     a[0] * b[0] + a[1] * b[1]
 }
 
+// Callers guard corner angle with `ANGLE_TOLERANCE` before invoking; the near-zero
+// branch here uses `LENGTH_TOLERANCE`. Correctness of the `[0,0]` fallback therefore
+// relies on `ANGLE_TOLERANCE >= LENGTH_TOLERANCE` (currently both 1e-9 by ADR-004).
+// If these two constants are ever decoupled, the bisector for a near-π corner could
+// silently fall through the `[0,0]` branch and produce a malformed Arc.
 fn normalize(a: [f64; 2]) -> [f64; 2] {
     let n = (a[0] * a[0] + a[1] * a[1]).sqrt();
-    // Callers ensure non-zero length via LENGTH_TOLERANCE gates before invoking.
     if n <= LENGTH_TOLERANCE {
         [0.0, 0.0]
     } else {
@@ -395,27 +405,83 @@ mod tests {
             from: [0.0, 0.0],
             to: [2.5, 5.0 * 3.0_f64.sqrt() / 2.0],
         };
-        let (_a, arc, _b) = compute_fillet(&l1, &l2, 1.0).unwrap();
-        match arc {
+        let corner = [0.0, 0.0];
+        let (new_a, arc, new_b) = compute_fillet(&l1, &l2, 1.0).unwrap();
+        let half_theta = PI / 6.0;
+        let expected_t = 1.0 / half_theta.tan();
+        // d_a = normalize((5,0)-(0,0)) = (1,0). tangent_a = corner + d_a * t = (√3, 0)
+        let expected_tangent_a = [corner[0] + expected_t, corner[1]];
+        // d_b = (0.5, √3/2). tangent_b = corner + d_b * t = (√3/2, 3/2)
+        let expected_tangent_b = [
+            corner[0] + 0.5 * expected_t,
+            corner[1] + (3.0_f64.sqrt() / 2.0) * expected_t,
+        ];
+
+        // Trimmed Line endpoints must match tangent points (the only non-90° check in
+        // the suite — distinguishes `t = radius` from the correct `t = radius/tan(θ/2)`).
+        match &new_a {
+            SketchElement::Line { to, .. } => {
+                assert!((to[0] - expected_tangent_a[0]).abs() < LENGTH_TOLERANCE);
+                assert!((to[1] - expected_tangent_a[1]).abs() < LENGTH_TOLERANCE);
+            }
+            _ => panic!("expected trimmed Line for elem_a"),
+        }
+        match &new_b {
+            SketchElement::Line { from, .. } => {
+                assert!((from[0] - expected_tangent_b[0]).abs() < LENGTH_TOLERANCE);
+                assert!((from[1] - expected_tangent_b[1]).abs() < LENGTH_TOLERANCE);
+            }
+            _ => panic!("expected trimmed Line for elem_b"),
+        }
+
+        match &arc {
             SketchElement::Arc { center, radius, .. } => {
                 assert!((radius - 1.0).abs() < LENGTH_TOLERANCE);
-                let half_theta = PI / 6.0;
-                let expected_t = 1.0 / half_theta.tan();
                 let expected_center_dist = 1.0 / half_theta.sin();
-                // bisector = normalize(d_a + d_b) = normalize((1+0.5, 0+√3/2)) = normalize((1.5, √3/2))
-                //          = (1.5, √3/2) / |(1.5, √3/2)|. |.|² = 2.25 + 0.75 = 3, |.|=√3.
-                //          = (√3/2, 1/2) — this is exactly the bisector direction at 30°.
+                // bisector direction = (√3/2, 1/2) (see derivation above)
                 let expected_center = [
                     expected_center_dist * (3.0_f64.sqrt() / 2.0),
                     expected_center_dist * 0.5,
                 ];
                 assert!((center[0] - expected_center[0]).abs() < LENGTH_TOLERANCE);
                 assert!((center[1] - expected_center[1]).abs() < LENGTH_TOLERANCE);
-                // t sanity (length-only check on the lines, computed from public state).
-                let _ = expected_t;
+                // Tangency: |center - tangent_a| == radius (non-trivial at 60°).
+                let dx = center[0] - expected_tangent_a[0];
+                let dy = center[1] - expected_tangent_a[1];
+                let d = (dx * dx + dy * dy).sqrt();
+                assert!((d - radius).abs() < LENGTH_TOLERANCE);
+                let dx_b = center[0] - expected_tangent_b[0];
+                let dy_b = center[1] - expected_tangent_b[1];
+                let d_b = (dx_b * dx_b + dy_b * dy_b).sqrt();
+                assert!((d_b - radius).abs() < LENGTH_TOLERANCE);
             }
             _ => panic!("expected Arc"),
         }
+    }
+
+    /// T_DEG_zero_length_input_line_b: only `elem_b` is zero-length — the regression
+    /// test required by Codex A01. Before the fix, the error reported `a_id` regardless
+    /// of which Line was degenerate.
+    #[test]
+    fn t_deg_zero_length_input_line_b() {
+        let l1 = SketchElement::Line {
+            id: "l1".to_string(),
+            from: [5.0, 0.0],
+            to: [5.0, 5.0],
+        };
+        let l2 = SketchElement::Line {
+            id: "l2".to_string(),
+            from: [5.0, 5.0],
+            to: [5.0, 5.0], // zero-length elem_b
+        };
+        let err = compute_fillet(&l1, &l2, 0.5).unwrap_err();
+        assert!(matches!(
+            err,
+            KernelError::DegenerateSketchElement {
+                element_id,
+                reason: "fillet_zero_length_input_line",
+            } if element_id == "l2"
+        ));
     }
 
     /// T09: profile chain continuity — out[i] endpoint meets out[(i+1)%n] startpoint.
