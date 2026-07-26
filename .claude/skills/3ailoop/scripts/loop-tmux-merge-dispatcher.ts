@@ -307,7 +307,16 @@ function realDeps(): MergeDeps {
       return { ok: r.ok, stderr: r.stderr };
     },
     push: async (worktree: string) => {
-      const r = await runCmd(["git", "-C", worktree, "push", "--force-with-lease", "origin", "HEAD"]);
+      // #327: push 先を default branch (origin/HEAD) に明示指定する。
+      // これがないと HEAD (= worker branch cad/N-slug) の同名 ref に push されて
+      // main branch には反映されない (Sketch Fillet 実装が孤児化した実観測 2026-07-26)。
+      // rebase 直後なので main への fast-forward push (force-with-lease で他更新も検知)。
+      const defBr = (await detectDefaultBranch(worktree)) ?? "main";
+      const r = await runCmd([
+        "git", "-C", worktree,
+        "push", "--force-with-lease", "origin",
+        `HEAD:refs/heads/${defBr}`,
+      ]);
       return { ok: r.ok, stderr: r.stderr };
     },
     headSha: async (worktree: string) => {
