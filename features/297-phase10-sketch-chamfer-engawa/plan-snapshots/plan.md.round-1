@@ -45,7 +45,7 @@
 | 長さ過大時 `KernelError::ChamferLengthTooLarge { elem1_id, elem2_id, length }` | Chamfer 挿入直線が profile 内の他の遠い要素と交差する一般的な self-intersection 検出 (Fillet の `FilletRadiusTooLarge` も同様に自要素長のみ判定、scope 揃え) |
 | `engawa-build` dispatch (`built_sketch_profiles` 更新) + `feature_crud.rs` の参照解決ゲート (6箇所) | CRUD gate での幾何再検証 (半径/長さ過大・角度退化は build 側のみ、Fillet の「検証範囲分離」原則を継承) |
 | golden YAML fixture `examples/sketch_chamfer.engawa` (実装完了後に追加) | Mirror/Pattern/Trim/Extend 等、他のスケッチ編集op (#276/#278 等) |
-| 決定性テスト (T01/T01d/T01e)・正常系 (T05)・長さ過大退化テスト (T_DEG_chamfer_too_long) を含む自動テスト一式 | ts-rs 生成 TS 型の web/ 側 UI 反映 (型生成のみ、UI 実装は別 Issue) |
+| 決定性テスト (T01)・正常系 (T05)・長さ過大退化テスト (T_DEG_chamfer_too_long) を含む自動テスト一式 | ts-rs 生成 TS 型の web/ 側 UI 反映 (型生成のみ、UI 実装は別 Issue) |
 
 ## Non-Goals
 
@@ -54,11 +54,6 @@
 - Chamfer 挿入直線と profile 内の非隣接要素との self-intersection 検出: Fillet と同じ scope defense を継承 (該当なし = 対応しない)
 - `geometry/sketch_common.rs` への helper 共通化リファクタ: 本 Issue merge 後に別 Issue で提案 (rule of three, 3rd occurrence として本 Issue が対象だが blast radius 最小化のため見送る)
 - `SketchTrim`/`SketchExtend` (#276) の実装: 未実装のまま、Chamfer は Fillet と同様 inline trim で完結させる
-- **CRUD gate の current-profile 再構築 (Codex 独立設計 gate R01 部分採用)**: `refs_resolve_in_state` / `check_refs_resolve_before` の element-level gate は、参照先 `CreateSketch.profile` (= **編集前の元 profile**) に対して `find_adjacent_pair` を実行する。一方 build 側は `built_sketch_profiles` に先行 Sketch 編集 op の結果を逐次適用した **current profile** に対して Chamfer を適用する (`crates/engawa-build/src/lib.rs:504,532`)。この非対称により以下 2 方向の乖離が既知の制約として残り、public contract として T10/T11 で固定する:
-  - **false-reject (Chamfer で新規に到達可能)**: 先行 Chamfer が挿入した派生 Line (`{a}_{b}_chamfer_line`) を対象にする2段目の Chamfer/Fillet は build では成功するが、CRUD gate は元 profile に該当 ID が無いため `SketchElementNotResolved { reason: "sketch_fillet_elem_not_found" }` で拒否する。Fillet 単体ではこの class は発生しない (派生要素が Arc であり、Fillet/Chamfer は共に Line-Line only のため対象外になる)。Chamfer の派生要素が Line であることに由来する新しい乖離である。
-  - **false-accept (#296 T13 の Chamfer 版)**: 先行 Chamfer で非隣接化した `(l1, l2)` を対象にする2段目の Chamfer は CRUD gate を通過し、build で `InvalidParameter { kind: "sketch_fillet_elems_not_adjacent" }` として初めて失敗する。「gate は ID/隣接性のみを見る参照解決チェックであって幾何 validator ではない」(`feature_crud.rs:660-663`) という既存設計の帰結。
-  gate 側で current profile を段階的に再構築する修正は `simulate_history` が kernel の幾何 op を実行することを意味し (「history gate is a ref-resolution check, not a geometry validator」という既存設計判断の反転)、Fillet/Offset の gate にも同時に波及し、`build_bodies_from_features` の profile replay ロジックを `feature_crud` へ共有抽出する refactor を伴うため、本 Issue では扱わない。
-- **follow-up Issue の起票 (本 Issue の完了条件に含める)**: Chamfer merge 後に `type: refactor, batch:kernel` (milestone: Phase 12 Refactor Pass 候補) で「`feature_crud` の element-level gate を current profile ベースに再構築する (Fillet/Chamfer/Offset 横断)」を起票する。#296 plan.md も同種の先送りを宣言していたが実際の起票が漏れていた (該当 open issue が存在しない) ため、本 Issue では起票完了を明示的な完了条件に含める (STEP 8 後に実施)。
 
 ## 実装対象
 
@@ -101,12 +96,8 @@ After:
     /// point. The chamfer inserts a straight `SketchElement::Line` between them and
     /// shortens both Lines to their respective cut points (each `length` from the corner).
     ///
-    /// Derived Line id is deterministic: `"{a_id}_{b_id}_chamfer_line"`, where `a_id` / `b_id`
-    /// are the element ids taken in **profile array order** as normalised by
-    /// `find_adjacent_pair` (successor pair `(i, i+1)`, or `(n-1, 0)` for the closed-loop
-    /// wraparound) — never the order in which `elem1_id` / `elem2_id` were supplied.
-    /// Input order of `elem1_id` / `elem2_id` therefore affects neither the geometry nor
-    /// the derived Line id.
+    /// Derived Line id is deterministic: `"{a_id}_{b_id}_chamfer_line"`. Input order of
+    /// `elem1_id` / `elem2_id` does not affect the result.
     #[serde(rename = "sketch_chamfer")]
     SketchChamfer {
         id: String,
@@ -147,11 +138,6 @@ After:
             | Feature::SketchFillet { suppressed, .. }
             | Feature::SketchChamfer { suppressed, .. } => *suppressed,
 ```
-
-**2b. `crates/engawa-format/src/feature.rs` — `#[cfg(test)] mod tests` にテスト追加 (Codex R02 採用)**
-
-- `t_sketch_chamfer_roundtrip` (T01f): 既存 `t_sketch_fillet_roundtrip` を鏡写しし、タグ名 `sketch_chamfer` と `id`/`sketch`/`elem1_id`/`elem2_id`/`length` 全フィールドの serialize/deserialize 安定性を固定する
-- `t_sketch_chamfer_suppressed_skipped_when_false` (T01b) / `t_sketch_chamfer_suppressed_true_serialized` (T01c): 既存 `t_sketch_fillet_suppressed_*` を鏡写し
 
 **3. `crates/engawa-kernel/src/error.rs` — 新規エラー variant**
 
@@ -255,12 +241,10 @@ After:
 - `simulate_history`: `Feature::SketchFillet { id: _, suppressed, .. } => { ... }` と同型の `Feature::SketchChamfer { id: _, suppressed, .. } => { ... }` を追加
 - `check_refs_resolve_before`: 既存の `if let Feature::SketchFillet { .. } = f { ... }` ブロックと同型の `if let Feature::SketchChamfer { .. } = f { ... }` ブロックを追加 (`FeatureCrudError::SketchElementNotResolved` を再利用、新規 error variant 不要)
 - `set_feature_suppressed`: or-pattern 末尾の `| Feature::SketchFillet { suppressed, .. }` の直後に `| Feature::SketchChamfer { suppressed, .. }` を追加
-- **doc コメント (Codex R01 部分採用)**: `refs_resolve_in_state`/`check_refs_resolve_before` の `SketchChamfer` 分岐に、既存 `SketchFillet` 分岐のコメント (`in the *original* CreateSketch profile. This is sound but incomplete`) と同じ趣旨の doc コメントを付け、「元 profile 基準であり派生要素 (`*_chamfer_line`) は解決しない/非隣接化は検出しない」ことを T10/T11 のテスト名と共に明記する (Non-Goals の public contract と対応)
 
 ## 設計方針
 
 - **決定性**: `apply_sketch_chamfer_build` は純関数 (`&[SketchElement] -> Result<Vec<SketchElement>, KernelError>`)。`IdGenerator` は使用しない (B-rep トポロジー確定前の2Dプロファイル編集のため、Fillet/Offset と同じ)。派生 Line ID は `format!("{a_id}_{b_id}_chamfer_line")` の決定的文字列連結。同一入力を2回 build して同一結果になることを T01d で検証する。
-  派生 Line ID の `a_id`/`b_id` は `element_id(&source[a_idx])` / `element_id(&source[b_idx])` であり、`a_idx`/`b_idx` は `find_adjacent_pair` が返す **profile 配列順に正規化されたインデックス対** (直列ペアなら `(i, i+1)`、閉ループ wraparound なら `(n-1, 0)`) を使う。`find_adjacent_pair` は 4 分岐 (`idx2==idx1+1` / `idx1==idx2+1` / `idx1==n-1 && idx2==0` / `idx2==n-1 && idx1==0`) で両方の受け取り順を同一の `(a_idx, b_idx)` へ畳み込むため、ユーザーが `elem1_id`/`elem2_id` をどちらの順で渡しても、幾何結果・派生 Line ID・出力配列のすべてが完全一致する。**`elem1_id`/`elem2_id` を `a_id`/`b_id` へ直接代入する実装、および文字列 sort による正規化は禁止する** — 前者は入力順依存の ID を生み docstring の順序不変性主張と矛盾し、後者は Fillet の `{a}_{b}_fillet_arc` (配列順) 規約と非互換な ID 命名になる。順序不変性は T01e で検証する (GLM ambig r1 AM01 採用)。
 - **B-rep トポロジー妥当性**: 本 Issue は 2D profile 編集のみで Body/Solid を生成しないため Euler-Poincaré 検証は対象外 (Fillet/Offset と同じ)。
 - **退化幾何の扱い**: `length <= LENGTH_TOLERANCE` (非正/NaN/Inf) を `InvalidParameter { kind: "length" }` で reject。入力 Line が零長なら `DegenerateSketchElement { reason: "chamfer_zero_length_input_line" }`。コーナー角度退化 (θ≈0 or θ≈π) は `DegenerateSketchElement { reason: "chamfer_corner_angle_degenerate" }` (自律判断ログ参照)。
 - **derive 規約**: `SketchChamfer` variant は既存 `Feature` の derive (`Debug, Clone, Serialize, Deserialize, JsonSchema, TS`) をそのまま継承 (enum 全体への derive のため個別指定不要)。
@@ -284,9 +268,7 @@ After:
 | T01 | 決定性 | 同一 Chamfer を2回 build → 全 ID・座標が一致 | `assert_eq!` |
 | T01b | 正常系 | `suppressed: false` (デフォルト) は YAML シリアライズで省略される | roundtrip |
 | T01c | 正常系 | `suppressed: true` は YAML に明示的にシリアライズされる | roundtrip |
-| T01f | format roundtrip (Codex R02 採用) | `Feature::SketchChamfer { id, sketch, elem1_id, elem2_id, length: 1.5, suppressed: false }` を `serde_yaml` で serialize し `type: sketch_chamfer` タグと全フィールド (`id`/`sketch`/`elem1_id`/`elem2_id`/`length`) の出現を assert → deserialize して全フィールド一致を検証 | `crates/engawa-format/src/feature.rs::t_sketch_fillet_roundtrip` の鏡写し。`length` 比較は `(a-b).abs() < 1e-12` |
 | T01d | 決定性 | `IdGenerator::new(0)` を2つ用意し2回 build → 完全同一の `Vec<SketchElement>` | `assert_eq!` |
-| T01e | 決定性 (入力順不変性) | 同一隣接ペアを `("l1","l2")` と `("l2","l1")` の両順で `apply_sketch_chamfer_build`、加えて wraparound ペアを `("l4","l1")` と `("l1","l4")` の両順で実行 | `assert_eq!(forward, reverse)` — 座標のみでなく派生 Line ID (`l1_l2_chamfer_line`) を含め完全一致。`sketch_fillet.rs::t01b_input_order_invariance` の鏡写し (GLM ambig r1 AM01 採用) |
 | T02 | 正常系 | 90°コーナーの L 字ペアに `length=1.0` chamfer → 解析解 (chamfer 点座標) と一致 | 座標比較 (手計算) |
 | T03 | 正常系 | 60°コーナーの line ペアに `length=1.0` chamfer → 解析解と一致 | 座標比較 (手計算) |
 | T05 | 正常系 (Issue必須) | L 字 line ペア (#297 完了条件記載の例) に `length=1.0` chamfer | trim 後の2 Line + 中間 Line が正しい座標 |
@@ -294,9 +276,6 @@ After:
 | T07 | CRUD gate | `CreateSketch.profile` から chamfer 対象要素を rename/reorder する edit | `FeatureCrudError::EditBreaksConsumer` |
 | T08 | CRUD gate | 存在しない要素IDを参照する Chamfer を insert | `FeatureCrudError::SketchElementNotResolved` |
 | T09 | CRUD gate 境界 | 座標のみ変更 (ID/隣接性保持) → gate は通すが `validate_profile_closed` で後段が reject | `InvalidParameter { kind: "profile" }` |
-| T10 | CRUD gate 既知制約 (Codex R01 部分採用・false-reject) | `[CreateSketch(sk,[l1..l4]), SketchChamfer(c1,sk,l1,l2)]` に対し `SketchChamfer(c2,sk,"l1","l1_l2_chamfer_line")` を追加。(a) feature 列を `build_bodies_from_features` に直接渡すと成功する (current profile では両者が隣接 Line)、(b) 同じ feature を `FeatureCrud::insert` すると拒否される (gate は元 profile を見るため派生 Line ID が解決しない) | (a) `build_bodies_from_features(..).is_ok()` + (b) `FeatureCrudError::SketchElementNotResolved { reason: "sketch_fillet_elem_not_found", .. }` — build と CRUD の乖離を public contract として固定 |
-| T11 | CRUD gate 既知制約 (false-accept, #296 T13 の Chamfer 版) | 同 history に `SketchChamfer(c2,sk,l1,l2)` (先行 Chamfer で非隣接化済みのペア) を `FeatureCrud::insert` → (a) insert は成功する、(b) 続く build が非隣接エラーで失敗する | (a) `insert(..).is_ok()` + (b) `KernelError::InvalidParameter { kind: "sketch_fillet_elems_not_adjacent" }` |
-| T12 | 連鎖 正常系 (Codex R01: fillet → chamfer) | `[CreateSketch(sk,[l1..l4]), SketchFillet(f1,sk,l1,l2), SketchChamfer(c1,sk,l3,l4)]` — Chamfer 対象は Fillet が触っていない元 profile 要素 | build 成功 かつ `FeatureCrud::insert(c1)` も成功 (乖離が派生/変形要素に限局することを固定) |
 | T_DEG_chamfer_too_long | 退化 (Issue必須) | 短い L 字ペア (長さ1.0) に `length=10.0` | `ChamferLengthTooLarge { elem1_id, elem2_id, length: 10.0 }` |
 | T_DEG_corner_angle_flat | 退化 | ~180°(直線的、実質コーナー無し) | `DegenerateSketchElement { reason: "chamfer_corner_angle_degenerate" }` |
 | T_DEG_corner_angle_zero | 退化 | ~0°(折り返し) | `DegenerateSketchElement { reason: "chamfer_corner_angle_degenerate" }` |

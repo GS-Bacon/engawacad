@@ -572,6 +572,38 @@ pub enum Feature {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         suppressed: bool,
     },
+
+    /// Chamfer (bevel) a corner where two sketch elements meet (2D profile edit).
+    ///
+    /// Phase 10 (#297): Line-Line only, symmetric (single `length`). Arc-Arc / Line-Arc /
+    /// Circle / Ellipse / Conic and asymmetric (distance_a/distance_b) chamfer are
+    /// Out-of-Scope (separate Issue).
+    ///
+    /// The two referenced elements must be adjacent in the CreateSketch profile array
+    /// (including the closed-loop wraparound pair `[last, first]`) and share a corner
+    /// point. The chamfer inserts a straight `SketchElement::Line` between them and
+    /// shortens both Lines to their respective cut points (each `length` from the corner).
+    ///
+    /// Derived Line id is deterministic: `"{a_id}_{b_id}_chamfer_line"`, where `a_id` /
+    /// `b_id` are the element ids taken in **profile array order** as normalised by
+    /// `find_adjacent_pair` (successor pair `(i, i+1)`, or `(n-1, 0)` for the closed-loop
+    /// wraparound) — never the order in which `elem1_id` / `elem2_id` were supplied.
+    /// Input order of `elem1_id` / `elem2_id` therefore affects neither the geometry nor
+    /// the derived Line id.
+    #[serde(rename = "sketch_chamfer")]
+    SketchChamfer {
+        id: String,
+        /// Reference to CreateSketch.id
+        sketch: String,
+        /// First element ID (any of the two adjacent elements)
+        elem1_id: String,
+        /// Second element ID (any of the two adjacent elements)
+        elem2_id: String,
+        /// Chamfer length (positive), measured from the shared corner along each element
+        length: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
 }
 
 fn is_origin(p: &[f64; 3]) -> bool {
@@ -596,7 +628,8 @@ impl Feature {
             | Feature::Fuse { id, .. }
             | Feature::Intersect { id, .. }
             | Feature::SketchOffset { id, .. }
-            | Feature::SketchFillet { id, .. } => id,
+            | Feature::SketchFillet { id, .. }
+            | Feature::SketchChamfer { id, .. } => id,
         }
     }
 
@@ -613,7 +646,8 @@ impl Feature {
             | Feature::Fuse { suppressed, .. }
             | Feature::Intersect { suppressed, .. }
             | Feature::SketchOffset { suppressed, .. }
-            | Feature::SketchFillet { suppressed, .. } => *suppressed,
+            | Feature::SketchFillet { suppressed, .. }
+            | Feature::SketchChamfer { suppressed, .. } => *suppressed,
         }
     }
 }
@@ -1817,6 +1851,89 @@ mod tests {
             elem1_id: "l1".to_string(),
             elem2_id: "l2".to_string(),
             radius: 1.0,
+            suppressed: true,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(back.is_suppressed());
+    }
+
+    /// T01f: SketchChamfer YAML roundtrip (Issue #297).
+    #[test]
+    fn t_sketch_chamfer_roundtrip() {
+        let f = Feature::SketchChamfer {
+            id: "chamfer1".to_string(),
+            sketch: "sketch_0".to_string(),
+            elem1_id: "l1".to_string(),
+            elem2_id: "l2".to_string(),
+            length: 1.5,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("type: sketch_chamfer"), "tag missing: {yaml}");
+        assert!(yaml.contains("id: chamfer1"), "id missing: {yaml}");
+        assert!(yaml.contains("sketch: sketch_0"), "sketch missing: {yaml}");
+        assert!(yaml.contains("elem1_id: l1"), "elem1_id missing: {yaml}");
+        assert!(yaml.contains("elem2_id: l2"), "elem2_id missing: {yaml}");
+        assert!(yaml.contains("length: 1.5"), "length missing: {yaml}");
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match (f, back) {
+            (
+                Feature::SketchChamfer {
+                    id: id1,
+                    sketch: sk1,
+                    elem1_id: e1_a,
+                    elem2_id: e2_a,
+                    length: len1,
+                    suppressed: sup1,
+                },
+                Feature::SketchChamfer {
+                    id: id2,
+                    sketch: sk2,
+                    elem1_id: e1_b,
+                    elem2_id: e2_b,
+                    length: len2,
+                    suppressed: sup2,
+                },
+            ) => {
+                assert_eq!(id1, id2);
+                assert_eq!(sk1, sk2);
+                assert_eq!(e1_a, e1_b);
+                assert_eq!(e2_a, e2_b);
+                assert!((len1 - len2).abs() < 1e-12);
+                assert_eq!(sup1, sup2);
+            }
+            _ => panic!("SketchChamfer did not roundtrip"),
+        }
+    }
+
+    /// T01b: SketchChamfer suppressed=false is omitted from YAML.
+    #[test]
+    fn t_sketch_chamfer_suppressed_skipped_when_false() {
+        let f = Feature::SketchChamfer {
+            id: "chamfer2".to_string(),
+            sketch: "sketch_0".to_string(),
+            elem1_id: "l1".to_string(),
+            elem2_id: "l2".to_string(),
+            length: 1.0,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(!yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(!back.is_suppressed());
+    }
+
+    /// T01c: SketchChamfer suppressed=true is serialized.
+    #[test]
+    fn t_sketch_chamfer_suppressed_true_serialized() {
+        let f = Feature::SketchChamfer {
+            id: "chamfer3".to_string(),
+            sketch: "sketch_0".to_string(),
+            elem1_id: "l1".to_string(),
+            elem2_id: "l2".to_string(),
+            length: 1.0,
             suppressed: true,
         };
         let yaml = serde_yaml::to_string(&f).unwrap();

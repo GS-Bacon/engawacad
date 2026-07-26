@@ -199,3 +199,9 @@ fn sketch_offset() {
 fn sketch_fillet() {
     smoke(include_str!("../../../examples/sketch_fillet.engawa"));
 }
+
+/// Issue #297: Phase 10 Sketch Chamfer smoke テスト
+#[test]
+fn sketch_chamfer() {
+    smoke(include_str!("../../../examples/sketch_chamfer.engawa"));
+}

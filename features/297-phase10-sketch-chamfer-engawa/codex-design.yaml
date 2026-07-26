@@ -1,0 +1,13 @@
+issues:
+  - id: R01
+    severity: high
+    section: "実装対象 > crates/engawa-build/src/feature_crud.rs"
+    finding: "Chamfer の CRUD gate を `SketchFillet` と同型で追加すると、既存 `refs_resolve_in_state` / `check_refs_resolve_before` と同じく参照解決が original `CreateSketch.profile` 固定になります。一方 build は `built_sketch_profiles` 上の current edited profile に逐次適用されるため、先行する Fillet/Chamfer/Offset 後の有効な Chamfer を CRUD 側だけが不正扱いでき、`Feature history = source of truth` と矛盾します。"
+    suggestion: "CRUD/history simulation 側も current edited profile を段階的に再構築してその配列に対して `find_adjacent_pair` を行うこと。少なくとも `fillet -> chamfer` / `chamfer -> chamfer` の連鎖ケースを受け入れ条件に追加し、original profile 固定のままならその制約を public contract とテストに明示してください。"
+  - id: R02
+    severity: medium
+    section: "テスト計画(ID付き)"
+    finding: "既存 `SketchFillet` には `engawa-format/src/feature.rs` に専用の YAML roundtrip/golden テストがありますが、この plan の Chamfer 側は `suppressed` の有無確認 (T01b/T01c) と `examples/sketch_chamfer.engawa` の parse/build smoke だけで、`Feature::SketchChamfer` 本体のフィールド一式 (`type/id/sketch/elem1_id/elem2_id/length`) を固定する format-layer roundtrip が欠けています。"
+    suggestion: "`engawa-format/src/feature.rs` に `SketchChamfer` の専用 roundtrip/golden テストを追加し、タグ名と全フィールドの serialize/deserialize 安定性を `SketchFillet` と同じ粒度で固定してください。"
+
+verdict: fail

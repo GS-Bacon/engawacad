@@ -113,6 +113,7 @@ fn feature_sketch_refs(f: &Feature) -> Vec<&str> {
         Feature::ExtrudeCut { sketch, .. } => vec![sketch.as_str()],
         Feature::SketchOffset { sketch, .. } => vec![sketch.as_str()],
         Feature::SketchFillet { sketch, .. } => vec![sketch.as_str()],
+        Feature::SketchChamfer { sketch, .. } => vec![sketch.as_str()],
         _ => vec![],
     }
 }
@@ -143,6 +144,7 @@ fn feature_variant_name(f: &Feature) -> &'static str {
         Feature::Intersect { .. } => "Intersect",
         Feature::SketchOffset { .. } => "SketchOffset",
         Feature::SketchFillet { .. } => "SketchFillet",
+        Feature::SketchChamfer { .. } => "SketchChamfer",
     }
 }
 
@@ -264,6 +266,36 @@ fn refs_resolve_in_state(
         } => {
             // Element-level gate (Codex R01): both elements must resolve to adjacent Lines
             // in the *original* CreateSketch profile. This is sound but incomplete — see plan.md.
+            match sketches_at.get(sketch.as_str()) {
+                Some(&idx) => match &features[idx] {
+                    Feature::CreateSketch { profile, .. } => {
+                        match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
+                            profile, elem1_id, elem2_id,
+                        ) {
+                            Ok((a, b)) => {
+                                matches!(profile[a], SketchElement::Line { .. })
+                                    && matches!(profile[b], SketchElement::Line { .. })
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    _ => false,
+                },
+                None => false,
+            }
+        }
+        Feature::SketchChamfer {
+            sketch,
+            elem1_id,
+            elem2_id,
+            ..
+        } => {
+            // Element-level gate: same contract as SketchFillet — resolved against the
+            // *original* CreateSketch profile. Derived chamfer Lines (`*_chamfer_line`)
+            // inserted by an earlier SketchChamfer are NOT resolvable here (T10 false-reject);
+            // non-adjacency introduced by an earlier Chamfer is NOT detected here (T11
+            // false-accept). Geometry (`length`) is not validated — gate is a ref-resolution
+            // check, not a geometry validator.
             match sketches_at.get(sketch.as_str()) {
                 Some(&idx) => match &features[idx] {
                     Feature::CreateSketch { profile, .. } => {
@@ -453,6 +485,18 @@ fn simulate_history(
                     continue;
                 }
                 // SketchFillet modifies sketch profile but does not produce a body.
+                executed_at.insert(i);
+            }
+            Feature::SketchChamfer {
+                id: _, suppressed, ..
+            } => {
+                if *suppressed {
+                    continue;
+                }
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
+                // SketchChamfer modifies sketch profile but does not produce a body.
                 executed_at.insert(i);
             }
         }
@@ -662,6 +706,52 @@ fn check_refs_resolve_before(
     // length) is intentionally NOT validated here — history gate is a ref-resolution
     // check, not a geometry validator (matches SketchOffset precedent on `distance`).
     if let Feature::SketchFillet {
+        sketch,
+        elem1_id,
+        elem2_id,
+        ..
+    } = f
+    {
+        if let Some(&idx) = sketches_at.get(sketch.as_str()) {
+            if let Feature::CreateSketch { profile, .. } = &features[idx] {
+                let reason: Option<&'static str> =
+                    match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
+                        profile, elem1_id, elem2_id,
+                    ) {
+                        Ok((a, b)) => {
+                            if !matches!(profile[a], SketchElement::Line { .. })
+                                || !matches!(profile[b], SketchElement::Line { .. })
+                            {
+                                Some("sketch_fillet_only_line_line")
+                            } else {
+                                None
+                            }
+                        }
+                        Err(engawa_kernel::error::KernelError::InvalidParameter { kind }) => {
+                            Some(kind)
+                        }
+                        Err(_) => Some("sketch_fillet_elem_unresolved"),
+                    };
+                if let Some(reason) = reason {
+                    return Err(FeatureCrudError::SketchElementNotResolved {
+                        feature_id: fid.to_string(),
+                        sketch_ref: sketch.clone(),
+                        elem1_id: elem1_id.clone(),
+                        elem2_id: elem2_id.clone(),
+                        reason,
+                    });
+                }
+            }
+        }
+    }
+
+    // SketchChamfer element-level gate (insert path): same contract as SketchFillet —
+    // both element IDs must resolve to adjacent Lines in the *original* CreateSketch
+    // profile. Geometry (`length`) is not validated. Known limitations (T10/T11):
+    // a derived chamfer Line id (`*_chamfer_line`) from an earlier SketchChamfer does
+    // not resolve here (false-reject), and non-adjacency introduced by an earlier
+    // Chamfer is not detected here (false-accept). Both are accepted as public contract.
+    if let Feature::SketchChamfer {
         sketch,
         elem1_id,
         elem2_id,
@@ -972,7 +1062,8 @@ fn set_feature_suppressed(f: &mut Feature, on: bool) {
         | Feature::Fuse { suppressed, .. }
         | Feature::Intersect { suppressed, .. }
         | Feature::SketchOffset { suppressed, .. }
-        | Feature::SketchFillet { suppressed, .. } => {
+        | Feature::SketchFillet { suppressed, .. }
+        | Feature::SketchChamfer { suppressed, .. } => {
             *suppressed = on;
         }
     }

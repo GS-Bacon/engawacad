@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: medium
+    section: "実装対象 > 1. Feature::SketchChamfer docstring / 設計方針 > 決定性"
+    finding: "派生 Line ID `format!(\"{a_id}_{b_id}_chamfer_line\")` の a_id/b_id とユーザー入力 elem1_id/elem2_id の対応規則が未定義。docstring は 'Input order of elem1_id / elem2_id does not affect the result' と主張するが、a_id/b_id を elem1_id/elem2_id に直接対応させると ID は入力順に依存して主張と矛盾する。find_adjacent_pair の出力順で正規化する前提と思われるが明記がないため、実装者が (a) 入力順そのまま (b) sort (c) find_adjacent_pair 配列順、のいずれで構築するか独断で判断する必要がある。T01/T01d は同一入力の再現性のみ検証し、順序不変性は未検証"
+    suggestion: "派生 ID の a_id/b_id 決定規則を本文で明記すること。例: 『find_adjacent_pair が返す配列順 (earlier index, later index) を a_id, b_id として採用するためユーザー入力順に依存しない』。または docstring の 'result' を 'geometric result' に限定し、派生 ID は入力順に依存しうる旨を明示する"
+
+verdict: pass

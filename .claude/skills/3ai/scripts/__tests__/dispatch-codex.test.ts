@@ -112,3 +112,67 @@ describe("dispatch-codex PERSONA_HINTS 定義整合性", () => {
     expect(PERSONA_HINTS.migration.length).toBeGreaterThan(20);
   });
 });
+
+describe("dispatch-codex review モードの diff 網羅性 (#330)", () => {
+  test("T13: review モードの diff は untracked 新規ファイルと tracked ファイルの unstaged 変更を含む", async () => {
+    const repo = join(TMP_BASE, "diff-repro-repo");
+    rmSync(repo, { recursive: true, force: true });
+    mkdirSync(repo, { recursive: true });
+    const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+
+    git("init", "-q");
+    git("config", "user.email", "test@test.local");
+    git("config", "user.name", "test");
+    writeFileSync(join(repo, "tracked.txt"), "line1\n");
+    git("add", "tracked.txt");
+    git("commit", "-q", "-m", "init");
+    const baseSha = new TextDecoder().decode(git("rev-parse", "HEAD").stdout).trim();
+
+    // #330 repro: unstaged edit to a tracked file + a brand-new untracked file.
+    // /3ai 規約 (STEP 8 まで手動 git add 禁止) の下では実装差分は常にこの状態にある。
+    writeFileSync(join(repo, "tracked.txt"), "line1\nline2\n");
+    writeFileSync(join(repo, "new_untracked.rs"), "fn new_thing() {}\n");
+    // #330 M01 repro: a change the caller had *already* staged before invoking us.
+    // The real index must still hold this afterwards — dispatchCodex must not run a
+    // blanket `git reset` (that would silently discard unrelated staged work).
+    writeFileSync(join(repo, "pre_staged.txt"), "staged\n");
+    git("add", "pre_staged.txt");
+
+    const instrFile = join(repo, "instr.md");
+    writeFileSync(instrFile, "instructions");
+    const resultFile = join(repo, "result.yaml");
+
+    const origCwd = process.cwd();
+    const origWrite = process.stdout.write.bind(process.stdout);
+    let captured = "";
+    process.chdir(repo);
+    process.env.CODEX_DRY_RUN = "1";
+    (process.stdout.write as unknown) = (chunk: string) => {
+      captured += chunk;
+      return true;
+    };
+    try {
+      await dispatchCodex({
+        mode: "review",
+        instructionFile: instrFile,
+        resultFile,
+        baseBranch: baseSha,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+      process.chdir(origCwd);
+      delete process.env.CODEX_DRY_RUN;
+    }
+
+    expect(captured).toContain("new_thing");
+    expect(captured).toContain("line2");
+    expect(captured).toContain("staged");
+
+    // 実 index は呼び出し前の状態のまま (#330 M01: 事前の staged 状態が保持され、
+    // git add -N プローブの跡が real index には一切残らない)
+    const status = new TextDecoder().decode(git("status", "--short").stdout);
+    expect(status).toContain("A  pre_staged.txt"); // 事前 staged 状態が維持されている
+    expect(status).toContain(" M tracked.txt"); // 未追跡プローブで誤って staged 化されていない
+    expect(status).toContain("?? new_untracked.rs"); // 同上
+  });
+});

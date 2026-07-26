@@ -2,7 +2,9 @@
 // dispatch-codex.ts — Codex (gpt-5.4) レビュー起動スクリプト
 // CODEX_DRY_RUN=1 のとき Codex を呼ばず stdin prefix をダンプして exit 0 (テスト用)
 
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 export type CodexPersona = "single" | "architect" | "contrarian" | "migration";
 
@@ -102,9 +104,40 @@ export async function dispatchCodex(opts: DispatchCodexOpts): Promise<number> {
     stdinContent = prefix + readFileSync(inputFile, "utf-8");
   } else {
     process.stderr.write(`  base: ${baseBranch}\n`);
-    const proc = Bun.spawn(["git", "diff", `${baseBranch}...HEAD`], { stdout: "pipe" });
-    stdinContent = prefix + (await new Response(proc.stdout).text());
-    await proc.exited;
+    // #330: three-dot diff (`base...HEAD`) only shows *committed* changes. /3ai's own
+    // workflow keeps implementation changes uncommitted+untracked until STEP 8's squash
+    // commit, so a plain `git diff base...HEAD` here is near-empty and Codex reviews
+    // almost nothing. `git add -N` (intent-to-add) makes untracked files show up in a
+    // two-arg diff against merge-base, which also picks up unstaged modifications to
+    // already-tracked files — but running that against the real index would discard
+    // any changes the caller had legitimately staged before invoking us (#330 M01).
+    // Perform the intent-to-add on a throwaway *copy* of the index via `GIT_INDEX_FILE`
+    // instead, so the real index (and any pre-existing staged state) is never touched.
+    const mergeBaseProc = Bun.spawn(["git", "merge-base", baseBranch, "HEAD"], {
+      stdout: "pipe",
+    });
+    const mergeBase = (await new Response(mergeBaseProc.stdout).text()).trim();
+    await mergeBaseProc.exited;
+
+    const realIndexProc = Bun.spawn(["git", "rev-parse", "--git-path", "index"], {
+      stdout: "pipe",
+    });
+    const realIndexPath = (await new Response(realIndexProc.stdout).text()).trim();
+    await realIndexProc.exited;
+
+    const scratchIndex = join(tmpdir(), `dispatch-codex-index-${process.pid}-${Date.now()}`);
+    copyFileSync(realIndexPath, scratchIndex);
+    const env = { ...process.env, GIT_INDEX_FILE: scratchIndex };
+    try {
+      Bun.spawnSync(["git", "add", "-N", "."], { env });
+      const proc = Bun.spawn(["git", "diff", mergeBase], { stdout: "pipe", env });
+      stdinContent = prefix + (await new Response(proc.stdout).text());
+      await proc.exited;
+    } finally {
+      try {
+        unlinkSync(scratchIndex);
+      } catch {}
+    }
   }
 
   if (process.env.CODEX_DRY_RUN === "1") {

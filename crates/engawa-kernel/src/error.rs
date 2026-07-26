@@ -110,4 +110,11 @@ pub enum KernelError {
         elem2_id: String,
         radius: f64,
     },
+
+    #[error("chamfer length {length} too large for elements ({elem1_id}, {elem2_id}) — cut length exceeds line segment length")]
+    ChamferLengthTooLarge {
+        elem1_id: String,
+        elem2_id: String,
+        length: f64,
+    },
 }

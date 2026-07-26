@@ -1,0 +1,39 @@
+schema_version: 2
+version: "0.1.0"
+root_component:
+  name: "Sketch Chamfer Example (Phase 10 #297)"
+  features:
+    # 10x5 rectangle on XY plane
+    - type: create_sketch
+      id: sketch_0
+      plane: xy
+      offset: 0.0
+      profile:
+        - kind: line
+          id: l1
+          from: [0.0, 0.0]
+          to: [10.0, 0.0]
+        - kind: line
+          id: l2
+          from: [10.0, 0.0]
+          to: [10.0, 5.0]
+        - kind: line
+          id: l3
+          from: [10.0, 5.0]
+          to: [0.0, 5.0]
+        - kind: line
+          id: l4
+          from: [0.0, 5.0]
+          to: [0.0, 0.0]
+    # Bevel the corner at l1/l2 with length 1.0
+    - type: sketch_chamfer
+      id: chamfer_1
+      sketch: sketch_0
+      elem1_id: l1
+      elem2_id: l2
+      length: 1.0
+    # Extrude the chamfered profile into a solid
+    - type: extrude
+      id: extrude_1
+      sketch: sketch_0
+      depth: 3.0

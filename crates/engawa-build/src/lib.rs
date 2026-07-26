@@ -539,6 +539,32 @@ pub fn build_bodies_from_features(
                 )?;
                 built_sketch_profiles.insert(sketch.clone(), out);
             }
+            Feature::SketchChamfer {
+                id: _,
+                sketch,
+                elem1_id,
+                elem2_id,
+                length,
+                suppressed: _,
+            } => {
+                let entry =
+                    sketches
+                        .get(sketch.as_str())
+                        .ok_or_else(|| KernelError::SketchNotFound {
+                            sketch: sketch.clone(),
+                        })?;
+
+                // Source profile: previously accumulated edits, else CreateSketch.profile.
+                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| entry.profile.to_vec());
+
+                let out = engawa_kernel::geometry::sketch_chamfer::apply_sketch_chamfer_build(
+                    &source, elem1_id, elem2_id, *length,
+                )?;
+                built_sketch_profiles.insert(sketch.clone(), out);
+            }
         }
     }
 

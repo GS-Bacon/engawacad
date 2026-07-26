@@ -1,6 +1,7 @@
 pub mod curve;
 pub mod math;
 pub mod pcurve;
+pub mod sketch_chamfer;
 pub mod sketch_fillet;
 pub mod sketch_offset;
 pub mod surface;
