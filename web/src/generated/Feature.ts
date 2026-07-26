@@ -35,4 +35,20 @@ elem2_id: string,
 /**
  * Fillet radius (positive)
  */
-radius: number, suppressed?: boolean, };
+radius: number, suppressed?: boolean, } | { "type": "sketch_chamfer", id: string, 
+/**
+ * Reference to CreateSketch.id
+ */
+sketch: string, 
+/**
+ * First element ID (any of the two adjacent elements)
+ */
+elem1_id: string, 
+/**
+ * Second element ID (any of the two adjacent elements)
+ */
+elem2_id: string, 
+/**
+ * Chamfer length (positive), measured from the shared corner along each element
+ */
+length: number, suppressed?: boolean, };
