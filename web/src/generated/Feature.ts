@@ -67,4 +67,44 @@ axis_p2: [number, number],
 /**
  * Element IDs to mirror; empty = all elements (SketchOffset と同慣習)
  */
-selection?: Array<string>, suppressed?: boolean, };
+selection?: Array<string>, suppressed?: boolean, } | { "type": "sketch_pattern_linear", id: string, 
+/**
+ * Reference to CreateSketch.id
+ */
+sketch: string, 
+/**
+ * Element IDs to pattern; empty = all elements (SketchOffset/SketchMirror と同慣習)
+ */
+selection?: Array<string>, 
+/**
+ * Total instance count including the original (count=1 は no-op、count=0 はエラー)
+ */
+count: number, 
+/**
+ * Pattern direction (internally normalised to a unit vector)
+ */
+direction: [number, number], 
+/**
+ * Spacing between consecutive instances along `direction`
+ */
+distance: number, suppressed?: boolean, } | { "type": "sketch_pattern_circular", id: string, 
+/**
+ * Reference to CreateSketch.id
+ */
+sketch: string, 
+/**
+ * Element IDs to pattern; empty = all elements
+ */
+selection?: Array<string>, 
+/**
+ * Rotation center
+ */
+center: [number, number], 
+/**
+ * Total instance count including the original
+ */
+count: number, 
+/**
+ * Total angular span in radians; step = total_angle / count
+ */
+total_angle: number, suppressed?: boolean, };
