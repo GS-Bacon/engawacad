@@ -1,0 +1,70 @@
+{
+  "totals": {
+    "passed": 1479,
+    "failed": 0,
+    "ignored": 17
+  },
+  "by_crate": {},
+  "added_in_round": [
+    {
+      "name": "t01_determinism_and_derived_arc_id",
+      "kind": "determinism"
+    },
+    {
+      "name": "t04_build_rectangle_corner_fillet",
+      "kind": "other"
+    },
+    {
+      "name": "t06_extrude_uses_filleted_profile",
+      "kind": "other"
+    },
+    {
+      "name": "t07_closed_loop_wraparound_corner",
+      "kind": "other"
+    },
+    {
+      "name": "t08_cw_profile_negative_sweep",
+      "kind": "other"
+    },
+    {
+      "name": "t09_profile_chain_continuity",
+      "kind": "other"
+    },
+    {
+      "name": "t10_crud_gate_rejects_rename_breaking_fillet",
+      "kind": "other"
+    },
+    {
+      "name": "t11_crud_gate_rejects_insert_with_missing_element",
+      "kind": "other"
+    },
+    {
+      "name": "t12_crud_gate_rejects_reorder_breaking_adjacency",
+      "kind": "other"
+    },
+    {
+      "name": "t01_determinism_and_derived_arc_id",
+      "kind": "determinism"
+    },
+    {
+      "name": "t02_normal_90deg",
+      "kind": "other"
+    },
+    {
+      "name": "t03_normal_60deg",
+      "kind": "other"
+    },
+    {
+      "name": "t09_profile_chain_continuity",
+      "kind": "other"
+    }
+  ],
+  "coverage_hints": {
+    "total_added": 13,
+    "determinism": 2,
+    "degenerate": 0,
+    "boundary": 0,
+    "golden": 0,
+    "edge_case": 0
+  }
+}

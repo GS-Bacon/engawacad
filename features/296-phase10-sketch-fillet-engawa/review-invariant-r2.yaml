@@ -1,0 +1,14 @@
+issues:
+  - id: IN01
+    severity: critical
+    section: "設計方針 > 決定性"
+    finding: "IdGenerator を使わず format! マクロで Arc ID を生成している (format!(\"{a_id}_{b_id}_fillet_arc\"))。これは EngawaCAD の決定性規約に違反する。"
+    suggestion: "Arc ID 生成に IdGenerator を使用すること。engawa-format 層の element_id はユーザー入力文字列だが、engawa-kernel で生成される EntityID は IdGenerator::next() で決定的に生成されなければならない。"
+
+  - id: IN02
+    severity: high
+    section: "テスト計画"
+    finding: "T01 決定性テストの記述が不十分。「生成 element (trimmed line×2 + arc) の ID・座標が完全一致」とあるが、Arc ID が format! マクロで生成されている現状設計ではテストがパスしても決定性規約を満たさない。IdGenerator 導入後に同一入力を 2 回 build して全 ID・座標が一致することを assert するテストに修正すること。"
+    suggestion: "T01 を「IdGenerator を使用した状態で、同一入力を 2 回 build して生成される Arc の ID が完全一致することを assert する」に変更すること。"
+
+verdict: fail

@@ -1,0 +1,8 @@
+issues:
+  - id: IN01
+    severity: medium
+    section: "実装対象 > 補足コメント"
+    finding: "「共通化するか `geometry/math.rs` に切り出すか」というコメントがあるが、重複する `element_id` helper の実装場所が決まっていない。GLM 実装時に判断としているが、決定性に影響する可能性がある（異なる実装場所で非決定的な挙動になるリスク）。"
+    suggestion: "決定性レビュー観点から、`element_id` helper は純関数であり入力のみから決定的に出力を返すことが保証されていれば、どこに実装されても問題ない。ただし、GLM 実装時に「純関数であること」を確認するコメントをコードに残すこと。"
+
+verdict: pass

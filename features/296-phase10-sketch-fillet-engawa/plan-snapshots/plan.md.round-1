@@ -1,0 +1,303 @@
+# plan: #296 Sketch Fillet を engawa-format / engawa-build に実装
+
+## 自律判断ログ (autonomous mode, --issue 296 --autonomous)
+
+- Issue 本文の `SketchEdit::SketchFillet { elem1_id, elem2_id, radius }` は ADR-017 §3 表 (`SketchFillet { sketch_ref, vertex_ref: (e1_id, e2_id), radius }`) と概念的に一致するが命名が異なる。ADR-017 は accepted 済で authoritative だが、`vertex_ref` タプル表現より、#295 (SketchOffset) が確立した規約および既存 `Feature::Fuse{target,tool}` / `Feature::Cut{target,tool}` 式の**フラットな2フィールド命名**の方が既存コードと整合するため、`elem1_id: String, elem2_id: String` (Issue 本文の命名をそのまま採用) を選ぶ。
+- `sketch_ref: EntityRef` は #295 で Codex architect が「EntityRef は B-rep Face/Edge/Vertex 専用」として refute 済み (ADR-005 契約)。#295 と同じ理由・同じ解決 (`sketch: String`、既存 `Feature::Extrude.sketch` 慣習) を継承する。
+- 「適用に伴う元 element の Trim」は ADR-017 §3 の generic `SketchTrim` Feature (#276 → 子 #307、まだ未実装) には依存しない。Fillet 自身の純関数内で指定された2 element (`elem1_id`/`elem2_id`) をその場で短縮する局所操作であり、`SketchTrim` (任意点でのユーザー指定 Trim) とは別物。#307/#308 が未実装でも本 Issue のブロッカーにならない。
+- #295 は build-level 契約を「Circle 単一要素のみ」に絞った (profile 全体の Line/Arc corner join が Trim/Extend #276 待ちのため)。本 Issue の Fillet は **profile 全体の corner join** ではなく **指定された2 Line 間のローカルな corner 処理**なので、#276 を待たずに Line-Line ペアの build 経路を実装できる (Fillet 自身が trim ロジックを内包するため、Offset とは事情が異なる)。
+- Arc-Arc / Line-Arc / Circle を含む fillet は正接円構築問題で数式が別になるため Out-of-Scope とする (Line-Line のみ In-Scope。親 #277 のテスト仕様 T04 "L字 line ペアに半径 1.0 fillet" に一致)。
+
+## In-Scope / Out-of-Scope
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `Feature::SketchFillet { id, sketch, elem1_id, elem2_id, radius, suppressed }` の YAML 型定義 + serde tagged (`type: sketch_fillet`) | Sketch Chamfer (#297) — 別 Issue |
+| serialize → deserialize roundtrip | Sketch Trim / Extend (#307/#308) — 別 Issue、本 Issue はそれらに依存しない |
+| **Line-Line のみ**: profile 内で隣接する (配列上で連続、または閉ループの末尾↔先頭) 2 つの `SketchElement::Line` への fillet 適用 (kernel + build 経路の両方) | Arc-Arc / Line-Arc / Circle を含む fillet (正接円構築問題、別 ADR/Issue) |
+| corner (共有端点) の検出、tangent point 計算、fillet 用 Arc の挿入、両 Line の trim (endpoint 差し替え) | Ellipse/Conic に対する fillet |
+| `radius` 過大時の `KernelError::FilletRadiusTooLarge { elem1_id, elem2_id, radius }` (新規 error variant、issue 完了条件で名指し) | 3 要素以上をまたぐ fillet chain (1 回の Feature 呼び出しは常に2 element ペアのみ) |
+| corner 角度退化 (ほぼ0° または ほぼ180°) 時の `DegenerateSketchElement` | Fillet 後の Arc が profile 内の他の遠い要素と self-intersect する一般判定 (2 element 自身の長さチェックのみ、下記 SCOPE DEFENSE 参照) |
+| `engawa-build` dispatch: `built_sketch_profiles` (#295 で導入済み) を読み書きし Offset と合成可能にする | 履歴ロールバック / 削除時の SketchRef 解決失敗経路 (別 Issue) |
+| `examples/sketch_fillet.engawa` 追加 (矩形の1角を fillet) + `examples_smoke.rs` に entry | 3D fillet (本 Issue は sketch = 2D 平面内) |
+| Golden YAML fixture 1件 (CreateSketch → SketchFillet → Extrude で fillet が反映されることを assert) | `CURRENT_SCHEMA_VERSION` の bump (加算的 variant 追加のみ、#295 Non-Goals と同理由) |
+
+## Non-Goals
+- Sketch Chamfer (#297)、Sketch Trim / Extend (#307/#308) — 別 Issue で個別実装 (本 Issue はそれらに依存しない、並行実装可)
+- Arc-Arc / Line-Arc / Circle / Ellipse / Conic を含む fillet (正接円構築の数式が別、独立 Issue で提案)
+- 3要素以上の fillet chain、複数コーナーの一括 fillet
+- 一般的な `SelfIntersection` 判定 (本 Issue は `elem1`/`elem2` 自身の長さ制約のみで代替、SCOPE DEFENSE 節参照)
+- Fillet 適用後の profile に対する再 fillet (elem1_id/elem2_id は常に Line である前提。既に fillet 済みの Arc を挟んだ状態からの再 fillet は対象外)
+- `CURRENT_SCHEMA_VERSION` の bump (#295 Non-Goals と同理由: 加算的 variant 追加は breaking ではない)
+- Property test 網羅 (本 Issue は fixed input のテストのみ、Refactor Pass で追加)
+
+### SCOPE DEFENSE: 一般 SelfIntersection → 2-element 長さ制約で代替
+
+親 #277 の完了条件は fillet 適用時の一般的な自己交差を明示していないが、念のため明記する:
+
+- `FilletRadiusTooLarge` は `elem1`/`elem2` **自身の長さ**に対する tangent length (`t = radius / tan(theta/2)`) の超過のみを検出する。fillet の Arc が profile 内の **他の遠い要素**と交差するケース (非常に大きい radius で profile 全体を覆うような病的入力) は検出しない。
+- 一般的な self-intersection 判定は Sketch 全体の 2D 交差計算が必要で、#295 が Trim/Extend 待ちとして先送りした scope と同種の実装量。本 Issue でも同じ理由で先送りする。
+- `elem1`/`elem2` 自身の長さ制約は fillet の必要条件であり、CAD 実務上最も頻出するケース (角に対して大きすぎる半径を指定するミス) を捕捉する。
+
+## 実装対象
+- 影響クレート/ファイル:
+  - `crates/engawa-format/src/feature.rs` — `Feature::SketchFillet` variant 追加、`id()` / `is_suppressed()` match arm 拡張、roundtrip test 追加
+  - `crates/engawa-kernel/src/error.rs` — 新規 `KernelError::FilletRadiusTooLarge { elem1_id, elem2_id, radius }` を追加 (issue 完了条件で明示的に要求されている名称)
+  - `crates/engawa-kernel/src/geometry/sketch_fillet.rs` (新規、`sketch_offset.rs` の構成を踏襲) — `compute_fillet` (element-level 純関数) + `apply_sketch_fillet_build` (profile-level)
+  - `crates/engawa-kernel/src/geometry/mod.rs` (or 該当の re-export 箇所) — 新規モジュール `pub mod sketch_fillet;` の追加
+  - `crates/engawa-build/src/lib.rs` — `Feature::SketchFillet` dispatch 追加 (`built_sketch_profiles` 読み書き、#295 と同じ合成パターン)
+  - `crates/engawa-build/src/feature_crud.rs` — `feature_sketch_refs` / `feature_variant_name` / `refs_resolve_in_state` / `simulate_history` match arm 拡張 (`Feature::SketchOffset` の対応箇所 L104, L133, L233, L395 相当の型を追加)
+  - `examples/sketch_fillet.engawa` — 新規 fixture (矩形4 Line の1角を fillet)
+  - `crates/engawa-build/tests/examples_smoke.rs` — 上記 fixture の smoke entry 追加
+  - `crates/engawa-build/tests/sketch_fillet_acceptance.rs` (新規) — acceptance test skeleton (STEP 5.5) → STEP 6 で本実装
+
+- 変更する型・関数のシグネチャ:
+
+```rust
+// engawa-format/src/feature.rs
+pub enum Feature {
+    // ... 既存 variant ...
+    #[serde(rename = "sketch_fillet")]
+    SketchFillet {
+        id: String,
+        /// 対象 CreateSketch.id (ADR-017 §3 の sketch_ref を #295 踏襲で String に変更)
+        sketch: String,
+        /// corner を共有する2 element の ID (配列内の位置で前後を正規化、入力順序は結果に影響しない)
+        elem1_id: String,
+        elem2_id: String,
+        /// fillet 半径 (正値)
+        radius: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
+}
+```
+
+- `Feature::id()` / `Feature::is_suppressed()` の match arm に `Feature::SketchFillet { id, .. }` / `Feature::SketchFillet { suppressed, .. }` を追加。
+
+- 新規 kernel module (`crates/engawa-kernel/src/geometry/sketch_fillet.rs`、`sketch_offset.rs` の構成を踏襲):
+
+```rust
+use crate::error::KernelError;
+use crate::geometry::math::{LENGTH_TOLERANCE, ANGLE_TOLERANCE};
+use engawa_format::SketchElement;
+
+/// Element-level pure function: corner を trim + Arc 挿入で fillet 化する。
+/// `elem_a`/`elem_b` は profile 配列上で連続する順序 (elem_a.to == elem_b.from == corner) を前提とする。
+/// 呼び出し側 (`apply_sketch_fillet_build`) が elem1_id/elem2_id の入力順序を配列順に正規化してから渡す。
+///
+/// Returns: (trimmed_a, new_arc, trimmed_b) — 元の配列順 (a, b) を保った3要素。
+///
+/// # Errors
+/// - `UnsupportedFeature { kind: "sketch_fillet_only_line_line" }` — a/b どちらかが Line でない
+/// - `InvalidParameter { kind: "sketch_fillet_no_shared_corner" }` — a.to != b.from (LENGTH_TOLERANCE 超)
+/// - `InvalidParameter { kind: "radius" }` — radius が非正 or non-finite
+/// - `DegenerateSketchElement { reason: "fillet_zero_length_input_line" | "fillet_corner_angle_degenerate" }`
+/// - `FilletRadiusTooLarge { elem1_id, elem2_id, radius }` — tangent length が a または b の長さを超過
+pub fn compute_fillet(
+    elem_a: &SketchElement,
+    elem_b: &SketchElement,
+    radius: f64,
+) -> Result<(SketchElement, SketchElement, SketchElement), KernelError> {
+    let (a_id, a_from, a_to) = as_line(elem_a)?;
+    let (b_id, b_from, b_to) = as_line(elem_b)?;
+
+    if !radius.is_finite() || radius <= LENGTH_TOLERANCE {
+        return Err(KernelError::InvalidParameter { kind: "radius" });
+    }
+
+    if dist(a_to, b_from) > LENGTH_TOLERANCE {
+        return Err(KernelError::InvalidParameter { kind: "sketch_fillet_no_shared_corner" });
+    }
+    let corner = a_to; // == b_from
+
+    let len_a = dist(a_from, a_to);
+    let len_b = dist(b_from, b_to);
+    if len_a <= LENGTH_TOLERANCE || len_b <= LENGTH_TOLERANCE {
+        return Err(KernelError::DegenerateSketchElement {
+            element_id: a_id.to_string(),
+            reason: "fillet_zero_length_input_line",
+        });
+    }
+
+    let d_a = normalize(sub(a_from, corner)); // corner→far_a 方向
+    let d_b = normalize(sub(b_to, corner));   // corner→far_b 方向
+
+    let theta = dot(d_a, d_b).clamp(-1.0, 1.0).acos();
+    if theta <= ANGLE_TOLERANCE || theta >= std::f64::consts::PI - ANGLE_TOLERANCE {
+        return Err(KernelError::DegenerateSketchElement {
+            element_id: format!("{a_id}_{b_id}"),
+            reason: "fillet_corner_angle_degenerate",
+        });
+    }
+
+    let t = radius / (theta / 2.0).tan();
+    if t > len_a - LENGTH_TOLERANCE || t > len_b - LENGTH_TOLERANCE {
+        return Err(KernelError::FilletRadiusTooLarge {
+            elem1_id: a_id.to_string(),
+            elem2_id: b_id.to_string(),
+            radius,
+        });
+    }
+
+    let tangent_a = add(corner, scale(d_a, t));
+    let tangent_b = add(corner, scale(d_b, t));
+
+    let center_dist = radius / (theta / 2.0).sin();
+    let bisector = normalize(add(d_a, d_b));
+    let center = add(corner, scale(bisector, center_dist));
+
+    let angle_a = angle_of(sub(tangent_a, center));
+    let angle_b = angle_of(sub(tangent_b, center));
+    // tangent_a → tangent_b への最小絶対値の符号付き回転角 (-π, π) に正規化。
+    // profile の走査順 (a → arc → b) と接続する向きを保証する。
+    let raw_sweep = normalize_angle(angle_b - angle_a);
+
+    let new_a = SketchElement::Line { id: a_id.to_string(), from: a_from, to: tangent_a };
+    let new_b = SketchElement::Line { id: b_id.to_string(), from: tangent_b, to: b_to };
+    let new_arc = SketchElement::Arc {
+        id: format!("{a_id}_{b_id}_fillet_arc"),
+        center,
+        radius,
+        start_angle: angle_a,
+        end_angle: angle_a + raw_sweep,
+    };
+
+    Ok((new_a, new_arc, new_b))
+}
+
+/// Build-level: profile 内で elem1_id/elem2_id を検索し、配列順に正規化してから `compute_fillet` を適用する。
+/// 隣接性 (配列上で連続、または閉ループの末尾↔先頭) を要求する。
+///
+/// # Errors (上記に加えて)
+/// - `InvalidParameter { kind: "sketch_fillet_elem_not_found" }` — elem1_id/elem2_id が profile 内に無い
+/// - `InvalidParameter { kind: "sketch_fillet_same_element" }` — elem1_id == elem2_id
+/// - `InvalidParameter { kind: "sketch_fillet_elems_not_adjacent" }` — 2 element が配列上で隣接していない
+pub fn apply_sketch_fillet_build(
+    source: &[SketchElement],
+    elem1_id: &str,
+    elem2_id: &str,
+    radius: f64,
+) -> Result<Vec<SketchElement>, KernelError> {
+    if elem1_id == elem2_id {
+        return Err(KernelError::InvalidParameter { kind: "sketch_fillet_same_element" });
+    }
+    let idx1 = source.iter().position(|e| element_id(e) == elem1_id)
+        .ok_or(KernelError::InvalidParameter { kind: "sketch_fillet_elem_not_found" })?;
+    let idx2 = source.iter().position(|e| element_id(e) == elem2_id)
+        .ok_or(KernelError::InvalidParameter { kind: "sketch_fillet_elem_not_found" })?;
+
+    // 配列順に正規化: a_idx の直後が b_idx になるように並べる (閉ループの wraparound 含む)
+    let n = source.len();
+    let (a_idx, b_idx) = if idx2 == idx1 + 1 {
+        (idx1, idx2)
+    } else if idx1 == idx2 + 1 {
+        (idx2, idx1)
+    } else if idx1 == n - 1 && idx2 == 0 {
+        (idx1, idx2)
+    } else if idx2 == n - 1 && idx1 == 0 {
+        (idx2, idx1)
+    } else {
+        return Err(KernelError::InvalidParameter { kind: "sketch_fillet_elems_not_adjacent" });
+    };
+
+    let (new_a, new_arc, new_b) = compute_fillet(&source[a_idx], &source[b_idx], radius)?;
+
+    // splice: a_idx→new_a, b_idx→new_b、new_arc を a_idx と b_idx の間に挿入
+    let mut out = source.to_vec();
+    out[a_idx] = new_a;
+    out[b_idx] = new_b;
+    let insert_at = if b_idx == a_idx + 1 { a_idx + 1 } else { n }; // wraparound (b_idx=0,a_idx=n-1) は末尾に挿入
+    out.insert(insert_at, new_arc);
+    Ok(out)
+}
+```
+
+(`as_line` / `dist` / `normalize` / `sub` / `add` / `scale` / `dot` / `angle_of` / `normalize_angle` / `element_id` は private helper。`sketch_offset.rs` の `element_id` と重複するため、共通化するか `geometry/math.rs` に切り出すかは GLM 実装時に既存コードとの整合を見て判断すること。)
+
+- `engawa-build/src/lib.rs` dispatch (`Feature::SketchOffset` の直後に追加、#295 と同じ `built_sketch_profiles` 合成パターン):
+
+```rust
+Feature::SketchFillet {
+    id: _,
+    sketch,
+    elem1_id,
+    elem2_id,
+    radius,
+    suppressed: _,
+} => {
+    let entry = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+        .get(sketch.as_str())
+        .cloned()
+        .unwrap_or_else(|| entry.profile.to_vec());
+    let out = engawa_kernel::geometry::sketch_fillet::apply_sketch_fillet_build(
+        &source, elem1_id, elem2_id, *radius,
+    )?;
+    built_sketch_profiles.insert(sketch.clone(), out);
+}
+```
+
+- `feature_crud.rs` の対応箇所 (`Feature::SketchOffset` の各 match arm に倣う):
+  - `feature_sketch_refs`: `Feature::SketchFillet { sketch, .. } => vec![sketch.as_str()],`
+  - `feature_variant_name`: `Feature::SketchFillet { .. } => "SketchFillet",`
+  - `refs_resolve_in_state` / `simulate_history`: SketchOffset の A01 Circle-only チェックのような build-level 契約チェックは **不要** (Fillet は Line-Line ペアの局所検証を `apply_sketch_fillet_build` 内で行うため、事前の profile-level ガードは無い)。`sketches_at.contains_key(sketch)` のみで良い (Extrude と同型の緩いチェック)。`simulate_history` では SketchOffset と同様「body を生成しない」枝として `executed_at.insert(i)` のみ行う。
+
+## 設計方針
+- **決定性**: `compute_fillet` / `apply_sketch_fillet_build` は共に純関数。elem1_id/elem2_id の入力順序を配列位置で正規化するため、`SketchFillet{elem1_id:"l1",elem2_id:"l2"}` と `{elem1_id:"l2",elem2_id:"l1"}` は同一結果を返す (T01b で検証)。
+- **B-rep トポロジー妥当性**: 本 Issue は2D sketch 編集で B-rep には直接触れない。Extrude 経由で最終 Solid が Euler-Poincaré (V-E+F=2) を満たすかは既存 `make_extrusion` が担保。fillet 後の profile が `validate_sketch_profile_contours` を通ることを確認 (Line+Arc 混在は既存 #273 で許容済み)。
+- **退化幾何の扱い**:
+  - corner 角度 `theta` が `<= ANGLE_TOLERANCE` または `>= π - ANGLE_TOLERANCE` → `DegenerateSketchElement { reason: "fillet_corner_angle_degenerate" }`
+  - 入力 Line 自体が退化長 (`<= LENGTH_TOLERANCE`) → `DegenerateSketchElement { reason: "fillet_zero_length_input_line" }`
+  - tangent length が入力 Line の長さを超過 → `FilletRadiusTooLarge`
+- **derive 規約**: `Feature::SketchFillet` は既存 `Feature` enum に variant を追加するので既存の Debug/Clone/Serialize/Deserialize/JsonSchema/TS derive を継承。
+- **エラーハンドリング**: `thiserror` の `KernelError` を使用。新規 variant は `FilletRadiusTooLarge` の1種のみ追加 (issue 完了条件で明示的に名前が指定されているため)。それ以外 (element not found, same element, not adjacent, no shared corner, radius invalid) は既存 `InvalidParameter { kind: &'static str }` の kind 文字列追加で表現し、新規 variant を増やさない (#295 の「3種で足りる」哲学を継承しつつ1種だけ例外)。
+- **workspace.dependencies**: 追加不要 (既存の serde / thiserror / ts-rs / schemars で足りる)。
+
+### 数値モデル
+
+- 使用 tolerance:
+  - `LENGTH_TOLERANCE = 1e-9` (`crates/engawa-kernel/src/geometry/math.rs`, ADR-004): 入力 Line の退化長判定、corner 共有判定 (`dist(a.to, b.from) <= LENGTH_TOLERANCE`)、tangent length の長さ超過判定
+  - `ANGLE_TOLERANCE = 1e-9`: corner 角度の退化判定 (ほぼ0 または ほぼπ)
+- 幾何アルゴリズム (角の二等分線法):
+  - `corner = a.to (= b.from)`、`d_a = normalize(a.from - corner)`、`d_b = normalize(b.to - corner)`
+  - `theta = acos(clamp(dot(d_a, d_b), -1, 1))` — 2 direction 間の角度 (0, π)
+  - tangent length: `t = radius / tan(theta/2)`
+  - arc 中心までの距離: `center_dist = radius / sin(theta/2)`、中心 = `corner + normalize(d_a + d_b) * center_dist`
+  - tangent points: `tangent_a = corner + d_a * t`、`tangent_b = corner + d_b * t`
+  - arc の sweep は `tangent_a` → `tangent_b` の最小絶対値回転角 (`(-π, π)` に正規化) を採用し、profile の元の走査順 (a → arc → b) と接続する向きを保証する
+- 数値判定:
+  - `radius` が非正 (`<= LENGTH_TOLERANCE`) または非有限 (NaN/Inf) → `InvalidParameter { kind: "radius" }`
+  - `FilletRadiusTooLarge` 判定: `t > len_a - LENGTH_TOLERANCE || t > len_b - LENGTH_TOLERANCE`
+- ADR-004 準拠方針: **tolerant** (`LENGTH_TOLERANCE`/`ANGLE_TOLERANCE` 相対誤差以内は同一扱い)。exact 算術は使わない。
+
+## テスト計画（ID 付き）
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一の SketchFillet を2回適用し、生成 element (trimmed line×2 + arc) の ID・座標が完全一致 | `assert_eq!` |
+| T01b | 決定性 (入力順序不変性) | `elem1_id`/`elem2_id` を入れ替えて適用し、出力 profile が完全一致 | `assert_eq!(out_forward, out_reverse)` |
+| T02 | 正常系 (kernel) | `compute_fillet` を90°コーナー (L字) に radius=1.0 で適用 → tangent point / arc center / radius が解析解と一致 | `assert!((x - expected).abs() < LENGTH_TOLERANCE)` |
+| T03 | 正常系 (kernel, 非90°) | 60°コーナーに radius=1.0 で適用 → tangent length / center distance が解析解 (`t=r/tan(30°)`, `d=r/sin(30°)`) と一致 | 同上 |
+| T04 | 正常系 (build, L字 line ペア) | 矩形 (4 Line) の1角に radius=1.0 の SketchFillet → Extrude、Solid が生成され旧コーナー頂点が消え tangent point 近傍の頂点が存在する | build 成功 + 頂点座標 assert |
+| T05 | Roundtrip | `Feature::SketchFillet` を YAML serialize → deserialize → 完全一致 | `assert_eq!` |
+| T06 | 統合 (Extrude 経由) | `examples/sketch_fillet.engawa` を build → baseline (fillet無し矩形) と比較し、V/E/F count が変化する (Arc 挿入で E,V が増える) | build 成功 + count 比較 |
+| T07 | 閉ループ wraparound | 4 Line 矩形の「最後→先頭」corner (l4/l1) に fillet を適用しても同様に成功する | build 成功 |
+| T_DEG_fillet_too_large | 退化 (issue 完了条件) | 短い Line ペア (長さ1.0) に radius=10.0 → `FilletRadiusTooLarge` | `assert_matches!(err, KernelError::FilletRadiusTooLarge { .. })` |
+| T_DEG_corner_angle_flat | 退化 (境界) | ほぼ180° (直線に近い) コーナーに fillet → `DegenerateSketchElement { reason: "fillet_corner_angle_degenerate" }` | `assert_matches!` |
+| T_DEG_corner_angle_zero | 退化 (境界) | ほぼ0° (折り返し) コーナーに fillet → 同上 | `assert_matches!` |
+| T_DEG_no_shared_corner | 退化 (入力不整合) | corner を共有しない2 Line (endpoint が離れている) → `InvalidParameter { kind: "sketch_fillet_no_shared_corner" }` | `assert_matches!` |
+| T_DEG_non_line_element | 退化 (仕様) | elem1_id が Circle を指す → `UnsupportedFeature { kind: "sketch_fillet_only_line_line" }` | `assert_matches!` |
+| T_DEG_same_element | 退化 (入力不整合) | elem1_id == elem2_id → `InvalidParameter { kind: "sketch_fillet_same_element" }` | `assert_matches!` |
+| T_DEG_not_adjacent | 退化 (入力不整合) | 配列上で隣接しない2 Line (間に他要素あり) → `InvalidParameter { kind: "sketch_fillet_elems_not_adjacent" }` | `assert_matches!` |
+| T_DEG_elem_not_found | 退化 (参照) | 存在しない element id → `InvalidParameter { kind: "sketch_fillet_elem_not_found" }` | `assert_matches!` |
+| T_DEG_negative_radius | 退化 (数値入力) | `radius = -1.0` → `InvalidParameter { kind: "radius" }` | `assert_matches!` |
+| T_DEG_nan_radius | 退化 (数値入力) | `radius = NaN` → `InvalidParameter { kind: "radius" }` | `assert_matches!` |
+| T_DEG_sketch_ref_not_found | 参照 | 存在しない sketch id を指す SketchFillet → `SketchNotFound` | `assert_matches!` |
+
+## 幾何的不変条件チェックリスト
+- [ ] N/A: partition 出力の polygon 頂点順と assemble の normal 処理が整合しているか (Boolean 系のみ)
+- [ ] N/A: 各プリミティブの face ごとの outer_loop 2D 向き（CW/CCW）が文書化されているか (Boolean 系のみ)
+- [ ] N/A: flip_normals / same_sense の意味論が明確か (Boolean 系のみ)
+- [ ] N/A: pslg_subdivide の出力向きが元の outer_loop 向きと整合しているか (partition 系のみ)
+
+本 Issue はスケッチ (2D) 編集のため上記4項目はすべて N/A。既存 `validate_sketch_profile_contours` と `make_extrusion` の hardening が下流で integrity を担保する。

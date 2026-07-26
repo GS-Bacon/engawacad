@@ -1,0 +1,13 @@
+issues:
+  - id: R01
+    severity: high
+    section: "実装対象 > engawa-build/src/feature_crud.rs"
+    finding: "plan は `SketchFillet` の `refs_resolve_in_state` / `simulate_history` を `sketches_at.contains_key(sketch)` だけで通す前提ですが、これだと `CreateSketch` の profile 編集で `elem1_id` / `elem2_id` が消えても `FeatureCrud::edit` / `suppress` / `reorder` が成功します。例: `CreateSketch(l1,l2)` の後に `SketchFillet(l1,l2)` を置き、後で `l1` を `l1b` に変える edit が通ると、history gate は成功したのに build で初めて `sketch_fillet_elem_not_found` になります。"
+    suggestion: "`FeatureCrud` でも当該時点の effective profile を再生し、`elem1_id` / `elem2_id` の存在と隣接性まで検証すること。少なくとも downstream consumer preservation に SketchFillet の element-level 参照を入れ、CreateSketch profile 編集で壊れる acceptance test を追加すること。"
+  - id: R02
+    severity: medium
+    section: "設計方針 > B-rep トポロジー妥当性 / テスト計画"
+    finding: "plan は `validate_sketch_profile_contours` が fillet 後 profile の integrity を担保するとしていますが、現行実装は『multi-element profile に closed primitive が混ざっていないか』しか見ておらず、Line+Arc profile の連結性・閉路性・Euler-Poincaré は検証しません。T04/T06 も build 成功と count 差分だけなので、wraparound splice や負 sweep Arc の壊れた出力を topology 観点で検出できません。"
+    suggestion: "fillet 後 profile の endpoint 連結性を明示的に検証するか、少なくとも Extrude acceptance に Euler-Poincaré の assert を追加して `V - E + F = 2S`（必要なら inner loop 補正込み）を確認すること。"
+
+verdict: fail

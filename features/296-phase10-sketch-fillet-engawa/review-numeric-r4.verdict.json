@@ -1,0 +1,12 @@
+{
+  "verdict": "pass",
+  "severity_counts": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 0
+  },
+  "blocking": 0,
+  "demoted": true,
+  "demote_reason": "pass-with-blockers"
+}

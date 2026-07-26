@@ -1,0 +1,8 @@
+issues:
+  - id: AM01
+    severity: low
+    section: "実装対象 > 新規 kernel module"
+    finding: "`normalize_angle` 関数の具体的な振る舞い（戻り値範囲・正規化方式）がコードスニペットに記載されていない。既存 `geometry/math.rs` に存在する前提だが、自明ではない"
+    suggestion: "既存 `normalize_angle` が `(-π, π]` または `[-π, π)` のどちらの区間に正規化するかをコメントで明示する、または `sketch_offset.rs` で使用済みなら同等の関数を再利用すると明記すること"
+
+verdict: pass
