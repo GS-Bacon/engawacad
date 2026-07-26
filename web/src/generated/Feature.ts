@@ -51,4 +51,20 @@ elem2_id: string,
 /**
  * Chamfer length (positive), measured from the shared corner along each element
  */
-length: number, suppressed?: boolean, };
+length: number, suppressed?: boolean, } | { "type": "sketch_mirror", id: string, 
+/**
+ * Reference to CreateSketch.id
+ */
+sketch: string, 
+/**
+ * Mirror axis: first point
+ */
+axis_p1: [number, number], 
+/**
+ * Mirror axis: second point (must differ from axis_p1)
+ */
+axis_p2: [number, number], 
+/**
+ * Element IDs to mirror; empty = all elements (SketchOffset と同慣習)
+ */
+selection?: Array<string>, suppressed?: boolean, };

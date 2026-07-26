@@ -604,6 +604,31 @@ pub enum Feature {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         suppressed: bool,
     },
+
+    /// Mirror (reflect) selected sketch elements across a 2-point axis line (2D profile edit).
+    ///
+    /// Phase 10 (#298): Line/Circle/Arc only. Ellipse/Conic are Out-of-Scope (separate Issue,
+    /// matches SketchOffset's exact same exclusion). Mirrored duplicates are appended to the
+    /// profile (originals are preserved, not modified).
+    ///
+    /// Derived element id is `"{elem_id}_mirror"` for each mirrored element. The mirror axis
+    /// is defined by two distinct points `axis_p1` / `axis_p2`. `selection` is the element IDs
+    /// to mirror; empty = all elements (matches SketchOffset convention).
+    #[serde(rename = "sketch_mirror")]
+    SketchMirror {
+        id: String,
+        /// Reference to CreateSketch.id
+        sketch: String,
+        /// Mirror axis: first point
+        axis_p1: [f64; 2],
+        /// Mirror axis: second point (must differ from axis_p1)
+        axis_p2: [f64; 2],
+        /// Element IDs to mirror; empty = all elements (SketchOffset と同慣習)
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        selection: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
 }
 
 fn is_origin(p: &[f64; 3]) -> bool {
@@ -629,7 +654,8 @@ impl Feature {
             | Feature::Intersect { id, .. }
             | Feature::SketchOffset { id, .. }
             | Feature::SketchFillet { id, .. }
-            | Feature::SketchChamfer { id, .. } => id,
+            | Feature::SketchChamfer { id, .. }
+            | Feature::SketchMirror { id, .. } => id,
         }
     }
 
@@ -647,7 +673,8 @@ impl Feature {
             | Feature::Intersect { suppressed, .. }
             | Feature::SketchOffset { suppressed, .. }
             | Feature::SketchFillet { suppressed, .. }
-            | Feature::SketchChamfer { suppressed, .. } => *suppressed,
+            | Feature::SketchChamfer { suppressed, .. }
+            | Feature::SketchMirror { suppressed, .. } => *suppressed,
         }
     }
 }
@@ -1938,6 +1965,92 @@ mod tests {
         };
         let yaml = serde_yaml::to_string(&f).unwrap();
         assert!(yaml.contains("suppressed"));
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(back.is_suppressed());
+    }
+
+    /// T_SERDE_roundtrip: SketchMirror default (empty selection, suppressed=false) roundtrips
+    /// and omits the optional fields.
+    #[test]
+    fn t_sketch_mirror_roundtrip() {
+        let f = Feature::SketchMirror {
+            id: "mirror1".to_string(),
+            sketch: "sketch_0".to_string(),
+            axis_p1: [0.0, 0.0],
+            axis_p2: [0.0, 1.0],
+            selection: vec![],
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("type: sketch_mirror"), "tag missing: {yaml}");
+        assert!(yaml.contains("id: mirror1"), "id missing: {yaml}");
+        assert!(yaml.contains("sketch: sketch_0"), "sketch missing: {yaml}");
+        // empty selection / suppressed=false must be omitted
+        assert!(
+            !yaml.contains("selection"),
+            "selection should be omitted: {yaml}"
+        );
+        assert!(
+            !yaml.contains("suppressed"),
+            "suppressed should be omitted: {yaml}"
+        );
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.id(), "mirror1");
+        match back {
+            Feature::SketchMirror {
+                sketch,
+                axis_p1,
+                axis_p2,
+                selection,
+                suppressed,
+                ..
+            } => {
+                assert_eq!(sketch, "sketch_0");
+                assert_eq!(axis_p1, [0.0, 0.0]);
+                assert_eq!(axis_p2, [0.0, 1.0]);
+                assert!(selection.is_empty());
+                assert!(!suppressed);
+            }
+            _ => panic!("SketchMirror did not roundtrip"),
+        }
+    }
+
+    /// T_SERDE_selection_present: non-empty selection is serialized.
+    #[test]
+    fn t_sketch_mirror_selection_present() {
+        let f = Feature::SketchMirror {
+            id: "mirror2".to_string(),
+            sketch: "sketch_0".to_string(),
+            axis_p1: [0.0, 0.0],
+            axis_p2: [1.0, 0.0],
+            selection: vec!["l1".to_string()],
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("selection"), "selection missing: {yaml}");
+        assert!(yaml.contains("l1"), "l1 missing: {yaml}");
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match back {
+            Feature::SketchMirror { selection, .. } => {
+                assert_eq!(selection, vec!["l1".to_string()]);
+            }
+            _ => panic!("SketchMirror did not roundtrip"),
+        }
+    }
+
+    /// T_SERDE_suppressed_true: suppressed=true is serialized.
+    #[test]
+    fn t_sketch_mirror_suppressed_true_serialized() {
+        let f = Feature::SketchMirror {
+            id: "mirror3".to_string(),
+            sketch: "sketch_0".to_string(),
+            axis_p1: [0.0, 0.0],
+            axis_p2: [1.0, 0.0],
+            selection: vec![],
+            suppressed: true,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("suppressed"), "suppressed missing: {yaml}");
         let back: Feature = serde_yaml::from_str(&yaml).unwrap();
         assert!(back.is_suppressed());
     }

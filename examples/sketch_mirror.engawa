@@ -1,0 +1,25 @@
+schema_version: 2
+version: "0.1.0"
+root_component:
+  name: "Sketch Mirror Example (Phase 10 #298)"
+  features:
+    # A single circle profile on the XY plane.
+    # (Circle is closed, so CreateSketch's validate_profile_closed passes — Line would
+    # require a closed chain, but mirror's Non-Goal is auto-closing the result.)
+    - type: create_sketch
+      id: sketch_0
+      plane: xy
+      offset: 0.0
+      profile:
+        - kind: circle
+          id: c1
+          center: [3.0, 0.0]
+          radius: 1.0
+    # Mirror c1 across the y-axis (axis_p1=(0,0), axis_p2=(0,1)).
+    # Non-Goal: mirror does not guarantee a closed loop, so this example does not extrude.
+    - type: sketch_mirror
+      id: mirror_1
+      sketch: sketch_0
+      axis_p1: [0.0, 0.0]
+      axis_p2: [0.0, 1.0]
+      selection: []

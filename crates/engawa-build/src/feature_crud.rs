@@ -114,7 +114,20 @@ fn feature_sketch_refs(f: &Feature) -> Vec<&str> {
         Feature::SketchOffset { sketch, .. } => vec![sketch.as_str()],
         Feature::SketchFillet { sketch, .. } => vec![sketch.as_str()],
         Feature::SketchChamfer { sketch, .. } => vec![sketch.as_str()],
+        Feature::SketchMirror { sketch, .. } => vec![sketch.as_str()],
         _ => vec![],
+    }
+}
+
+/// Return the id field of a SketchElement by reference (matches SketchElement::id helper
+/// on the format crate but returns `&str` to fit HashSet<&str> without allocation).
+fn element_id_of(elem: &SketchElement) -> &str {
+    match elem {
+        SketchElement::Line { id, .. }
+        | SketchElement::Circle { id, .. }
+        | SketchElement::Arc { id, .. }
+        | SketchElement::Ellipse { id, .. }
+        | SketchElement::Conic { id, .. } => id.as_str(),
     }
 }
 
@@ -145,6 +158,7 @@ fn feature_variant_name(f: &Feature) -> &'static str {
         Feature::SketchOffset { .. } => "SketchOffset",
         Feature::SketchFillet { .. } => "SketchFillet",
         Feature::SketchChamfer { .. } => "SketchChamfer",
+        Feature::SketchMirror { .. } => "SketchMirror",
     }
 }
 
@@ -314,6 +328,7 @@ fn refs_resolve_in_state(
                 None => false,
             }
         }
+        Feature::SketchMirror { sketch, .. } => sketches_at.contains_key(sketch.as_str()),
         // CreateSketch の直接 plane_ref も上の transitive ループでカバーされる
         // (feature_implicit_body_refs が CreateSketch 自身の plane_ref を返す)
         _ => true,
@@ -497,6 +512,18 @@ fn simulate_history(
                     continue;
                 }
                 // SketchChamfer modifies sketch profile but does not produce a body.
+                executed_at.insert(i);
+            }
+            Feature::SketchMirror {
+                id: _, suppressed, ..
+            } => {
+                if *suppressed {
+                    continue;
+                }
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
+                // SketchMirror modifies sketch profile but does not produce a body.
                 executed_at.insert(i);
             }
         }
@@ -791,6 +818,48 @@ fn check_refs_resolve_before(
         }
     }
 
+    // SketchMirror element-level gate (insert path): when `selection` is non-empty, each
+    // id must resolve in the *original* CreateSketch profile. Empty selection means
+    // "all elements" and is not validated here (matches SketchOffset precedent).
+    // Geometry (axis coincidence, duplicate id) is not validated at this gate — those
+    // are kernel-level fail-fast checks in `apply_sketch_mirror`.
+    //
+    // Known limitation (false-reject): derived element ids produced by earlier
+    // SketchFillet (`{a}_{b}_fillet_arc`/`{a}_{b}_fillet_line`), SketchChamfer
+    // (`{a}_{b}_chamfer_line`), or SketchOffset (`{id}_offset`) resolve in the
+    // current build profile but NOT in the original CreateSketch profile this gate
+    // inspects. A `SketchMirror` whose `selection` references such a derived id
+    // will build successfully via `build_bodies_from_features` but be rejected by
+    // `FeatureCrud::insert` with `sketch_mirror_elem_not_found`. This is the same
+    // shape of false-reject already documented for Fillet/Chamfer (#296/#297 T10)
+    // and is tracked cross-feature in #331 (CRUD gate は元の profile 基準 vs
+    // build は current profile 基準のアーキテクチャ起因)。Acceptance test:
+    // `sketch_mirror_acceptance.rs::t_known_limitation_mirror_derived_elem_false_reject`.
+    if let Feature::SketchMirror {
+        sketch, selection, ..
+    } = f
+    {
+        if !selection.is_empty() {
+            if let Some(&idx) = sketches_at.get(sketch.as_str()) {
+                if let Feature::CreateSketch { profile, .. } = &features[idx] {
+                    let profile_ids: std::collections::HashSet<&str> =
+                        profile.iter().map(element_id_of).collect();
+                    for sid in selection {
+                        if !profile_ids.contains(sid.as_str()) {
+                            return Err(FeatureCrudError::SketchElementNotResolved {
+                                feature_id: fid.to_string(),
+                                sketch_ref: sketch.clone(),
+                                elem1_id: sid.clone(),
+                                elem2_id: String::new(),
+                                reason: "sketch_mirror_elem_not_found",
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1063,7 +1132,8 @@ fn set_feature_suppressed(f: &mut Feature, on: bool) {
         | Feature::Intersect { suppressed, .. }
         | Feature::SketchOffset { suppressed, .. }
         | Feature::SketchFillet { suppressed, .. }
-        | Feature::SketchChamfer { suppressed, .. } => {
+        | Feature::SketchChamfer { suppressed, .. }
+        | Feature::SketchMirror { suppressed, .. } => {
             *suppressed = on;
         }
     }

@@ -422,3 +422,34 @@ fn golden_sketch_chamfer() {
         ),
     );
 }
+
+#[test]
+fn golden_sketch_mirror() {
+    assert_golden(
+        "sketch_mirror.engawa",
+        concat!(
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n",
+            "  name: 'Sketch Mirror Example (Phase 10 #298)'\n",
+            "  features:\n",
+            "  - type: create_sketch\n",
+            "    id: sketch_0\n",
+            "    plane: xy\n",
+            "    profile:\n",
+            "    - kind: circle\n",
+            "      id: c1\n",
+            "      center:\n",
+            "      - 3.0\n",
+            "      - 0.0\n",
+            "      radius: 1.0\n",
+            "  - type: sketch_mirror\n",
+            "    id: mirror_1\n",
+            "    sketch: sketch_0\n",
+            "    axis_p1:\n",
+            "    - 0.0\n",
+            "    - 0.0\n",
+            "    axis_p2:\n",
+            "    - 0.0\n",
+            "    - 1.0\n",
+        ),
+    );
+}

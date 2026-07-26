@@ -205,3 +205,9 @@ fn sketch_fillet() {
 fn sketch_chamfer() {
     smoke(include_str!("../../../examples/sketch_chamfer.engawa"));
 }
+
+/// Issue #298: Phase 10 Sketch Mirror smoke テスト
+#[test]
+fn sketch_mirror() {
+    smoke(include_str!("../../../examples/sketch_mirror.engawa"));
+}

@@ -565,6 +565,31 @@ pub fn build_bodies_from_features(
                 )?;
                 built_sketch_profiles.insert(sketch.clone(), out);
             }
+            Feature::SketchMirror {
+                id: _,
+                sketch,
+                axis_p1,
+                axis_p2,
+                selection,
+                suppressed: _,
+            } => {
+                let entry =
+                    sketches
+                        .get(sketch.as_str())
+                        .ok_or_else(|| KernelError::SketchNotFound {
+                            sketch: sketch.clone(),
+                        })?;
+
+                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| entry.profile.to_vec());
+
+                let out = engawa_kernel::geometry::sketch_mirror::apply_sketch_mirror(
+                    &source, *axis_p1, *axis_p2, selection,
+                )?;
+                built_sketch_profiles.insert(sketch.clone(), out);
+            }
         }
     }
 
