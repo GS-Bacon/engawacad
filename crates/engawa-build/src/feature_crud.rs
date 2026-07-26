@@ -38,6 +38,16 @@ pub enum FeatureCrudError {
         sketch_ref: String,
     },
 
+    /// Feature references sketch elements that do not resolve in the referenced CreateSketch profile.
+    #[error("feature {feature_id} references elements ({elem1_id:?}, {elem2_id:?}) of sketch {sketch_ref:?} which do not resolve ({reason})")]
+    SketchElementNotResolved {
+        feature_id: String,
+        sketch_ref: String,
+        elem1_id: String,
+        elem2_id: String,
+        reason: &'static str,
+    },
+
     /// Referenced body does not exist, is not yet created, or was already consumed.
     #[error("feature {feature_id} references body {body_ref:?} that does not exist, is created after this feature, or was already consumed")]
     BodyNotFound {
@@ -102,6 +112,7 @@ fn feature_sketch_refs(f: &Feature) -> Vec<&str> {
         Feature::Extrude { sketch, .. } => vec![sketch.as_str()],
         Feature::ExtrudeCut { sketch, .. } => vec![sketch.as_str()],
         Feature::SketchOffset { sketch, .. } => vec![sketch.as_str()],
+        Feature::SketchFillet { sketch, .. } => vec![sketch.as_str()],
         _ => vec![],
     }
 }
@@ -131,6 +142,7 @@ fn feature_variant_name(f: &Feature) -> &'static str {
         Feature::Fuse { .. } => "Fuse",
         Feature::Intersect { .. } => "Intersect",
         Feature::SketchOffset { .. } => "SketchOffset",
+        Feature::SketchFillet { .. } => "SketchFillet",
     }
 }
 
@@ -241,6 +253,32 @@ fn refs_resolve_in_state(
                         false
                     }
                 }
+                None => false,
+            }
+        }
+        Feature::SketchFillet {
+            sketch,
+            elem1_id,
+            elem2_id,
+            ..
+        } => {
+            // Element-level gate (Codex R01): both elements must resolve to adjacent Lines
+            // in the *original* CreateSketch profile. This is sound but incomplete — see plan.md.
+            match sketches_at.get(sketch.as_str()) {
+                Some(&idx) => match &features[idx] {
+                    Feature::CreateSketch { profile, .. } => {
+                        match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
+                            profile, elem1_id, elem2_id,
+                        ) {
+                            Ok((a, b)) => {
+                                matches!(profile[a], SketchElement::Line { .. })
+                                    && matches!(profile[b], SketchElement::Line { .. })
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    _ => false,
+                },
                 None => false,
             }
         }
@@ -403,6 +441,18 @@ fn simulate_history(
                 }
                 // SketchOffset modifies sketch profile but does not produce a body.
                 // It is recorded as executed but does not register to live_bodies_at.
+                executed_at.insert(i);
+            }
+            Feature::SketchFillet {
+                id: _, suppressed, ..
+            } => {
+                if *suppressed {
+                    continue;
+                }
+                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
+                    continue;
+                }
+                // SketchFillet modifies sketch profile but does not produce a body.
                 executed_at.insert(i);
             }
         }
@@ -601,6 +651,50 @@ fn check_refs_resolve_before(
                     return Err(FeatureCrudError::SketchNotFound {
                         feature_id: fid.to_string(),
                         sketch_ref: sketch.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    // SketchFillet element-level gate (insert path): both element IDs must resolve to
+    // adjacent Lines in the referenced CreateSketch profile. Geometry (radius, tangent
+    // length) is intentionally NOT validated here — history gate is a ref-resolution
+    // check, not a geometry validator (matches SketchOffset precedent on `distance`).
+    if let Feature::SketchFillet {
+        sketch,
+        elem1_id,
+        elem2_id,
+        ..
+    } = f
+    {
+        if let Some(&idx) = sketches_at.get(sketch.as_str()) {
+            if let Feature::CreateSketch { profile, .. } = &features[idx] {
+                let reason: Option<&'static str> =
+                    match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
+                        profile, elem1_id, elem2_id,
+                    ) {
+                        Ok((a, b)) => {
+                            if !matches!(profile[a], SketchElement::Line { .. })
+                                || !matches!(profile[b], SketchElement::Line { .. })
+                            {
+                                Some("sketch_fillet_only_line_line")
+                            } else {
+                                None
+                            }
+                        }
+                        Err(engawa_kernel::error::KernelError::InvalidParameter { kind }) => {
+                            Some(kind)
+                        }
+                        Err(_) => Some("sketch_fillet_elem_unresolved"),
+                    };
+                if let Some(reason) = reason {
+                    return Err(FeatureCrudError::SketchElementNotResolved {
+                        feature_id: fid.to_string(),
+                        sketch_ref: sketch.clone(),
+                        elem1_id: elem1_id.clone(),
+                        elem2_id: elem2_id.clone(),
+                        reason,
                     });
                 }
             }
@@ -877,7 +971,8 @@ fn set_feature_suppressed(f: &mut Feature, on: bool) {
         | Feature::Cut { suppressed, .. }
         | Feature::Fuse { suppressed, .. }
         | Feature::Intersect { suppressed, .. }
-        | Feature::SketchOffset { suppressed, .. } => {
+        | Feature::SketchOffset { suppressed, .. }
+        | Feature::SketchFillet { suppressed, .. } => {
             *suppressed = on;
         }
     }

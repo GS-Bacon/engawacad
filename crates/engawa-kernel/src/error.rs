@@ -103,4 +103,11 @@ pub enum KernelError {
         element_id: String,
         reason: &'static str,
     },
+
+    #[error("fillet radius {radius} too large for elements ({elem1_id}, {elem2_id}) — tangent length exceeds line segment length")]
+    FilletRadiusTooLarge {
+        elem1_id: String,
+        elem2_id: String,
+        radius: f64,
+    },
 }
