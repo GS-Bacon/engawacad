@@ -118,3 +118,23 @@ C7 (空振り determinism assertion) / M7 (ADR-017 §3 の乖離) は本 Issue �
 
 修正前に 5 テスト (A01 系 3 + A1 系 2) が赤であることを実測してから実装した
 (CLAUDE.md「バグ修正は再現テスト先行」)。
+
+### 実装の分担 (guard-crates 制約)
+
+`crates/**/src/` は `guard-crates.ts` フックにより Claude が直接編集できないため、
+判定と受け入れテスト (`crates/*/tests/` は許可対象) を Claude が確定させたうえで、
+src 側 2 修正は `debug-spec.md` を書いて `dispatch-glm.ts --mode core --debug-spec` で
+GLM に委譲した (STEP 7.5-C の「GLM 実装へ再 dispatch」経路)。
+GLM は spec どおりに実装し、逸脱・スコープ外変更なし (`glm-fix-result.json`)。
+
+### CI 結果 (Claude による独立再実行)
+
+`cargo xtask ci` → **`=== All CI checks passed ===` (exit 0)**、`ci-final.log` に保存。
+
+| suite | 結果 |
+|---|---|
+| `sketch_pattern_acceptance` | 29 passed / 0 failed / 0 ignored (合流前 19 → +10) |
+| `sketch_mirror_acceptance` | 22 passed / 0 failed (合流前 21 → +1) |
+| `sketch_fillet_acceptance` の `t10_crud_gate_rejects_rename_breaking_fillet` | ok (既存契約の回帰なし) |
+| `t_known_limitation_mirror_derived_elem_false_reject` | ok (既知 false-reject の挙動は不変) |
+| workspace 全体 | `0 failed` のみ (build / test / clippy -D warnings / fmt --check すべて green) |

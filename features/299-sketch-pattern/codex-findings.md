@@ -70,4 +70,28 @@ Mirror は既にマージ・クローズ済みで本 Issue の diff 範囲外だ
 そもそもそうした Document は `FeatureCrud::insert` で作れない (手書き YAML のみ到達可能)。
 根本解決は #331 の current-profile 基準化。
 
+### 修正内容 (実装は `dispatch-glm.ts --mode core --debug-spec` 経由、spec は `debug-spec.md`)
+
+`crates/engawa-build/src/feature_crud.rs`:
+
+- `sketch_selection_resolves(features, sketches_at, sketch, selection) -> bool` を新設。
+  空 selection = 全要素で常に解決 (SketchOffset 前例 / insert gate と同一基準)。
+- `refs_resolve_in_state` の 3 arm を差し替え:
+  - `SketchMirror` → `sketch_selection_resolves(..)`
+  - `SketchPatternLinear` / `SketchPatternCircular` → `*count >= 2` のときだけ
+    `sketch_selection_resolves(..)`、それ以外は従来どおり sketch 存在確認のみ
+
+これにより `simulate_history` → `check_edit_preserves_consumers` が
+edit / suppress / delete / reorder の全経路で selection 破壊を検知する。
+
+### 検証
+
+`cargo xtask ci` → `=== All CI checks passed ===` (exit 0)。
+
+- 再現テスト 3 件すべて green (修正前は 3 件とも赤を実測)
+- `t_crud_pattern_edit_n1_selection_ignored` green (R01 の count=1 no-op 契約を維持)
+- `t10_crud_gate_rejects_rename_breaking_fillet` / `t_known_limitation_mirror_derived_elem_false_reject`
+  green (既存契約に回帰なし)
+- `sketch_mirror_acceptance` 22 passed / `sketch_pattern_acceptance` 29 passed / workspace `0 failed`
+
 **最終判定: A01 部分採用 + 修正・回帰テスト追加済み、blocking=0 相当。STEP 8 へ進める。**
