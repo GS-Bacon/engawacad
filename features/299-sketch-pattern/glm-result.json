@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "ci_passed": false,
+  "summary": "CI red",
+  "glm_exit": 1,
+  "debug_spec_used": false,
+  "failed_reason": "cargo xtask ci failed — see features/299-sketch-pattern/ci.log",
+  "error_pattern": null,
+  "error_pattern_kind": "none"
+}

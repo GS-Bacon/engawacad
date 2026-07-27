@@ -1,0 +1,13 @@
+issues:
+  - id: R01
+    severity: high
+    section: "実装対象 > crates/engawa-build/src/feature_crud.rs"
+    finding: "count=1 を『selection 未検証の真の no-op』と定義している一方で、insert gate は `selection` 非空なら常に元 `CreateSketch.profile` 上で要素存在確認を行うため、`count=1` + 未知 id は CRUD で拒否される。Non-Goals と T_DEG_pattern_n1/T_DEG_pattern_n1_circular の仕様を API が満たせない。"
+    suggestion: "`SketchPatternLinear` / `SketchPatternCircular` の element-level gate は `count >= 2` の場合に限定し、`count=1` では kernel と同じく selection 検証を完全にスキップする。CRUD 経由の回帰テストも追加する。"
+  - id: R02
+    severity: high
+    section: "数値モデル > Circular / テスト計画 T04"
+    finding: "`step = total_angle / count` を採用すると `count=2, total_angle=π` の複製角は 90° になるが、T04 は 180° 回転を期待している。現行プランでは circular pattern の受け入れ条件が自己矛盾しており、実装とテストのどちらかが必ず不正になる。"
+    suggestion: "等間隔規約を維持するなら T04 の期待値を 90° 回転へ修正する。終点含み規約を採るなら式を `total_angle / (count - 1)` に変更し、`count=1` の特例処理も設計に明記する。"
+
+verdict: fail

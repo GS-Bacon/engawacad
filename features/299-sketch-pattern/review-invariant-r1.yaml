@@ -1,0 +1,46 @@
+issues: []
+verdict: pass
+#
+# レビュー根拠 (INVARIANT ペルソナ):
+#
+# 1. 決定性 — OK
+#    - 複製 element id は "{elem_id}_pattern_{linear,circular}_{k}" の決定的文字列連結のみ。
+#      IdGenerator 不使用だが、これは SketchOffset/SketchMirror と同じ "派生 id = 入力 id
+#      への規則的命名" パターンで、engawa-kernel の IdGenerator は EntityID (B-rep トポロジー
+#      用) に限定されるため、sketch profile 編集系では文字列決定性が正当方針。
+#    - selection 走査順は source 配列順に固定、k は 1..count 昇順、BTreeSet で重複除去
+#      (Mirror と同型)。HashMap iteration / thread_rng / timestamp 等の非決定要素なし。
+#    - apply_sketch_pattern_{linear,circular} は純関数。
+#    - T01 決定性テスト (同一入力を 2 回 build して id・座標完全一致) が計画に含まれている。
+#
+# 2. B-rep トポロジー妥当性 — N/A (正しく特定済み)
+#    - 本 Issue は 2D SketchElement profile の編集のみで Solid/Shell/Face/Edge を生成しない
+#      (Offset/Fillet/Chamfer/Mirror と同じ "body 非生成" 系 Feature)。
+#    - Euler-Poincaré / HalfEdge twin-next-prev / Loop-Shell-Solid の入れ子構造は非該当。
+#    - 幾何的不変条件チェックリストは Boolean/Partition/Assemble 系ではないため N/A 正当。
+#
+# 3. 既存 Feature への副作用 — OK
+#    - 変更は全て「新規追加」のみ (Feature enum variant 2 本 / kernel 関数 2 本 / build
+#      dispatch 節 / feature_crud match 節)。既存関数のシグネチャ破壊的変更なし。
+#    - Feature::id() / Feature::is_suppressed() の match 節追加はコンパイラ強制で漏れ防止。
+#    - is_body_producer はデフォルト false のまま (Pattern は body を生成しない) で、
+#      既存 tessellation パイプラインへの影響なし。
+#    - make_cuboid / make_cylinder / make_sphere の既存テストは不変。
+#
+# 4. アーキテクチャ整合性 — OK
+#    - Index-based topology: 本 Issue は Solid に触らないため非該当。
+#    - Feature history = source of truth: Feature enum への追加で一貫。
+#    - engawa-kernel はレンダリング非依存維持 (TriangleMesh のみ生成、GPU/wgpu に非接触)。
+#    - derive 規約: Feature は Debug/Clone/Serialize/Deserialize/JsonSchema/TS 維持。
+#    - 層境界: engawa-format に Feature variant 追加、engawa-kernel に純関数、engawa-build
+#      に薄い dispatcher、engawa-cli はロジックを持たない。層越境なし。
+#      (IdGenerator は engawa-kernel に属し、engawa-format は user 入力の文字列 id を扱う
+#       — 今回 Pattern の derived_id も kernel 側の文字列生成で、層境界適正)
+#
+# 退化判定・duplicate id 検出も適切:
+#   - count=0 fail-fast / count=1 真の no-op (selection 未検証) は明示済み。
+#   - direction=(0,0) / |distance|<=ε / |step|<=ε の退化検出あり。
+#   - derived_id の既存 profile 衝突 → DegenerateSketchElement で検出 (Mirror と同型)。
+#   - NaN/Inf 非 finite チェックも direction/distance/center/total_angle 各項目で明記。
+#
+# issue なし (critical/high ゼロ) → verdict: pass

@@ -1,0 +1,296 @@
+## 自律判断ログ (autonomous mode)
+
+Issue #299 本文・ADR-017 の記述と、実際に着地した #295-#298 (Offset/Fillet/Chamfer/Mirror) の実装慣習との間に以下の乖離があったため、Claude が調査の上で判断し推奨設計で続行する。
+
+1. **Feature 構造の乖離**: ADR-017 §3 Decision Matrix は Pattern を単一 variant `SketchPattern { sketch_ref, kind: PatternKind (Rect/Polar), count_u, count_v, spacing }` と定義しているが、Issue #299 本文はこれと異なり `SketchEdit::PatternLinear { target_ids, count, direction, distance }` / `SketchEdit::PatternCircular { target_ids, count, center, total_angle }` という**2 つの独立した構造**を提案している。さらに実装済みの Offset/Fillet/Chamfer/Mirror はいずれも ADR の抽象命名 (`sketch_ref: EntityRef`, enum-of-kind) を採用せず、`Feature` enum に**フラットな variant を直接追加**する方式（`kind` のような入れ子 discriminator を持たない）を一貫して採っている。
+   → **判断**: ADR の `SketchPattern{kind: PatternKind}` は不採用。Issue 本文が提案する 2 構造 + 既存コードのフラット variant 方式を組み合わせ、`Feature::SketchPatternLinear` / `Feature::SketchPatternCircular` を独立した 2 variant として追加する（Mirror が ADR の `MirrorLine` enum を不採用にしたのと同型の判断）。
+2. **フィールド命名の乖離**: Issue 本文の `target_ids: Vec<EntityId>` は、Offset/Fillet/Chamfer/Mirror が確立した `selection: Vec<String>`（空 = 全 element、Offset/Mirror と同慣習）に合わせて改名する。`direction: Vec2` / `center: Point2d` は既存コードの `[f64; 2]` 慣習（`Circle.center` 等、Mirror の `axis_p1`/`axis_p2` も同様）に合わせて `[f64; 2]` を採用する。
+3. **count の意味論**: Issue・ADR いずれも `count` が「複製後の総数」か「複製個数（元を含まない）」かを明記していない。
+   → **判断**: 一般的な CAD の Linear/Circular Pattern 慣習（SolidWorks 等）に合わせ、**`count` = 元を含む総インスタンス数**とする。よって追加される複製は `count - 1` 個（`k = 1..count` の範囲で生成、`count=1` は複製 0 個の no-op）。
+4. **Circular の角度分割方式**: total_angle を count 個で割るか (count-1) 個で割るかは CAD ツールにより流儀が割れる（SolidWorks の "Equal spacing" ON/OFF 相当）。Issue には `equal_spacing` 相当のフラグが存在しない。
+   → **判断**: `step = total_angle / count` を採用する（"Equal spacing" 相当、count=1 でも 0 除算にならない一様な式）。`total_angle / (count-1)` は count=1 で 0 除算になり特殊分岐が必要なため不採用。
+5. **direction の正規化**: Issue の `direction: Vec2` は単位ベクトルか任意ベクトルかを明記していない。
+   → **判断**: `direction` は内部で単位化し (`unit_dir = direction / |direction|`)、複製 k 番目のオフセットは `unit_dir * distance * k` とする。`distance` を唯一の間隔パラメータとして明確化するため（`direction` の大きさが `distance` と二重に間隔へ影響しないようにする）。
+6. **count=1 (no-op) 時の selection 検証範囲**: `count=1` は複製 0 個のため、`k = 1..count` のループが空になり selection の中身（未知 id・Ellipse/Conic）を一切参照しない。
+   → **判断**: これを意図的な仕様として明記する（count=1 は「複製しない」ため selection の中身を検証しない、真の no-op）。count=0 のみを明確なエラーとし、「複製 0 個」と「複製対象の存在確認が不要（複製しない）」を区別する。
+
+以上 6 点は plan 内の各セクションに反映済み。GLM 設計レビュー (STEP 3) で異論があれば採用/棄却を判定する。
+
+## In-Scope / Out-of-Scope
+
+| In-Scope | Out-of-Scope |
+|----------|--------------|
+| `Feature::SketchPatternLinear { id, sketch, selection, count: u32, direction: [f64;2], distance: f64, suppressed }` を `engawa-format` に追加 | ADR-017 の `SketchPattern{kind: PatternKind}` 単一 variant 方式（本 Issue は Issue 本文どおり 2 variant 分離を採用） |
+| `Feature::SketchPatternCircular { id, sketch, selection, center: [f64;2], count: u32, total_angle: f64, suppressed }` を `engawa-format` に追加 | Pattern 対象の曲線・矩形状パターン (`PatternCurve`)。Linear/Circular のみが本 Issue のスコープ |
+| 指定要素の等間隔複製（直線方向 / 円周方向）を `engawa-build`/`engawa-kernel` に実装 | Mirror（#298 で実装済み）・Trim/Extend（#276 で実装済み）以外のスケッチ編集 |
+| 対象 element 種別: `Line` / `Circle` / `Arc` の 3 種（Offset/Mirror と同じ制約） | `Ellipse` / `Conic` の Pattern（Offset/Mirror と同じ理由で follow-up へ委譲） |
+| 複製要素への決定的 ID 付与 (`"{elem_id}_pattern_linear_{k}"` / `"{elem_id}_pattern_circular_{k}"`) | Rectangle/Polygon/Slot への Pattern 対応（`SketchElement` に未追加の型は対象外） |
+| `count=0` の fail-fast エラー、`count=1` の no-op 許容 | 多重回転 (`total_angle` が 2π 超) による座標重複の検出（spatial overlap は本 Issue ではエラーとしない） |
+| `direction=(0,0)` / `total_angle=0`（count>=2 時）の fail-fast エラー | Pattern した結果に対する自動 Trim/閉ループ化・extrude |
+| `selection` 空 = 全 element 対象（Offset/Mirror の慣習を踏襲） | 軸/中心を既存 sketch 要素（`EntityRef`）で指定する機能（2 点/中心の直接数値指定のみ） |
+
+## Non-Goals
+
+- ADR-017 の `SketchPattern{kind: PatternKind}` 単一 variant 方式は不採用（自律判断ログ §1）
+- `PatternCurve`（曲線に沿ったパターン）: 本 Issue の対象外（親 #278 にも存在しない、将来 Issue）
+- `Ellipse` / `Conic` の Pattern 対応: `SketchOffset`/`SketchMirror` と同じ理由（iterative な変換が必要と判断される範囲）で follow-up Issue に委譲
+- Rectangle / Polygon / Slot の Pattern 対応: `SketchElement` enum に存在しない型は対象外
+- `total_angle` が `2π` を超える多重回転時の座標重複検出: Pattern の複製は「意味のある新規要素」であり、spatial overlap 自体は B-rep 不変条件違反ではない（Mirror の on-axis coincidence 検出とは性質が異なる、自律判断ログでは扱わないと判断）。利用者が意図的に多重回転を指定した場合の重複は許容する
+- `count=1` (no-op) 時の `selection` 内容検証: 複製 0 個のため未知 id・Ellipse/Conic を含んでいてもエラーにしない（自律判断ログ §6）
+- Pattern 結果を用いた自動 Trim/閉ループ検証・extrude: golden example は `create_sketch` + Pattern のみで完結させ `extrude` を含めない（Mirror と同じ理由 — Pattern 単体は閉ループを保証しない）
+- 軸/中心を `EntityRef`（既存 sketch 要素）で指定する機能: 数値直接指定のみ対応
+- **CRUD gate の element-level 検証は元の `CreateSketch.profile` 基準**（build 側は先行編集を逐次適用した current profile 基準）: 先行 `SketchFillet`/`SketchChamfer`/`SketchOffset`/`SketchMirror` が挿入した派生要素を Pattern の `selection` で指定すると、build では成功するが `FeatureCrud::insert` は元 profile に該当 id が無いため拒否する（false-reject）。Mirror (#298) で文書化済みの既知アーキテクチャ制約と同型。根本修正は Issue #331（横断統合）に Pattern も加えて追跡する
+- **Pattern の連鎖**: 派生 id が `"{elem_id}_pattern_linear_{k}"` / `"{elem_id}_pattern_circular_{k}"` に固定されているため、同じ要素を 2 回目の同種 Pattern で再度対象にすると `pattern_*_duplicate_id` で fail する（Mirror #298 の `mirror_duplicate_id` 制約 / follow-up #332 と同型の既知の制約として受容）
+
+## 実装対象
+
+<!-- Issue: #299 -->
+
+**影響クレート/ファイル**:
+
+1. `crates/engawa-format/src/feature.rs`
+   - `Feature` enum に `SketchPatternLinear` / `SketchPatternCircular` の 2 variant を追加
+   - `Feature::id()` / `Feature::is_suppressed()` の match 節に追加（コンパイラ強制）
+   - YAML roundtrip テストを 2 variant 分追加（`T_SERDE_roundtrip`）
+
+2. `crates/engawa-kernel/src/geometry/sketch_pattern.rs`（新規ファイル）
+   - `pub fn apply_sketch_pattern_linear(source: &[SketchElement], selection: &[String], count: u32, direction: [f64; 2], distance: f64) -> Result<Vec<SketchElement>, KernelError>`
+   - `pub fn apply_sketch_pattern_circular(source: &[SketchElement], selection: &[String], center: [f64; 2], count: u32, total_angle: f64) -> Result<Vec<SketchElement>, KernelError>`
+   - `crates/engawa-kernel/src/geometry/mod.rs` に `pub mod sketch_pattern;` を追加
+
+3. `crates/engawa-build/src/lib.rs`
+   - `build_bodies_from_features` の feature dispatch ループに `Feature::SketchPatternLinear` / `Feature::SketchPatternCircular` 節を追加（`SketchMirror` と同じ形: `built_sketch_profiles` から source 取得 → kernel 関数呼び出し → 結果を upsert、body は生成しない）
+   - `is_body_producer` の対象外リストは変更不要（デフォルト `matches!` の対象外に自動的に含まれる = false のまま）
+
+4. `crates/engawa-build/src/feature_crud.rs`
+   - `feature_sketch_refs`: `Feature::SketchPatternLinear { sketch, .. } | Feature::SketchPatternCircular { sketch, .. } => vec![sketch.as_str()]` を追加
+   - `feature_variant_name`: `"SketchPatternLinear"` / `"SketchPatternCircular"` を追加
+   - `refs_resolve_in_state`: `Feature::SketchPatternLinear { sketch, .. } | Feature::SketchPatternCircular { sketch, .. } => sketches_at.contains_key(sketch.as_str())`（Mirror と同型、隣接ペア制約なし）
+   - element-level gate (insert path): Mirror と同じ形（`selection` が非空のときだけ元 `CreateSketch.profile` に対して各 id の存在確認、reason は `"sketch_pattern_linear_elem_not_found"` / `"sketch_pattern_circular_elem_not_found"`）
+   - `suppressed` 判定の match 節に追加
+
+5. `examples/sketch_pattern.engawa`（新規ゴールデン、`PatternLinear` と `PatternCircular` を両方含む単一ファイル）+ `crates/engawa-build/tests/examples_smoke.rs` に `sketch_pattern()` テスト追加
+   - `crates/engawa-format/tests/golden_examples.rs` に `golden_sketch_pattern()` を追加
+   - `crates/xtask/src/main.rs` のスキーマタグ一覧に `sketch_pattern_linear` / `sketch_pattern_circular` を追加
+
+### 変更シグネチャ（新規追加のみ、既存関数の破壊的変更なし）
+
+```rust
+// crates/engawa-format/src/feature.rs — Feature enum に追加
+
+/// Linear pattern (equally-spaced translation duplication) of selected sketch elements
+/// (2D profile edit).
+///
+/// Phase 10 (#299): Line/Circle/Arc only. Ellipse/Conic are Out-of-Scope (matches
+/// SketchOffset/SketchMirror's exact same exclusion). `count` is the TOTAL instance
+/// count including the original (count=1 → no-op, count=0 → error). Copies are
+/// appended to the profile (originals are preserved, not modified).
+///
+/// Derived element id is `"{elem_id}_pattern_linear_{k}"` for k = 1..count (1-indexed
+/// copy number). `direction` is normalised internally to a unit vector; `distance` is
+/// the sole spacing parameter (offset of copy k = unit(direction) * distance * k).
+#[serde(rename = "sketch_pattern_linear")]
+SketchPatternLinear {
+    id: String,
+    /// Reference to CreateSketch.id
+    sketch: String,
+    /// Element IDs to pattern; empty = all elements (SketchOffset/SketchMirror と同慣習)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    selection: Vec<String>,
+    /// Total instance count including the original (count=1 は no-op、count=0 はエラー)
+    count: u32,
+    /// Pattern direction (internally normalised to a unit vector)
+    direction: [f64; 2],
+    /// Spacing between consecutive instances along `direction`
+    distance: f64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    suppressed: bool,
+},
+
+/// Circular pattern (equally-spaced rotation duplication) of selected sketch elements
+/// (2D profile edit).
+///
+/// Phase 10 (#299): Line/Circle/Arc only. `count` is the TOTAL instance count including
+/// the original. Angular step = `total_angle / count` ("equal spacing" convention —
+/// avoids division-by-zero at count=1, unlike `total_angle / (count - 1)`).
+///
+/// Derived element id is `"{elem_id}_pattern_circular_{k}"` for k = 1..count.
+#[serde(rename = "sketch_pattern_circular")]
+SketchPatternCircular {
+    id: String,
+    /// Reference to CreateSketch.id
+    sketch: String,
+    /// Element IDs to pattern; empty = all elements
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    selection: Vec<String>,
+    /// Rotation center
+    center: [f64; 2],
+    /// Total instance count including the original
+    count: u32,
+    /// Total angular span in radians; step = total_angle / count
+    total_angle: f64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    suppressed: bool,
+},
+```
+
+```rust
+// crates/engawa-kernel/src/geometry/sketch_pattern.rs — 新規ファイル
+
+pub fn apply_sketch_pattern_linear(
+    source: &[SketchElement],
+    selection: &[String],
+    count: u32,
+    direction: [f64; 2],
+    distance: f64,
+) -> Result<Vec<SketchElement>, KernelError> {
+    // 1. direction 退化チェック: 非 finite または |direction| <= LENGTH_TOLERANCE
+    //    → Err(InvalidParameter { kind: "sketch_pattern_linear_direction_degenerate" })
+    // 2. distance 非 finite チェック → Err(InvalidParameter { kind: "sketch_pattern_linear_distance_invalid" })
+    // 3. count == 0 → Err(InvalidParameter { kind: "sketch_pattern_linear_count_zero" })
+    // 4. count == 1 → Ok(source.to_vec()) を即座に返す（真の no-op、selection 未検証）
+    // 5. (count >= 2) count>=2 かつ |distance| <= LENGTH_TOLERANCE
+    //    → Err(InvalidParameter { kind: "sketch_pattern_linear_distance_zero" })
+    // 6. selection 解決（空 = 全 element、BTreeSet で重複除去、SketchMirror に倣う）
+    //    存在しない id → Err(InvalidParameter { kind: "sketch_pattern_linear_unknown_element_id" })
+    // 7. unit_dir = normalize(direction)
+    // 8. for elem in selected element (source 配列順) {
+    //        for k in 1..count {
+    //            offset = unit_dir * distance * (k as f64)
+    //            Ellipse/Conic → Err(UnsupportedFeature { kind: "sketch_pattern_linear_of_ellipse_or_conic" })
+    //            それ以外 → translate_element(elem, offset) で新規 element 生成
+    //            derived_id = "{elem_id}_pattern_linear_{k}"
+    //            derived_id が元 profile の既存 id と衝突 →
+    //                Err(DegenerateSketchElement { element_id: derived_id, reason: "pattern_linear_duplicate_id" })
+    //            appended に push
+    //        }
+    //    }
+    // 9. 戻り値 = source.to_vec() ++ appended
+    todo!()
+}
+
+pub fn apply_sketch_pattern_circular(
+    source: &[SketchElement],
+    selection: &[String],
+    center: [f64; 2],
+    count: u32,
+    total_angle: f64,
+) -> Result<Vec<SketchElement>, KernelError> {
+    // 1. center 退化チェック: 非 finite → Err(InvalidParameter { kind: "sketch_pattern_circular_center_degenerate" })
+    // 2. total_angle 非 finite → Err(InvalidParameter { kind: "sketch_pattern_circular_angle_invalid" })
+    // 3. count == 0 → Err(InvalidParameter { kind: "sketch_pattern_circular_count_zero" })
+    // 4. count == 1 → Ok(source.to_vec()) を即座に返す（真の no-op、selection 未検証）
+    // 5. step = total_angle / (count as f64)
+    //    count>=2 かつ |step| <= ANGLE_TOLERANCE
+    //    → Err(InvalidParameter { kind: "sketch_pattern_circular_angle_degenerate" })
+    // 6. selection 解決（linear と同じ BTreeSet 方式）
+    //    存在しない id → Err(InvalidParameter { kind: "sketch_pattern_circular_unknown_element_id" })
+    // 7. for elem in selected element (source 配列順) {
+    //        for k in 1..count {
+    //            angle = step * (k as f64)
+    //            Ellipse/Conic → Err(UnsupportedFeature { kind: "sketch_pattern_circular_of_ellipse_or_conic" })
+    //            それ以外 → rotate_element(elem, center, angle) で新規 element 生成
+    //            derived_id = "{elem_id}_pattern_circular_{k}"
+    //            衝突 → Err(DegenerateSketchElement { element_id: derived_id, reason: "pattern_circular_duplicate_id" })
+    //            appended に push
+    //        }
+    //    }
+    // 8. 戻り値 = source.to_vec() ++ appended
+    todo!()
+}
+```
+
+**呼び出し側 (engawa-build/src/lib.rs) の追加パターン**（`SketchMirror` の節と同型、抜粋）:
+
+```rust
+Feature::SketchPatternLinear {
+    id: _, sketch, selection, count, direction, distance, suppressed: _,
+} => {
+    let entry = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+        .get(sketch.as_str()).cloned().unwrap_or_else(|| entry.profile.to_vec());
+    let out = engawa_kernel::geometry::sketch_pattern::apply_sketch_pattern_linear(
+        &source, selection, *count, *direction, *distance,
+    )?;
+    built_sketch_profiles.insert(sketch.clone(), out);
+}
+Feature::SketchPatternCircular {
+    id: _, sketch, selection, center, count, total_angle, suppressed: _,
+} => {
+    let entry = sketches.get(sketch.as_str())
+        .ok_or_else(|| KernelError::SketchNotFound { sketch: sketch.clone() })?;
+    let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+        .get(sketch.as_str()).cloned().unwrap_or_else(|| entry.profile.to_vec());
+    let out = engawa_kernel::geometry::sketch_pattern::apply_sketch_pattern_circular(
+        &source, selection, *center, *count, *total_angle,
+    )?;
+    built_sketch_profiles.insert(sketch.clone(), out);
+}
+```
+
+## 設計方針
+
+- **決定性**: `apply_sketch_pattern_{linear,circular}` は純関数（`IdGenerator` 不使用）。複製 element の id は `"{elem_id}_pattern_{linear,circular}_{k}"` という決定的な文字列連結のみで導出する（乱数・カウンタ不使用）。`selection` の走査順は `source` 配列順に固定（`selection` Vec 自体の入力順序には依存しない、Mirror と同じ原則）。各要素内の複製順序は `k = 1..count` の昇順に固定する。
+- **B-rep トポロジー妥当性**: 本 Issue は 2D `SketchElement` profile の編集のみで Solid/B-rep トポロジーを生成しない（Offset/Fillet/Chamfer/Mirror と同じ "body 非生成" 系 Feature）。Euler-Poincaré は非該当。
+- **退化幾何の扱い**: 下記数値モデル参照。Mirror と異なり、Pattern の複製がオリジナルと幾何的に一致するのは「オフセット/回転角が実質ゼロのとき」のみであり、これは入力パラメータレベルの検証（`distance=0` かつ `count>=2`、`total_angle≈0` かつ `count>=2`）で完全に防げる。よって Mirror の `is_axis_coincident` のような複製後の事後幾何比較は不要（自律判断ログ・Non-Goals参照）。
+- **derive 規約**: `Feature` は既存どおり `Debug, Clone, Serialize, Deserialize, JsonSchema, TS` を維持。
+- **エラーハンドリング**: 新規エラー variant は追加しない。既存 `KernelError` の `InvalidParameter { kind: &'static str }` / `UnsupportedFeature { kind: &'static str }` / `DegenerateSketchElement { element_id: String, reason: &'static str }` を再利用する（Offset/Fillet/Mirror の前例踏襲、新規 error type 不要）。
+- **workspace.dependencies**: 新規依存なし。
+
+### 数値モデル
+
+- 既存 tolerance を再利用: `LENGTH_TOLERANCE` (`1e-9`) を距離判定（direction 長さ・distance ゼロ判定）に、`ANGLE_TOLERANCE` (`1e-9`) を角度判定（step ゼロ判定）に使用。新規 ε は追加しない。
+- **ADR-004 準拠方針**: tolerant 判定（`<=`/`>=` に上記 ε を用いる）。既存 `sketch_mirror.rs`/`sketch_fillet.rs` と同じ比較スタイル。
+
+**Linear の変換式**（`unit_dir = direction / |direction|`。`|direction|` は `hypot` で計算し overflow を回避、Mirror の `dist()` 実装に倣う）:
+
+- 複製 k (`k = 1..count`) のオフセット: `offset_k = unit_dir * distance * (k as f64)`
+- 点 `Q` の平行移動: `Q' = Q + offset_k`
+- **Line** `{from, to}` → `{from: from + offset_k, to: to + offset_k}`
+- **Circle** `{center, radius}` → `{center: center + offset_k, radius: radius}`（半径不変）
+- **Arc** `{center, radius, start_angle, end_angle}` → `{center: center + offset_k, radius, start_angle, end_angle}`（平行移動は角度不変 — Mirror の反射と異なり回転・反転を伴わないため sweep 符号反転は発生しない）
+
+**Circular の変換式**（`step = total_angle / count`。回転中心 `center`、回転角 `angle_k = step * (k as f64)`、CCW 正）:
+
+- 点 `Q` の回転: `v = Q - center`, `v' = (v.x*cos(angle_k) - v.y*sin(angle_k), v.x*sin(angle_k) + v.y*cos(angle_k))`, `Q' = center + v'`
+- **Line** `{from, to}` → `{from: rotate(from), to: rotate(to)}`
+- **Circle** `{center: c, radius}` → `{center: rotate(c), radius}`（半径不変）
+- **Arc** `{center: c, radius, start_angle, end_angle}` → `{center: rotate(c), radius, start_angle: start_angle + angle_k, end_angle: end_angle + angle_k}`（回転は等長・向き保存変換のため sweep の符号・大きさは不変。両角度に同じ `angle_k` を加算するのみ — Mirror の反射式のような符号反転や atan2 再計算は不要）
+
+**退化判定**（両方とも `count >= 2`（＝複製が実際に生成される場合）に限定して評価。`count ∈ {0, 1}` は上記 count チェックで先に処理済み）:
+
+- Linear: `direction` の成分に NaN/Inf を含む、または `|direction| <= LENGTH_TOLERANCE` → `sketch_pattern_linear_direction_degenerate`
+- Linear: `distance` が NaN/Inf → `sketch_pattern_linear_distance_invalid`
+- Linear: `|distance| <= LENGTH_TOLERANCE`（かつ `count >= 2`）→ `sketch_pattern_linear_distance_zero`（全複製がオリジナルと座標一致するため）
+- Circular: `center` の成分に NaN/Inf → `sketch_pattern_circular_center_degenerate`
+- Circular: `total_angle` が NaN/Inf → `sketch_pattern_circular_angle_invalid`
+- Circular: `|step| <= ANGLE_TOLERANCE`（かつ `count >= 2`、`step = total_angle / count`）→ `sketch_pattern_circular_angle_degenerate`
+
+## テスト計画（ID 付き）
+
+| ID | 種別 | 内容 | 期待結果 |
+|----|------|------|----------|
+| T01 | 決定性 | 同一 `sketch_pattern_linear`/`sketch_pattern_circular` を含む Document を 2 回 build し、結果 profile の id・座標が完全一致 | `assert_eq!` |
+| T02 | 正常系 (Linear/Line) | Line `(0,0)-(2,0)` を `direction=(1,0), distance=3, count=3` で pattern | `"l1_pattern_linear_1"`=`(3,0)-(5,0)`, `"l1_pattern_linear_2"`=`(6,0)-(8,0)` が追加、元 `l1` 不変 |
+| T03 | 正常系 (Circular/Circle) | Circle `center=(3,0), radius=1` を `center=(0,0), total_angle=2π, count=4` で pattern | `k=1,2,3` の複製が 90°/180°/270° 回転位置に追加、半径不変 |
+| T04 | 正常系 (Circular/Arc, 数値モデル検証) | Arc `center=(2,0), radius=1, start=0, end=π/2` を `center=(0,0), total_angle=π, count=2` で pattern | 複製 `center` が 180° 回転、`start_angle=π`, `end_angle=3π/2`（sweep 符号・大きさ不変） |
+| T05 | 境界 | `selection` 空配列 → profile 内の全 element (Line/Circle/Arc) が両方の Pattern で複製される | 元 element 数 × count の profile 長 |
+| T_DEG_pattern_n0 | 退化 | `SketchPatternLinear` に `count=0` | `Err(InvalidParameter { kind: "sketch_pattern_linear_count_zero" })` |
+| T_DEG_pattern_n0_circular | 退化 | `SketchPatternCircular` に `count=0` | `Err(InvalidParameter { kind: "sketch_pattern_circular_count_zero" })` |
+| T_DEG_pattern_n1 | 退化(no-op) | `SketchPatternLinear` に `count=1`（`selection` に未知 id を含めても） | `Ok`、profile は元のまま変化なし（selection 未検証の no-op を確認） |
+| T_DEG_pattern_n1_circular | 退化(no-op) | `SketchPatternCircular` に `count=1` | `Ok`、profile は元のまま変化なし |
+| T_DEG_zero_direction | 退化 | `SketchPatternLinear` に `direction=(0,0)`, `count=2` | `Err(InvalidParameter { kind: "sketch_pattern_linear_direction_degenerate" })` |
+| T_DEG_zero_distance | 退化 | `SketchPatternLinear` に `distance=0.0`, `count=2` | `Err(InvalidParameter { kind: "sketch_pattern_linear_distance_zero" })` |
+| T_DEG_zero_angle | 退化 | `SketchPatternCircular` に `total_angle=0.0`, `count=2` | `Err(InvalidParameter { kind: "sketch_pattern_circular_angle_degenerate" })` |
+| T_DEG_unknown_element_linear | 退化 | `SketchPatternLinear` の `selection` に profile 内に存在しない id（`count>=2`） | `Err(InvalidParameter { kind: "sketch_pattern_linear_unknown_element_id" })` |
+| T_DEG_unknown_element_circular | 退化 | `SketchPatternCircular` の `selection` に存在しない id | `Err(InvalidParameter { kind: "sketch_pattern_circular_unknown_element_id" })` |
+| T_DEG_unsupported_type_linear | 退化 | `SketchPatternLinear` の `selection` に `Ellipse` 要素の id | `Err(UnsupportedFeature { kind: "sketch_pattern_linear_of_ellipse_or_conic" })` |
+| T_DEG_unsupported_type_circular | 退化 | `SketchPatternCircular` の `selection` に `Conic` 要素の id | `Err(UnsupportedFeature { kind: "sketch_pattern_circular_of_ellipse_or_conic" })` |
+| T_DEG_duplicate_id | 退化 | 派生 id `"{elem_id}_pattern_linear_1"` が既に profile 内に存在する状態で同じ element を再度 pattern | `Err(DegenerateSketchElement { reason: "pattern_linear_duplicate_id", .. })` |
+| T_SERDE_roundtrip | 単体 | `Feature::SketchPatternLinear` / `SketchPatternCircular` の YAML roundtrip（`selection` 省略時デフォルト空、`suppressed` の省略/出力）を `crates/engawa-format/src/feature.rs` に追加 | 既存 Offset/Fillet/Chamfer/Mirror の roundtrip テストと同型で pass |
+| T_GOLDEN | golden | `examples/sketch_pattern.engawa`（create_sketch + sketch_pattern_linear + sketch_pattern_circular、extrude なし）が `build_bodies_from_features` を通る | `examples_smoke.rs::sketch_pattern()` pass |
+
+## 幾何的不変条件チェックリスト
+
+N/A — 本 Issue は Boolean/Partition/Assemble 系ではなく、2D `SketchElement` profile の複製編集のみ（Solid を生成しない）。

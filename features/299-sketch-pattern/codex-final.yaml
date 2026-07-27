@@ -1,0 +1,8 @@
+issues:
+  - id: A01
+    severity: high
+    file: "crates/engawa-build/src/feature_crud.rs"
+    line_hint: 335
+    finding: "refs_resolve_in_state treats SketchMirror and SketchPattern* as depending only on the sketch ID. After those features are already in history, FeatureCrud::edit can rename/remove selected elements or retag them to unsupported kinds without tripping EditBreaksConsumer; the edit succeeds and the document only fails later when build hits sketch_*_unknown_element_id or unsupported-type errors."
+    suggestion: "Make history simulation validate the current sketch profile for Mirror/Pattern consumers, not just sketch existence: re-check non-empty selection IDs against the edited profile, and for selection=[] reject profiles that now contain unsupported element kinds. Add an EditBreaksConsumer regression test for sketch edits that break an existing Mirror/Pattern selection."
+verdict: fail
