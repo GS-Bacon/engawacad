@@ -164,7 +164,9 @@ export function checkFullAdoptionWarning(path: string): boolean {
   const data = readState(path);
   const j = data.judgments ?? [];
   if (j.length < 2) return false;
-  return j.slice(-2).every((x) => x.rejected === 0);
+  // adopted > 0 のガード必須 (#334): adopted=0/rejected=0 (指摘ゼロ) は
+  // adopted>0/rejected=0 (全採用でスコープ防衛が緩んでいる) とは別物。
+  return j.slice(-2).every((x) => x.adopted > 0 && x.rejected === 0);
 }
 
 // 2 連続 round で全指摘を棄却 (adopted = 0) → early-stop シグナル
