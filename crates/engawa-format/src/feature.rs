@@ -629,6 +629,61 @@ pub enum Feature {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         suppressed: bool,
     },
+
+    /// Linear pattern (equally-spaced translation duplication) of selected sketch elements
+    /// (2D profile edit).
+    ///
+    /// Phase 10 (#299): Line/Circle/Arc only. Ellipse/Conic are Out-of-Scope (matches
+    /// SketchOffset/SketchMirror's exact same exclusion). `count` is the TOTAL instance
+    /// count including the original (count=1 → no-op, count=0 → error). Copies are
+    /// appended to the profile (originals are preserved, not modified).
+    ///
+    /// Derived element id is `"{elem_id}_pattern_linear_{k}"` for k = 1..count (1-indexed
+    /// copy number). `direction` is normalised internally to a unit vector; `distance` is
+    /// the sole spacing parameter (offset of copy k = unit(direction) * distance * k).
+    #[serde(rename = "sketch_pattern_linear")]
+    SketchPatternLinear {
+        id: String,
+        /// Reference to CreateSketch.id
+        sketch: String,
+        /// Element IDs to pattern; empty = all elements (SketchOffset/SketchMirror と同慣習)
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        selection: Vec<String>,
+        /// Total instance count including the original (count=1 は no-op、count=0 はエラー)
+        count: u32,
+        /// Pattern direction (internally normalised to a unit vector)
+        direction: [f64; 2],
+        /// Spacing between consecutive instances along `direction`
+        distance: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
+
+    /// Circular pattern (equally-spaced rotation duplication) of selected sketch elements
+    /// (2D profile edit).
+    ///
+    /// Phase 10 (#299): Line/Circle/Arc only. `count` is the TOTAL instance count including
+    /// the original. Angular step = `total_angle / count` ("equal spacing" convention —
+    /// avoids division-by-zero at count=1, unlike `total_angle / (count - 1)`).
+    ///
+    /// Derived element id is `"{elem_id}_pattern_circular_{k}"` for k = 1..count.
+    #[serde(rename = "sketch_pattern_circular")]
+    SketchPatternCircular {
+        id: String,
+        /// Reference to CreateSketch.id
+        sketch: String,
+        /// Element IDs to pattern; empty = all elements
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        selection: Vec<String>,
+        /// Rotation center
+        center: [f64; 2],
+        /// Total instance count including the original
+        count: u32,
+        /// Total angular span in radians; step = total_angle / count
+        total_angle: f64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        suppressed: bool,
+    },
 }
 
 fn is_origin(p: &[f64; 3]) -> bool {
@@ -655,7 +710,9 @@ impl Feature {
             | Feature::SketchOffset { id, .. }
             | Feature::SketchFillet { id, .. }
             | Feature::SketchChamfer { id, .. }
-            | Feature::SketchMirror { id, .. } => id,
+            | Feature::SketchMirror { id, .. }
+            | Feature::SketchPatternLinear { id, .. }
+            | Feature::SketchPatternCircular { id, .. } => id,
         }
     }
 
@@ -674,7 +731,9 @@ impl Feature {
             | Feature::SketchOffset { suppressed, .. }
             | Feature::SketchFillet { suppressed, .. }
             | Feature::SketchChamfer { suppressed, .. }
-            | Feature::SketchMirror { suppressed, .. } => *suppressed,
+            | Feature::SketchMirror { suppressed, .. }
+            | Feature::SketchPatternLinear { suppressed, .. }
+            | Feature::SketchPatternCircular { suppressed, .. } => *suppressed,
         }
     }
 }
@@ -2053,5 +2112,129 @@ mod tests {
         assert!(yaml.contains("suppressed"), "suppressed missing: {yaml}");
         let back: Feature = serde_yaml::from_str(&yaml).unwrap();
         assert!(back.is_suppressed());
+    }
+
+    /// T_SERDE_roundtrip: SketchPatternLinear default (empty selection, suppressed=false) roundtrips.
+    #[test]
+    fn t_sketch_pattern_linear_roundtrip() {
+        let f = Feature::SketchPatternLinear {
+            id: "pl1".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec![],
+            count: 3,
+            direction: [1.0, 0.0],
+            distance: 2.5,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(
+            yaml.contains("type: sketch_pattern_linear"),
+            "tag missing: {yaml}"
+        );
+        assert!(yaml.contains("id: pl1"), "id missing: {yaml}");
+        assert!(yaml.contains("sketch: sketch_0"), "sketch missing: {yaml}");
+        assert!(yaml.contains("count: 3"), "count missing: {yaml}");
+        assert!(yaml.contains("distance: 2.5"), "distance missing: {yaml}");
+        // empty selection / suppressed=false must be omitted
+        assert!(
+            !yaml.contains("selection"),
+            "selection should be omitted: {yaml}"
+        );
+        assert!(
+            !yaml.contains("suppressed"),
+            "suppressed should be omitted: {yaml}"
+        );
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match back {
+            Feature::SketchPatternLinear {
+                id,
+                sketch,
+                selection,
+                count,
+                direction,
+                distance,
+                suppressed,
+            } => {
+                assert_eq!(id, "pl1");
+                assert_eq!(sketch, "sketch_0");
+                assert!(selection.is_empty());
+                assert_eq!(count, 3);
+                assert_eq!(direction, [1.0, 0.0]);
+                assert!((distance - 2.5).abs() < 1e-12);
+                assert!(!suppressed);
+            }
+            _ => panic!("SketchPatternLinear did not roundtrip"),
+        }
+    }
+
+    /// T_SERDE_selection_present: non-empty selection and suppressed=true are serialized.
+    #[test]
+    fn t_sketch_pattern_linear_selection_and_suppressed() {
+        let f = Feature::SketchPatternLinear {
+            id: "pl2".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec!["l1".to_string()],
+            count: 2,
+            direction: [0.0, 1.0],
+            distance: 1.0,
+            suppressed: true,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(yaml.contains("selection"), "selection missing: {yaml}");
+        assert!(yaml.contains("l1"), "l1 missing: {yaml}");
+        assert!(yaml.contains("suppressed"), "suppressed missing: {yaml}");
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        assert!(back.is_suppressed());
+    }
+
+    /// T_SERDE_roundtrip: SketchPatternCircular default (empty selection, suppressed=false) roundtrips.
+    #[test]
+    fn t_sketch_pattern_circular_roundtrip() {
+        let f = Feature::SketchPatternCircular {
+            id: "pc1".to_string(),
+            sketch: "sketch_0".to_string(),
+            selection: vec![],
+            center: [0.0, 0.0],
+            count: 4,
+            total_angle: std::f64::consts::TAU,
+            suppressed: false,
+        };
+        let yaml = serde_yaml::to_string(&f).unwrap();
+        assert!(
+            yaml.contains("type: sketch_pattern_circular"),
+            "tag missing: {yaml}"
+        );
+        assert!(yaml.contains("id: pc1"), "id missing: {yaml}");
+        assert!(yaml.contains("sketch: sketch_0"), "sketch missing: {yaml}");
+        assert!(yaml.contains("count: 4"), "count missing: {yaml}");
+        assert!(
+            !yaml.contains("selection"),
+            "selection should be omitted: {yaml}"
+        );
+        assert!(
+            !yaml.contains("suppressed"),
+            "suppressed should be omitted: {yaml}"
+        );
+        let back: Feature = serde_yaml::from_str(&yaml).unwrap();
+        match back {
+            Feature::SketchPatternCircular {
+                id,
+                sketch,
+                selection,
+                center,
+                count,
+                total_angle,
+                suppressed,
+            } => {
+                assert_eq!(id, "pc1");
+                assert_eq!(sketch, "sketch_0");
+                assert!(selection.is_empty());
+                assert_eq!(center, [0.0, 0.0]);
+                assert_eq!(count, 4);
+                assert!((total_angle - std::f64::consts::TAU).abs() < 1e-12);
+                assert!(!suppressed);
+            }
+            _ => panic!("SketchPatternCircular did not roundtrip"),
+        }
     }
 }

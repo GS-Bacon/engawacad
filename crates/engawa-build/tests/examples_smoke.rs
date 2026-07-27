@@ -211,3 +211,9 @@ fn sketch_chamfer() {
 fn sketch_mirror() {
     smoke(include_str!("../../../examples/sketch_mirror.engawa"));
 }
+
+/// Issue #299: Phase 10 Sketch Pattern (Linear + Circular) smoke テスト
+#[test]
+fn sketch_pattern() {
+    smoke(include_str!("../../../examples/sketch_pattern.engawa"));
+}

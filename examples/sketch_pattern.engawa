@@ -1,0 +1,33 @@
+schema_version: 2
+version: "0.1.0"
+root_component:
+  name: "Sketch Pattern Example (Phase 10 #299)"
+  features:
+    # A single circle profile on the XY plane.
+    # (Circle is closed, so CreateSketch's validate_profile_closed passes — Line would
+    # require a closed chain, but pattern's Non-Goal is auto-closing the result.)
+    - type: create_sketch
+      id: sketch_0
+      plane: xy
+      offset: 0.0
+      profile:
+        - kind: circle
+          id: c1
+          center: [3.0, 0.0]
+          radius: 1.0
+    # Linear pattern: 3 total copies along +x at distance=8 (originals preserved).
+    - type: sketch_pattern_linear
+      id: pattern_linear_1
+      sketch: sketch_0
+      count: 3
+      direction: [1.0, 0.0]
+      distance: 8.0
+      selection: []
+    # Circular pattern: 4 total copies around origin over a full turn (originals preserved).
+    - type: sketch_pattern_circular
+      id: pattern_circular_1
+      sketch: sketch_0
+      center: [0.0, 0.0]
+      count: 4
+      total_angle: 6.283185307179586
+      selection: []

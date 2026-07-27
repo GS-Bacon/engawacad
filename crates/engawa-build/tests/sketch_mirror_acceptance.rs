@@ -505,6 +505,50 @@ fn t10_crud_gate_insert_mirror_unknown_element() {
     }
 }
 
+/// T11_crud_gate_edit_breaks_mirror_selection (Codex #299 STEP 7.5 A01 regression):
+/// SketchMirror の `selection` が参照している要素を `CreateSketch` の edit で rename すると
+/// `EditBreaksConsumer` で拒否される。修正前は `refs_resolve_in_state` の SketchMirror arm が
+/// sketch id の存在だけを見ていたため edit が成功し、後続の `build_bodies_from_features` で
+/// 初めて `sketch_mirror_unknown_element_id` になっていた (false-accept 非対称)。
+/// SketchFillet の T10 (`sketch_fillet_acceptance.rs`) と同じ契約。
+#[test]
+fn t11_crud_gate_edit_breaks_mirror_selection() {
+    let sk = |elem_id: &str| Feature::CreateSketch {
+        id: "sk1".to_string(),
+        plane: SketchPlane::Xy,
+        offset: 0.0,
+        variables: Vec::new(),
+        profile: vec![SketchElement::Circle {
+            id: elem_id.to_string(),
+            center: [3.0, 0.0],
+            radius: 1.0,
+        }],
+        plane_ref: None,
+        suppressed: false,
+    };
+    let mut doc = Document::new("t");
+    doc.root_component.features = vec![
+        sk("c1"),
+        Feature::SketchMirror {
+            id: "m1".to_string(),
+            sketch: "sk1".to_string(),
+            axis_p1: [0.0, 0.0],
+            axis_p2: [0.0, 1.0],
+            selection: vec!["c1".to_string()],
+            suppressed: false,
+        },
+    ];
+    let err = FeatureCrud::edit(&doc, "sk1", sk("c_renamed")).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            FeatureCrudError::EditBreaksConsumer { broken_consumer_id, .. }
+                if broken_consumer_id == "m1"
+        ),
+        "expected EditBreaksConsumer(m1), got {err:?}"
+    );
+}
+
 /// T_known_limitation_mirror_derived_elem_false_reject:
 /// 先行 SketchFillet が挿入した派生 Arc (`l1_l2_fillet_arc`) を SketchMirror の
 /// selection に指定した場合、build は current profile 基準で成功するが CRUD gate は

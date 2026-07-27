@@ -453,3 +453,41 @@ fn golden_sketch_mirror() {
         ),
     );
 }
+
+#[test]
+fn golden_sketch_pattern() {
+    assert_golden(
+        "sketch_pattern.engawa",
+        concat!(
+            "schema_version: 2\nversion: 0.1.0\nroot_component:\n",
+            "  name: 'Sketch Pattern Example (Phase 10 #299)'\n",
+            "  features:\n",
+            "  - type: create_sketch\n",
+            "    id: sketch_0\n",
+            "    plane: xy\n",
+            "    profile:\n",
+            "    - kind: circle\n",
+            "      id: c1\n",
+            "      center:\n",
+            "      - 3.0\n",
+            "      - 0.0\n",
+            "      radius: 1.0\n",
+            "  - type: sketch_pattern_linear\n",
+            "    id: pattern_linear_1\n",
+            "    sketch: sketch_0\n",
+            "    count: 3\n",
+            "    direction:\n",
+            "    - 1.0\n",
+            "    - 0.0\n",
+            "    distance: 8.0\n",
+            "  - type: sketch_pattern_circular\n",
+            "    id: pattern_circular_1\n",
+            "    sketch: sketch_0\n",
+            "    center:\n",
+            "    - 0.0\n",
+            "    - 0.0\n",
+            "    count: 4\n",
+            "    total_angle: 6.283185307179586\n",
+        ),
+    );
+}

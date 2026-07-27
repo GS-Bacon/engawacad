@@ -590,6 +590,62 @@ pub fn build_bodies_from_features(
                 )?;
                 built_sketch_profiles.insert(sketch.clone(), out);
             }
+            Feature::SketchPatternLinear {
+                id: _,
+                sketch,
+                selection,
+                count,
+                direction,
+                distance,
+                suppressed: _,
+            } => {
+                let entry =
+                    sketches
+                        .get(sketch.as_str())
+                        .ok_or_else(|| KernelError::SketchNotFound {
+                            sketch: sketch.clone(),
+                        })?;
+
+                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| entry.profile.to_vec());
+
+                let out = engawa_kernel::geometry::sketch_pattern::apply_sketch_pattern_linear(
+                    &source, selection, *count, *direction, *distance,
+                )?;
+                built_sketch_profiles.insert(sketch.clone(), out);
+            }
+            Feature::SketchPatternCircular {
+                id: _,
+                sketch,
+                selection,
+                center,
+                count,
+                total_angle,
+                suppressed: _,
+            } => {
+                let entry =
+                    sketches
+                        .get(sketch.as_str())
+                        .ok_or_else(|| KernelError::SketchNotFound {
+                            sketch: sketch.clone(),
+                        })?;
+
+                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
+                    .get(sketch.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| entry.profile.to_vec());
+
+                let out = engawa_kernel::geometry::sketch_pattern::apply_sketch_pattern_circular(
+                    &source,
+                    selection,
+                    *center,
+                    *count,
+                    *total_angle,
+                )?;
+                built_sketch_profiles.insert(sketch.clone(), out);
+            }
         }
     }
 

@@ -5,6 +5,7 @@ pub mod sketch_chamfer;
 pub mod sketch_fillet;
 pub mod sketch_mirror;
 pub mod sketch_offset;
+pub mod sketch_pattern;
 pub mod surface;
 pub mod surface_intersect;
 pub mod tolerance;
