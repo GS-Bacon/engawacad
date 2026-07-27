@@ -35,6 +35,18 @@ const PERSONA_AGENT: Record<string, string> = {
   final:     ".claude/skills/3ai/agents/glm-reviewer-final.md",
 };
 
+async function detectBaseBranch(): Promise<string> {
+  const proc = Bun.spawn(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const out = (await new Response(proc.stdout).text()).trim();
+  await proc.exited;
+  // #335: bare branch 名まで剥がすと /3ailoop worktree 構成で同名 stale local branch に
+  // シャドウされるため "origin/<branch>" の完全修飾形を残す (dispatch-codex.ts と同型)。
+  return out ? out.replace("refs/remotes/", "") : "main";
+}
+
 function parseEnvFile(path: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of readFileSync(path, "utf-8").split("\n")) {
@@ -321,7 +333,11 @@ async function main() {
 
   if (persona === "final") {
     // 最終レビュー: git diff + test summary を渡す
-    const diffProc = Bun.spawn(["git", "diff", "main...HEAD"], { stdout: "pipe", stderr: "pipe" });
+    const baseBranch = await detectBaseBranch();
+    const diffProc = Bun.spawn(["git", "diff", `${baseBranch}...HEAD`], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const diffText = await new Response(diffProc.stdout).text();
     await diffProc.exited;
 

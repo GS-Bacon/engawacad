@@ -23,9 +23,13 @@ function detectBase(): Promise<string> {
     stdout: "pipe",
     stderr: "pipe",
   });
+  // #335: "refs/remotes/" のみ剥がして "origin/<branch>" の完全修飾形を残す。
+  // bare branch 名 (例 "claude/add-claude-guidelines-BKKtD") まで剥がすと、
+  // /3ailoop の worktree 構成では同名のローカル branch (他 worktree で checkout 中、
+  // 古い可能性がある) に解決され、diff base が stale なコミットにずれる。
   return new Response(proc.stdout)
     .text()
-    .then((s) => s.trim().replace("refs/remotes/origin/", ""));
+    .then((s) => s.trim().replace("refs/remotes/", ""));
 }
 
 export function buildPrefix(

@@ -49,9 +49,26 @@ function extractTIdsFromPlan(content: string): string[] {
   return [...new Set(ids)];
 }
 
+function detectBaseBranch(repoRoot: string): string {
+  try {
+    // #335: bare branch 名まで剥がすと /3ailoop worktree 構成で同名 stale local branch に
+    // シャドウされるため "origin/<branch>" の完全修飾形を残す (dispatch-codex.ts と同型)。
+    return execSync("git symbolic-ref refs/remotes/origin/HEAD", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+      .trim()
+      .replace("refs/remotes/", "");
+  } catch {
+    return "main";
+  }
+}
+
 function getChangedRustFiles(repoRoot: string): string[] {
   try {
-    const out = execSync("git diff main..HEAD --name-only -- 'crates/**/*.rs'", {
+    const base = detectBaseBranch(repoRoot);
+    const out = execSync(`git diff ${base}..HEAD --name-only -- 'crates/**/*.rs'`, {
       cwd: repoRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
