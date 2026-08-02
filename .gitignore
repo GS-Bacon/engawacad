@@ -27,3 +27,6 @@ features/.loop/fanout-state.json
 # Phase E (#319): phase audit input dirs (regenerated each audit run)
 features/.loop/phase-audit-*/
 .claude/scheduled_tasks.lock
+
+# ローカル閲覧用のドキュメント置き場 (git 管理外)
+.local-docs/
