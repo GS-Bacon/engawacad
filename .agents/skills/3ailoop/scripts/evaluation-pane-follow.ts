@@ -30,7 +30,7 @@ export function lifecycleForLog(file: string): string | null {
   const name = basename(file);
   const screen = name.match(/^(.*)-attempt(\d+)\.jsonl$/);
   if (screen) return `=== SCREEN ${identity(screen[1])} attempt ${screen[2]} ===`;
-  const qualification = name.match(/^(.*)-(?:multi|consult|resume)\.jsonl$/);
+  const qualification = name.match(/^(.*)-(?:multi|diagnose)(?:-resume)?\.jsonl$/);
   if (qualification) return `===== QUALIFY ${identity(qualification[1])} =====`;
   return null;
 }

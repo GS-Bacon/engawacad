@@ -26,7 +26,7 @@ import { withFileLockSync } from "./file-lock.ts";
 const REPO_ROOT = resolve(import.meta.dir, "../../../../..");
 const DEFAULT_REGISTRY_PATH = resolve(REPO_ROOT, "features/.loop/model-registry.json");
 const DEFAULT_REPORT_PATH = resolve(REPO_ROOT, "features/.loop/model-retirements.jsonl");
-export const CURRENT_MODEL_SUITE_VERSION = "2";
+export const CURRENT_MODEL_SUITE_VERSION = "3";
 
 export type ModelStatus = "qualified" | "probation" | "retired";
 
@@ -39,6 +39,10 @@ export interface EvaluationResult {
   tested_at: string;
   /** Total wall-clock time for the fixed suite. Used only as a deterministic tie-breaker. */
   duration_ms?: number;
+  /** Codex consultation is a cost signal after delivery success, never a standalone score. */
+  consultations_used?: number;
+  tasks_completed_after_consultation?: number;
+  operating_mode?: "autonomous" | "assisted";
 }
 
 export interface FreeTierEvidence {
@@ -285,7 +289,7 @@ export function appendRetirementReport(report: RetirementReport, path: string = 
  *  `qualified` at evaluation time must still look free/active/uncosted/tool-capable and
  *  must not be due for re-evaluation, otherwise it is NOT selectable right now (F5).
  *  Pure. Returns null when still selectable, or a reason string when it must be skipped. */
-export function selectionBlocker(entry: ModelEntry, now: () => Date): string | null {
+export function selectionBlocker(entry: ModelEntry, now: () => Date, trustedSuiteVersion?: string): string | null {
   if (entry.status !== "qualified") {
     return `status=${entry.status} (not qualified)`;
   }
@@ -305,7 +309,7 @@ export function selectionBlocker(entry: ModelEntry, now: () => Date): string | n
     if (now().getTime() >= new Date(ft.expiry).getTime()) return "free period expired";
   }
   // rate-limit cluster (recent failures / rate limits → needs re-eval before selection)
-  const reeval = needsReevaluation(entry, now);
+  const reeval = needsReevaluation(entry, now, trustedSuiteVersion ?? entry.evaluation.suite_version);
   if (reeval) return `needs re-evaluation (${reeval})`;
   return null;
 }
@@ -315,9 +319,10 @@ export function selectionBlocker(entry: ModelEntry, now: () => Date): string | n
  *  -uncosted/-rate-limited models are also excluded (F5). Sorted by observed successes. */
 export function qualifiedModels(reg: ModelRegistry, now: () => Date = () => new Date()): ModelEntry[] {
   return Object.values(reg.models)
-    .filter(m => selectionBlocker(m, now) === null)
+    .filter(m => selectionBlocker(m, now, reg.suite_version) === null)
     .sort((a, b) =>
       b.evaluation.passed - a.evaluation.passed ||
+      (a.evaluation.consultations_used ?? 0) - (b.evaluation.consultations_used ?? 0) ||
       (a.evaluation.duration_ms ?? Number.MAX_SAFE_INTEGER) - (b.evaluation.duration_ms ?? Number.MAX_SAFE_INTEGER) ||
       a.identity.localeCompare(b.identity)
     );
@@ -373,21 +378,26 @@ export type ReevalReason =
   | "quality-degradation";
 
 /** Decide whether a model needs re-evaluation per policy #7. Pure. */
-export function needsReevaluation(entry: ModelEntry, now: () => Date): ReevalReason | null {
-  if (entry.evaluation?.suite_version !== CURRENT_MODEL_SUITE_VERSION) return "harness-failure";
+export function needsReevaluation(entry: ModelEntry, now: () => Date, trustedSuiteVersion: string = CURRENT_MODEL_SUITE_VERSION): ReevalReason | null {
+  if (trustedSuiteVersion && entry.evaluation?.suite_version !== trustedSuiteVersion) return "harness-failure";
   // expired free period
   if (entry.free_tier.expiry_known && entry.free_tier.expiry) {
     if (now().getTime() >= new Date(entry.free_tier.expiry).getTime()) {
       return "expired";
     }
   }
-  // observed quality degradation: recent failures outpace successes
+  // Suite v3 requalification is an evidence checkpoint: preserve lifetime counters for reports,
+  // but do not let failures that predate a successful v3 evaluation block the model forever.
+  // Legacy suites keep their historical aggregate behavior until they are re-evaluated on v3.
   const obs = entry.observations;
-  if (obs.failures >= 2 && obs.failures > obs.successes) {
+  const failureAt = obs.last_failure_at ? new Date(obs.last_failure_at).getTime() : Number.NEGATIVE_INFINITY;
+  const evaluatedAt = entry.last_evaluated_at ? new Date(entry.last_evaluated_at).getTime() : Number.NEGATIVE_INFINITY;
+  const unresolvedObservation = entry.evaluation.suite_version !== "3" || failureAt >= evaluatedAt;
+  if (unresolvedObservation && obs.failures >= 2 && obs.failures > obs.successes) {
     return "quality-degradation";
   }
   // rate-limit cluster
-  if (obs.rate_limits >= 3) {
+  if (unresolvedObservation && obs.rate_limits >= 3) {
     return "rate-limited";
   }
   return null;

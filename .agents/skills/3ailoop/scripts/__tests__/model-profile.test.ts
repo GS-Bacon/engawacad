@@ -25,7 +25,6 @@ describe("evaluation-derived task profiles", () => {
     const profile = deriveTaskProfile([
       task("bounded-rust-bugfix", { passed: true }), task("multi-crate-feature", { passed: true }),
       task("diagnose-regression", { passed: true }), task("skill-compliance", { passed: true }),
-      task("supervisor-resume", { passed: true }),
     ]);
     expect(profile.max_scope).toBe("medium");
     expect(profile.allowed_classes).toContain("multi-crate");
@@ -37,7 +36,6 @@ describe("evaluation-derived task profiles", () => {
     const profile = deriveTaskProfile([
       task("bounded-rust-bugfix", { passed: true }), task("multi-crate-feature", { passed: false }),
       task("diagnose-regression", { passed: false }), task("skill-compliance", { passed: true }),
-      task("supervisor-resume", { passed: true }),
     ]);
     expect(profile.max_scope).toBe("small");
     expect(profile.allowed_classes).toEqual(["bugfix", "focused-test"]);

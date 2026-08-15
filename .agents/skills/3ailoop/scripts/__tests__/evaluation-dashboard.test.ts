@@ -27,10 +27,10 @@ describe("evaluation dashboard", () => {
   test("shows formal screen and qualification results when graders publish reports", () => {
     const state = createEvaluationDashboard(["opencode/hy3-free"]);
     applyScreenReport(state, { results: [{ identity: "opencode/hy3-free", passed: true, outcome: "passed" }] });
-    applyQualificationReport(state, { results: [{ identity: "opencode/hy3-free", outcome: "qualified", tasks: [{ passed: true }, { passed: true }, { passed: false }, { passed: true }, { passed: true }] }] });
+    applyQualificationReport(state, { results: [{ identity: "opencode/hy3-free", outcome: "qualified", tasks: [{ passed: true }, { passed: true }, { passed: false }, { passed: true }] }] });
     state.currentModel = "opencode/hy3-free";
     const output = renderEvaluationDashboard(state).join("\n");
-    expect(output).toContain("正式スコア  4/5  qualified");
+    expect(output).toContain("正式スコア  3/4  qualified");
     expect(output).toContain("verdict 1/1");
   });
 

@@ -15,14 +15,14 @@
 //   - cwd = assigned isolated worktree (worker は worktree 内でのみ動作)
 //   - --model <provider/model> で qualified-free model を pin (paid/未選定は混入しない)
 //   - plan を prompt として渡し、worktree 内で実装 → receipt.json を書く
-//   - --resume-from で same worker session を再開 (consultation 後)
+//   - --resume-session + --consult-id + --decision-file で same worker session を再開
 //
 // 使い方:
 //   bun run-worker.ts --issue <N> --worker-id <id> --model <provider/model> --worktree <path>
-//                     --plan <plan.md> [--resume-from <consult-id>]
+//                     --plan <plan.md> [--resume-session <session-id> --consult-id <id> --decision-file <path>]
 //
 // 出力 (stdout JSON): 委譲 marker
-//   { delegated: true, marker, issue, worker_id, model, worktree, plan, resume_from,
+//   { delegated: true, marker, issue, worker_id, model, worktree, plan, resume_session,
 //     launch: { command, cwd, env }, pane: { side, identity, stream_command, on_terminal },
 //     receipt_path, constraints }
 //
@@ -51,6 +51,7 @@ import {
   setWorkerModel,
   REGISTRY_DEFAULTS,
 } from "./lib/worker-registry.ts";
+import { PRODUCTION_CONSULTATION_BUDGET, receiptInstructions } from "./lib/worker-contract.ts";
 
 /** Default worker queue dir. Honors the LOOP_QUEUE_DIR env override so deployments/tests can
  *  relocate the queue without touching the repo default (features/.loop/worker-queue). */
@@ -85,7 +86,8 @@ export function buildLaunch(opts: {
   worktree: string;
   plan: string;
   receiptPath: string;
-  resumeFrom?: string | null;
+  resumeSession?: string | null;
+  consultation?: { id: string; decision: string } | null;
   harness?: string;
   issue?: number;
   workerId?: string;
@@ -106,23 +108,21 @@ export function buildLaunch(opts: {
     `No git push. No gh write (issue/pr/milestone/label/repo/release). No default-branch land.`,
     `No shared stash. No cross-worktree edit. No git config credential.* changes.`,
     `You may inspect, edit, test, and create a LOCAL commit inside this worktree.`,
-    `When finished, write a receipt (schema_version 1) as JSON to: ${opts.receiptPath}`,
-    `Receipt status must be one of: completed | needs_supervisor | failed | rate_limited.`,
-    `Include schema_version=1, summary, forbidden_operations, test_commands, unverified_items, and emitted_at.`,
-    `forbidden_operations means operations you ACTUALLY EXECUTED, not the prohibitions above. It MUST be [] when none were executed; never copy the constraint list into it.`,
-    `test_commands must be objects: [{"command":"...","rc":0,"output_summary":"..."}].`,
-    `Immediately before writing the receipt, inspect git status including untracked files.`,
-    `For completed: include commit_sha + changed_files covering the FULL diff (tracked, committed, staged, and untracked). Do not omit generated files; instead remove unintended generated files before the local commit/receipt.`,
-    `For completed, use this exact key/type shape (replace example values):`,
-    `{"schema_version":1,"status":"completed","summary":"...","commit_sha":"<40-hex local commit>","changed_files":["path/from/repo/root"],"forbidden_operations":[],"test_commands":[{"command":"cargo test","rc":0,"output_summary":"..."}],"unverified_items":[],"emitted_at":"1970-01-01T00:00:00Z"}`,
-    `schema_version is the NUMBER 1, not the string "1". The harness replaces emitted_at and binds issue/worker/model/session, so do not run a clock command and do not invent those identity fields.`,
-    `For needs_supervisor: include consultation { question, options (>=2), recommendation }.`,
+    ...receiptInstructions(opts.receiptPath, {
+      allowConsultation: true,
+      consultationBudget: PRODUCTION_CONSULTATION_BUDGET,
+    }),
+    ...(opts.consultation ? [
+      `--- CODEX CONSULTATION ${opts.consultation.id} ---`,
+      opts.consultation.decision,
+      `Apply this decision, continue the same task, and replace the needs_supervisor receipt with the terminal receipt.`,
+    ] : []),
     ``,
     `--- PLAN ---`,
     planBody,
   ].join("\n");
 
-  let command = launchCommand(opts.harness ?? "opencode", opts.model, opts.resumeFrom ?? null, prompt);
+  let command = launchCommand(opts.harness ?? "opencode", opts.model, opts.resumeSession ?? null, prompt);
   if ((opts.harness ?? "opencode") === "opencode" && opts.issue !== undefined && opts.workerId) {
     command = [
       "bun", resolve(import.meta.dir, "opencode-worker-terminal.ts"),
@@ -170,7 +170,9 @@ async function main(): Promise<number> {
   const model = arg(args, "--model");
   const worktree = arg(args, "--worktree");
   const plan = arg(args, "--plan");
-  const resumeFrom = arg(args, "--resume-from");
+  const resumeSession = arg(args, "--resume-session") ?? arg(args, "--resume-from");
+  const consultId = arg(args, "--consult-id");
+  const decisionFile = arg(args, "--decision-file");
   const registryPath = arg(args, "--registry-path") ?? MODEL_REGISTRY_PATHS.DEFAULT_REGISTRY_PATH;
   const requirementsPath = arg(args, "--requirements");
   const statePath = resolve(arg(args, "--state-path") ?? STATE_PATHS.DEFAULT_STATE_PATH);
@@ -186,7 +188,7 @@ async function main(): Promise<number> {
   const allowUnverified = process.env.LOOP_ALLOW_UNVERIFIED_MODEL === "1";
 
   if (!issueStr || !workerId || !model || !worktree || !plan) {
-    emitStatus("Usage: run-worker.ts --issue <N> --worker-id <id> --model <p/m> --worktree <path> --plan <plan.md> [--resume-from <id>] [--registry-path <f>]");
+    emitStatus("Usage: run-worker.ts --issue <N> --worker-id <id> --model <p/m> --worktree <path> --plan <plan.md> [--resume-session <session-id> --consult-id <id> --decision-file <path>] [--registry-path <f>]");
     return 2;
   }
   if (!existsSync(plan)) {
@@ -196,6 +198,24 @@ async function main(): Promise<number> {
   if (!existsSync(worktree)) {
     emitJson({ delegated: false, error: "worktree-not-found", worktree });
     return 1;
+  }
+  const resumeFields = [resumeSession, consultId, decisionFile].filter(Boolean).length;
+  if (resumeFields !== 0 && resumeFields !== 3) {
+    emitJson({ delegated: false, error: "invalid-consultation-resume", detail: "resume requires --resume-session, --consult-id, and --decision-file together" });
+    return 1;
+  }
+  let consultation: { id: string; decision: string } | null = null;
+  if (resumeFields === 3) {
+    if (!existsSync(decisionFile!)) {
+      emitJson({ delegated: false, error: "consultation-decision-not-found", decision_file: decisionFile });
+      return 1;
+    }
+    const decision = readFileSync(decisionFile!, "utf-8").trim();
+    if (!decision) {
+      emitJson({ delegated: false, error: "consultation-decision-empty", decision_file: decisionFile });
+      return 1;
+    }
+    consultation = { id: consultId!, decision };
   }
 
   // Validate the requested --model is a qualified, still-selectable registry entry. This
@@ -211,7 +231,7 @@ async function main(): Promise<number> {
     emitJson({ delegated: false, error: "model-not-qualified", detail: `--model ${model} is not in the qualified-model registry; select via model-select first (policy #6)` });
     return 1;
   } else {
-    const blocker = selectionBlocker(entry, () => new Date());
+    const blocker = selectionBlocker(entry, () => new Date(), reg.suite_version);
     if (blocker) {
       emitJson({ delegated: false, error: "model-not-selectable", detail: `--model ${model} is not selectable right now: ${blocker}` });
       return 1;
@@ -311,7 +331,7 @@ async function main(): Promise<number> {
   const runMarker = `worker:${workerId}:issue:${issue}:run:${randomBytes(8).toString("hex")}`;
   const receiptPath = resolve(worktree, ".worker", "receipt.json");
 
-  const launch = buildLaunch({ model, worktree, plan, receiptPath, resumeFrom: resumeFrom ?? null, harness, issue, workerId });
+  const launch = buildLaunch({ model, worktree, plan, receiptPath, resumeSession: resumeSession ?? null, consultation, harness, issue, workerId });
 
   // Per-worker tmux pane identity (contract §Orchestration #5). The async-delegation harness
   // allocates a dedicated RIGHT-SIDE pane for this worker before running `launch`, stamps a
@@ -347,7 +367,9 @@ async function main(): Promise<number> {
     worktree,
     plan,
     requirements: requirementsPath ?? null,
-    resume_from: resumeFrom ?? null,
+    resume_session: resumeSession ?? null,
+    consultation_id: consultId ?? null,
+    decision_file: decisionFile ?? null,
     enqueued_at: new Date().toISOString(),
     // executable launch contract: the harness runs exactly this command in this cwd.
     launch,

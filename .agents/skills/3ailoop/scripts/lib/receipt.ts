@@ -149,11 +149,21 @@ export function validateReceipt(raw: unknown): ValidationResult {
   }
 
   // forbidden_operations: any non-empty array is a hard fail
-  if (Array.isArray(raw.forbidden_operations) && raw.forbidden_operations.length > 0) {
+  if (!isStringArray(raw.forbidden_operations)) {
+    errors.push({ field: "forbidden_operations", message: "must be a string[]" });
+  } else if (raw.forbidden_operations.length > 0) {
     errors.push({
       field: "forbidden_operations",
       message: `forbidden external operations detected: ${JSON.stringify(raw.forbidden_operations)}`,
     });
+  }
+  if (!Array.isArray(raw.test_commands) || raw.test_commands.some(t =>
+    !isObject(t) || !isString(t.command) || typeof t.rc !== "number" || !Number.isFinite(t.rc)
+  )) {
+    errors.push({ field: "test_commands", message: "must be an array of {command, rc, output_summary?}" });
+  }
+  if (!isStringArray(raw.unverified_items)) {
+    errors.push({ field: "unverified_items", message: "must be a string[]" });
   }
 
   return { ok: errors.length === 0, errors };

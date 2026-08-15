@@ -15,6 +15,7 @@ import {
 } from "./lib/evaluation-timeout.ts";
 import { runOpenCodeEvaluation, type InfrastructureKind } from "./lib/opencode-evaluation-run.ts";
 import { completeFixtureChanges, receiptMatchesChanges } from "./lib/evaluation-fixture.ts";
+import { receiptInstructions, validateHarnessReceipt } from "./lib/worker-contract.ts";
 
 type ScreenOutcome = "passed" | "failed" | "inconclusive";
 
@@ -203,7 +204,12 @@ async function runAttempt(candidate: Eligible, outputDir: string, attempt: numbe
   const log = resolve(outputDir, `${safe}-attempt${attempt}.jsonl`);
   fixture(root);
   const before = baseline(root);
-  const prompt = `Fix the failing Rust test in this isolated EngawaCAD-style fixture. Preserve the public API, run cargo test, make one local git commit, and write ${RECEIPT} as JSON with keys status="completed", summary, changed_files, test_command, and unverified_items. Do not access the network or paths outside this directory. Keep the change minimal.`;
+  const prompt = [
+    `Fix the failing Rust test in this isolated EngawaCAD-style fixture.`,
+    `Preserve the public API, run cargo test, make one local git commit, and keep the change minimal.`,
+    `Do not access the network or paths outside this directory.`,
+    ...receiptInstructions(RECEIPT),
+  ].join("\n");
   const started = Date.now();
   console.log(`\n=== SCREEN ${candidate.identity} attempt ${attempt} ===`);
   writeFileSync(log, "");
@@ -227,8 +233,10 @@ async function runAttempt(candidate: Eligible, outputDir: string, attempt: numbe
   let receipt: any = null;
   if (existsSync(join(root, RECEIPT))) {
     try {
-      receipt = JSON.parse(readFileSync(join(root, RECEIPT), "utf8"));
-      receiptValid = receipt?.status === "completed" && Array.isArray(receipt.changed_files) && Array.isArray(receipt.unverified_items);
+      const raw = JSON.parse(readFileSync(join(root, RECEIPT), "utf8"));
+      const bound = validateHarnessReceipt(raw, candidate.identity, run.sessionId);
+      receipt = bound.receipt;
+      receiptValid = bound.validation.ok && receipt?.status === "completed";
     } catch { receiptValid = false; }
   }
   const changed = completeFixtureChanges(root, before);
@@ -322,7 +330,7 @@ async function main(): Promise<number> {
     }
   }
   const report = {
-    version: 4,
+    version: 5,
     stage: "screen",
     checked_at: new Date().toISOString(),
     timeout_config: timeouts,

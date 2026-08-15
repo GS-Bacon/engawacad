@@ -7,7 +7,8 @@ import { lifecycleForLog } from "../evaluation-pane-follow.ts";
 describe("evaluation-pane-follow", () => {
   test("derives safe lifecycle labels from evaluation artifact names", () => {
     expect(lifecycleForLog("opencode_hy3-free-attempt2.jsonl")).toBe("=== SCREEN opencode/hy3-free attempt 2 ===");
-    expect(lifecycleForLog("opencode_hy3-free-consult.jsonl")).toBe("===== QUALIFY opencode/hy3-free =====");
+    expect(lifecycleForLog("opencode_hy3-free-diagnose.jsonl")).toBe("===== QUALIFY opencode/hy3-free =====");
+    expect(lifecycleForLog("opencode_hy3-free-diagnose-resume.jsonl")).toBe("===== QUALIFY opencode/hy3-free =====");
   });
 
   test("renders appended events and exits from terminal state without polling", async () => {

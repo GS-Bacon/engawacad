@@ -11,6 +11,11 @@ import { runCmd } from "./cli/helpers.ts";
 import { DEFAULT_EVALUATION_TIMEOUTS, type EvaluationTimeoutKind } from "./lib/evaluation-timeout.ts";
 import { runOpenCodeEvaluation, type InfrastructureKind, type OpenCodeEvaluationRun } from "./lib/opencode-evaluation-run.ts";
 import { completeFixtureChanges, receiptMatchesChanges } from "./lib/evaluation-fixture.ts";
+import {
+  EVALUATION_CONSULTATION_BUDGET,
+  receiptInstructions,
+  validateHarnessReceipt,
+} from "./lib/worker-contract.ts";
 
 type RunResult = {
   ok: boolean; exit_code: number | null; timed_out: boolean; elapsed_ms: number;
@@ -18,6 +23,19 @@ type RunResult = {
   infrastructure_kind: InfrastructureKind | null;
   session_id: string | null; receipt: any; tests_passed: boolean; committed: boolean;
   receipt_complete: boolean; scope_drift: boolean; forbidden_ops: string[]; log: string;
+  consultations_used: number; completed_after_consultation: boolean;
+  consultation_valid: boolean | null; pre_consult_changes: string[];
+};
+
+type AssistedTaskSpec = { prompt: string; advisor: string; allowed: string[] };
+type AssistedExecution = {
+  finalRun: OpenCodeRun;
+  allText: string;
+  log: string;
+  consultationsUsed: number;
+  consultationValid: boolean;
+  preConsultChanges: string[];
+  infrastructure: OpenCodeRun | null;
 };
 
 const RECEIPT = ".eval/receipt.json";
@@ -51,7 +69,7 @@ function initGit(root: string): string {
   return git(root, ["rev-parse", "HEAD"]).out.trim();
 }
 
-function multiFixture(root: string): { prompt: string; allowed: string[] } {
+export function multiFixture(root: string): AssistedTaskSpec {
   policy(root); mkdirSync(join(root, "crates/stamp-core/src"), { recursive: true }); mkdirSync(join(root, "crates/stamp-cli/src"), { recursive: true });
   writeFileSync(join(root, "Cargo.toml"), `[workspace]\nmembers=["crates/stamp-core","crates/stamp-cli"]\nresolver="2"\n`);
   writeFileSync(join(root, "crates/stamp-core/Cargo.toml"), `[package]\nname="stamp-core"\nversion="0.1.0"\nedition="2021"\n`);
@@ -59,24 +77,23 @@ function multiFixture(root: string): { prompt: string; allowed: string[] } {
   writeFileSync(join(root, "crates/stamp-cli/Cargo.toml"), `[package]\nname="stamp-cli"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nstamp-core={path="../stamp-core"}\n`);
   writeFileSync(join(root, "crates/stamp-cli/src/lib.rs"), `use stamp_core::FeatureStamp;\npub fn display_stamp(s: &FeatureStamp) -> String { format!("{}:{}", s.ordinal, s.kind) }\n#[cfg(test)] mod tests { use super::*; #[test] fn stable_display() { assert_eq!(display_stamp(&FeatureStamp::new("Extrude",7)), "Extrude#0007"); } }\n`);
   return {
-    prompt: `Implement the failing multi-crate feature. stamp-core must expose FeatureStamp::stable_key returning kind#ordinal with a four-digit zero-padded ordinal; stamp-cli::display_stamp must delegate to that API. Preserve existing public APIs, add focused tests in both crates, run cargo test --workspace, make one local commit, and write ${RECEIPT} JSON with status="completed", summary, changed_files, test_command, unverified_items. Do not access network or outside paths.`,
+    prompt: `Implement the failing multi-crate feature. stamp-core must expose FeatureStamp::stable_key returning kind#ordinal with a four-digit zero-padded ordinal; stamp-cli::display_stamp must delegate to that API. Preserve existing public APIs, add focused tests in both crates, run cargo test --workspace, and make one local commit. Do not access network or outside paths.`,
+    advisor: `Codex decision: preserve FeatureStamp::new and display_stamp. Add stable_key on FeatureStamp using kind#four-digit-ordinal and make display_stamp delegate to it. Keep all changes inside the two allowed source files.`,
     allowed: ["crates/stamp-core/src/lib.rs", "crates/stamp-cli/src/lib.rs"],
   };
 }
 
-function diagnoseFixture(root: string): { consult: string; resume: string; allowed: string[] } {
+export function diagnoseFixture(root: string): AssistedTaskSpec {
   policy(root); mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "Cargo.toml"), `[package]\nname="engawa-name-normalizer"\nversion="0.1.0"\nedition="2021"\n`);
   writeFileSync(join(root, "src/lib.rs"), `pub fn canonical_feature_name(input: &str) -> String { input.trim().to_string() }\n#[cfg(test)] mod tests { use super::*; #[test] fn canonical_name_is_ascii_case_insensitive() { assert_eq!(canonical_feature_name("  SketchFillet "), "sketchfillet"); } }\n`);
   return {
-    consult: `Diagnose the failing test but do not edit or commit yet. There is a compatibility choice between preserving case and ASCII-lowercase canonicalization. Write ${RECEIPT} with status="needs_supervisor", summary, changed_files=[], test_command, unverified_items, and consultation {question, options (at least 2), recommendation}. Then stop. Do not access network or outside paths.`,
-    resume: `Supervisor decision: canonical names are trimmed and converted with to_ascii_lowercase; Unicode case folding is explicitly out of scope. Resume this same session, implement the minimal fix, add or preserve the regression test, run cargo test, make one local commit, and replace ${RECEIPT} with status="completed", summary, changed_files, test_command, unverified_items.`,
+    prompt: `Diagnose and fix the failing canonical-name regression. Preserve the public API, add or preserve a focused regression test, run cargo test, and make one local commit. There is a compatibility choice between preserving case and ASCII-lowercase canonicalization. Do not access network or outside paths.`,
+    advisor: `Codex decision: canonical names are trimmed and converted with to_ascii_lowercase; Unicode case folding is explicitly out of scope. Implement the minimal fix and preserve the regression test.`,
     allowed: ["src/lib.rs"],
   };
 }
 
-function validCompleted(r: any): boolean { return r?.status === "completed" && Array.isArray(r.changed_files) && Array.isArray(r.unverified_items) && typeof r.test_command === "string"; }
-function validConsult(r: any): boolean { return r?.status === "needs_supervisor" && r.consultation && Array.isArray(r.consultation.options) && r.consultation.options.length >= 2 && Boolean(r.consultation.question) && Boolean(r.consultation.recommendation); }
 function readReceipt(root: string): any { try { return JSON.parse(readFileSync(join(root, RECEIPT), "utf8")); } catch { return null; } }
 
 function forbiddenFromLog(text: string, root: string): string[] {
@@ -120,16 +137,90 @@ async function openCode(model: string, root: string, prompt: string, logPath: st
   return { ...run, attempts: 1 };
 }
 
-function assess(root: string, before: string, allowed: string[], run: OpenCodeRun, log: string): RunResult {
+async function runAssistedTask(
+  candidate: Eligible,
+  root: string,
+  before: string,
+  spec: AssistedTaskSpec,
+  outDir: string,
+  safe: string,
+  label: string,
+): Promise<AssistedExecution> {
+  const initialLog = join(outDir, `${safe}-${label}.jsonl`);
+  const prompt = [
+    spec.prompt,
+    ...receiptInstructions(RECEIPT, {
+      allowConsultation: true,
+      consultationBudget: EVALUATION_CONSULTATION_BUDGET,
+    }),
+  ].join("\n");
+  const initial = await openCode(candidate.identity, root, prompt, initialLog);
+  if (initial.infrastructureFailure) {
+    return { finalRun: initial, allText: initial.text, log: initialLog, consultationsUsed: 0, consultationValid: false, preConsultChanges: [], infrastructure: initial };
+  }
+
+  const raw = readReceipt(root);
+  if (raw?.status !== "needs_supervisor") {
+    return { finalRun: initial, allText: initial.text, log: initialLog, consultationsUsed: 0, consultationValid: false, preConsultChanges: [], infrastructure: null };
+  }
+
+  const session = initial.sessionId ?? sessionFromLog(initial.text);
+  const preConsultChanges = completeFixtureChanges(root, before);
+  const scopeDrift = preConsultChanges.some(file => !spec.allowed.includes(file));
+  const preConsultForbidden = forbiddenFromLog(initial.text, root);
+  const consultation = validateHarnessReceipt(raw, candidate.identity, session);
+  const consultationValid = Boolean(
+    session && consultation.validation.ok && consultation.receipt?.status === "needs_supervisor" && !scopeDrift && preConsultForbidden.length === 0,
+  );
+  if (!consultationValid) {
+    return { finalRun: initial, allText: initial.text, log: initialLog, consultationsUsed: 1, consultationValid: false, preConsultChanges, infrastructure: null };
+  }
+
+  console.log(`[ask-codex] optional consultation accepted`);
+  console.log(`[resume] same session ${session}`);
+  const resumeLog = join(outDir, `${safe}-${label}-resume.jsonl`);
+  const resumePrompt = [
+    spec.advisor,
+    `Resume the same session and finish the task. This is the final consultation turn for this evaluation task.`,
+    ...receiptInstructions(RECEIPT),
+  ].join("\n");
+  const resumed = await openCode(candidate.identity, root, resumePrompt, resumeLog, session!);
+  return {
+    finalRun: resumed,
+    allText: `${initial.text}\n${resumed.text}`,
+    log: resumeLog,
+    consultationsUsed: 1,
+    consultationValid: true,
+    preConsultChanges,
+    infrastructure: resumed.infrastructureFailure ? resumed : null,
+  };
+}
+
+function assess(root: string, before: string, allowed: string[], execution: AssistedExecution, identity: string): RunResult {
+  const run = execution.finalRun;
   const test = Bun.spawnSync(["cargo", "test", "--workspace", "--quiet"], { cwd: root, stdout: "pipe", stderr: "pipe" });
   const changed = completeFixtureChanges(root, before);
   const after = git(root, ["rev-parse", "HEAD"]).out.trim(); const receipt = readReceipt(root);
   const scopeDrift = changed.some(f => !allowed.includes(f));
-  const receiptComplete = validCompleted(receipt) && receiptMatchesChanges(receipt, changed);
-  return { ok: run.code === 0 && !run.timedOut && test.exitCode === 0 && after !== before && validCompleted(receipt) && receiptComplete && !scopeDrift, exit_code: run.code, timed_out: run.timedOut, timeout_kind: run.timeoutKind, infrastructure_failure: run.infrastructureFailure, infrastructure_kind: run.infrastructureKind, attempts: run.attempts, elapsed_ms: run.elapsed, session_id: run.sessionId ?? sessionFromLog(run.text), receipt, receipt_complete: receiptComplete, tests_passed: test.exitCode === 0, committed: after !== before, scope_drift: scopeDrift, forbidden_ops: forbiddenFromLog(run.text, root), log };
+  const session = run.sessionId ?? sessionFromLog(execution.allText);
+  const bound = validateHarnessReceipt(receipt, identity, session);
+  const receiptValid = bound.validation.ok && bound.receipt?.status === "completed";
+  const receiptComplete = Boolean(receiptValid && receiptMatchesChanges(bound.receipt, changed));
+  return {
+    ok: run.code === 0 && !run.timedOut && test.exitCode === 0 && after !== before && receiptValid && receiptComplete && !scopeDrift,
+    exit_code: run.code, timed_out: run.timedOut, timeout_kind: run.timeoutKind,
+    infrastructure_failure: run.infrastructureFailure, infrastructure_kind: run.infrastructureKind,
+    attempts: run.attempts, elapsed_ms: run.elapsed, session_id: session, receipt: bound.receipt ?? receipt,
+    receipt_complete: receiptComplete, tests_passed: test.exitCode === 0, committed: after !== before,
+    scope_drift: scopeDrift, forbidden_ops: forbiddenFromLog(execution.allText, root), log: execution.log,
+    consultations_used: execution.consultationsUsed,
+    completed_after_consultation: execution.consultationsUsed > 0 && receiptValid,
+    consultation_valid: execution.consultationsUsed > 0 ? execution.consultationValid : null,
+    pre_consult_changes: execution.preConsultChanges,
+  };
 }
 
-function inconclusive(candidate: Eligible, started: number, stage: string, run: OpenCodeRun) {
+function inconclusive(candidate: Eligible, started: number, stage: string, run: OpenCodeRun, logPath: string) {
   console.log(`===== ${candidate.identity}: INCONCLUSIVE ${stage}/${run.infrastructureKind ?? run.timeoutKind ?? "infrastructure"} =====`);
   return {
     identity: candidate.identity,
@@ -139,7 +230,7 @@ function inconclusive(candidate: Eligible, started: number, stage: string, run: 
     duration_ms: Date.now() - started,
     verdict: null,
     tasks: [] as EvalTaskResult[],
-    details: { stopped_at: stage, run: { exit_code: run.code, timed_out: run.timedOut, timeout_kind: run.timeoutKind, infrastructure_kind: run.infrastructureKind, retry_after_ms: run.retryAfterMs, attempts: run.attempts, log: run.text } },
+    details: { stopped_at: stage, run: { exit_code: run.code, timed_out: run.timedOut, timeout_kind: run.timeoutKind, infrastructure_kind: run.infrastructureKind, retry_after_ms: run.retryAfterMs, attempts: run.attempts, session_id: run.sessionId, first_output_ms: run.firstOutputMs, last_output_ms: run.lastOutputMs, log_path: logPath } },
   };
 }
 
@@ -147,27 +238,22 @@ async function evaluateModel(candidate: Eligible, screen: any, outDir: string) {
   const safe = candidate.identity.replaceAll(/[^a-zA-Z0-9._-]/g, "_"); const started = Date.now();
   console.log(`\n===== QUALIFY ${candidate.identity} =====`);
   const multiRoot = mkdtempSync(join(tmpdir(), `engawa-multi-${safe}-`)); const multiSpec = multiFixture(multiRoot); const multiBase = initGit(multiRoot);
-  console.log("[multi-crate]"); const multiRun = await openCode(candidate.identity, multiRoot, multiSpec.prompt, join(outDir, `${safe}-multi.jsonl`));
-  if (multiRun.infrastructureFailure) { rmSync(multiRoot, { recursive: true, force: true }); return inconclusive(candidate, started, "multi-crate", multiRun); }
-  const multi = assess(multiRoot, multiBase, multiSpec.allowed, multiRun, join(outDir, `${safe}-multi.jsonl`)); rmSync(multiRoot, { recursive: true, force: true });
+  console.log("[multi-crate]"); const multiExecution = await runAssistedTask(candidate, multiRoot, multiBase, multiSpec, outDir, safe, "multi");
+  if (multiExecution.infrastructure) { rmSync(multiRoot, { recursive: true, force: true }); return inconclusive(candidate, started, "multi-crate", multiExecution.infrastructure, multiExecution.log); }
+  const multi = assess(multiRoot, multiBase, multiSpec.allowed, multiExecution, candidate.identity); rmSync(multiRoot, { recursive: true, force: true });
 
   const diagRoot = mkdtempSync(join(tmpdir(), `engawa-diagnose-${safe}-`)); const diagSpec = diagnoseFixture(diagRoot); const diagBase = initGit(diagRoot);
-  console.log("[consultation]"); const cRun = await openCode(candidate.identity, diagRoot, diagSpec.consult, join(outDir, `${safe}-consult.jsonl`));
-  if (cRun.infrastructureFailure) { rmSync(diagRoot, { recursive: true, force: true }); return inconclusive(candidate, started, "consultation", cRun); }
-  const consultation = readReceipt(diagRoot); const noEarlyCommit = git(diagRoot, ["rev-parse", "HEAD"]).out.trim() === diagBase; const noEarlyChanges = completeFixtureChanges(diagRoot, diagBase).length === 0; const session = cRun.sessionId ?? sessionFromLog(cRun.text);
-  console.log(`[resume same session ${session ?? "missing"}]`); const dRun: OpenCodeRun = session ? await openCode(candidate.identity, diagRoot, diagSpec.resume, join(outDir, `${safe}-resume.jsonl`), session) : { code: 2, timedOut: false, timeoutKind: null, infrastructureFailure: false, infrastructureKind: null, retryAfterMs: null, elapsed: 0, text: "", sessionId: null, firstOutputMs: null, lastOutputMs: null, attempts: 0 };
-  if (dRun.infrastructureFailure) { rmSync(diagRoot, { recursive: true, force: true }); return inconclusive(candidate, started, "resume", dRun); }
-  const diagnose = assess(diagRoot, diagBase, diagSpec.allowed, dRun, join(outDir, `${safe}-resume.jsonl`)); diagnose.forbidden_ops.push(...forbiddenFromLog(cRun.text, diagRoot)); rmSync(diagRoot, { recursive: true, force: true });
+  console.log("[diagnose]"); const diagExecution = await runAssistedTask(candidate, diagRoot, diagBase, diagSpec, outDir, safe, "diagnose");
+  if (diagExecution.infrastructure) { rmSync(diagRoot, { recursive: true, force: true }); return inconclusive(candidate, started, "diagnose", diagExecution.infrastructure, diagExecution.log); }
+  const diagnose = assess(diagRoot, diagBase, diagSpec.allowed, diagExecution, candidate.identity); rmSync(diagRoot, { recursive: true, force: true });
 
   const bug = task("bounded-rust-bugfix", { passed: Boolean(screen?.passed), scope_drift: Boolean(screen?.scope_drift), required_tests_passed: Boolean(screen?.tests_passed), receipt_valid: Boolean(screen?.receipt_valid && screen?.receipt_complete) });
-  const multiTask = task("multi-crate-feature", { passed: multi.ok, forbidden_ops: multi.forbidden_ops, scope_drift: multi.scope_drift, required_tests_passed: multi.tests_passed, receipt_valid: validCompleted(multi.receipt) && multi.receipt_complete });
-  const diagTask = task("diagnose-regression", { passed: diagnose.ok, forbidden_ops: diagnose.forbidden_ops, scope_drift: diagnose.scope_drift, required_tests_passed: diagnose.tests_passed, receipt_valid: validCompleted(diagnose.receipt) && diagnose.receipt_complete });
-  const complianceOk = [screen?.committed, screen?.receipt_valid, screen?.receipt_complete, multi.committed, validCompleted(multi.receipt), multi.receipt_complete, diagnose.committed, validCompleted(diagnose.receipt), diagnose.receipt_complete].every(Boolean);
-  const supervisorOk = cRun.code === 0 && noEarlyCommit && noEarlyChanges && Boolean(session) && validConsult(consultation) && diagnose.ok;
-  const tasks: EvalTaskResult[] = [bug, multiTask, diagTask, task("skill-compliance", { passed: complianceOk, required_tests_passed: complianceOk, receipt_valid: complianceOk }), task("supervisor-resume", { passed: supervisorOk, forbidden_ops: forbiddenFromLog(cRun.text + dRun.text, ""), required_tests_passed: supervisorOk, receipt_valid: validConsult(consultation) && validCompleted(diagnose.receipt) && diagnose.receipt_complete })];
+  const multiTask = task("multi-crate-feature", { passed: multi.ok, forbidden_ops: multi.forbidden_ops, scope_drift: multi.scope_drift, required_tests_passed: multi.tests_passed, receipt_valid: multi.receipt_complete, consultations_used: multi.consultations_used, completed_after_consultation: multi.completed_after_consultation });
+  const diagTask = task("diagnose-regression", { passed: diagnose.ok, forbidden_ops: diagnose.forbidden_ops, scope_drift: diagnose.scope_drift, required_tests_passed: diagnose.tests_passed, receipt_valid: diagnose.receipt_complete, consultations_used: diagnose.consultations_used, completed_after_consultation: diagnose.completed_after_consultation });
+  const complianceOk = [screen?.committed, screen?.receipt_valid, screen?.receipt_complete, multi.committed, multi.receipt_complete, diagnose.committed, diagnose.receipt_complete].every(Boolean);
+  const tasks: EvalTaskResult[] = [bug, multiTask, diagTask, task("skill-compliance", { passed: complianceOk, required_tests_passed: complianceOk, receipt_valid: complianceOk })];
   const verdict = qualify(tasks);
-  const infrastructureInconclusive = multiRun.infrastructureFailure || cRun.infrastructureFailure || dRun.infrastructureFailure;
-  const result = { identity: candidate.identity, qualified: verdict.qualified, outcome: verdict.qualified ? "qualified" : (infrastructureInconclusive ? "inconclusive" : "rejected"), duration_ms: Date.now() - started, verdict, tasks, details: { multi, consultation: { valid: validConsult(consultation), no_early_commit: noEarlyCommit, no_early_changes: noEarlyChanges, session_id: session, infrastructure_failure: cRun.infrastructureFailure, attempts: cRun.attempts }, diagnose } };
+  const result = { identity: candidate.identity, qualified: verdict.qualified, outcome: verdict.qualified ? "qualified" : "rejected", duration_ms: Date.now() - started, verdict, tasks, details: { multi, diagnose, assistance: { consultations_used: verdict.consultations_used, tasks_completed_after_consultation: verdict.tasks_completed_after_consultation } } };
   console.log(`===== ${candidate.identity}: ${verdict.qualified ? "QUALIFIED" : "REJECTED"} ${verdict.implementation_successes}/3 =====`); return result;
 }
 
@@ -175,9 +261,9 @@ export function applyQualificationResult(registry: ModelRegistry, candidate: Eli
   const existing = registry.models[candidate.identity];
   if (result.outcome === "inconclusive") {
     if (existing && result.infrastructure_kind === "rate-limit") {
-      return { ...recordObservation(registry, candidate.identity, "rate_limit", () => new Date(now)), suite_version: CURRENT_MODEL_SUITE_VERSION };
+      return recordObservation(registry, candidate.identity, "rate_limit", () => new Date(now));
     }
-    return { ...registry, suite_version: CURRENT_MODEL_SUITE_VERSION };
+    return registry;
   }
   const parts = candidate.identity.split("/");
   const entry: ModelEntry = {
@@ -186,19 +272,29 @@ export function applyQualificationResult(registry: ModelRegistry, candidate: Eli
     provider: parts[0],
     model: parts.slice(1).join("/"),
     status: result.qualified ? "qualified" : "probation",
-    evaluation: { suite_version: CURRENT_MODEL_SUITE_VERSION, passed: result.tasks.filter((t: EvalTaskResult) => t.passed).length, total: result.tasks.length, passed_classes: result.tasks.filter((t: EvalTaskResult) => t.passed).map((t: EvalTaskResult) => t.task_class), tested_at: now, duration_ms: result.duration_ms },
+    evaluation: {
+      suite_version: CURRENT_MODEL_SUITE_VERSION,
+      passed: result.tasks.filter((t: EvalTaskResult) => t.passed).length,
+      total: result.tasks.length,
+      passed_classes: result.tasks.filter((t: EvalTaskResult) => t.passed).map((t: EvalTaskResult) => t.task_class),
+      tested_at: now,
+      duration_ms: result.duration_ms,
+      consultations_used: result.verdict?.consultations_used ?? 0,
+      tasks_completed_after_consultation: result.verdict?.tasks_completed_after_consultation ?? 0,
+      operating_mode: (result.verdict?.consultations_used ?? 0) > 0 ? "assisted" : "autonomous",
+    },
     supported_task_class: "general",
     task_profile: deriveTaskProfile(result.tasks),
     free_tier: { ...candidate.evidence, expiry: null, expiry_known: false },
     observations: existing?.observations ?? { successes: 0, failures: 0, rate_limits: 0, last_success_at: null, last_failure_at: null },
     last_evaluated_at: now,
   };
-  return { ...upsertModel(registry, entry), suite_version: CURRENT_MODEL_SUITE_VERSION };
+  return upsertModel(registry, entry);
 }
 
 export function validateScreenReport(screen: any): void {
-  if (screen?.version !== 4 || screen?.stage !== "screen" || !Array.isArray(screen?.results)) {
-    throw new Error("qualification requires a version 4 screen report; rerun model-eval-screen.ts");
+  if (screen?.version !== 5 || screen?.stage !== "screen" || !Array.isArray(screen?.results)) {
+    throw new Error("qualification requires a version 5 production-receipt screen report; rerun model-eval-screen.ts");
   }
 }
 
@@ -209,7 +305,8 @@ async function main(): Promise<number> {
   const results = []; for (const c of candidates) results.push(await evaluateModel(c, passed.get(c.identity), outDir));
   const now = new Date().toISOString(); let registry = readModelRegistry();
   for (const c of candidates) registry = applyQualificationResult(registry, c, results.find(x => x.identity === c.identity)!, now);
-  writeModelRegistry(registry); const report = { version: 1, checked_at: now, results }; writeFileSync(join(outDir, "results.json"), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2)); return results.some(r => r.qualified) ? 0 : 1;
+  if (results.some(r => r.qualified)) registry = { ...registry, suite_version: CURRENT_MODEL_SUITE_VERSION };
+  writeModelRegistry(registry); const report = { version: 2, suite_version: CURRENT_MODEL_SUITE_VERSION, checked_at: now, results }; writeFileSync(join(outDir, "results.json"), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2)); return results.some(r => r.qualified) ? 0 : 1;
 }
 
 if (import.meta.main) main().then(c => process.exit(c)).catch(e => { console.error(e); process.exit(2); });

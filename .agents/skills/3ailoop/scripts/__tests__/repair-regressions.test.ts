@@ -130,16 +130,31 @@ describe("Finding 2: run-worker emits an executable launch contract", () => {
     expect(prompt).toContain("test_commands must be objects");
     expect(prompt).toContain('"schema_version":1,"status":"completed"');
     expect(prompt).toContain("schema_version is the NUMBER 1");
-    expect(prompt).toContain("do not run a clock command");
+    expect(prompt).toContain("run a clock command");
+    expect(prompt).toContain("$ask-codex is an OPTIONAL capability");
+    expect(prompt).toContain("not a required phase");
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  test("buildLaunch adds --resume when resumeFrom is set (same worker session)", () => {
+  test("buildLaunch resumes the observed session and injects the matching Codex decision", () => {
     const { tmp, wt, plan } = setupWorktree();
-    const launch = buildLaunch({ model: "opencode/free-model", worktree: wt, plan, receiptPath: join(wt, ".worker", "receipt.json"), resumeFrom: "consult-7" });
+    const launch = buildLaunch({ model: "opencode/free-model", worktree: wt, plan, receiptPath: join(wt, ".worker", "receipt.json"), resumeSession: "ses-7", consultation: { id: "consult-7", decision: "Use thiserror." } });
     const resumeIdx = launch.command.indexOf("--session");
     expect(resumeIdx).toBeGreaterThan(-1);
-    expect(launch.command[resumeIdx + 1]).toBe("consult-7");
+    expect(launch.command[resumeIdx + 1]).toBe("ses-7");
+    expect(launch.command[launch.command.length - 1]).toContain("CODEX CONSULTATION consult-7");
+    expect(launch.command[launch.command.length - 1]).toContain("Use thiserror.");
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test("CLI refuses a consultation resume unless session, consultation id, and decision are all bound", () => {
+    const { tmp, wt, plan } = setupWorktree();
+    const r = bun(
+      ["run-worker.ts", "--issue", "1", "--worker-id", "worker-1", "--model", "opencode/free-model", "--worktree", wt, "--plan", plan, "--resume-session", "ses-7"],
+      { LOOP_ALLOW_UNVERIFIED_MODEL: "1", LOOP_QUEUE_DIR: join(tmp, "q") },
+    );
+    expect(r.rc).toBe(1);
+    expect(JSON.parse(r.stdout).error).toBe("invalid-consultation-resume");
     rmSync(tmp, { recursive: true, force: true });
   });
 

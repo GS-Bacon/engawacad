@@ -14,7 +14,9 @@ allowed-tools: Read, Bash, Glob, Grep
 - CodexはObjective / Done when / Boundary / Starting contextだけを固定する。
 - workerはassigned worktreeとslice境界の中で、調査順、編集方法、必要ファイル、focused testを自由に選ぶ。
 - workerへ逐次手順、コマンド列、行単位の解法を渡さない。途中の通常判断にCodex承認を要求しない。
-- material choice、scope拡張、外部権限が必要な場合だけ`needs_supervisor`で止める。
+- workerへ任意の`$ask-codex`能力を渡す。local evidenceを確認してもmaterial choiceが残り、誤判断の手戻りが大きい場合に自発的に使える。相談は必須フェーズではない。
+- receipt形式、実行command、ローカルで確認できる事実は相談せず、決定的script/validatorへ従う。通常の相談予算は1 sliceあたり2回。
+- scope拡張、外部権限、安全性の問題は相談予算に関係なく`needs_supervisor`で止める。
 - 1 slice完了ごとにlocal commit + receiptを出して終了する。次sliceはCodexレビュー後、同じworktreeの
   状態を引き継いだ**新しいmodel session**へ渡す。会話contextは引き継がない。
 - `needs_supervisor`の回答だけは、相談を出した同じsessionへresumeする。
@@ -65,10 +67,20 @@ allowed-tools: Read, Bash, Glob, Grep
 
 ## resume (consultation)
 
-worker が `needs_supervisor` receipt を出したとき:
+worker が任意の`$ask-codex`として`needs_supervisor` receipt を出したとき:
 - receipt.consultation { question, options, recommendation } を Codex が読む。
 - Codex が decision を決定し、consultations.jsonl に answer を書く (lib/consult.ts `answerConsultation`)。
-- **同じ worker session** を `--resume-from <consult-id>` で再開する。
+- harnessが観測したreceipt.session_id、相談recordのid、Codex回答fileを別々に渡し、**同じ worker session** を再開する。
+
+  ```bash
+  bun .agents/skills/3ailoop/scripts/run-worker.ts \
+    <通常の起動引数> \
+    --resume-session <receipt.session_id> \
+    --consult-id <consultation-record-id> \
+    --decision-file <codex-answer.txt>
+  ```
+
+相談IDをOpenCode session IDとして流用しない。3引数の一部だけを渡したresumeはfail-closedになる。作業途中のscope内editは保持してよいが、回答前のscope逸脱・禁止操作は許可しない。
 
 通常のslice継続にはこのresume経路を使わない。完了済みsliceの大きな会話contextを次sliceへ持ち込まず、
 Codexがreceipt/diff/testから短いStarting contextを作って新sessionへ渡す。

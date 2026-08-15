@@ -57,7 +57,7 @@ qualified poolから適格workerを選ぶ。pool不足・失効・rate limit・�
 
 worker に現在のslice contractを委譲 (async, event-driven, **polling なし**)。worktree 内で自由に
 調査・実装・test → local commit + receipt.jsonを出す。
-`needs_supervisor` が出たら Codex が決定し、**同じ worker session で resume**。
+workerは任意の`$ask-codex`で`needs_supervisor`を返せる。相談は固定フェーズではなく、Codexが決定後に**同じ worker session で resume**する。
 
 ### L-5. 検証 → `$3ailoop-verify`
 

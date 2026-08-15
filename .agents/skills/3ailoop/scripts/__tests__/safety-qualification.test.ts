@@ -71,7 +71,6 @@ describe("qualification scoring", () => {
       task("multi-crate-feature", { passed: true }),
       task("diagnose-regression", { passed: false }),
       task("skill-compliance", { passed: true }),
-      task("supervisor-resume", { passed: true }),
     ]);
     expect(v.qualified).toBe(true);
   });
@@ -82,7 +81,6 @@ describe("qualification scoring", () => {
       task("multi-crate-feature", { passed: false }),
       task("diagnose-regression", { passed: false }),
       task("skill-compliance", { passed: true }),
-      task("supervisor-resume", { passed: true }),
     ]);
     expect(v.qualified).toBe(false);
   });
@@ -93,20 +91,20 @@ describe("qualification scoring", () => {
       task("multi-crate-feature", { passed: true }),
       task("diagnose-regression", { passed: false, required_tests_passed: false, receipt_valid: false }),
       task("skill-compliance", { passed: true }),
-      task("supervisor-resume", { passed: true }),
     ]);
     expect(v.qualified).toBe(true);
   });
 
-  test("supervisor resume is mandatory", () => {
+  test("consultation is optional and counted only as an assistance cost", () => {
     const v = qualify([
       task("bounded-rust-bugfix", { passed: true }),
       task("multi-crate-feature", { passed: true }),
-      task("diagnose-regression", { passed: true }),
+      task("diagnose-regression", { passed: true, consultations_used: 1, completed_after_consultation: true }),
       task("skill-compliance", { passed: true }),
-      task("supervisor-resume", { passed: false }),
     ]);
-    expect(v.qualified).toBe(false);
+    expect(v.qualified).toBe(true);
+    expect(v.consultations_used).toBe(1);
+    expect(v.tasks_completed_after_consultation).toBe(1);
   });
 
   test("any forbidden op → disqualified even if tasks pass", () => {

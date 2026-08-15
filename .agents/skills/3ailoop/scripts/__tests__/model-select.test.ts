@@ -14,6 +14,7 @@ import {
   retire,
   setProbation,
   needsReevaluation,
+  CURRENT_MODEL_SUITE_VERSION,
   type ModelEntry,
 } from "../lib/model-registry.ts";
 import { runFallbackGate, type ExternalCandidate } from "../lib/external-fallback.ts";
@@ -27,7 +28,7 @@ function entry(identity: string, status: "qualified" | "probation" | "retired" =
     provider: identity.split("/")[0],
     model: identity.split("/")[1],
     status,
-    evaluation: { suite_version: "2", passed: 2, total: 3, passed_classes: ["bounded-rust-bugfix", "multi-crate-feature"], tested_at: "2026-08-13T00:00:00Z" },
+    evaluation: { suite_version: CURRENT_MODEL_SUITE_VERSION, passed: 2, total: 3, passed_classes: ["bounded-rust-bugfix", "multi-crate-feature"], tested_at: "2026-08-13T00:00:00Z" },
     supported_task_class: "general",
     free_tier: { status: "active", input_cost: 0, output_cost: 0, toolcall: true, checked_at: "2026-08-13T00:00:00Z", expiry: null, expiry_known: false },
     observations: { successes: 0, failures: 0, rate_limits: 0, last_success_at: null, last_failure_at: null },
@@ -52,6 +53,21 @@ describe("no-free-worker stop (policy #6)", () => {
     let reg = readModelRegistry("/nonexistent/registry.json");
     reg = upsertModel(reg, entry("opencode/z", "qualified"));
     expect(selectQualified(reg)?.identity).toBe("opencode/z");
+  });
+
+  test("delivery score outranks consultation cost, then fewer consultations wins", () => {
+    let reg = readModelRegistry("/nonexistent/registry.json");
+    const autonomous = entry("opencode/autonomous");
+    autonomous.evaluation = { ...autonomous.evaluation, passed: 4, total: 4, consultations_used: 0, duration_ms: 200 };
+    const assisted = entry("opencode/assisted");
+    assisted.evaluation = { ...assisted.evaluation, passed: 4, total: 4, consultations_used: 2, duration_ms: 100 };
+    reg = upsertModel(upsertModel(reg, assisted), autonomous);
+    expect(selectQualified(reg)?.identity).toBe("opencode/autonomous");
+
+    assisted.evaluation.passed = 4;
+    autonomous.evaluation.passed = 3;
+    reg = upsertModel(upsertModel(reg, autonomous), assisted);
+    expect(selectQualified(reg)?.identity).toBe("opencode/assisted");
   });
 });
 
@@ -103,6 +119,16 @@ describe("reevaluation gating (policy #7)", () => {
     const e = entry("opencode/old-suite");
     e.evaluation.suite_version = "1";
     expect(needsReevaluation(e, now)).toBe("harness-failure");
+  });
+
+  test("successful suite v3 re-evaluation clears only older failure gates", () => {
+    const e = entry("opencode/recovered");
+    e.evaluation.suite_version = "3";
+    e.last_evaluated_at = "2026-08-14T00:00:00Z";
+    e.observations = { successes: 0, failures: 2, rate_limits: 0, last_success_at: null, last_failure_at: "2026-08-13T00:00:00Z" };
+    expect(needsReevaluation(e, now, "3")).toBeNull();
+    e.observations.last_failure_at = "2026-08-15T00:00:00Z";
+    expect(needsReevaluation(e, now, "3")).toBe("quality-degradation");
   });
 });
 

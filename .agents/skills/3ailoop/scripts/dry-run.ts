@@ -232,6 +232,7 @@ async function main(): Promise<number> {
       summary: `fake completion of #${i}`,
       commit_sha: `deadbeef${i}`,
       changed_files: [`${worktree}/src/changed.rs`],
+      forbidden_operations: [],
       test_commands: [{ command: "cargo test fake", rc: 0 }],
       unverified_items: [],
       emitted_at: now().toISOString(),

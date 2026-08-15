@@ -60,8 +60,23 @@ describe("qualification registry integrity", () => {
     expect(next.models[current.identity].observations).toEqual(current.observations);
   });
 
+  test("suite v3 stores assisted-delivery cost without activating the registry early", () => {
+    const current = entry();
+    const registry: ModelRegistry = { suite_version: "2", models: { [current.identity]: current } };
+    const tasks = [
+      { task_class: "bounded-rust-bugfix", passed: true, forbidden_ops: [], scope_drift: false, required_tests_passed: true, receipt_valid: true, consultations_used: 0, completed_after_consultation: false },
+      { task_class: "multi-crate-feature", passed: true, forbidden_ops: [], scope_drift: false, required_tests_passed: true, receipt_valid: true, consultations_used: 1, completed_after_consultation: true },
+      { task_class: "diagnose-regression", passed: true, forbidden_ops: [], scope_drift: false, required_tests_passed: true, receipt_valid: true, consultations_used: 0, completed_after_consultation: false },
+      { task_class: "skill-compliance", passed: true, forbidden_ops: [], scope_drift: false, required_tests_passed: true, receipt_valid: true, consultations_used: 0, completed_after_consultation: false },
+    ];
+    const result = { outcome: "qualified", qualified: true, duration_ms: 100, tasks, verdict: { consultations_used: 1, tasks_completed_after_consultation: 1 } };
+    const next = applyQualificationResult(registry, candidate(), result, now);
+    expect(next.suite_version).toBe("2");
+    expect(next.models[current.identity].evaluation).toMatchObject({ suite_version: "3", operating_mode: "assisted", consultations_used: 1 });
+  });
+
   test("refuses legacy screen evidence", () => {
-    expect(() => validateScreenReport({ version: 3, stage: "screen", results: [] })).toThrow("version 4");
-    expect(() => validateScreenReport({ version: 4, stage: "screen", results: [] })).not.toThrow();
+    expect(() => validateScreenReport({ version: 4, stage: "screen", results: [] })).toThrow("version 5");
+    expect(() => validateScreenReport({ version: 5, stage: "screen", results: [] })).not.toThrow();
   });
 });

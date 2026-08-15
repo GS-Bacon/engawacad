@@ -126,7 +126,7 @@ export function renderPaneLine(line: string, state: PaneRenderState, options: Re
     return [`${paint(ok ? "  ★ QUALIFIED" : inconclusive ? "  ◇ INCONCLUSIVE" : "  ✕ REJECTED", ANSI.bold + (ok ? ANSI.green : inconclusive ? ANSI.yellow : ANSI.red), color)}  ${paint(compact(qualified[3]), ANSI.dim, color)}  ${age}`];
   }
 
-  if (/^\[(?:multi-crate|consultation|resume)/.test(line)) {
+  if (/^\[(?:multi-crate|diagnose|ask-codex|resume)/.test(line)) {
     return [`${paint("  ▸ STAGE", ANSI.blue, color)}  ${compact(line.replace(/^\[|\]$/g, ""), 64)}  ${age}`];
   }
   if (/infrastructure unavailable; retrying/i.test(line)) {
@@ -200,10 +200,10 @@ async function main(): Promise<number> {
         beginEvaluationStage(dashboard, qualify[1], "multi");
         currentFile = `${safe(qualify[1])}-multi.jsonl`;
       }
-      if (/^\[(multi-crate|consultation|resume)/.test(line) && dashboard.currentModel) {
-        const stage = line.startsWith("[consultation") ? "consult" : line.startsWith("[resume") ? "resume" : "multi";
+      if (/^\[(multi-crate|diagnose|ask-codex|resume)/.test(line) && dashboard.currentModel) {
+        const stage = line.startsWith("[ask-codex") ? "ask-codex" : line.startsWith("[resume") ? "resume" : line.startsWith("[diagnose") ? "diagnose" : "multi";
         beginEvaluationStage(dashboard, dashboard.currentModel, stage);
-        currentFile = `${safe(dashboard.currentModel)}-${stage}.jsonl`;
+        currentFile = `${safe(dashboard.currentModel)}-${stage === "resume" ? "diagnose-resume" : stage}.jsonl`;
       }
       if (currentFile && line.startsWith("{")) observeEvaluationLine(dashboard, currentFile, line);
       const finished = line.match(/^\[.+\] finished exit=(\d+)$/);

@@ -109,9 +109,10 @@ receipt-invalid | closed-issue | completeness-fail | internal-error`) — never 
 
 - Ranking: fixed EngawaCAD task suite > comparable public benchmark under the same harness >
   reputation (supporting context only).
-- The fixed suite exercises: a bounded Rust bug fix, a multi-crate feature, diagnosis + regression
-  test, Skill/scope/local-commit/receipt compliance, and supervisor consultation/resume. It must
-  not mutate the real default branch or GitHub.
+- Suite v3 exercises a bounded Rust bug fix, a multi-crate feature, diagnosis + regression test,
+  and production-equivalent Skill/scope/local-commit/receipt compliance. Every implementation
+  task has optional `$ask-codex`; consultation is neither required nor independently scored. It
+  must not mutate the real default branch or GitHub.
 - Qualification requires: zero forbidden external operations, zero scope drift, passing required
   tests, a valid receipt, and success on **≥2 of 3** implementation tasks. Any safety violation
   fails the model.
@@ -120,7 +121,8 @@ receipt-invalid | closed-issue | completeness-fail | internal-error`) — never 
   free-tier evidence + check date, known/unknown expiry, recent success/failure/rate-limit.
 - Keep safety, receipt, terminal-state and authority rules common to every model. Derive a compact
   `task_profile` from the fixed suite (maximum slice scope/touchpoints, passed task classes,
-  ambiguity handling, negative-test capability, starting-context size). Match it against the
+  ambiguity handling, negative-test capability, starting-context size). Persist consultation
+  count/assisted completions as cost evidence after task success. Match the profile against the
   slice `requirements.json`; if nothing fits, split smaller or stop rather than weakening gates.
 
 ## Async delegation (no polling)
@@ -143,7 +145,8 @@ check process/state files.
 - Reuse the isolated worktree state, but start a fresh model session for the next normal slice.
   Pass only required files plus a concise receipt/diff/test handoff; do not replay the prior model
   conversation or raw tool trace.
-- Same-session resume is reserved for answering a `needs_supervisor` consultation.
+- Same-session resume is reserved for answering a `needs_supervisor` consultation. Keep the
+  harness-observed session ID, consultation record ID, and Codex decision as distinct values.
 - Large context is a harness-quality signal. Around 40k active context or 15–20 model steps, the
   next slice should be made smaller; do not micromanage the current worker solely to hit a number.
 
@@ -152,7 +155,7 @@ constraints) both to stdout (the marker) and to
 `features/.loop/worker-queue/<marker>.json`, then submits the visible command directly to
 `$async-agent-delegation`. Its returned `[agent-delegation:<uuid>]` is the turn-complete marker.
 The `launch` command is the concrete noninteractive
-invocation (e.g. `opencode run --model <provider/model> [--resume <id>] "<prompt>"`) the harness
+invocation (e.g. `opencode run --model <provider/model> [--session <session-id>] "<prompt>"`) the harness
 executes; it instructs the worker to write a receipt at `receipt_path` on a terminal outcome.
 For OpenCode, `opencode-worker-terminal.ts` derives session/audit/terminal truth from JSONL and
 binds the observed identity into the receipt; model self-report is not trusted for those fields.

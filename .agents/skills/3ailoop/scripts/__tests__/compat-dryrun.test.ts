@@ -160,6 +160,7 @@ describe("compatibility fixture replay (representative cycle record shape)", () 
       schema_version: 1, issue: 295, worker_id: "worker-1", status: "completed",
       model: { provider: "opencode", model: "x-free" }, summary: "ok",
       commit_sha: "abc", changed_files: ["crates/a.rs"],
+      forbidden_operations: [],
       test_commands: [{ command: "cargo test", rc: 0 }], unverified_items: [],
       emitted_at: "2026-08-13T00:00:00Z",
     };

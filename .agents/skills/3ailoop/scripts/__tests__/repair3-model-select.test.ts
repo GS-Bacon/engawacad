@@ -131,12 +131,14 @@ describe("F5: selectQualified/qualifiedModels skip stale qualified entries", () 
 
   test("healthy qualified still returned", () => {
     let reg = readModelRegistry("/nonexistent/registry.json");
+    reg = { ...reg, suite_version: "2" };
     reg = upsertModel(reg, qualifiedEntry("opencode/healthy"));
     expect(selectQualified(reg, now)?.identity).toBe("opencode/healthy");
   });
 
   test("mix: expired + healthy → only healthy returned", () => {
     let reg = readModelRegistry("/nonexistent/registry.json");
+    reg = { ...reg, suite_version: "2" };
     reg = upsertModel(reg, qualifiedEntry("opencode/expired", {
       free_tier: { status: "active", input_cost: 0, output_cost: 0, toolcall: true, checked_at: "2026-08-13T00:00:00Z", expiry: "2026-01-01T00:00:00Z", expiry_known: true },
     }));

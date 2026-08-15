@@ -2,13 +2,14 @@ import { basename } from "path";
 
 export const SCREEN_GATES = ["response", "edit", "test", "commit", "receipt"] as const;
 export type ScreenGate = typeof SCREEN_GATES[number];
+export type QualificationStage = "multi" | "diagnose" | "ask-codex" | "resume";
 
 export type EvaluationModelProgress = {
   identity: string;
   gates: Set<ScreenGate>;
   screenOutcome: "passed" | "failed" | "inconclusive" | null;
   qualificationScore: { passed: number; total: number; outcome: string } | null;
-  qualificationStage: "multi" | "consult" | "resume" | null;
+  qualificationStage: QualificationStage | null;
   workFinished: boolean;
   toolErrors: number;
   providerRetries: number;
@@ -29,12 +30,12 @@ function identity(safe: string): string {
   return separator < 0 ? safe : `${safe.slice(0, separator)}/${safe.slice(separator + 1)}`;
 }
 
-export function modelAndStageForLog(file: string): { identity: string; stage: "screen" | "multi" | "consult" | "resume" } | null {
+export function modelAndStageForLog(file: string): { identity: string; stage: "screen" | QualificationStage } | null {
   const name = basename(file);
   const screen = name.match(/^(.*)-attempt\d+\.jsonl$/);
   if (screen) return { identity: identity(screen[1]), stage: "screen" };
-  const qualification = name.match(/^(.*)-(multi|consult|resume)\.jsonl$/);
-  if (qualification) return { identity: identity(qualification[1]), stage: qualification[2] as "multi" | "consult" | "resume" };
+  const qualification = name.match(/^(.*)-(multi|diagnose)(-resume)?\.jsonl$/);
+  if (qualification) return { identity: identity(qualification[1]), stage: qualification[3] ? "resume" : qualification[2] as "multi" | "diagnose" };
   return null;
 }
 
@@ -59,7 +60,7 @@ function model(state: EvaluationDashboardState, identity: string): EvaluationMod
 export function beginEvaluationStage(
   state: EvaluationDashboardState,
   identity: string,
-  stage: "screen" | "multi" | "consult" | "resume",
+  stage: "screen" | QualificationStage,
   observedAt = Date.now(),
 ): void {
   if (state.currentModel && state.currentModel !== identity) {
@@ -140,7 +141,7 @@ export function applyQualificationReport(state: EvaluationDashboardState, report
     const tasks = Array.isArray(result.tasks) ? result.tasks : [];
     current.qualificationScore = {
       passed: tasks.filter((task: any) => task?.passed).length,
-      total: tasks.length || 5,
+      total: tasks.length || 4,
       outcome: result.outcome ?? (result.qualified ? "qualified" : "rejected"),
     };
     current.workFinished = true;
@@ -200,7 +201,7 @@ export function renderEvaluationDashboard(state: EvaluationDashboardState, optio
     `  ${paint("SCREEN", COLOR.bold + COLOR.cyan, color)}   ${paint(bar(screenWorked, known.length), COLOR.cyan, color)}  work ${screenWorked}/${known.length}`,
     `           active ${active} · wait ${Math.max(0, known.length - started)} · verdict ${screenDone}/${known.length}`,
     `  ${paint("QUALIFY", COLOR.bold + COLOR.violet, color)}  ${paint(bar(qualificationDone, Math.max(1, known.length)), COLOR.violet, color)}  done ${qualificationDone} · active ${qualificationActive}`,
-    `  ${paint("PASS", COLOR.bold + COLOR.yellow, color)}     implementation 2/3 + operations 2/2`,
+    `  ${paint("PASS", COLOR.bold + COLOR.yellow, color)}     implementation 2/3 + production contract 1/1`,
     "",
   ];
   if (current) {
