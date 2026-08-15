@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "stage": "screen",
+  "checked_at": "2026-08-13T10:44:52.976Z",
+  "candidates": [
+    "opencode/nemotron-3-ultra-free"
+  ],
+  "results": [
+    {
+      "identity": "opencode/nemotron-3-ultra-free",
+      "passed": false,
+      "elapsed_ms": 311509,
+      "exit_code": 0,
+      "tests_passed": false,
+      "committed": false,
+      "receipt_valid": false,
+      "reason": "tests-failed,no-local-commit,invalid-receipt",
+      "session_log": "/home/bacon/engawacad/features/.loop/model-eval/third-candidate/screen/opencode_nemotron-3-ultra-free.jsonl"
+    }
+  ]
+}

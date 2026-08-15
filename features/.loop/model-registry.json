@@ -1,0 +1,209 @@
+{
+  "models": {
+    "opencode/nemotron-3.5-lightning-free": {
+      "identity": "opencode/nemotron-3.5-lightning-free",
+      "harness": "opencode",
+      "provider": "opencode",
+      "model": "nemotron-3.5-lightning-free",
+      "status": "probation",
+      "evaluation": {
+        "suite_version": "2",
+        "passed": 5,
+        "total": 5,
+        "passed_classes": [
+          "bounded-rust-bugfix",
+          "multi-crate-feature",
+          "diagnose-regression",
+          "skill-compliance",
+          "supervisor-resume"
+        ],
+        "tested_at": "2026-08-14T13:19:58.720Z",
+        "duration_ms": 201083
+      },
+      "supported_task_class": "general",
+      "free_tier": {
+        "status": "active",
+        "input_cost": 0,
+        "output_cost": 0,
+        "toolcall": true,
+        "checked_at": "2026-08-14T13:05:59.968Z",
+        "expiry": null,
+        "expiry_known": false
+      },
+      "observations": {
+        "successes": 0,
+        "failures": 2,
+        "rate_limits": 0,
+        "last_success_at": null,
+        "last_failure_at": "2026-08-15T00:59:21.328Z"
+      },
+      "task_profile": {
+        "max_scope": "medium",
+        "max_primary_touchpoints": 6,
+        "allowed_classes": [
+          "bugfix",
+          "focused-test",
+          "multi-crate",
+          "diagnose"
+        ],
+        "ambiguity": "bounded",
+        "required_negative_tests": true,
+        "starting_context": "standard"
+      },
+      "last_evaluated_at": "2026-08-15T00:59:21.328Z"
+    },
+    "opencode/laguna-s-2.1-free": {
+      "identity": "opencode/laguna-s-2.1-free",
+      "harness": "opencode",
+      "provider": "opencode",
+      "model": "laguna-s-2.1-free",
+      "status": "qualified",
+      "evaluation": {
+        "suite_version": "2",
+        "passed": 5,
+        "total": 5,
+        "passed_classes": [
+          "bounded-rust-bugfix",
+          "multi-crate-feature",
+          "diagnose-regression",
+          "skill-compliance",
+          "supervisor-resume"
+        ],
+        "tested_at": "2026-08-14T13:19:58.720Z",
+        "duration_ms": 405524
+      },
+      "supported_task_class": "general",
+      "free_tier": {
+        "status": "active",
+        "input_cost": 0,
+        "output_cost": 0,
+        "toolcall": true,
+        "checked_at": "2026-08-14T13:05:59.968Z",
+        "expiry": null,
+        "expiry_known": false
+      },
+      "observations": {
+        "successes": 1,
+        "failures": 0,
+        "rate_limits": 0,
+        "last_success_at": "2026-08-15T02:00:16.189Z",
+        "last_failure_at": null
+      },
+      "task_profile": {
+        "max_scope": "medium",
+        "max_primary_touchpoints": 6,
+        "allowed_classes": [
+          "bugfix",
+          "focused-test",
+          "multi-crate",
+          "diagnose"
+        ],
+        "ambiguity": "bounded",
+        "required_negative_tests": true,
+        "starting_context": "standard"
+      },
+      "last_evaluated_at": "2026-08-14T13:19:58.720Z"
+    },
+    "opencode/hy3-free": {
+      "identity": "opencode/hy3-free",
+      "harness": "opencode",
+      "provider": "opencode",
+      "model": "hy3-free",
+      "status": "qualified",
+      "evaluation": {
+        "suite_version": "2",
+        "passed": 5,
+        "total": 5,
+        "passed_classes": [
+          "bounded-rust-bugfix",
+          "multi-crate-feature",
+          "diagnose-regression",
+          "skill-compliance",
+          "supervisor-resume"
+        ],
+        "tested_at": "2026-08-14T13:19:58.720Z",
+        "duration_ms": 232143
+      },
+      "supported_task_class": "general",
+      "free_tier": {
+        "status": "active",
+        "input_cost": 0,
+        "output_cost": 0,
+        "toolcall": true,
+        "checked_at": "2026-08-14T13:05:59.968Z",
+        "expiry": null,
+        "expiry_known": false
+      },
+      "observations": {
+        "successes": 0,
+        "failures": 2,
+        "rate_limits": 0,
+        "last_success_at": null,
+        "last_failure_at": "2026-08-14T03:05:06.890Z"
+      },
+      "task_profile": {
+        "max_scope": "medium",
+        "max_primary_touchpoints": 6,
+        "allowed_classes": [
+          "bugfix",
+          "focused-test",
+          "multi-crate",
+          "diagnose"
+        ],
+        "ambiguity": "bounded",
+        "required_negative_tests": true,
+        "starting_context": "standard"
+      },
+      "last_evaluated_at": "2026-08-14T13:19:58.720Z"
+    },
+    "opencode/nemotron-3-ultra-free": {
+      "identity": "opencode/nemotron-3-ultra-free",
+      "harness": "opencode",
+      "provider": "opencode",
+      "model": "nemotron-3-ultra-free",
+      "status": "probation",
+      "evaluation": {
+        "suite_version": "1",
+        "passed": 2,
+        "total": 5,
+        "passed_classes": [
+          "bounded-rust-bugfix",
+          "multi-crate-feature"
+        ],
+        "tested_at": "2026-08-14T11:40:25.416Z",
+        "duration_ms": 437514
+      },
+      "supported_task_class": "general",
+      "free_tier": {
+        "status": "active",
+        "input_cost": 0,
+        "output_cost": 0,
+        "toolcall": true,
+        "checked_at": "2026-08-14T11:33:07.901Z",
+        "expiry": null,
+        "expiry_known": false
+      },
+      "observations": {
+        "successes": 0,
+        "failures": 0,
+        "rate_limits": 0,
+        "last_success_at": null,
+        "last_failure_at": null
+      },
+      "task_profile": {
+        "max_scope": "small",
+        "max_primary_touchpoints": 4,
+        "allowed_classes": [
+          "bugfix",
+          "focused-test",
+          "multi-crate"
+        ],
+        "ambiguity": "consult",
+        "required_negative_tests": false,
+        "starting_context": "minimal"
+      },
+      "last_evaluated_at": "2026-08-14T11:40:25.416Z"
+    }
+  },
+  "suite_version": "2"
+}

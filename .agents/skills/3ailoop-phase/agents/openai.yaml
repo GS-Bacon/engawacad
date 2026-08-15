@@ -1,0 +1,2 @@
+name: 3ailoop-phase
+description: Maintain ADR / Phase / retrospective / dashboard state. Preserves the user-visible Phase close-check, Phase seed, retrospective metrics, and cumulative dashboard from the prior loop, without depending on ClaudeCode or GLM. Reads ROADMAP.md and features/.loop logs; emits drafts and verdicts only (no GitHub writes).

@@ -1,0 +1,6 @@
+name: 3ailoop-worker-qualify
+description: Discover, screen, fully qualify, retire, and replenish the 3ailoop free-cloud worker pool.
+interface:
+  display_name: "3ailoop Worker Qualify"
+  short_description: "Qualify and maintain free OpenCode workers"
+  default_prompt: "Use $3ailoop-worker-qualify to qualify and maintain the free worker pool."

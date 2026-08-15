@@ -1,0 +1,2 @@
+name: 3ailoop-work-select
+description: Select the next actionable EngawaCAD Issue for the loop. Reads CAS assign-state and excludes closed and already-assigned Issues (prevents #333 stale-plan reassignment), then orders candidates by tier (split-batch > phase-feature > foundation > general) and drops gate/needs/blocked-by-split labels.

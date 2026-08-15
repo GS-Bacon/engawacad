@@ -1,0 +1,2 @@
+name: 3ailoop-worker-select
+description: Discover, evaluate, and select a qualified free cloud worker (OpenCode first). Mechanically rejects local/Ollama/LM-Studio/Gemini/nonzero-or-unknown-price models. Stops and notifies when no qualified free worker exists; never uses Codex as worker or a paid fallback. Consults the external-free fallback gate only when the OpenCode set is exhausted.

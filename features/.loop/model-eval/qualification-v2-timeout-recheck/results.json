@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "checked_at": "2026-08-14T11:40:25.416Z",
+  "results": [
+    {
+      "identity": "opencode/nemotron-3-ultra-free",
+      "qualified": false,
+      "outcome": "inconclusive",
+      "duration_ms": 437514,
+      "verdict": {
+        "qualified": false,
+        "reasons": [
+          "skill-compliance: mandatory harness behavior failed",
+          "supervisor-resume: mandatory harness behavior failed"
+        ],
+        "implementation_successes": 2,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": false
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": false,
+          "receipt_valid": false
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": false,
+          "receipt_valid": false
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "attempts": 2,
+          "elapsed_ms": 218325,
+          "session_id": "ses_ffff38b8cffeXOsPBNIXUomZb7",
+          "receipt": {
+            "status": "completed",
+            "summary": "Implemented FeatureStamp::stable_key in stamp-core returning kind#ordinal with four-digit zero-padded ordinal. Updated stamp-cli::display_stamp to delegate to stable_key API. Added focused tests in both crates. All workspace tests pass.",
+            "changed_files": [
+              "crates/stamp-core/src/lib.rs",
+              "crates/stamp-cli/src/lib.rs"
+            ],
+            "test_command": "cargo test --workspace",
+            "unverified_items": []
+          },
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-timeout-recheck/opencode_nemotron-3-ultra-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": false,
+          "no_early_commit": true,
+          "session_id": "ses_ffff007d5ffeAOQax82sUb60Tp",
+          "infrastructure_failure": true,
+          "attempts": 2
+        },
+        "diagnose": {
+          "ok": false,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": true,
+          "attempts": 2,
+          "elapsed_ms": 160606,
+          "session_id": "ses_ffff007d5ffeAOQax82sUb60Tp",
+          "receipt": null,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-timeout-recheck/opencode_nemotron-3-ultra-free-resume.jsonl"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "checked_at": "2026-08-13T09:49:06.394Z",
+  "results": [
+    {
+      "identity": "opencode/nemotron-3.5-lightning-free",
+      "qualified": true,
+      "duration_ms": 270964,
+      "verdict": {
+        "qualified": true,
+        "reasons": [],
+        "implementation_successes": 3,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "elapsed_ms": 143246,
+          "session_id": "ses_0058594f4ffe2Ori5Mz5I51lZk",
+          "receipt": {
+            "status": "completed",
+            "summary": "Implemented FeatureStamp::stable_key returning kind#ordinal with four-digit zero-padded ordinal, and delegate stamp-cli::display_stamp to that API. Added focused tests in both crates. All workspace tests pass.",
+            "changed_files": [
+              "crates/stamp-core/src/lib.rs",
+              "crates/stamp-cli/src/lib.rs"
+            ],
+            "test_command": "cargo test --workspace",
+            "unverified_items": []
+          },
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v1/opencode_nemotron-3.5-lightning-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": true,
+          "no_early_commit": true,
+          "session_id": "ses_00583632cffeTZbNRO4zN1ftL7"
+        },
+        "diagnose": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "elapsed_ms": 84489,
+          "session_id": "ses_00583632cffeTZbNRO4zN1ftL7",
+          "receipt": {
+            "status": "completed",
+            "summary": "Fixed canonical_feature_name to trim and convert to ASCII lowercase. Test passes with case-insensitive matching.",
+            "changed_files": [
+              "src/lib.rs"
+            ],
+            "test_command": "cargo test canonical_name_is_ascii_case_insensitive",
+            "unverified_items": [],
+            "consultation": {
+              "question": "Should canonical_feature_name normalize to ASCII lowercase or preserve original case?",
+              "options": [
+                "Normalize to ASCII lowercase for case-insensitive matching",
+                "Preserve original case as-is"
+              ],
+              "recommendation": "Normalize to ASCII lowercase to match test expectation and enable case-insensitive feature name comparison"
+            }
+          },
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v1/opencode_nemotron-3.5-lightning-free-resume.jsonl"
+        }
+      }
+    },
+    {
+      "identity": "opencode/laguna-s-2.1-free",
+      "qualified": false,
+      "duration_ms": 177942,
+      "verdict": {
+        "qualified": false,
+        "reasons": [
+          "diagnose-regression: scope drift",
+          "skill-compliance: mandatory harness behavior failed",
+          "supervisor-resume: mandatory harness behavior failed",
+          "implementation threshold: 1/3 passed (need ≥2)"
+        ],
+        "implementation_successes": 1,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": false,
+          "receipt_valid": false
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": true,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": false,
+          "receipt_valid": false
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": false,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": false,
+          "receipt_valid": false
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": false,
+          "exit_code": 0,
+          "timed_out": false,
+          "elapsed_ms": 14309,
+          "session_id": "ses_00581717bffeX3Glp4Jm5CDSYO",
+          "receipt": null,
+          "tests_passed": false,
+          "committed": false,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v1/opencode_laguna-s-2.1-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": false,
+          "no_early_commit": true,
+          "session_id": "ses_005813734ffeHvT3Hl9tHrEDPR"
+        },
+        "diagnose": {
+          "ok": false,
+          "exit_code": 0,
+          "timed_out": false,
+          "elapsed_ms": 127006,
+          "session_id": "ses_005813734ffeHvT3Hl9tHrEDPR",
+          "receipt": {
+            "status": "completed",
+            "summary": "Fixed canonical_feature_name in src/lib.rs to trim whitespace then apply to_ascii_lowercase (per supervisor decision: ASCII-lowercase canonicalization, Unicode case folding out of scope). The previously failing test canonical_name_is_ascii_case_insensitive now passes. Commit 453e31f.",
+            "changed_files": [
+              "src/lib.rs",
+              ".eval/receipt.json"
+            ],
+            "test_command": "cargo test",
+            "unverified_items": [
+              "Unicode case folding (e.g., non-ASCII characters like 'İ') is explicitly out of scope and not handled by to_ascii_lowercase — documented as a known limitation",
+              "Non-ASCII characters in feature names will not be lowercased; only A-Z are converted to a-z"
+            ]
+          },
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": true,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v1/opencode_laguna-s-2.1-free-resume.jsonl"
+        }
+      }
+    },
+    {
+      "identity": "opencode/hy3-free",
+      "qualified": true,
+      "duration_ms": 345847,
+      "verdict": {
+        "qualified": true,
+        "reasons": [],
+        "implementation_successes": 3,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "elapsed_ms": 179568,
+          "session_id": "ses_0057ebabaffeXFAujQr7bW1v8x",
+          "receipt": {
+            "status": "completed",
+            "summary": "Added FeatureStamp::stable_key to stamp-core returning 'kind#ordinal' with a four-digit zero-padded ordinal, and refactored stamp-cli::display_stamp to delegate to that API. Existing public APIs (FeatureStamp struct, new, display_stamp) preserved. Added focused tests in both crates; all tests pass.",
+            "changed_files": [
+              "crates/stamp-core/src/lib.rs",
+              "crates/stamp-cli/src/lib.rs"
+            ],
+            "test_command": "cargo test --workspace",
+            "unverified_items": [
+              "The 'cargo test --workspace' invocation was blocked by sandbox command rules that deny arguments beyond the base subcommand; the functionally equivalent 'cargo test' (runs all workspace members from the root) was executed and passed instead. The receipt records the requested canonical command for the grader to run in an unrestricted environment."
+            ]
+          },
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v1/opencode_hy3-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": true,
+          "no_early_commit": true,
+          "session_id": "ses_0057bfb91ffe8WCepCCxptF8IM"
+        },
+        "diagnose": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "elapsed_ms": 94265,
+          "session_id": "ses_0057bfb91ffe8WCepCCxptF8IM",
+          "receipt": {
+            "status": "completed",
+            "summary": "Per supervisor decision, canonical_feature_name now trims input and applies to_ascii_lowercase (Unicode case folding explicitly out of scope). The regression test canonical_name_is_ascii_case_insensitive passes. Fix committed locally.",
+            "changed_files": [
+              "src/lib.rs"
+            ],
+            "test_command": "cargo test",
+            "unverified_items": [
+              "No downstream callers were checked for reliance on case-preserving output (no other source files exist in this crate).",
+              "Unicode case folding remains out of scope as instructed; non-ASCII inputs will only undergo ASCII lowercase, leaving non-ASCII letters unchanged."
+            ]
+          },
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v1/opencode_hy3-free-resume.jsonl"
+        }
+      }
+    }
+  ]
+}

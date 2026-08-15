@@ -1,0 +1,279 @@
+{
+  "version": 2,
+  "stage": "screen",
+  "checked_at": "2026-08-14T11:33:04.733Z",
+  "timeout_config": {
+    "firstOutputMs": 180000,
+    "idleMs": 480000,
+    "hardMs": 1200000
+  },
+  "infra_retries": 1,
+  "candidates": [
+    "opencode/nemotron-3-ultra-free",
+    "opencode/big-pickle",
+    "opencode/mimo-v2.5-free",
+    "opencode/deepseek-v4-flash-free"
+  ],
+  "results": [
+    {
+      "identity": "opencode/nemotron-3-ultra-free",
+      "passed": true,
+      "outcome": "passed",
+      "elapsed_ms": 86401,
+      "exit_code": 0,
+      "tests_passed": true,
+      "committed": true,
+      "receipt_valid": true,
+      "timeout_kind": null,
+      "infrastructure_failure": false,
+      "first_output_ms": 7573,
+      "last_output_ms": 86090,
+      "progress": {
+        "event_count": 33,
+        "edit_observed": true,
+        "agent_test_pass_observed": true
+      },
+      "reason": "passed",
+      "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_nemotron-3-ultra-free-attempt2.jsonl",
+      "attempts": [
+        {
+          "identity": "opencode/nemotron-3-ultra-free",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 10911,
+          "exit_code": 0,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": null,
+          "infrastructure_failure": true,
+          "first_output_ms": 5137,
+          "last_output_ms": 9728,
+          "progress": {
+            "event_count": 6,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_nemotron-3-ultra-free-attempt1.jsonl"
+        },
+        {
+          "identity": "opencode/nemotron-3-ultra-free",
+          "passed": true,
+          "outcome": "passed",
+          "elapsed_ms": 86401,
+          "exit_code": 0,
+          "tests_passed": true,
+          "committed": true,
+          "receipt_valid": true,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "first_output_ms": 7573,
+          "last_output_ms": 86090,
+          "progress": {
+            "event_count": 33,
+            "edit_observed": true,
+            "agent_test_pass_observed": true
+          },
+          "reason": "passed",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_nemotron-3-ultra-free-attempt2.jsonl"
+        }
+      ]
+    },
+    {
+      "identity": "opencode/big-pickle",
+      "passed": false,
+      "outcome": "inconclusive",
+      "elapsed_ms": 180423,
+      "exit_code": 143,
+      "tests_passed": false,
+      "committed": false,
+      "receipt_valid": false,
+      "timeout_kind": "first-output",
+      "infrastructure_failure": true,
+      "first_output_ms": null,
+      "last_output_ms": null,
+      "progress": {
+        "event_count": 0,
+        "edit_observed": false,
+        "agent_test_pass_observed": false
+      },
+      "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+      "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_big-pickle-attempt2.jsonl",
+      "attempts": [
+        {
+          "identity": "opencode/big-pickle",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 180409,
+          "exit_code": 143,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": "first-output",
+          "infrastructure_failure": true,
+          "first_output_ms": null,
+          "last_output_ms": null,
+          "progress": {
+            "event_count": 0,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_big-pickle-attempt1.jsonl"
+        },
+        {
+          "identity": "opencode/big-pickle",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 180423,
+          "exit_code": 143,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": "first-output",
+          "infrastructure_failure": true,
+          "first_output_ms": null,
+          "last_output_ms": null,
+          "progress": {
+            "event_count": 0,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_big-pickle-attempt2.jsonl"
+        }
+      ]
+    },
+    {
+      "identity": "opencode/mimo-v2.5-free",
+      "passed": false,
+      "outcome": "inconclusive",
+      "elapsed_ms": 180432,
+      "exit_code": 143,
+      "tests_passed": false,
+      "committed": false,
+      "receipt_valid": false,
+      "timeout_kind": "first-output",
+      "infrastructure_failure": true,
+      "first_output_ms": null,
+      "last_output_ms": null,
+      "progress": {
+        "event_count": 0,
+        "edit_observed": false,
+        "agent_test_pass_observed": false
+      },
+      "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+      "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_mimo-v2.5-free-attempt2.jsonl",
+      "attempts": [
+        {
+          "identity": "opencode/mimo-v2.5-free",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 180440,
+          "exit_code": 143,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": "first-output",
+          "infrastructure_failure": true,
+          "first_output_ms": null,
+          "last_output_ms": null,
+          "progress": {
+            "event_count": 0,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_mimo-v2.5-free-attempt1.jsonl"
+        },
+        {
+          "identity": "opencode/mimo-v2.5-free",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 180432,
+          "exit_code": 143,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": "first-output",
+          "infrastructure_failure": true,
+          "first_output_ms": null,
+          "last_output_ms": null,
+          "progress": {
+            "event_count": 0,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_mimo-v2.5-free-attempt2.jsonl"
+        }
+      ]
+    },
+    {
+      "identity": "opencode/deepseek-v4-flash-free",
+      "passed": false,
+      "outcome": "inconclusive",
+      "elapsed_ms": 180394,
+      "exit_code": 143,
+      "tests_passed": false,
+      "committed": false,
+      "receipt_valid": false,
+      "timeout_kind": "first-output",
+      "infrastructure_failure": true,
+      "first_output_ms": null,
+      "last_output_ms": null,
+      "progress": {
+        "event_count": 0,
+        "edit_observed": false,
+        "agent_test_pass_observed": false
+      },
+      "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+      "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_deepseek-v4-flash-free-attempt2.jsonl",
+      "attempts": [
+        {
+          "identity": "opencode/deepseek-v4-flash-free",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 180410,
+          "exit_code": 143,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": "first-output",
+          "infrastructure_failure": true,
+          "first_output_ms": null,
+          "last_output_ms": null,
+          "progress": {
+            "event_count": 0,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_deepseek-v4-flash-free-attempt1.jsonl"
+        },
+        {
+          "identity": "opencode/deepseek-v4-flash-free",
+          "passed": false,
+          "outcome": "inconclusive",
+          "elapsed_ms": 180394,
+          "exit_code": 143,
+          "tests_passed": false,
+          "committed": false,
+          "receipt_valid": false,
+          "timeout_kind": "first-output",
+          "infrastructure_failure": true,
+          "first_output_ms": null,
+          "last_output_ms": null,
+          "progress": {
+            "event_count": 0,
+            "edit_observed": false,
+            "agent_test_pass_observed": false
+          },
+          "reason": "first-output-timeout,infrastructure-unavailable,tests-failed,no-local-commit,invalid-receipt",
+          "session_log": "/home/bacon/engawacad/features/.loop/model-eval/screen-v2-timeout-recheck/opencode_deepseek-v4-flash-free-attempt2.jsonl"
+        }
+      ]
+    }
+  ]
+}

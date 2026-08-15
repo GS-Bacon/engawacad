@@ -1,0 +1,2 @@
+name: 3ailoop
+description: Codex-orchestrated autonomous loop that digests EngawaCAD Issues by delegating implementation work to qualified free cloud models (OpenCode first). Sequences the component Skills for work selection, planning, worker selection, worker execution, delivery verification, serial landing, and Phase maintenance. Replaces the ClaudeCode/GLM-centered loop; the active worker path never requires ClaudeCode, GLM, Gemini, or a local model.

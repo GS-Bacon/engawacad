@@ -1,0 +1,369 @@
+{
+  "version": 1,
+  "checked_at": "2026-08-14T13:19:58.720Z",
+  "results": [
+    {
+      "identity": "opencode/nemotron-3.5-lightning-free",
+      "qualified": true,
+      "outcome": "qualified",
+      "duration_ms": 201083,
+      "verdict": {
+        "qualified": true,
+        "reasons": [],
+        "implementation_successes": 3,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "infrastructure_kind": null,
+          "attempts": 1,
+          "elapsed_ms": 92493,
+          "session_id": "ses_fff9ed54cffe3FLHLV6pjFRcV9",
+          "receipt": {
+            "status": "completed",
+            "summary": "Implemented FeatureStamp::stable_key returning kind#ordinal with four-digit zero-padded ordinal; stamp-cli::display_stamp now delegates to stable_key API. Added focused tests in both crates. All workspace tests pass.",
+            "changed_files": [
+              "crates/stamp-core/src/lib.rs",
+              "crates/stamp-cli/src/lib.rs"
+            ],
+            "test_command": "cargo test --workspace",
+            "unverified_items": []
+          },
+          "receipt_complete": true,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-screen4-recheck/opencode_nemotron-3.5-lightning-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": true,
+          "no_early_commit": true,
+          "no_early_changes": true,
+          "session_id": "ses_fff9d6940ffe0UTu7DQlovgzIQ",
+          "infrastructure_failure": false,
+          "attempts": 1
+        },
+        "diagnose": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "infrastructure_kind": null,
+          "attempts": 1,
+          "elapsed_ms": 79218,
+          "session_id": "ses_fff9d6940ffe0UTu7DQlovgzIQ",
+          "receipt": {
+            "status": "completed",
+            "summary": "Implemented ASCII-lowercase canonicalization for feature names. canonical_feature_name now trims input and converts to ASCII lowercase via to_ascii_lowercase(). The regression test passes.",
+            "changed_files": [
+              "src/lib.rs"
+            ],
+            "test_command": "cargo test canonical_name_is_ascii_case_insensitive",
+            "unverified_items": [],
+            "consultation": {}
+          },
+          "receipt_complete": true,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-screen4-recheck/opencode_nemotron-3.5-lightning-free-resume.jsonl"
+        }
+      }
+    },
+    {
+      "identity": "opencode/laguna-s-2.1-free",
+      "qualified": true,
+      "outcome": "qualified",
+      "duration_ms": 405524,
+      "verdict": {
+        "qualified": true,
+        "reasons": [],
+        "implementation_successes": 3,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "infrastructure_kind": null,
+          "attempts": 1,
+          "elapsed_ms": 154938,
+          "session_id": "ses_fff9bc392ffeIVf1fwJlX03HaB",
+          "receipt": {
+            "status": "completed",
+            "summary": "Implemented multi-crate FeatureStamp::stable_key returning 'kind#ordinal' (four-digit zero-padded ordinal) in stamp-core; display_stamp in stamp-cli now delegates to that API. Existing public API (FeatureStamp fields, new) preserved. All tests pass.",
+            "changed_files": [
+              "crates/stamp-core/src/lib.rs",
+              "crates/stamp-cli/src/lib.rs"
+            ],
+            "test_command": "cargo test --workspace",
+            "unverified_items": [
+              "Network/offline build behavior not validated in restricted environment",
+              "Commit author identity is a generated placeholder (opencode)",
+              "No integration tests added outside unit tests"
+            ]
+          },
+          "receipt_complete": true,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-screen4-recheck/opencode_laguna-s-2.1-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": true,
+          "no_early_commit": true,
+          "no_early_changes": true,
+          "session_id": "ses_fff996432ffeJB7rkFDnHlndw1",
+          "infrastructure_failure": false,
+          "attempts": 1
+        },
+        "diagnose": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "infrastructure_kind": null,
+          "attempts": 1,
+          "elapsed_ms": 164774,
+          "session_id": "ses_fff996432ffeJB7rkFDnHlndw1",
+          "receipt": {
+            "status": "completed",
+            "summary": "Supervisor chose ASCII-lowercase canonicalization (trim + to_ascii_lowercase; Unicode case folding explicitly out of scope). Updated canonical_feature_name in src/lib.rs to `input.trim().to_ascii_lowercase()`, preserving the existing regression test and adding a new test (canonical_name_does_not_unicode_case_fold) guarding the ASCII-only scope. All tests pass (2 passed). One commit created (4a01624).",
+            "changed_files": [
+              "src/lib.rs"
+            ],
+            "test_command": "cargo test",
+            "unverified_items": [
+              "Runtime behavior of downstream callers that relied on case-preserved canonical names (no such callers found in this repo)",
+              "Unicode normalization / beyond-ASCII case folding (out of scope)",
+              "Non-string or non-'&str' input paths (function signature unchanged)"
+            ]
+          },
+          "receipt_complete": true,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-screen4-recheck/opencode_laguna-s-2.1-free-resume.jsonl"
+        }
+      }
+    },
+    {
+      "identity": "opencode/hy3-free",
+      "qualified": true,
+      "outcome": "qualified",
+      "duration_ms": 232143,
+      "verdict": {
+        "qualified": true,
+        "reasons": [],
+        "implementation_successes": 3,
+        "implementation_total": 3
+      },
+      "tasks": [
+        {
+          "task_class": "bounded-rust-bugfix",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "multi-crate-feature",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "diagnose-regression",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "skill-compliance",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        },
+        {
+          "task_class": "supervisor-resume",
+          "passed": true,
+          "forbidden_ops": [],
+          "scope_drift": false,
+          "required_tests_passed": true,
+          "receipt_valid": true
+        }
+      ],
+      "details": {
+        "multi": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "infrastructure_kind": null,
+          "attempts": 1,
+          "elapsed_ms": 108298,
+          "session_id": "ses_fff959348ffelqmOtQOzHxQOHv",
+          "receipt": {
+            "status": "completed",
+            "summary": "Added FeatureStamp::stable_key in stamp-core returning kind#ordinal with a four-digit zero-padded ordinal, and delegated stamp-cli::display_stamp to that API. Existing public APIs (FeatureStamp, FeatureStamp::new, display_stamp) preserved. Added focused tests in both crates.",
+            "changed_files": [
+              "crates/stamp-core/src/lib.rs",
+              "crates/stamp-cli/src/lib.rs"
+            ],
+            "test_command": "cargo test --workspace",
+            "unverified_items": []
+          },
+          "receipt_complete": true,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-screen4-recheck/opencode_hy3-free-multi.jsonl"
+        },
+        "consultation": {
+          "valid": true,
+          "no_early_commit": true,
+          "no_early_changes": true,
+          "session_id": "ses_fff93eab0ffeoWoRADf3pV9Pk6",
+          "infrastructure_failure": false,
+          "attempts": 1
+        },
+        "diagnose": {
+          "ok": true,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_kind": null,
+          "infrastructure_failure": false,
+          "infrastructure_kind": null,
+          "attempts": 1,
+          "elapsed_ms": 85363,
+          "session_id": "ses_fff93eab0ffeoWoRADf3pV9Pk6",
+          "receipt": {
+            "status": "completed",
+            "summary": "Implemented the supervisor-approved fix: canonical_feature_name now trims input and applies to_ascii_lowercase, making canonical names case-insensitive ASCII canonicalized. Unicode case folding remains explicitly out of scope. The regression test canonical_name_is_ascii_case_insensitive passes. Fix committed locally.",
+            "changed_files": [
+              "src/lib.rs"
+            ],
+            "test_command": "cargo test",
+            "unverified_items": [
+              "Non-ASCII input behavior: to_ascii_lowercase leaves non-ASCII characters unchanged; Unicode case folding is intentionally not performed (out of scope per supervisor).",
+              "Downstream consumers relying on original-case output were not inspected, as none exist in this repository."
+            ]
+          },
+          "receipt_complete": true,
+          "tests_passed": true,
+          "committed": true,
+          "scope_drift": false,
+          "forbidden_ops": [],
+          "log": "/home/bacon/engawacad/features/.loop/model-eval/qualification-v2-screen4-recheck/opencode_hy3-free-resume.jsonl"
+        }
+      }
+    }
+  ]
+}

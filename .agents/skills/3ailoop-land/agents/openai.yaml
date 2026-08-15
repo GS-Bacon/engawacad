@@ -1,0 +1,2 @@
+name: 3ailoop-land
+description: Serially land verified work. Serialized by a file lock so only one land runs at a time. Before any default-branch mutation it revalidates receipt, CAS generation, Issue-closed state, worker ownership, scope, the complete diff, and tests. Conflicts or CI/test failures return a bounded explicit state — never destructive recovery.

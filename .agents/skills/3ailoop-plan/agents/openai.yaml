@@ -1,0 +1,2 @@
+name: 3ailoop-plan
+description: Codex plans the selected Issue into a plan.md. Applies the ADR-006 granularity guard (check-issue-granularity), records non-goals and scope, and prepares the contract the worker will implement. Codex is the sole planner; no external model writes the plan.

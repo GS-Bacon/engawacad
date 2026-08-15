@@ -24,6 +24,19 @@ features/.loop/merge-history.jsonl
 features/.loop/worker-registry.json
 features/.loop/worker-queue.jsonl
 features/.loop/fanout-state.json
+# 3ailoop Codex runtime state (local, mutable, or reproducible)
+features/.loop/assign-state.json
+features/.loop/new-runtime.enabled
+features/.loop/worker-queue/
+# Keep concise model-eval results.json reports; exclude raw transcripts and launch state.
+features/.loop/model-eval/**/*.jsonl
+features/.loop/model-eval/**/*.sh
+features/.loop/model-eval/**/*.exit
+features/.loop/model-eval/**/job.json
+features/.loop/model-eval/*-visible.json
+# Local Codex delegation records and legacy-test working artifacts.
+.codex/
+.claude/skills/3ailoop/scripts/features/
 # Phase E (#319): phase audit input dirs (regenerated each audit run)
 features/.loop/phase-audit-*/
 .claude/scheduled_tasks.lock

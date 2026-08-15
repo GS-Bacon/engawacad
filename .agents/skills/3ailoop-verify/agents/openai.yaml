@@ -1,0 +1,2 @@
+name: 3ailoop-verify
+description: Verify the worker receipt against the complete worktree delta. Validates the receipt schema, scans the safety audit for forbidden external operations (push/gh-write/scope/stash), and checks completeness across tracked + staged + committed + untracked files — a missing untracked file fails (#330) rather than yielding a false clean result.

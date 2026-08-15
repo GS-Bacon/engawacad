@@ -1,0 +1,2 @@
+name: 3ailoop-worker-run
+description: Launch or resume a free cloud worker on the Issue's plan inside an isolated worktree. Async, event-driven delegation — emits a delegation marker and ends the turn; no polling, sleep-loops, or repeated state checks. The worker implements, tests, makes a local commit, and emits a receipt (completed / needs_supervisor / failed / rate_limited). On needs_supervisor, Codex decides and the same worker session resumes.
