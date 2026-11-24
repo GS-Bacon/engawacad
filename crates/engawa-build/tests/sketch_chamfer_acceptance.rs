@@ -713,3 +713,69 @@ fn startpoint_of(elem: &SketchElement) -> [f64; 2] {
         _ => panic!("non-Line element"),
     }
 }
+
+/// The downstream cut follows the bevel between l1 and l2 as the width changes.
+#[test]
+fn derived_bevel_survives_dimension_edit_and_yaml_reload() {
+    const BEVEL: &str = "l1_l2_chamfer_line";
+    fn check_bevel(doc: &Document, width: f64) {
+        let built = build_bodies_from_features(
+            &doc.root_component.features,
+            &doc.root_component.ref_planes,
+            &mut IdGenerator::new(0),
+        )
+        .unwrap();
+        let vertices = &built.get("ext").unwrap().solid.vertices;
+        // The first 1-unit bevel starts at (width-1, 0) on l1. The second
+        // cuts 0.5 units back on l1 and 0.5 units along that 45-degree bevel.
+        let shift = 0.5 * std::f64::consts::FRAC_1_SQRT_2;
+        for (x, y) in [
+            (width - 1.5, 0.0),
+            (width - 1.0 + shift, shift),
+            (width, 1.0),
+        ] {
+            assert!(
+                vertices
+                    .iter()
+                    .any(|v| (v.point.x - x).abs() < LENGTH_TOLERANCE
+                        && (v.point.y - y).abs() < LENGTH_TOLERANCE
+                        && v.point.z.abs() < LENGTH_TOLERANCE),
+                "missing bevel vertex at ({x}, {y})"
+            );
+        }
+    }
+
+    let mut doc = Document::new("rectangle");
+    doc.root_component.features = chamfer_rect_features("sk", "c1", "ext", 1.0);
+    let next_cut = Feature::SketchChamfer {
+        id: "c2".into(),
+        sketch: "sk".into(),
+        elem1_id: "l1".into(),
+        elem2_id: BEVEL.into(),
+        length: 0.5,
+        suppressed: false,
+    };
+    let doc = FeatureCrud::insert(&doc, next_cut, 2).unwrap();
+    check_bevel(&doc, 10.0);
+
+    let mut wider = rect_create_sketch("sk");
+    if let Feature::CreateSketch { profile, .. } = &mut wider {
+        *profile = vec![
+            line("l1", [0.0, 0.0], [16.0, 0.0]),
+            line("l2", [16.0, 0.0], [16.0, 5.0]),
+            line("l3", [16.0, 5.0], [0.0, 5.0]),
+            line("l4", [0.0, 5.0], [0.0, 0.0]),
+        ];
+    }
+    let edited = FeatureCrud::edit(&doc, "sk", wider).unwrap();
+    let loaded = Document::from_yaml(&edited.to_yaml().unwrap()).unwrap();
+    assert!(
+        matches!(&loaded.root_component.features[2], Feature::SketchChamfer { id, elem2_id, .. } if id == "c2" && elem2_id == BEVEL)
+    );
+    check_bevel(&loaded, 16.0);
+
+    let err = FeatureCrud::delete(&loaded, "c1").unwrap_err();
+    assert!(
+        matches!(err, FeatureCrudError::EditBreaksConsumer { edit_feature_id, broken_consumer_id, broken_ref, .. } if edit_feature_id == "c1" && broken_consumer_id == "c2" && broken_ref == BEVEL)
+    );
+}
