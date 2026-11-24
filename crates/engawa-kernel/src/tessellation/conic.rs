@@ -5,6 +5,8 @@ use crate::{KernelError, EPS_DISCRIMINANT, RELATIVE_TOLERANCE};
 pub(super) struct Conic {
     center: [f64; 2],
     axis: [f64; 2],
+    linear_scale: f64,
+    quadratic_scale: f64,
     radii: [f64; 2],
     // Negative principal coefficient ratio places sinh along that axis.
     hyperbolic_axis: Option<usize>,
@@ -20,7 +22,7 @@ impl Conic {
             return Err(invalid("non-finite coeff"));
         }
 
-        // Use u = sqrt(scale) * x and v = sqrt(scale) * y. Delta now compares
+        // Scale the quadratic part first. Delta now compares
         // axis conditioning independently of the overall size of the sketch.
         let [a, b, c, d, e] = coeffs;
         let scale = a.abs().max(b.abs()).max(c.abs());
@@ -56,18 +58,28 @@ impl Conic {
             });
         }
 
-        let unit = scale.sqrt();
-        let (d, e) = (d / unit, e / unit);
+        // In coordinates (u,v) = (x,y) * scale / linear_scale both the
+        // quadratic and linear coefficients are bounded by one. In particular,
+        // translating x²+y²+1e200*x−1 no longer squares a 1e200 coefficient.
+        let linear_scale = d.abs().max(e.abs()).max(scale.sqrt());
+        let (d, e) = (d / linear_scale, e / linear_scale);
         let det = -delta * 0.25;
         let u = (b * 0.25 * e - c * 0.5 * d) / det;
         let v = (b * 0.25 * d - a * 0.5 * e) / det;
         let du = d * 0.5 * u;
         let ev = e * 0.5 * v;
-        let fp = -1.0 + du + ev;
-        if !fp.is_finite() {
+        // The constant is -(sqrt(scale)/linear_scale)². Compare its square
+        // root with the translation terms before squaring: in xy+1e200*x−1
+        // both translation terms vanish but the original −1 still matters.
+        let constant_root = scale.sqrt() / linear_scale;
+        let magnitude = constant_root.max(du.abs().sqrt()).max(ev.abs().sqrt());
+        if magnitude == 0.0 {
             return Err(invalid("non-finite canonical form"));
         }
-        if fp.abs() <= RELATIVE_TOLERANCE * du.abs().max(ev.abs()).max(1.0) {
+        let fp = -(constant_root / magnitude).powi(2)
+            + (du / magnitude) / magnitude
+            + (ev / magnitude) / magnitude;
+        if fp.abs() <= RELATIVE_TOLERANCE {
             return Err(invalid(if delta < 0.0 {
                 "degenerate point conic"
             } else {
@@ -93,11 +105,7 @@ impl Conic {
             (false, true) => Some(1),
             (true, true) => return Err(invalid("non-real conic (no real points)")),
         };
-        let center = [u / unit, v / unit];
-        let radii = [lambda1, lambda2].map(|l| fp.abs().sqrt() / l.abs().sqrt() / unit);
-        if !center.iter().chain(&radii).all(|x| x.is_finite()) {
-            return Err(invalid("non-finite canonical form"));
-        }
+        let radii = [lambda1, lambda2].map(|l| magnitude * fp.abs().sqrt() / l.abs().sqrt());
         // Preserve the direction (and chosen hyperbola branch) of the
         // existing eigenvector (B/2, lambda1 - A), including axis-aligned cases.
         let axis = if b == 0.0 {
@@ -110,19 +118,44 @@ impl Conic {
             let (sin, cos) = (0.5 * b.atan2(a - c)).sin_cos();
             [cos * b.signum(), sin * b.signum()]
         };
-        Ok(Self {
-            center,
+        let conic = Self {
+            center: [u, v],
+            linear_scale,
+            quadratic_scale: scale,
             axis,
             radii,
             hyperbolic_axis,
-        })
+        };
+        if conic
+            .center
+            .iter()
+            .chain(&conic.radii)
+            .any(|&x| !conic.world_length(x).is_finite())
+        {
+            return Err(invalid("non-finite canonical form"));
+        }
+        Ok(conic)
+    }
+
+    fn world_length(&self, x: f64) -> f64 {
+        let factor = self.linear_scale / self.quadratic_scale;
+        if factor.is_finite() {
+            x * factor
+        } else {
+            // The scale factor alone may overflow while a small x still fits.
+            (x * self.linear_scale) / self.quadratic_scale
+        }
     }
 
     pub(super) fn is_open(&self) -> bool {
         self.hyperbolic_axis.is_some()
     }
 
-    pub(super) fn tessellate(&self, segments: usize) -> Vec<[f64; 2]> {
+    pub(super) fn tessellate(
+        &self,
+        id: &str,
+        segments: usize,
+    ) -> Result<Vec<[f64; 2]>, KernelError> {
         let n = segments.max(1) * 2;
         (0..n)
             .map(|i| {
@@ -139,10 +172,18 @@ impl Conic {
                 };
                 let (x, y) = (x * self.radii[0], y * self.radii[1]);
                 let [ex, ey] = self.axis;
-                [
-                    x * ex - y * ey + self.center[0],
-                    x * ey + y * ex + self.center[1],
-                ]
+                let point = [
+                    self.world_length(x * ex - y * ey + self.center[0]),
+                    self.world_length(x * ey + y * ex + self.center[1]),
+                ];
+                if point.iter().all(|p| p.is_finite()) {
+                    Ok(point)
+                } else {
+                    Err(KernelError::DegenerateSketchElement {
+                        element_id: id.into(),
+                        reason: "non-finite conic sample",
+                    })
+                }
             })
             .collect()
     }

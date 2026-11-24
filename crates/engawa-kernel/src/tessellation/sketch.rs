@@ -157,7 +157,7 @@ pub fn tessellate_sketch_element(
                 .collect())
         }
         SketchElement::Conic { id, coeffs } => {
-            Ok(Conic::from_coeffs(id, *coeffs)?.tessellate(base_segments))
+            Conic::from_coeffs(id, *coeffs)?.tessellate(id, base_segments)
         }
     }
 }
@@ -844,6 +844,47 @@ mod tests {
                 assert!(!result.unwrap());
             }
         }
+    }
+
+    #[test]
+    fn conic_large_translation_preserves_finite_circle_and_hyperbola() {
+        let circle = SketchElement::Conic {
+            id: "circle".into(),
+            coeffs: [1., 0., 1., 1e200, 0.],
+        };
+        assert!(!try_sketch_element_is_open(&circle).unwrap());
+        let points = tessellate_sketch_element(&circle, 8).unwrap();
+        assert!((points[8][0] / 1e200 + 1.).abs() < 1e-12);
+        assert!((points[4][1] / 5e199 - 1.).abs() < 1e-12);
+        for [x, y] in points {
+            assert!(((x / 5e199 + 1.).hypot(y / 5e199) - 1.).abs() < 1e-12);
+        }
+
+        // xy + D*x − 1 = 0 has zero center contributions (D*u = E*v = 0).
+        // The constant term alone determines the finite distance between branches.
+        let hyperbola = SketchElement::Conic {
+            id: "h".into(),
+            coeffs: [0., 1., 0., 1e200, 0.],
+        };
+        assert!(try_sketch_element_is_open(&hyperbola).unwrap());
+        let points = tessellate_sketch_element(&hyperbola, 8).unwrap();
+        for (i, [x, y]) in points.iter().enumerate() {
+            let t = -2.0 + i as f64 * 4.0 / (points.len() - 1) as f64;
+            assert!((x - (-t).exp()).abs() < 1e-12);
+            assert!((y / 1e200 + 1.).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn hyperbola_reports_out_of_range_sample() {
+        let hyperbola = SketchElement::Conic {
+            id: "large".into(),
+            coeffs: [1., 0., -1., 1.7e308, 0.],
+        };
+        assert!(try_sketch_element_is_open(&hyperbola).unwrap());
+        assert!(matches!(tessellate_sketch_element(&hyperbola, 8),
+            Err(KernelError::DegenerateSketchElement { element_id, reason: "non-finite conic sample" })
+            if element_id == "large"));
     }
 
     /// T_DEG_conic_nan: NaN coeff fails.
