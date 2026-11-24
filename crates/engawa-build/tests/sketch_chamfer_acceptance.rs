@@ -257,98 +257,66 @@ fn t09_crud_gate_coordinate_only_edit_boundary() {
     );
 }
 
-// === T10: CRUD gate 既知制約 (Codex R01 部分採用・false-reject) ===
 #[test]
-fn t10_crud_gate_known_limitation_false_reject() {
-    let features = chamfer_rect_features("sk", "c1", "ext", 1.0);
-    // (a) build succeeds: current profile has l1 and derived l1_l2_chamfer_line both as Lines
-    // (chamfer cuts l1 short but does not remove it; the derived Line is adjacent to l1 at the
-    // tail when l2 wraps around — but here we re-chamfer l1/l2 which is the *same* pair, so
-    // instead target l1 / l1_l2_chamfer_line which are adjacent in current profile).
-    // Build path uses current profile; derived Line id resolves.
-    let mut features_build = features.clone();
-    features_build.push(Feature::SketchChamfer {
-        id: "c2".to_string(),
-        sketch: "sk".to_string(),
-        elem1_id: "l1".to_string(),
-        elem2_id: "l1_l2_chamfer_line".to_string(),
-        length: 0.5,
-        suppressed: false,
-    });
-    let ref_planes = RefPlane::default_canonical_three();
-    let mut gen = IdGenerator::new(0);
-    let build_result = build_bodies_from_features(&features_build, &ref_planes, &mut gen);
-    assert!(
-        build_result.is_ok(),
-        "build should accept derived Line ref, got {build_result:?}"
-    );
-
-    // (b) CRUD gate rejects: derived Line id does not exist in original CreateSketch profile.
+fn t10_crud_accepts_a_derived_adjacent_chamfer_line() {
     let mut doc = Document::new("t");
-    doc.root_component.features = features;
-    let bad_chamfer = Feature::SketchChamfer {
-        id: "c2".to_string(),
-        sketch: "sk".to_string(),
-        elem1_id: "l1".to_string(),
-        elem2_id: "l1_l2_chamfer_line".to_string(),
+    doc.root_component.features = chamfer_rect_features("sk", "c1", "ext", 1.0);
+    let second = Feature::SketchChamfer {
+        id: "c2".into(),
+        sketch: "sk".into(),
+        elem1_id: "l1".into(),
+        elem2_id: "l1_l2_chamfer_line".into(),
         length: 0.5,
         suppressed: false,
     };
-    let err = FeatureCrud::insert(&doc, bad_chamfer, 2).unwrap_err();
-    match err {
-        FeatureCrudError::SketchElementNotResolved {
-            reason: "sketch_fillet_elem_not_found",
-            ..
-        } => {}
-        other => panic!("expected SketchElementNotResolved(elem_not_found), got {other:?}"),
-    }
+    let inserted = FeatureCrud::insert(&doc, second, 2).unwrap();
+    build_bodies_from_features(
+        &inserted.root_component.features,
+        &RefPlane::default_canonical_three(),
+        &mut IdGenerator::new(0),
+    )
+    .unwrap();
 }
 
-// === T11: CRUD gate 既知制約 (false-accept, #296 T13 の Chamfer 版) ===
 #[test]
-fn t11_crud_gate_known_limitation_false_accept() {
-    // history: CreateSketch(sk, [l1..l4]) + SketchChamfer(c1, sk, l1, l2) [non-adjacency
-    // for original l1/l2 is impossible — they ARE adjacent. Use c2 on l1/l2 again, which
-    // the gate accepts but build rejects since l1 is now trimmed and not adjacent to l2 anymore].
-    let mut features = vec![rect_create_sketch("sk")];
-    features.push(Feature::SketchChamfer {
-        id: "c1".to_string(),
-        sketch: "sk".to_string(),
-        elem1_id: "l1".to_string(),
-        elem2_id: "l2".to_string(),
-        length: 1.0,
-        suppressed: false,
-    });
-
+fn t11_crud_rejects_lines_separated_by_a_prior_chamfer() {
     let mut doc = Document::new("t");
-    doc.root_component.features = features;
-
-    let second_chamfer = Feature::SketchChamfer {
-        id: "c2".to_string(),
-        sketch: "sk".to_string(),
-        elem1_id: "l1".to_string(),
-        elem2_id: "l2".to_string(),
+    doc.root_component.features = chamfer_rect_features("sk", "c1", "ext", 1.0);
+    let repeat = Feature::SketchChamfer {
+        id: "c2".into(),
+        sketch: "sk".into(),
+        elem1_id: "l1".into(),
+        elem2_id: "l2".into(),
         length: 1.0,
         suppressed: false,
     };
-    // (a) gate accepts: original profile still has l1/l2 adjacent
-    let inserted = FeatureCrud::insert(&doc, second_chamfer, 2).expect("gate should accept");
-
-    // (b) build fails: after first chamfer, l1/l2 are no longer adjacent (separated by the
-    // derived chamfer Line). Build uses current profile, not original.
-    let ref_planes = RefPlane::default_canonical_three();
-    let mut gen = IdGenerator::new(0);
-    let err = build_bodies_from_features(&inserted.root_component.features, &ref_planes, &mut gen)
-        .unwrap_err();
+    let err = FeatureCrud::insert(&doc, repeat.clone(), 2).unwrap_err();
+    assert!(matches!(
+        err,
+        FeatureCrudError::SketchElementNotResolved {
+            reason: "sketch_fillet_elems_not_adjacent",
+            ..
+        }
+    ));
+    // Inserting before c1 would instead displace that previously executing operation.
+    let err = FeatureCrud::insert(&doc, repeat.clone(), 1).unwrap_err();
     assert!(
-        matches!(
-            err,
-            KernelError::InvalidParameter {
-                kind: "sketch_fillet_elems_not_adjacent"
-            }
-        ),
-        "expected not-adjacent rejection, got {err:?}"
+        matches!(err, FeatureCrudError::SketchElementNotResolved { feature_id, .. } if feature_id == "c1")
     );
+
+    doc.root_component.features.insert(2, repeat);
+    let err = build_bodies_from_features(
+        &doc.root_component.features,
+        &RefPlane::default_canonical_three(),
+        &mut IdGenerator::new(0),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        KernelError::InvalidParameter {
+            kind: "sketch_fillet_elems_not_adjacent"
+        }
+    ));
 }
 
 // === T12: 連鎖 正常系 (Codex R01: fillet → chamfer、元profile要素のみを対象) ===

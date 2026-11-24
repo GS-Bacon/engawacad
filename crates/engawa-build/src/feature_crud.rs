@@ -5,6 +5,7 @@
 //! and preserves input Document immutability (ID-stable).
 
 use engawa_format::{Document, EntityRef, Feature, PlaneRef, SketchElement};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -38,7 +39,7 @@ pub enum FeatureCrudError {
         sketch_ref: String,
     },
 
-    /// Feature references sketch elements that do not resolve in the referenced CreateSketch profile.
+    /// Feature references sketch elements that do not resolve in the referenced sketch profile.
     #[error("feature {feature_id} references elements ({elem1_id:?}, {elem2_id:?}) of sketch {sketch_ref:?} which do not resolve ({reason})")]
     SketchElementNotResolved {
         feature_id: String,
@@ -218,27 +219,116 @@ fn feature_consumes(f: &Feature) -> Vec<&str> {
     feature_body_refs(f)
 }
 
-/// Check whether all direct refs of a body-producer feature resolve against the
-/// running prefix state (`sketches_at` / `live_bodies_at`).
-///
-/// Returns `true` for features that have no refs to validate (CreateBox/Cylinder/Sphere).
-/// Returns `false` if any sketch ref is missing from `sketches_at`, any body ref
-/// (target/tool/fuse_target) is missing from `live_bodies_at`, or any implicit body ref
-/// (e.g. CreateSketch.plane_ref=Entity) is missing from `live_bodies_at`.
-///
-/// SketchMirror / SketchPatternLinear / SketchPatternCircular additionally require each
-/// id in `selection` to resolve against the *original* `CreateSketch.profile` referred to
-/// by `sketch`. Pattern arms only enforce this when `count >= 2` (count<=1 is a kernel-level
-/// no-op that does not consult `selection` — validating at count<=1 would create a
-/// build-vs-CRUD inconsistency where `FeatureCrud::insert`/`edit` rejects what build accepts).
-///
-/// This is the gate used by `simulate_history` to decide whether a prefix feature
-/// "really executed". A feature that fails this check is treated as inert — its
-/// inputs are not consumed and its output is not registered (atomic skip).
+struct SketchState<'a> {
+    created_at: usize,
+    profile: Cow<'a, [SketchElement]>,
+}
+
+/// Element-reference checks shared by insert, edit and prefix replay. Geometry errors
+/// such as an excessive fillet radius are diagnosed during build.
+fn check_element_refs(f: &Feature, profile: &[SketchElement]) -> Result<(), FeatureCrudError> {
+    match f {
+        Feature::SketchOffset { sketch, .. }
+            if !matches!(profile, [SketchElement::Circle { .. }]) =>
+        {
+            return Err(FeatureCrudError::SketchNotFound {
+                feature_id: f.id().into(),
+                sketch_ref: sketch.clone(),
+            });
+        }
+        Feature::SketchFillet {
+            sketch,
+            elem1_id,
+            elem2_id,
+            ..
+        }
+        | Feature::SketchChamfer {
+            sketch,
+            elem1_id,
+            elem2_id,
+            ..
+        } => {
+            let reason = match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
+                profile, elem1_id, elem2_id,
+            ) {
+                Ok((a, b))
+                    if matches!(profile[a], SketchElement::Line { .. })
+                        && matches!(profile[b], SketchElement::Line { .. }) =>
+                {
+                    return Ok(())
+                }
+                Ok(_) => "sketch_fillet_only_line_line",
+                Err(engawa_kernel::error::KernelError::InvalidParameter { kind }) => kind,
+                Err(_) => "sketch_fillet_elem_unresolved",
+            };
+            return Err(FeatureCrudError::SketchElementNotResolved {
+                feature_id: f.id().into(),
+                sketch_ref: sketch.clone(),
+                elem1_id: elem1_id.clone(),
+                elem2_id: elem2_id.clone(),
+                reason,
+            });
+        }
+        Feature::SketchMirror {
+            sketch, selection, ..
+        }
+        | Feature::SketchPatternLinear {
+            sketch,
+            selection,
+            count: 2..,
+            ..
+        }
+        | Feature::SketchPatternCircular {
+            sketch,
+            selection,
+            count: 2..,
+            ..
+        } => {
+            let ids: HashSet<_> = profile.iter().map(element_id_of).collect();
+            if let Some(missing) = selection.iter().find(|id| !ids.contains(id.as_str())) {
+                let reason = match f {
+                    Feature::SketchPatternLinear { .. } => "sketch_pattern_linear_elem_not_found",
+                    Feature::SketchPatternCircular { .. } => {
+                        "sketch_pattern_circular_elem_not_found"
+                    }
+                    _ => "sketch_mirror_elem_not_found",
+                };
+                return Err(FeatureCrudError::SketchElementNotResolved {
+                    feature_id: f.id().into(),
+                    sketch_ref: sketch.clone(),
+                    elem1_id: missing.clone(),
+                    elem2_id: String::new(),
+                    reason,
+                });
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Pattern selection still uses its original CreateSketch contract. Other edit
+/// operations resolve their inputs against the most recent profile.
+fn reference_profile<'a>(
+    f: &Feature,
+    state: &'a SketchState<'_>,
+    features: &'a [Feature],
+) -> &'a [SketchElement] {
+    if matches!(
+        f,
+        Feature::SketchPatternLinear { .. } | Feature::SketchPatternCircular { .. }
+    ) {
+        if let Feature::CreateSketch { profile, .. } = &features[state.created_at] {
+            return profile;
+        }
+    }
+    &state.profile
+}
+
 fn refs_resolve_in_state(
     f: &Feature,
     features: &[Feature],
-    sketches_at: &HashMap<String, usize>,
+    sketches_at: &HashMap<String, SketchState<'_>>,
     live_bodies_at: &HashMap<String, usize>,
 ) -> bool {
     // 全 variant 共通の transitive implicit body refs check:
@@ -268,141 +358,19 @@ fn refs_resolve_in_state(
         | Feature::Intersect { target, tool, .. } => {
             live_bodies_at.contains_key(target) && live_bodies_at.contains_key(tool)
         }
-        Feature::SketchOffset { sketch, .. } => {
-            // A01: SketchOffset build-level contract requires single Circle profile.
-            // Check that referenced CreateSketch.profile is exactly one Circle.
-            match sketches_at.get(sketch.as_str()) {
-                Some(&idx) => {
-                    if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                        profile.len() == 1 && matches!(profile[0], SketchElement::Circle { .. })
-                    } else {
-                        false
-                    }
-                }
-                None => false,
-            }
-        }
-        Feature::SketchFillet {
-            sketch,
-            elem1_id,
-            elem2_id,
-            ..
-        } => {
-            // Element-level gate (Codex R01): both elements must resolve to adjacent Lines
-            // in the *original* CreateSketch profile. This is sound but incomplete — see plan.md.
-            match sketches_at.get(sketch.as_str()) {
-                Some(&idx) => match &features[idx] {
-                    Feature::CreateSketch { profile, .. } => {
-                        match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
-                            profile, elem1_id, elem2_id,
-                        ) {
-                            Ok((a, b)) => {
-                                matches!(profile[a], SketchElement::Line { .. })
-                                    && matches!(profile[b], SketchElement::Line { .. })
-                            }
-                            Err(_) => false,
-                        }
-                    }
-                    _ => false,
-                },
-                None => false,
-            }
-        }
-        Feature::SketchChamfer {
-            sketch,
-            elem1_id,
-            elem2_id,
-            ..
-        } => {
-            // Element-level gate: same contract as SketchFillet — resolved against the
-            // *original* CreateSketch profile. Derived chamfer Lines (`*_chamfer_line`)
-            // inserted by an earlier SketchChamfer are NOT resolvable here (T10 false-reject);
-            // non-adjacency introduced by an earlier Chamfer is NOT detected here (T11
-            // false-accept). Geometry (`length`) is not validated — gate is a ref-resolution
-            // check, not a geometry validator.
-            match sketches_at.get(sketch.as_str()) {
-                Some(&idx) => match &features[idx] {
-                    Feature::CreateSketch { profile, .. } => {
-                        match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
-                            profile, elem1_id, elem2_id,
-                        ) {
-                            Ok((a, b)) => {
-                                matches!(profile[a], SketchElement::Line { .. })
-                                    && matches!(profile[b], SketchElement::Line { .. })
-                            }
-                            Err(_) => false,
-                        }
-                    }
-                    _ => false,
-                },
-                None => false,
-            }
-        }
-        Feature::SketchMirror {
-            sketch, selection, ..
-        } => sketch_selection_resolves(features, sketches_at, sketch, selection),
-        Feature::SketchPatternLinear {
-            sketch,
-            selection,
-            count,
-            ..
-        }
-        | Feature::SketchPatternCircular {
-            sketch,
-            selection,
-            count,
-            ..
-        } => {
-            // count<=1 は kernel 側が `selection` を一切参照しない no-op (count=0 はエラー、
-            // count=1 は source をそのまま返す)。insert 経路の element-level gate と同じく
-            // `count >= 2` のときだけ selection を検証する (Codex #299 R01 と整合)。
-            if *count >= 2 {
-                sketch_selection_resolves(features, sketches_at, sketch, selection)
-            } else {
-                sketches_at.contains_key(sketch.as_str())
-            }
+        Feature::SketchOffset { sketch, .. }
+        | Feature::SketchFillet { sketch, .. }
+        | Feature::SketchChamfer { sketch, .. }
+        | Feature::SketchMirror { sketch, .. }
+        | Feature::SketchPatternLinear { sketch, .. }
+        | Feature::SketchPatternCircular { sketch, .. } => {
+            sketches_at.get(sketch).is_some_and(|state| {
+                check_element_refs(f, reference_profile(f, state, features)).is_ok()
+            })
         }
         // CreateSketch の直接 plane_ref も上の transitive ループでカバーされる
         // (feature_implicit_body_refs が CreateSketch 自身の plane_ref を返す)
         _ => true,
-    }
-}
-
-/// Resolve a `selection` of sketch element ids against the *original* `CreateSketch.profile`
-/// that `sketch` refers to.
-///
-/// Empty selection means "all elements" and always resolves (matches the SketchOffset
-/// precedent and the insert-path element-level gate in `check_refs_resolve_before`).
-///
-/// This keeps `refs_resolve_in_state` (edit/suppress/delete/reorder path) in agreement with
-/// the insert-path gate: without it, `FeatureCrud::edit` could rename or remove an element a
-/// downstream SketchMirror/SketchPattern* `selection` depends on without tripping
-/// `EditBreaksConsumer`, and the breakage would only surface later in
-/// `build_bodies_from_features` (Codex #299 STEP 7.5 A01, false-accept-on-edit).
-///
-/// Known limitation (unchanged, tracked in #331): the check is against the ORIGINAL
-/// `CreateSketch.profile`, not the current profile that preceding sketch-edit features
-/// (Fillet/Chamfer/Offset/Mirror/Pattern) would have produced. A selection naming such a
-/// derived id is therefore treated as unresolved here — the same false-reject already
-/// documented for the insert path.
-fn sketch_selection_resolves(
-    features: &[Feature],
-    sketches_at: &HashMap<String, usize>,
-    sketch: &str,
-    selection: &[String],
-) -> bool {
-    let Some(&idx) = sketches_at.get(sketch) else {
-        return false;
-    };
-    if selection.is_empty() {
-        return true;
-    }
-    match &features[idx] {
-        Feature::CreateSketch { profile, .. } => {
-            let ids: HashSet<&str> = profile.iter().map(element_id_of).collect();
-            selection.iter().all(|s| ids.contains(s.as_str()))
-        }
-        _ => false,
     }
 }
 
@@ -426,11 +394,11 @@ fn simulate_history(
     features: &[Feature],
     up_to: usize,
 ) -> (
-    HashMap<String, usize>,
+    HashMap<String, SketchState<'_>>,
     HashMap<String, usize>,
     HashSet<usize>,
 ) {
-    let mut sketches_at: HashMap<String, usize> = HashMap::new();
+    let mut sketches_at = HashMap::new();
     let mut live_bodies_at: HashMap<String, usize> = HashMap::new();
     let mut executed_at: HashSet<usize> = HashSet::new();
 
@@ -440,14 +408,22 @@ fn simulate_history(
         }
 
         match f {
-            Feature::CreateSketch { id, suppressed, .. } => {
+            Feature::CreateSketch {
+                id,
+                profile,
+                suppressed,
+                ..
+            } => {
                 if *suppressed {
                     continue;
                 }
                 if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
                     continue;
                 }
-                sketches_at.entry(id.clone()).or_insert(i);
+                sketches_at.entry(id.clone()).or_insert(SketchState {
+                    created_at: i,
+                    profile: Cow::Borrowed(profile),
+                });
                 executed_at.insert(i);
             }
             Feature::CreateBox { id, suppressed, .. }
@@ -548,74 +524,21 @@ fn simulate_history(
                 live_bodies_at.insert(id.clone(), i);
                 executed_at.insert(i);
             }
-            Feature::SketchOffset {
-                id: _, suppressed, ..
-            } => {
-                if *suppressed {
+            Feature::SketchOffset { sketch, .. }
+            | Feature::SketchFillet { sketch, .. }
+            | Feature::SketchChamfer { sketch, .. }
+            | Feature::SketchMirror { sketch, .. }
+            | Feature::SketchPatternLinear { sketch, .. }
+            | Feature::SketchPatternCircular { sketch, .. } => {
+                if f.is_suppressed()
+                    || !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at)
+                {
                     continue;
                 }
-                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
-                    continue;
-                }
-                // SketchOffset modifies sketch profile but does not produce a body.
-                // It is recorded as executed but does not register to live_bodies_at.
-                executed_at.insert(i);
-            }
-            Feature::SketchFillet {
-                id: _, suppressed, ..
-            } => {
-                if *suppressed {
-                    continue;
-                }
-                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
-                    continue;
-                }
-                // SketchFillet modifies sketch profile but does not produce a body.
-                executed_at.insert(i);
-            }
-            Feature::SketchChamfer {
-                id: _, suppressed, ..
-            } => {
-                if *suppressed {
-                    continue;
-                }
-                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
-                    continue;
-                }
-                // SketchChamfer modifies sketch profile but does not produce a body.
-                executed_at.insert(i);
-            }
-            Feature::SketchMirror {
-                id: _, suppressed, ..
-            } => {
-                if *suppressed {
-                    continue;
-                }
-                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
-                    continue;
-                }
-                // SketchMirror modifies sketch profile but does not produce a body.
-                executed_at.insert(i);
-            }
-            Feature::SketchPatternLinear {
-                id: _, suppressed, ..
-            } => {
-                if *suppressed {
-                    continue;
-                }
-                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
-                    continue;
-                }
-                executed_at.insert(i);
-            }
-            Feature::SketchPatternCircular {
-                id: _, suppressed, ..
-            } => {
-                if *suppressed {
-                    continue;
-                }
-                if !refs_resolve_in_state(f, features, &sketches_at, &live_bodies_at) {
-                    continue;
+                let state = sketches_at.get_mut(sketch).expect("resolved sketch");
+                // A geometry-only failure is left to build. It creates no derived IDs.
+                if let Ok(profile) = crate::sketch_edit::apply(f, &state.profile) {
+                    state.profile = Cow::Owned(profile);
                 }
                 executed_at.insert(i);
             }
@@ -664,7 +587,9 @@ fn check_refs_resolve_before(
 
     // Check sketch refs
     for sketch_ref in feature_sketch_refs(f) {
-        if let Some(&idx) = sketches_at.get(sketch_ref) {
+        if let Some(state) = sketches_at.get(sketch_ref) {
+            check_element_refs(f, reference_profile(f, state, features))?;
+            let idx = state.created_at;
             if idx >= at {
                 return Err(FeatureCrudError::InsertBeforeProducer {
                     feature_id: fid.to_string(),
@@ -804,224 +729,33 @@ fn check_refs_resolve_before(
         }
     }
 
-    // A01 fix (round 4): SketchOffset requires single Circle profile.
-    // Even if sketch ref resolves in sketches_at, verify the profile is Circle-only.
-    if let Feature::SketchOffset { sketch, .. } = f {
-        if let Some(&idx) = sketches_at.get(sketch.as_str()) {
-            if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                let is_circle_only =
-                    profile.len() == 1 && matches!(profile[0], SketchElement::Circle { .. });
-                if !is_circle_only {
-                    return Err(FeatureCrudError::SketchNotFound {
-                        feature_id: fid.to_string(),
-                        sketch_ref: sketch.clone(),
-                    });
-                }
-            }
-        }
-    }
-
-    // SketchFillet element-level gate (insert path): both element IDs must resolve to
-    // adjacent Lines in the referenced CreateSketch profile. Geometry (radius, tangent
-    // length) is intentionally NOT validated here — history gate is a ref-resolution
-    // check, not a geometry validator (matches SketchOffset precedent on `distance`).
-    if let Feature::SketchFillet {
-        sketch,
-        elem1_id,
-        elem2_id,
-        ..
-    } = f
-    {
-        if let Some(&idx) = sketches_at.get(sketch.as_str()) {
-            if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                let reason: Option<&'static str> =
-                    match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
-                        profile, elem1_id, elem2_id,
-                    ) {
-                        Ok((a, b)) => {
-                            if !matches!(profile[a], SketchElement::Line { .. })
-                                || !matches!(profile[b], SketchElement::Line { .. })
-                            {
-                                Some("sketch_fillet_only_line_line")
-                            } else {
-                                None
-                            }
-                        }
-                        Err(engawa_kernel::error::KernelError::InvalidParameter { kind }) => {
-                            Some(kind)
-                        }
-                        Err(_) => Some("sketch_fillet_elem_unresolved"),
-                    };
-                if let Some(reason) = reason {
-                    return Err(FeatureCrudError::SketchElementNotResolved {
-                        feature_id: fid.to_string(),
-                        sketch_ref: sketch.clone(),
-                        elem1_id: elem1_id.clone(),
-                        elem2_id: elem2_id.clone(),
-                        reason,
-                    });
-                }
-            }
-        }
-    }
-
-    // SketchChamfer element-level gate (insert path): same contract as SketchFillet —
-    // both element IDs must resolve to adjacent Lines in the *original* CreateSketch
-    // profile. Geometry (`length`) is not validated. Known limitations (T10/T11):
-    // a derived chamfer Line id (`*_chamfer_line`) from an earlier SketchChamfer does
-    // not resolve here (false-reject), and non-adjacency introduced by an earlier
-    // Chamfer is not detected here (false-accept). Both are accepted as public contract.
-    if let Feature::SketchChamfer {
-        sketch,
-        elem1_id,
-        elem2_id,
-        ..
-    } = f
-    {
-        if let Some(&idx) = sketches_at.get(sketch.as_str()) {
-            if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                let reason: Option<&'static str> =
-                    match engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(
-                        profile, elem1_id, elem2_id,
-                    ) {
-                        Ok((a, b)) => {
-                            if !matches!(profile[a], SketchElement::Line { .. })
-                                || !matches!(profile[b], SketchElement::Line { .. })
-                            {
-                                Some("sketch_fillet_only_line_line")
-                            } else {
-                                None
-                            }
-                        }
-                        Err(engawa_kernel::error::KernelError::InvalidParameter { kind }) => {
-                            Some(kind)
-                        }
-                        Err(_) => Some("sketch_fillet_elem_unresolved"),
-                    };
-                if let Some(reason) = reason {
-                    return Err(FeatureCrudError::SketchElementNotResolved {
-                        feature_id: fid.to_string(),
-                        sketch_ref: sketch.clone(),
-                        elem1_id: elem1_id.clone(),
-                        elem2_id: elem2_id.clone(),
-                        reason,
-                    });
-                }
-            }
-        }
-    }
-
-    // SketchMirror element-level gate (insert path): when `selection` is non-empty, each
-    // id must resolve in the *original* CreateSketch profile. Empty selection means
-    // "all elements" and is not validated here (matches SketchOffset precedent).
-    // Geometry (axis coincidence, duplicate id) is not validated at this gate — those
-    // are kernel-level fail-fast checks in `apply_sketch_mirror`.
-    //
-    // Known limitation (false-reject): derived element ids produced by earlier
-    // SketchFillet (`{a}_{b}_fillet_arc`/`{a}_{b}_fillet_line`), SketchChamfer
-    // (`{a}_{b}_chamfer_line`), or SketchOffset (`{id}_offset`) resolve in the
-    // current build profile but NOT in the original CreateSketch profile this gate
-    // inspects. A `SketchMirror` whose `selection` references such a derived id
-    // will build successfully via `build_bodies_from_features` but be rejected by
-    // `FeatureCrud::insert` with `sketch_mirror_elem_not_found`. This is the same
-    // shape of false-reject already documented for Fillet/Chamfer (#296/#297 T10)
-    // and is tracked cross-feature in #331 (CRUD gate は元の profile 基準 vs
-    // build は current profile 基準のアーキテクチャ起因)。Acceptance test:
-    // `sketch_mirror_acceptance.rs::t_known_limitation_mirror_derived_elem_false_reject`.
-    if let Feature::SketchMirror {
-        sketch, selection, ..
-    } = f
-    {
-        if !selection.is_empty() {
-            if let Some(&idx) = sketches_at.get(sketch.as_str()) {
-                if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                    let profile_ids: std::collections::HashSet<&str> =
-                        profile.iter().map(element_id_of).collect();
-                    for sid in selection {
-                        if !profile_ids.contains(sid.as_str()) {
-                            return Err(FeatureCrudError::SketchElementNotResolved {
-                                feature_id: fid.to_string(),
-                                sketch_ref: sketch.clone(),
-                                elem1_id: sid.clone(),
-                                elem2_id: String::new(),
-                                reason: "sketch_mirror_elem_not_found",
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // SketchPatternLinear / SketchPatternCircular element-level gate (insert path):
-    // Same shape as SketchMirror, but with an additional `count >= 2` qualifier —
-    // count<=1 is a kernel-level no-op (count=0 → error, count=1 → return source
-    // unchanged without consulting `selection`). Validating selection at count<=1
-    // would create a build-vs-CRUD inconsistency where build succeeds but insert
-    // rejects with `sketch_pattern_*_elem_not_found`. The gate therefore only fires
-    // when copies are actually produced. count==0 itself is left to the kernel's
-    // fail-fast `*_count_zero` check (CRUD gate is a ref-resolution check, not a
-    // geometry validator — matches SketchOffset precedent on `distance`).
-    //
-    // Same false-reject limitation as SketchMirror applies: derived ids from earlier
-    // Fillet/Chamfer/Offset/Mirror resolve in the build profile but not in the
-    // original CreateSketch profile this gate inspects. Tracked in #331.
-    if let Feature::SketchPatternLinear {
-        sketch,
-        selection,
-        count,
-        ..
-    } = f
-    {
-        if *count >= 2 && !selection.is_empty() {
-            if let Some(&idx) = sketches_at.get(sketch.as_str()) {
-                if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                    let profile_ids: std::collections::HashSet<&str> =
-                        profile.iter().map(element_id_of).collect();
-                    for sid in selection {
-                        if !profile_ids.contains(sid.as_str()) {
-                            return Err(FeatureCrudError::SketchElementNotResolved {
-                                feature_id: fid.to_string(),
-                                sketch_ref: sketch.clone(),
-                                elem1_id: sid.clone(),
-                                elem2_id: String::new(),
-                                reason: "sketch_pattern_linear_elem_not_found",
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if let Feature::SketchPatternCircular {
-        sketch,
-        selection,
-        count,
-        ..
-    } = f
-    {
-        if *count >= 2 && !selection.is_empty() {
-            if let Some(&idx) = sketches_at.get(sketch.as_str()) {
-                if let Feature::CreateSketch { profile, .. } = &features[idx] {
-                    let profile_ids: std::collections::HashSet<&str> =
-                        profile.iter().map(element_id_of).collect();
-                    for sid in selection {
-                        if !profile_ids.contains(sid.as_str()) {
-                            return Err(FeatureCrudError::SketchElementNotResolved {
-                                feature_id: fid.to_string(),
-                                sketch_ref: sketch.clone(),
-                                elem1_id: sid.clone(),
-                                elem2_id: String::new(),
-                                reason: "sketch_pattern_circular_elem_not_found",
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     Ok(())
+}
+
+/// Recheck a displaced consumer at its new position to identify the missing input.
+fn displaced_element_error(features: &[Feature], at: usize) -> Option<(FeatureCrudError, String)> {
+    let consumer = &features[at];
+    let sketch = feature_sketch_refs(consumer).first().copied()?;
+    let (sketches, _, _) = simulate_history(features, at);
+    let profile = reference_profile(consumer, sketches.get(sketch)?, features);
+    let error = check_element_refs(consumer, profile).err()?;
+    let lost = match &error {
+        FeatureCrudError::SketchElementNotResolved {
+            elem1_id, elem2_id, ..
+        } => {
+            // A missing ID identifies the broken reference directly. If both still
+            // exist, their adjacency or type has changed and the pair is relevant.
+            [elem1_id, elem2_id]
+                .into_iter()
+                .find(|id| {
+                    !id.is_empty() && !profile.iter().any(|e| element_id_of(e) == id.as_str())
+                })
+                .cloned()
+                .unwrap_or_else(|| format!("{elem1_id}, {elem2_id}"))
+        }
+        _ => sketch.to_owned(),
+    };
+    Some((error, lost))
 }
 
 /// Check that insertion doesn't break downstream consumers.
@@ -1114,6 +848,9 @@ fn check_no_downstream_break(
         if executed_at_post.contains(&post_idx) {
             // still works after
             continue;
+        }
+        if let Some((err, _)) = displaced_element_error(&post_insert, post_idx) {
+            return Err(err);
         }
         // Was working pre, broken post — identify which body of consumer_feat is no longer live post.
         let consumer_refs: Vec<&str> = feature_consumes(consumer_feat);
@@ -1268,7 +1005,9 @@ fn check_edit_preserves_consumers(
                 }
             }
         }
-        let broken_ref = broken_ref.unwrap_or_else(|| "<unknown>".to_string());
+        let broken_ref = broken_ref
+            .or_else(|| displaced_element_error(&post, consumer_idx).map(|(_, lost)| lost))
+            .unwrap_or_else(|| "<unknown>".to_string());
         return Err(FeatureCrudError::EditBreaksConsumer {
             edit_feature_id: new_feature.id().to_string(),
             broken_consumer_id: consumer_feat.id().to_string(),
@@ -1526,9 +1265,12 @@ impl FeatureCrud {
                     edit_feature_id: feature_id.to_string(),
                     broken_consumer_id: orig_id.to_string(),
                     broken_consumer_at: orig_idx,
-                    broken_ref:
-                        "reorder broke this consumer (cycle or producer moved past consumer)"
-                            .to_string(),
+                    broken_ref: displaced_element_error(&post, post_idx)
+                        .map(|(_, lost)| lost)
+                        .unwrap_or_else(|| {
+                            "reorder broke this consumer (cycle or producer moved past consumer)"
+                                .to_string()
+                        }),
                 });
             }
         }
@@ -1578,8 +1320,12 @@ impl FeatureCrud {
                     edit_feature_id: feature_id.to_string(),
                     broken_consumer_id: orig_id.to_string(),
                     broken_consumer_at: orig_idx,
-                    broken_ref: "delete broke this consumer (still referencing deleted feature)"
-                        .to_string(),
+                    broken_ref: displaced_element_error(&post, post_idx)
+                        .map(|(_, lost)| lost)
+                        .unwrap_or_else(|| {
+                            "delete broke this consumer (still referencing deleted feature)"
+                                .to_string()
+                        }),
                 });
             }
         }

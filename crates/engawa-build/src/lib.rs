@@ -1,4 +1,5 @@
 pub mod feature_crud;
+mod sketch_edit;
 
 pub use feature_crud::{FeatureCrud, FeatureCrudError};
 
@@ -490,169 +491,23 @@ pub fn build_bodies_from_features(
                 built.consume(tool);
                 built.register(id.to_string(), result);
             }
-            Feature::SketchOffset {
-                id: _,
-                sketch,
-                selection,
-                distance,
-                suppressed: _,
-            } => {
+            Feature::SketchOffset { sketch, .. }
+            | Feature::SketchFillet { sketch, .. }
+            | Feature::SketchChamfer { sketch, .. }
+            | Feature::SketchMirror { sketch, .. }
+            | Feature::SketchPatternLinear { sketch, .. }
+            | Feature::SketchPatternCircular { sketch, .. } => {
                 let entry =
                     sketches
                         .get(sketch.as_str())
                         .ok_or_else(|| KernelError::SketchNotFound {
                             sketch: sketch.clone(),
                         })?;
-
-                // Source profile: use previously accumulated offsets, or fall back to CreateSketch.profile
-                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
-                    .get(sketch.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| entry.profile.to_vec());
-
-                // Build-level contract: Circle single-element only (Phase 10 scope defense)
-                let out = engawa_kernel::geometry::sketch_offset::apply_sketch_offset_build(
-                    &source, selection, *distance,
-                )?;
-                built_sketch_profiles.insert(sketch.clone(), out);
-                // id remains in feature history only (no body generation)
-            }
-            Feature::SketchFillet {
-                id: _,
-                sketch,
-                elem1_id,
-                elem2_id,
-                radius,
-                suppressed: _,
-            } => {
-                let entry =
-                    sketches
-                        .get(sketch.as_str())
-                        .ok_or_else(|| KernelError::SketchNotFound {
-                            sketch: sketch.clone(),
-                        })?;
-
-                // Source profile: previously accumulated edits, else CreateSketch.profile.
-                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
-                    .get(sketch.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| entry.profile.to_vec());
-
-                let out = engawa_kernel::geometry::sketch_fillet::apply_sketch_fillet_build(
-                    &source, elem1_id, elem2_id, *radius,
-                )?;
-                built_sketch_profiles.insert(sketch.clone(), out);
-            }
-            Feature::SketchChamfer {
-                id: _,
-                sketch,
-                elem1_id,
-                elem2_id,
-                length,
-                suppressed: _,
-            } => {
-                let entry =
-                    sketches
-                        .get(sketch.as_str())
-                        .ok_or_else(|| KernelError::SketchNotFound {
-                            sketch: sketch.clone(),
-                        })?;
-
-                // Source profile: previously accumulated edits, else CreateSketch.profile.
-                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
-                    .get(sketch.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| entry.profile.to_vec());
-
-                let out = engawa_kernel::geometry::sketch_chamfer::apply_sketch_chamfer_build(
-                    &source, elem1_id, elem2_id, *length,
-                )?;
-                built_sketch_profiles.insert(sketch.clone(), out);
-            }
-            Feature::SketchMirror {
-                id: _,
-                id_suffix,
-                sketch,
-                axis_p1,
-                axis_p2,
-                selection,
-                suppressed: _,
-            } => {
-                let entry =
-                    sketches
-                        .get(sketch.as_str())
-                        .ok_or_else(|| KernelError::SketchNotFound {
-                            sketch: sketch.clone(),
-                        })?;
-
-                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
-                    .get(sketch.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| entry.profile.to_vec());
-
-                let out = engawa_kernel::geometry::sketch_mirror::apply_sketch_mirror_with_suffix(
-                    &source,
-                    *axis_p1,
-                    *axis_p2,
-                    selection,
-                    id_suffix.as_deref().unwrap_or("mirror"),
-                )?;
-                built_sketch_profiles.insert(sketch.clone(), out);
-            }
-            Feature::SketchPatternLinear {
-                id: _,
-                sketch,
-                selection,
-                count,
-                direction,
-                distance,
-                suppressed: _,
-            } => {
-                let entry =
-                    sketches
-                        .get(sketch.as_str())
-                        .ok_or_else(|| KernelError::SketchNotFound {
-                            sketch: sketch.clone(),
-                        })?;
-
-                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
-                    .get(sketch.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| entry.profile.to_vec());
-
-                let out = engawa_kernel::geometry::sketch_pattern::apply_sketch_pattern_linear(
-                    &source, selection, *count, *direction, *distance,
-                )?;
-                built_sketch_profiles.insert(sketch.clone(), out);
-            }
-            Feature::SketchPatternCircular {
-                id: _,
-                sketch,
-                selection,
-                center,
-                count,
-                total_angle,
-                suppressed: _,
-            } => {
-                let entry =
-                    sketches
-                        .get(sketch.as_str())
-                        .ok_or_else(|| KernelError::SketchNotFound {
-                            sketch: sketch.clone(),
-                        })?;
-
-                let source: Vec<engawa_format::SketchElement> = built_sketch_profiles
-                    .get(sketch.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| entry.profile.to_vec());
-
-                let out = engawa_kernel::geometry::sketch_pattern::apply_sketch_pattern_circular(
-                    &source,
-                    selection,
-                    *center,
-                    *count,
-                    *total_angle,
-                )?;
+                let profile = built_sketch_profiles
+                    .get(sketch)
+                    .map(Vec::as_slice)
+                    .unwrap_or(entry.profile);
+                let out = sketch_edit::apply(feature, profile)?;
                 built_sketch_profiles.insert(sketch.clone(), out);
             }
         }

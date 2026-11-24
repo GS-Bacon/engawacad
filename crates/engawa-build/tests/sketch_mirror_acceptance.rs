@@ -555,14 +555,8 @@ fn t11_crud_gate_edit_breaks_mirror_selection() {
     );
 }
 
-/// T_known_limitation_mirror_derived_elem_false_reject:
-/// 先行 SketchFillet が挿入した派生 Arc (`l1_l2_fillet_arc`) を SketchMirror の
-/// selection に指定した場合、build は current profile 基準で成功するが CRUD gate は
-/// 元の CreateSketch profile 基準で照合するため `sketch_mirror_elem_not_found` で拒否される
-/// (既知の false-reject 制約、`feature_crud.rs` の SketchMirror element-level gate コメント
-/// および plan.md Non-Goals 参照。Fillet/Chamfer と同型で Issue #331 で横断対応予定)。
 #[test]
-fn t_known_limitation_mirror_derived_elem_false_reject() {
+fn crud_mirror_resolves_arc_from_preceding_fillet() {
     // Original profile: closed rectangle (l1..l4).
     let rect = vec![
         SketchElement::Line {
@@ -624,25 +618,13 @@ fn t_known_limitation_mirror_derived_elem_false_reject() {
         "build should accept derived fillet_arc ref, got {build_result:?}"
     );
 
-    // (b) CRUD gate: SketchMirror element-level gate inspects the *original* CreateSketch
-    // profile, which contains only l1..l4 — `l1_l2_fillet_arc` is not present, so the gate
-    // rejects with `sketch_mirror_elem_not_found` even though build would succeed.
     let mut doc = Document::new("t");
     doc.root_component.features = vec![create_sk, fillet];
-    let err = FeatureCrud::insert(&doc, mirror, 2).unwrap_err();
-    match err {
-        FeatureCrudError::SketchElementNotResolved {
-            reason,
-            elem1_id,
-            sketch_ref,
-            feature_id,
-            ..
-        } if reason == "sketch_mirror_elem_not_found"
-            && elem1_id == "l1_l2_fillet_arc"
-            && sketch_ref == "sk1"
-            && feature_id == "m1" => {}
-        other => panic!("expected SketchElementNotResolved, got {other:?}"),
-    }
+    let inserted = FeatureCrud::insert(&doc, mirror, 2).unwrap();
+    let err = FeatureCrud::suppress(&inserted, "f1", true).unwrap_err();
+    assert!(
+        matches!(err, FeatureCrudError::EditBreaksConsumer { broken_consumer_id, broken_ref, .. } if broken_consumer_id == "m1" && broken_ref == "l1_l2_fillet_arc")
+    );
 }
 
 /// A mirror on the line x+y=k leaves precisely the chosen quadrant's center fixed.
