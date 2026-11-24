@@ -934,6 +934,8 @@ fn ci() -> ExitCode {
             "./.claude/skills/3ailoop/scripts/loop-split-detector.test.ts",
             // #262: dispatch-glm-review.ts の dispatch-failure 検出回帰スイート。
             "./.claude/skills/3ai/scripts/__tests__/dispatch-glm-review.test.ts",
+            "./.claude/skills/3ai/scripts/__tests__/final-review-retry.test.ts",
+            "./.claude/skills/3ai/scripts/__tests__/working-tree-diff.test.ts",
             // ADR-013 自動 accept フロー (regen-tracker / pause-detector rescan /
             // decision-matrix-lint / auto-accept) を回帰スイートに組み込む。
             "./.claude/skills/3ailoop/scripts/loop-adr-regen-tracker.test.ts",
