@@ -46,6 +46,14 @@ pub enum FeatureCrudError {
         reason: &'static str,
     },
 
+    /// A derived element would reuse an ID already present in this sketch.
+    #[error("feature {feature_id} cannot resolve sketch {sketch_ref:?}: derived element ID {element_id:?} collides with an existing element")]
+    SketchElementIdCollision {
+        feature_id: String,
+        sketch_ref: String,
+        element_id: String,
+    },
+
     /// Referenced body does not exist, is not yet created, or was already consumed.
     #[error("feature {feature_id} references body {body_ref:?} that does not exist, is created after this feature, or was already consumed")]
     BodyNotFound {
@@ -225,6 +233,8 @@ fn feature_consumes(f: &Feature) -> Vec<&str> {
 struct SketchState<'a> {
     created_at: usize,
     profile: Cow<'a, [SketchElement]>,
+    // A failed producer makes its output name ambiguous with an existing element.
+    collision: Option<String>,
 }
 
 /// Element-reference checks shared by insert, edit and prefix replay. Geometry errors
@@ -328,6 +338,63 @@ fn reference_profile<'a>(
     &state.profile
 }
 
+/// Replay a candidate edit once. Only structural failures affect the CRUD gate.
+fn replay_sketch_ref(
+    feature: &Feature,
+    sketch: &str,
+    state: &SketchState<'_>,
+    features: &[Feature],
+) -> Result<Option<Vec<SketchElement>>, FeatureCrudError> {
+    use engawa_kernel::error::KernelError;
+    let collision = |element_id: String| FeatureCrudError::SketchElementIdCollision {
+        feature_id: feature.id().into(),
+        sketch_ref: sketch.into(),
+        element_id,
+    };
+    if let Some(id) = &state.collision {
+        return Err(collision(id.clone()));
+    }
+    // Extrusions read the sketch and do not produce a new profile.
+    if matches!(
+        feature,
+        Feature::Extrude { .. } | Feature::ExtrudeCut { .. }
+    ) {
+        return Ok(None);
+    }
+    check_element_refs(feature, reference_profile(feature, state, features))?;
+    let profile = &state.profile;
+    match crate::sketch_edit::apply(feature, profile) {
+        Ok(result) => Ok(Some(result)),
+        Err(KernelError::DegenerateSketchElement {
+            element_id,
+            reason:
+                "mirror_duplicate_id" | "pattern_linear_duplicate_id" | "pattern_circular_duplicate_id",
+        }) => Err(collision(element_id)),
+        Err(KernelError::InvalidParameter {
+            kind: "sketch_chamfer_line_id_collision" | "sketch_fillet_arc_id_collision",
+        }) => {
+            let (first, second, suffix) = match feature {
+                Feature::SketchChamfer {
+                    elem1_id, elem2_id, ..
+                } => (elem1_id, elem2_id, "chamfer_line"),
+                Feature::SketchFillet {
+                    elem1_id, elem2_id, ..
+                } => (elem1_id, elem2_id, "fillet_arc"),
+                _ => unreachable!("only corner edits produce this collision"),
+            };
+            let (a, b) =
+                engawa_kernel::geometry::sketch_fillet::find_adjacent_pair(profile, first, second)
+                    .expect("kernel found adjacent elements before checking their derived ID");
+            Err(collision(format!(
+                "{}_{}_{suffix}",
+                element_id_of(&profile[a]),
+                element_id_of(&profile[b])
+            )))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 fn refs_resolve_in_state(
     f: &Feature,
     features: &[Feature],
@@ -348,13 +415,18 @@ fn refs_resolve_in_state(
             fuse_target,
             ..
         } => {
-            sketches_at.contains_key(sketch)
+            sketches_at
+                .get(sketch)
+                .is_some_and(|state| state.collision.is_none())
                 && fuse_target
                     .as_ref()
                     .is_none_or(|t| live_bodies_at.contains_key(t))
         }
         Feature::ExtrudeCut { sketch, target, .. } => {
-            sketches_at.contains_key(sketch) && live_bodies_at.contains_key(target)
+            sketches_at
+                .get(sketch)
+                .is_some_and(|state| state.collision.is_none())
+                && live_bodies_at.contains_key(target)
         }
         Feature::Cut { target, tool, .. }
         | Feature::Fuse { target, tool, .. }
@@ -366,11 +438,7 @@ fn refs_resolve_in_state(
         | Feature::SketchChamfer { sketch, .. }
         | Feature::SketchMirror { sketch, .. }
         | Feature::SketchPatternLinear { sketch, .. }
-        | Feature::SketchPatternCircular { sketch, .. } => {
-            sketches_at.get(sketch).is_some_and(|state| {
-                check_element_refs(f, reference_profile(f, state, features)).is_ok()
-            })
-        }
+        | Feature::SketchPatternCircular { sketch, .. } => sketches_at.contains_key(sketch),
         // CreateSketch の直接 plane_ref も上の transitive ループでカバーされる
         // (feature_implicit_body_refs が CreateSketch 自身の plane_ref を返す)
         _ => true,
@@ -426,6 +494,7 @@ fn simulate_history(
                 sketches_at.entry(id.clone()).or_insert(SketchState {
                     created_at: i,
                     profile: Cow::Borrowed(profile),
+                    collision: None,
                 });
                 executed_at.insert(i);
             }
@@ -539,9 +608,14 @@ fn simulate_history(
                     continue;
                 }
                 let state = sketches_at.get_mut(sketch).expect("resolved sketch");
-                // A geometry-only failure is left to build. It creates no derived IDs.
-                if let Ok(profile) = crate::sketch_edit::apply(f, &state.profile) {
-                    state.profile = Cow::Owned(profile);
+                match replay_sketch_ref(f, sketch, state, features) {
+                    Ok(Some(profile)) => state.profile = Cow::Owned(profile),
+                    Ok(None) => {} // Geometry-only failures are diagnosed by build.
+                    Err(FeatureCrudError::SketchElementIdCollision { element_id, .. }) => {
+                        state.collision = Some(element_id);
+                        continue;
+                    }
+                    Err(_) => continue,
                 }
                 executed_at.insert(i);
             }
@@ -591,7 +665,7 @@ fn check_refs_resolve_before(
     // Check sketch refs
     for sketch_ref in feature_sketch_refs(f) {
         if let Some(state) = sketches_at.get(sketch_ref) {
-            check_element_refs(f, reference_profile(f, state, features))?;
+            replay_sketch_ref(f, sketch_ref, state, features)?;
             let idx = state.created_at;
             if idx >= at {
                 return Err(FeatureCrudError::InsertBeforeProducer {
@@ -740,9 +814,11 @@ fn displaced_element_error(features: &[Feature], at: usize) -> Option<(FeatureCr
     let consumer = &features[at];
     let sketch = feature_sketch_refs(consumer).first().copied()?;
     let (sketches, _, _) = simulate_history(features, at);
-    let profile = reference_profile(consumer, sketches.get(sketch)?, features);
-    let error = check_element_refs(consumer, profile).err()?;
+    let state = sketches.get(sketch)?;
+    let error = replay_sketch_ref(consumer, sketch, state, features).err()?;
+    let profile = reference_profile(consumer, state, features);
     let lost = match &error {
+        FeatureCrudError::SketchElementIdCollision { element_id, .. } => element_id.clone(),
         FeatureCrudError::SketchElementNotResolved {
             elem1_id, elem2_id, ..
         } => {

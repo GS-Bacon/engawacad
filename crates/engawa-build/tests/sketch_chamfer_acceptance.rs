@@ -774,6 +774,27 @@ fn derived_bevel_survives_dimension_edit_and_yaml_reload() {
     );
     check_bevel(&loaded, 16.0);
 
+    // Renaming another original line must not let it impersonate the generated bevel.
+    let mut renamed = loaded.root_component.features[0].clone();
+    let Feature::CreateSketch { profile, .. } = &mut renamed else {
+        unreachable!()
+    };
+    let SketchElement::Line { id, .. } = &mut profile[3] else {
+        unreachable!()
+    };
+    *id = BEVEL.into();
+    let err = FeatureCrud::edit(&loaded, "sk", renamed.clone()).unwrap_err();
+    assert!(
+        matches!(err, FeatureCrudError::EditBreaksConsumer { broken_consumer_id, broken_ref, .. } if broken_consumer_id == "c1" && broken_ref == BEVEL)
+    );
+    let mut damaged = loaded.clone();
+    damaged.root_component.features[0] = renamed;
+    let second = damaged.root_component.features.remove(2);
+    let err = FeatureCrud::insert(&damaged, second, 2).unwrap_err();
+    assert!(
+        matches!(err, FeatureCrudError::SketchElementIdCollision { feature_id, element_id, .. } if feature_id == "c2" && element_id == BEVEL)
+    );
+
     let err = FeatureCrud::delete(&loaded, "c1").unwrap_err();
     assert!(
         matches!(err, FeatureCrudError::EditBreaksConsumer { edit_feature_id, broken_consumer_id, broken_ref, .. } if edit_feature_id == "c1" && broken_consumer_id == "c2" && broken_ref == BEVEL)

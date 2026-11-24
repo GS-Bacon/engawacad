@@ -737,3 +737,25 @@ fn explicit_mirror_suffix_is_a_valid_identifier_segment() {
         }
     }
 }
+
+#[test]
+fn crud_reports_custom_mirror_suffix_collision() {
+    let mut doc =
+        Document::from_yaml(include_str!("../../../examples/sketch_mirror_chain.engawa")).unwrap();
+    // Repeating the second mirror would generate c1_mirror_x again.
+    let mut repeat = doc.root_component.features.last().unwrap().clone();
+    let Feature::SketchMirror { id, selection, .. } = &mut repeat else {
+        unreachable!()
+    };
+    *id = "repeat".into();
+    *selection = vec!["c1".into()];
+    let at = doc.root_component.features.len();
+    let err = FeatureCrud::insert(&doc, repeat.clone(), at).unwrap_err();
+    assert!(
+        matches!(err, FeatureCrudError::SketchElementIdCollision { feature_id, element_id, .. } if feature_id == "repeat" && element_id == "c1_mirror_x")
+    );
+
+    // A document read from disk may already contain such a conflicting producer.
+    doc.root_component.features.push(repeat);
+    assert!(FeatureCrud::delete(&doc, "repeat").is_ok());
+}
