@@ -49,7 +49,7 @@ type ScreenResult = ScreenAttempt & { attempts: ScreenAttempt[] };
 
 const RECEIPT = ".eval/receipt.json";
 
-function fixture(root: string): void {
+export function createScreenFixture(root: string): void {
   mkdirSync(join(root, "src"), { recursive: true });
   mkdirSync(join(root, ".eval"), { recursive: true });
   writeFileSync(join(root, ".gitignore"), ".eval/\ntarget/\n");
@@ -202,7 +202,7 @@ async function runAttempt(candidate: Eligible, outputDir: string, attempt: numbe
   const safe = candidate.identity.replaceAll(/[^a-zA-Z0-9._-]/g, "_");
   const root = mkdtempSync(join(tmpdir(), `engawa-model-screen-${safe}-`));
   const log = resolve(outputDir, `${safe}-attempt${attempt}.jsonl`);
-  fixture(root);
+  createScreenFixture(root);
   const before = baseline(root);
   const prompt = [
     `Fix the failing Rust test in this isolated EngawaCAD-style fixture.`,
