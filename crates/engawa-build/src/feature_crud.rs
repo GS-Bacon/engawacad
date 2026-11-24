@@ -27,10 +27,7 @@ pub enum FeatureCrudError {
 
     /// Document validation failed after the operation.
     #[error("document validation failed after insert: {source}")]
-    Validation {
-        #[from]
-        source: engawa_format::FormatError,
-    },
+    Validation { source: engawa_format::FormatError },
 
     /// Referenced sketch does not exist or is not yet created at insertion point.
     #[error("feature {feature_id} references sketch {sketch_ref:?} that does not exist or is created after this feature")]
@@ -105,6 +102,12 @@ pub enum FeatureCrudError {
         broken_consumer_at: usize,
         broken_ref: String,
     },
+}
+
+impl From<engawa_format::FormatError> for FeatureCrudError {
+    fn from(source: engawa_format::FormatError) -> Self {
+        Self::Validation { source }
+    }
 }
 
 /// Extract sketch IDs referenced by a feature.

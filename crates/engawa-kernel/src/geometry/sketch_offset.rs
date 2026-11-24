@@ -586,7 +586,7 @@ mod tests {
         let out =
             apply_sketch_offset(std::slice::from_ref(&line), &["l1".to_string()], 1.0).unwrap();
         match &out[0] {
-            SketchElement::Line { from, to: _, .. } => {
+            SketchElement::Line { from, .. } => {
                 // Direction (1,1), perpendicular (-1,1) normalized ≈ (-0.707, 0.707)
                 // Offset = (-0.707, 0.707)
                 let expected_offset = 1.0 / 2.0_f64.sqrt();
