@@ -116,11 +116,19 @@ export type DispatchClassification =
   | { kind: "demote"; reason: "pass-with-blockers" }
   | { kind: "fail"; reason: string };
 
+function reachedTurnLimit(rawOut: string, rawErr: string): boolean {
+  // Do not match a diagnostic quoted inside a review finding.
+  const diagnostic = /^Error:\s*Reached max turns(?:\s*\(\d+\))?[.!]?$/i;
+  return diagnostic.test(rawOut.trim()) || (!rawOut.trim() && diagnostic.test(rawErr.trim()));
+}
+
 export function classifyDispatch(
   rawOut: string,
   exitCode: number,
   yamlText: string,
+  rawErr = "",
 ): DispatchClassification {
+  if (reachedTurnLimit(rawOut, rawErr)) return { kind: "fail", reason: "max-turns" };
   if (exitCode !== 0) return { kind: "fail", reason: `claude-exit-${exitCode}` };
   if (isValidReviewYaml(yamlText)) {
     const { verdict, blocking } = parseVerdict(yamlText);
@@ -378,32 +386,41 @@ async function main() {
   // design review は plan.md のみで小さいため従来の 5 turn を維持。
   const defaultMaxTurns = persona === "final" ? "30" : "5";
   const maxTurns = process.env.GLM_MAX_TURNS ?? defaultMaxTurns;
-  const proc = Bun.spawn(
-    [
-      "claude", "-p", prompt,
-      "--append-system-prompt-file", agentFile,
-      "--allowedTools", "Read",
-      "--max-turns", maxTurns,
-      "--output-format", "text",
-    ],
-    { env: glmEnv, stdout: "pipe", stderr: "pipe" }
-  );
-
-  const [rawOut, rawErr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-
-  // #262 r2 (contrarian F02): rawErr を log file に永続化 — 非ゼロ終了系の
-  // 障害は stderr 側にしか情報が出ないことが多く、diagnosis に必要。
-  try {
-    writeFileSync(
-      logPath,
-      `=== stderr ===\n${rawErr}\n=== stdout ===\n${rawOut}\n`,
-      "utf-8",
+  async function runReviewer(input: string, toolArgs: string[], turns: string) {
+    const proc = Bun.spawn(
+      ["claude", "-p", "--append-system-prompt-file", agentFile, ...toolArgs,
+       "--max-turns", turns, "--output-format", "text"],
+      { env: glmEnv, stdin: new Blob([input]), stdout: "pipe", stderr: "pipe" },
     );
-  } catch {}
+    const [rawOut, rawErr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { rawOut, rawErr, exitCode };
+  }
+
+  let attempt = await runReviewer(prompt, ["--allowedTools", "Read"], maxTurns);
+  const logAttempt = (label: string) =>
+    `=== ${label} (exit ${attempt.exitCode}) ===\n=== stderr ===\n${attempt.rawErr}\n=== stdout ===\n${attempt.rawOut}\n`;
+  let log = logAttempt("review");
+
+  // #326/#329: only the CLI's turn-limit diagnostic warrants a second attempt.
+  // Keep the same evidence and require a verdict without another file-reading loop.
+  if (persona === "final" && reachedTurnLimit(attempt.rawOut, attempt.rawErr)) {
+    const context = ["plan.md", "glm-self-review.md"].flatMap(name => {
+      const path = `${featureDir}/${name}`;
+      return existsSync(path) ? [`===== ${name} =====\n${readFileSync(path, "utf-8")}\n===== END ${name} =====`] : [];
+    });
+    const retryPrompt = [
+      "前回は調査中にターン上限に達しました。今回提示した資料で最終レビューを行い、指定の YAML を返してください。必須の受入条件を検証する証拠が不足していれば、その箇所を指摘してください。",
+      ...context, prompt,
+    ].join("\n\n");
+    attempt = await runReviewer(retryPrompt, ["--tools=", "--strict-mcp-config"], "1");
+    log += logAttempt("final review without tools");
+  }
+  const { rawOut, rawErr, exitCode } = attempt;
+  try { writeFileSync(logPath, log, "utf-8"); } catch {}
   if (rawErr.trim()) process.stderr.write(`[GLM stderr] ${rawErr.slice(0, 500)}\n`);
 
   // YAML ブロック抽出 (```yaml ... ``` を優先)
@@ -412,7 +429,7 @@ async function main() {
 
   // #262: dispatch 失敗を明示的に検出して vacuous pass を防ぐ。
   // #293: pass-with-blockers は dispatch_error にせず demote 経路で吸収する。
-  const classification = classifyDispatch(rawOut, exitCode, yamlText);
+  const classification = classifyDispatch(rawOut, exitCode, yamlText, rawErr);
   if (classification.kind === "fail") {
     writeFileSync(resultFile, rawOut, "utf-8");
     const errVerdict = makeErrorVerdict(classification.reason);

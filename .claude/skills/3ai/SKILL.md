@@ -941,6 +941,8 @@ Phase 10 現在は cargo-llvm-cov 未導入のため常に warn + exit 0。Phase
 bun .claude/skills/3ai/scripts/state.ts set features/$ISSUE_NUM-$ISSUE_SLUG/state.json final_review passed
 ```
 
+STEP 7 で CLI がターン上限を返した場合、dispatcher は同じ差分・Issue・テスト要約に手元の計画と self-review を添え、ツールを無効にして 1 回だけ再試行する。両方の出力は結果ファイルの `.log` に残る。
+
 **dispatch_error 分岐 (#262)**: verdict.json が `dispatch_error: true` または `verdict: "error"` の場合は GLM がレビュー出力を生成できなかった (max-turns 到達 / claude CLI 非ゼロ終了 / verdict 行不在) ことを意味する。**fix-dispatch ループに入らない** (再 dispatch しても同様に失敗するため):
 
 ```bash
