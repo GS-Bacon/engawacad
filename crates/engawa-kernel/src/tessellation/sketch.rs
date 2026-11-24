@@ -3,10 +3,9 @@
 //! Converts `SketchElement` variants (Line, Circle, Arc) into 2D point sequences
 //! for downstream extrusion/profile operations.
 
+use super::conic::Conic;
 use crate::error::KernelError;
-use crate::geometry::math::{
-    arc_segment_count, ANGLE_TOLERANCE, EPS_AXIS_RATIO, EPS_DISCRIMINANT, LENGTH_TOLERANCE,
-};
+use crate::geometry::math::{arc_segment_count, ANGLE_TOLERANCE, EPS_AXIS_RATIO, LENGTH_TOLERANCE};
 use engawa_format::SketchElement;
 
 /// Tessellate a sketch element into a 2D polyline.
@@ -158,191 +157,22 @@ pub fn tessellate_sketch_element(
                 .collect())
         }
         SketchElement::Conic { id, coeffs } => {
-            // 係数の有限性チェック
-            if !coeffs.iter().all(|&c| c.is_finite()) {
-                return Err(KernelError::DegenerateSketchElement {
-                    element_id: id.clone(),
-                    reason: "non-finite coeff",
-                });
-            }
-            // 判別式: B² - 4 A C (A=coeffs[0], B=coeffs[1], C=coeffs[2])
-            let a = coeffs[0];
-            let b = coeffs[1];
-            let c = coeffs[2];
-            let discriminant = b * b - 4.0 * a * c;
-            if discriminant.abs() < EPS_DISCRIMINANT {
-                return Err(KernelError::DegenerateSketchElement {
-                    element_id: id.clone(),
-                    reason: "|discriminant| < ε_discriminant",
-                });
-            }
-
-            // === 主軸変換 (canonical form 化) ===
-            // M = [[A, B/2], [B/2, C]] の固有値 λ1, λ2
-            // 閉解: λ = (A+C)/2 ± sqrt(((A-C)/2)² + (B/2)²)
-            let trace = a + c;
-            let det = a * c - b * b / 4.0;
-            let sqrt_term = ((a - c) / 2.0).powi(2) + (b / 2.0).powi(2);
-            let sqrt_val = sqrt_term.sqrt();
-            let lambda1 = trace / 2.0 + sqrt_val;
-            let lambda2 = trace / 2.0 - sqrt_val;
-
-            // 平行移動 t = -M⁻¹ · [D/2, E/2]ᵀ (M が可逆な場合のみ)
-            // M⁻¹ = 1/det * [[C, -B/2], [-B/2, A]]
-            let d = coeffs[3];
-            let e = coeffs[4];
-            let t_x = -(c * d / 2.0 - b * e / 4.0) / det;
-            let t_y = -(-b * d / 4.0 + a * e / 2.0) / det;
-
-            // 定数項 F' = F + (D/2, E/2) · t = -1 + (D/2, E/2) · t
-            let fp = -1.0 + d / 2.0 * t_x + e / 2.0 * t_y;
-
-            // F' が小さい（中心が conic 上に近い）→ 退化 1 点
-            if fp.abs() < LENGTH_TOLERANCE {
-                return Err(KernelError::DegenerateSketchElement {
-                    element_id: id.clone(),
-                    reason: "degenerate point conic",
-                });
-            }
-
-            // === 種別ごとの tessellation ===
-            let n = base_segments.max(1) * 2; // F21: 下限保証後 × 2
-            if discriminant < 0.0 {
-                // F02: lambda1, lambda2, fp の有限性検証
-                if !lambda1.is_finite() || !lambda2.is_finite() || !fp.is_finite() {
-                    return Err(KernelError::DegenerateSketchElement {
-                        element_id: id.clone(),
-                        reason: "non-finite canonical form",
-                    });
-                }
-                // 楕円 (lambda1, lambda2 同符号、fp と逆符号)
-                // a = sqrt(-fp / lambda1), b = sqrt(-fp / lambda2)
-                // 実点チェック: -fp / lambda1, -fp / lambda2 が両方 > 0 である必要がある
-                let ratio1 = -fp / lambda1;
-                let ratio2 = -fp / lambda2;
-                if ratio1 <= 0.0 || ratio2 <= 0.0 {
-                    return Err(KernelError::DegenerateSketchElement {
-                        element_id: id.clone(),
-                        reason: "non-real conic (no real points)",
-                    });
-                }
-                let semi_a = ratio1.sqrt();
-                let semi_b = ratio2.sqrt();
-                // パラメトリック: (a cos t, b sin t)
-                // 回転: lambda1/lamda2 の固有ベクトルで
-                //   e1 方向は (B/2, lambda1 - A) または (lambda1 - C, B/2)
-                let (e1_x, e1_y) = if b.abs() > LENGTH_TOLERANCE {
-                    let v_x = b / 2.0;
-                    let v_y = lambda1 - a;
-                    let norm = (v_x * v_x + v_y * v_y).sqrt();
-                    (v_x / norm, v_y / norm)
-                } else if (lambda1 - a).abs() < LENGTH_TOLERANCE {
-                    // B ≈ 0 → 軸方向は (1,0)
-                    (1.0, 0.0)
-                } else {
-                    (0.0, 1.0)
-                };
-                // e1 に直交する e2
-                let e2_x = -e1_y;
-                let e2_y = e1_x;
-
-                Ok((0..n)
-                    .map(|i| {
-                        let t = (i as f64) * std::f64::consts::TAU / (n as f64);
-                        let local_x = semi_a * t.cos();
-                        let local_y = semi_b * t.sin();
-                        // 主軸座標 → world 座標: (local_x * e1 + local_y * e2) + t
-                        let wx = local_x * e1_x + local_y * e2_x + t_x;
-                        let wy = local_x * e1_y + local_y * e2_y + t_y;
-                        [wx, wy]
-                    })
-                    .collect())
-            } else {
-                // F02: lambda1, lambda2, fp の有限性検証
-                if !lambda1.is_finite() || !lambda2.is_finite() || !fp.is_finite() {
-                    return Err(KernelError::DegenerateSketchElement {
-                        element_id: id.clone(),
-                        reason: "non-finite canonical form",
-                    });
-                }
-                // F12: 双曲線 (discriminant > 0): 実軸の方向は -fp/lambda_i の符号で決まる
-                // canonical form: lambda1*X² + lambda2*Y² + fp = 0
-                // → 実軸 = -fp/lambda_i > 0 となる i (cosh を載せる方向)
-                let r1 = -fp / lambda1; // X² 係数
-                let r2 = -fp / lambda2; // Y² 係数
-                                        // hyperbola なら必ず r1, r2 異符号
-                let (semi_a_sq, semi_b_sq, swap_axes) = if r1 > 0.0 && r2 < 0.0 {
-                    (r1, -r2, false) // X 軸に cosh、Y 軸に sinh
-                } else if r1 < 0.0 && r2 > 0.0 {
-                    (r2, -r1, true) // Y 軸に cosh、X 軸に sinh
-                } else {
-                    return Err(KernelError::DegenerateSketchElement {
-                        element_id: id.clone(),
-                        reason: "non-real hyperbola (no real points)",
-                    });
-                };
-                if !semi_a_sq.is_finite() || !semi_b_sq.is_finite() {
-                    return Err(KernelError::DegenerateSketchElement {
-                        element_id: id.clone(),
-                        reason: "non-real hyperbola (no real points)",
-                    });
-                }
-                let semi_a = semi_a_sq.sqrt();
-                let semi_b = semi_b_sq.sqrt();
-                // パラメトリック: (a cosh t, b sinh t), t ∈ [-2, 2] (AABB clip 相当)
-                let t_min = -2.0;
-                let t_max = 2.0;
-
-                // 主軸方向 (楕円と同じロジック)
-                let (e1_x, e1_y) = if b.abs() > LENGTH_TOLERANCE {
-                    let v_x = b / 2.0;
-                    let v_y = lambda1 - a;
-                    let norm = (v_x * v_x + v_y * v_y).sqrt();
-                    (v_x / norm, v_y / norm)
-                } else if (lambda1 - a).abs() < LENGTH_TOLERANCE {
-                    (1.0, 0.0)
-                } else {
-                    (0.0, 1.0)
-                };
-                let e2_x = -e1_y;
-                let e2_y = e1_x;
-
-                Ok((0..n)
-                    .map(|i| {
-                        let param = t_min + (i as f64) * (t_max - t_min) / ((n - 1) as f64);
-                        let (local_x, local_y) = if !swap_axes {
-                            (semi_a * param.cosh(), semi_b * param.sinh())
-                        } else {
-                            (semi_b * param.sinh(), semi_a * param.cosh())
-                        };
-                        let wx = local_x * e1_x + local_y * e2_x + t_x;
-                        let wy = local_x * e1_y + local_y * e2_y + t_y;
-                        [wx, wy]
-                    })
-                    .collect())
-            }
+            Ok(Conic::from_coeffs(id, *coeffs)?.tessellate(base_segments))
         }
     }
 }
 
-/// Returns true if the sketch element is an open curve (cannot form a closed profile).
-///
-/// - Conic hyperbola (discriminant > 0) → true (open, single branch)
-/// - All other elements → false (closed or can form closed profile)
-///
-/// Used by engawa-build to validate extrusion profiles.
+/// Returns whether this element is an open conic branch.
+/// Use `try_sketch_element_is_open` to diagnose invalid conic input.
 pub fn sketch_element_is_open(elem: &SketchElement) -> bool {
+    try_sketch_element_is_open(elem).unwrap_or(false)
+}
+
+/// Check conic validity before deciding whether a closed profile can contain it.
+pub fn try_sketch_element_is_open(elem: &SketchElement) -> Result<bool, KernelError> {
     match elem {
-        SketchElement::Conic { coeffs, .. } => {
-            // 判別式: B² - 4 A C
-            let a = coeffs[0];
-            let b = coeffs[1];
-            let c = coeffs[2];
-            let discriminant = b * b - 4.0 * a * c;
-            // hyperbola (discriminant > 0) は開曲線
-            discriminant > 0.0
-        }
-        _ => false,
+        SketchElement::Conic { id, coeffs } => Ok(Conic::from_coeffs(id, *coeffs)?.is_open()),
+        _ => Ok(false),
     }
 }
 
@@ -935,9 +765,85 @@ mod tests {
             err,
             KernelError::DegenerateSketchElement {
                 element_id,
-                reason: "|discriminant| < ε_discriminant"
+                reason: "degenerate rank-one conic"
             } if element_id == "c0"
         ));
+    }
+
+    #[test]
+    fn conic_parabolas_are_unsupported_in_both_entry_points() {
+        for coeffs in [
+            [1.0, 0.0, 0.0, 0.0, 1.0],  // x² + y - 1 = 0
+            [0.0, 0.0, 1.0, 1.0, 0.0],  // swapped axes
+            [1.0, 2.0, 1.0, 1.0, -1.0], // rotated
+        ] {
+            let elem = SketchElement::Conic {
+                id: "p".into(),
+                coeffs,
+            };
+            for err in [
+                tessellate_sketch_element(&elem, 8).unwrap_err(),
+                try_sketch_element_is_open(&elem).unwrap_err(),
+            ] {
+                assert!(matches!(
+                    err,
+                    KernelError::UnsupportedFeature {
+                        kind: "conic_parabola"
+                    }
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn conic_degeneracy_depends_on_linear_and_constant_terms() {
+        for (coeffs, expected) in [
+            ([1., 2., 1., 2., 2.], "degenerate rank-one conic"),
+            ([-1., 0., -1., 2., 0.], "degenerate point conic"),
+            ([-1., 0., 1., 2., 0.], "degenerate intersecting lines"),
+            ([-1., 0., -1., 0., 0.], "non-real conic (no real points)"),
+            ([0., 0., 0., 0., 1.], "no quadratic term"),
+        ] {
+            let elem = SketchElement::Conic {
+                id: "bad".into(),
+                coeffs,
+            };
+            assert!(matches!(try_sketch_element_is_open(&elem),
+                Err(KernelError::DegenerateSketchElement { element_id, reason })
+                if element_id == "bad" && reason == expected));
+        }
+    }
+
+    #[test]
+    fn conic_discriminant_checks_shape_independently_of_size() {
+        for scale in [1e-300, 1., 1e300] {
+            let circle = SketchElement::Conic {
+                id: "circle".into(),
+                coeffs: [scale, 0., scale, 0., 0.],
+            };
+            assert!(!try_sketch_element_is_open(&circle).unwrap());
+            for [x, y] in tessellate_sketch_element(&circle, 8).unwrap() {
+                assert!((x.hypot(y) * scale.sqrt() - 1.).abs() < 1e-12);
+            }
+        }
+        for factor in [0.5, 1.0, 2.0] {
+            let c = factor * crate::EPS_DISCRIMINANT / 4.;
+            let conic = SketchElement::Conic {
+                id: "thin".into(),
+                coeffs: [1., 0., c, 0., 0.],
+            };
+            let result = try_sketch_element_is_open(&conic);
+            if factor < 1.0 {
+                assert!(matches!(
+                    result,
+                    Err(KernelError::UnsupportedFeature {
+                        kind: "conic_near_parabolic"
+                    })
+                ));
+            } else {
+                assert!(!result.unwrap());
+            }
+        }
     }
 
     /// T_DEG_conic_nan: NaN coeff fails.

@@ -1,3 +1,4 @@
+mod conic;
 pub mod sketch;
 pub mod stl;
 pub use sketch::sketch_element_is_open;

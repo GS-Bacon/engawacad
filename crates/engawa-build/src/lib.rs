@@ -596,14 +596,14 @@ fn validate_sketch_element_ids(
 /// deferred to runtime (tessellate_sketch_element produces closed polylines).
 /// For Conic hyperbola (discriminant > 0), rejects as open curve (F05).
 fn validate_profile_closed(elements: &[engawa_format::SketchElement]) -> Result<(), KernelError> {
-    use engawa_kernel::tessellation::sketch_element_is_open;
+    use engawa_kernel::tessellation::sketch::try_sketch_element_is_open;
     use engawa_kernel::LENGTH_TOLERANCE;
     if elements.is_empty() {
         return Err(KernelError::InvalidParameter { kind: "profile" });
     }
     // F05: reject hyperbola conic (open curve) in profile
     for elem in elements {
-        if sketch_element_is_open(elem) {
+        if try_sketch_element_is_open(elem)? {
             return Err(KernelError::InvalidParameter { kind: "profile" });
         }
     }

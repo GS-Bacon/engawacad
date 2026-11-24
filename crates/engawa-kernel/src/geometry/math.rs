@@ -20,11 +20,8 @@ pub const RELATIVE_TOLERANCE: f64 = 1e-9;
 /// ADR-017 §2.
 pub const EPS_AXIS_RATIO: f64 = 1e-6;
 
-/// Discriminant tolerance for conic degeneracy detection.
-/// Conic `A x² + B xy + C y² + D x + E y + F = 0` (F = -1 normalized).
-/// Discriminant = B² - 4 A C.
-/// If `|discriminant| < EPS_DISCRIMINANT`, the conic is degenerate (parabolic or line pair).
-/// ADR-017 §2.
+/// Minimum absolute scaled quadratic discriminant for stable central conic tessellation.
+/// ADR-017 §2 defines separate checks for parabolas and degenerate conics.
 pub const EPS_DISCRIMINANT: f64 = 1e-9;
 
 // ---------------------------------------------------------------------------
