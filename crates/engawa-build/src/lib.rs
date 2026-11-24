@@ -571,6 +571,7 @@ pub fn build_bodies_from_features(
             }
             Feature::SketchMirror {
                 id: _,
+                id_suffix,
                 sketch,
                 axis_p1,
                 axis_p2,
@@ -589,8 +590,12 @@ pub fn build_bodies_from_features(
                     .cloned()
                     .unwrap_or_else(|| entry.profile.to_vec());
 
-                let out = engawa_kernel::geometry::sketch_mirror::apply_sketch_mirror(
-                    &source, *axis_p1, *axis_p2, selection,
+                let out = engawa_kernel::geometry::sketch_mirror::apply_sketch_mirror_with_suffix(
+                    &source,
+                    *axis_p1,
+                    *axis_p2,
+                    selection,
+                    id_suffix.as_deref().unwrap_or("mirror"),
                 )?;
                 built_sketch_profiles.insert(sketch.clone(), out);
             }

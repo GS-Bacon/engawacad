@@ -335,6 +335,7 @@ fn t_deg_sketch_ref_not_found() {
         },
         Feature::SketchMirror {
             id: "m1".to_string(),
+            id_suffix: None,
             sketch: "missing_sketch".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [0.0, 1.0],
@@ -374,6 +375,7 @@ fn t07_crud_gate_delete_sketch_breaks_mirror() {
         },
         Feature::SketchMirror {
             id: "m1".to_string(),
+            id_suffix: None,
             sketch: "sk1".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [0.0, 1.0],
@@ -412,6 +414,7 @@ fn t08_crud_gate_suppress_sketch_breaks_mirror() {
         },
         Feature::SketchMirror {
             id: "m1".to_string(),
+            id_suffix: None,
             sketch: "sk1".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [0.0, 1.0],
@@ -449,6 +452,7 @@ fn t09_crud_gate_insert_mirror_unknown_sketch() {
     }];
     let bad_mirror = Feature::SketchMirror {
         id: "m1".to_string(),
+        id_suffix: None,
         sketch: "missing_sketch".to_string(),
         axis_p1: [0.0, 0.0],
         axis_p2: [0.0, 1.0],
@@ -483,6 +487,7 @@ fn t10_crud_gate_insert_mirror_unknown_element() {
     }];
     let bad_mirror = Feature::SketchMirror {
         id: "m1".to_string(),
+        id_suffix: None,
         sketch: "sk1".to_string(),
         axis_p1: [0.0, 0.0],
         axis_p2: [0.0, 1.0],
@@ -531,6 +536,7 @@ fn t11_crud_gate_edit_breaks_mirror_selection() {
         sk("c1"),
         Feature::SketchMirror {
             id: "m1".to_string(),
+            id_suffix: None,
             sketch: "sk1".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [0.0, 1.0],
@@ -599,6 +605,7 @@ fn t_known_limitation_mirror_derived_elem_false_reject() {
     };
     let mirror = Feature::SketchMirror {
         id: "m1".to_string(),
+        id_suffix: None,
         sketch: "sk1".to_string(),
         axis_p1: [0.0, 0.0],
         axis_p2: [0.0, 1.0],
@@ -635,5 +642,84 @@ fn t_known_limitation_mirror_derived_elem_false_reject() {
             && sketch_ref == "sk1"
             && feature_id == "m1" => {}
         other => panic!("expected SketchElementNotResolved, got {other:?}"),
+    }
+}
+
+/// A mirror on the line x+y=k leaves precisely the chosen quadrant's center fixed.
+/// Querying each ID through the build path checks its referent as well as its spelling.
+#[test]
+fn mirrored_quadrants_keep_their_references_across_save_and_reload() {
+    let sample = include_str!("../../../examples/sketch_mirror_chain.engawa");
+    let doc = Document::from_yaml(sample).unwrap();
+    let saved = doc.to_yaml().unwrap();
+    assert_eq!(saved, sample);
+    for model in [doc, Document::from_yaml(&saved).unwrap()] {
+        let features = model.root_component.features;
+        let planes = &model.root_component.ref_planes;
+        build_bodies_from_features(&features, planes, &mut IdGenerator::new(0)).unwrap();
+        for (target, sum) in [
+            ("c1", 5.0),
+            ("c1_mirror", -1.0),
+            ("c1_mirror_x", 1.0),
+            ("c1_mirror_mirror_x", -5.0),
+        ] {
+            let mut probe = features.clone();
+            probe.push(Feature::SketchMirror {
+                id: "probe".into(),
+                sketch: "sketch_0".into(),
+                axis_p1: [0.0, sum],
+                axis_p2: [1.0, sum - 1.0],
+                selection: vec![target.into()],
+                id_suffix: Some("probe".into()),
+                suppressed: false,
+            });
+            assert!(matches!(
+                build_bodies_from_features(&probe, planes, &mut IdGenerator::new(0)),
+                Err(KernelError::DegenerateSketchElement { element_id, reason: "mirror_axis_coincident" })
+                    if element_id == target
+            ));
+        }
+    }
+}
+
+#[test]
+fn saved_followup_mirror_resolves_the_same_copy() {
+    // The first document uses exclusively pre-#332 syntax, including the follow-up reference.
+    for (sample, target, center_y) in [
+        (
+            include_str!("../../../examples/sketch_mirror.engawa"),
+            "c1_mirror",
+            0.0,
+        ),
+        (
+            include_str!("../../../examples/sketch_mirror_chain.engawa"),
+            "c1_mirror_mirror_x",
+            -2.0,
+        ),
+    ] {
+        let canonical = Document::from_yaml(sample).unwrap().to_yaml().unwrap();
+        let input = format!("{canonical}  - type: sketch_mirror\n    id: followup\n    sketch: sketch_0\n    axis_p1: [10.0, 0.0]\n    axis_p2: [10.0, 1.0]\n    selection: [{target}]\n");
+        let doc = Document::from_yaml(&input).unwrap();
+        let saved = doc.to_yaml().unwrap();
+        for model in [doc, Document::from_yaml(&saved).unwrap()] {
+            let mut features = model.root_component.features;
+            let planes = &model.root_component.ref_planes;
+            build_bodies_from_features(&features, planes, &mut IdGenerator::new(0)).unwrap();
+            // The follow-up across x=10 maps (-3, center_y) to (23, center_y).
+            let copy = format!("{target}_mirror");
+            features.push(Feature::SketchMirror {
+                id: "probe".into(),
+                sketch: "sketch_0".into(),
+                axis_p1: [23.0, center_y],
+                axis_p2: [24.0, center_y + 1.0],
+                selection: vec![copy.clone()],
+                id_suffix: None,
+                suppressed: false,
+            });
+            assert!(matches!(
+                build_bodies_from_features(&features, planes, &mut IdGenerator::new(0)),
+                Err(KernelError::DegenerateSketchElement { element_id, reason: "mirror_axis_coincident" }) if element_id == copy
+            ));
+        }
     }
 }

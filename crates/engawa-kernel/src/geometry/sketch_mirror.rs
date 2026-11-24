@@ -5,7 +5,7 @@
 //! require iterative parameter re-fitting for trim/segmentation downstream).
 //!
 //! Mirrored duplicates are **appended** to the profile (originals are preserved, not modified),
-//! and receive deterministic ids `"{elem_id}_mirror"`. Input order of `selection` does not
+//! and receive deterministic ids `"{elem_id}_{suffix}"` (default suffix `mirror`). Input order of `selection` does not
 //! affect the result — elements are mirrored in source-array order.
 //!
 //! # Errors
@@ -15,7 +15,7 @@
 //! - `UnsupportedFeature { kind: "sketch_mirror_of_ellipse_or_conic" }` — Ellipse/Conic in selection
 //! - `DegenerateSketchElement { reason: "mirror_axis_coincident" }` — element lies on the axis
 //!   (its reflection coincides with itself)
-//! - `DegenerateSketchElement { reason: "mirror_duplicate_id" }` — derived id `"{elem_id}_mirror"`
+//! - `DegenerateSketchElement { reason: "mirror_duplicate_id" }` — derived id `"{elem_id}_{suffix}"`
 //!   already present in profile
 
 use crate::error::KernelError;
@@ -37,6 +37,18 @@ pub fn apply_sketch_mirror(
     axis_p1: [f64; 2],
     axis_p2: [f64; 2],
     selection: &[String],
+) -> Result<Vec<SketchElement>, KernelError> {
+    apply_sketch_mirror_with_suffix(source, axis_p1, axis_p2, selection, "mirror")
+}
+
+/// Reflect the selected elements and append each copy under `{source_id}_{suffix}`.
+/// A suffix is part of the saved feature, so later operations can reference a particular copy.
+pub fn apply_sketch_mirror_with_suffix(
+    source: &[SketchElement],
+    axis_p1: [f64; 2],
+    axis_p2: [f64; 2],
+    selection: &[String],
+    suffix: &str,
 ) -> Result<Vec<SketchElement>, KernelError> {
     if !is_finite_point(&axis_p1) || !is_finite_point(&axis_p2) {
         return Err(KernelError::InvalidParameter {
@@ -84,7 +96,7 @@ pub fn apply_sketch_mirror(
                 reason: "mirror_axis_coincident",
             });
         }
-        let derived_id = format!("{eid}_mirror");
+        let derived_id = format!("{eid}_{suffix}");
         if existing_ids.contains(derived_id.as_str()) {
             return Err(KernelError::DegenerateSketchElement {
                 element_id: derived_id,

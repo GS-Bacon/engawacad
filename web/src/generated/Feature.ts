@@ -53,6 +53,10 @@ elem2_id: string,
  */
 length: number, suppressed?: boolean, } | { "type": "sketch_mirror", id: string, 
 /**
+ * Suffix of generated element IDs. Use a distinct suffix when mirroring a source again.
+ */
+id_suffix?: string | null, 
+/**
  * Reference to CreateSketch.id
  */
 sketch: string, 

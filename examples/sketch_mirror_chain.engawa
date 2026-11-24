@@ -1,0 +1,34 @@
+schema_version: 2
+version: 0.1.0
+root_component:
+  name: Four symmetric circles
+  features:
+  - type: create_sketch
+    id: sketch_0
+    plane: xy
+    profile:
+    - kind: circle
+      id: c1
+      center:
+      - 3.0
+      - 2.0
+      radius: 1.0
+  - type: sketch_mirror
+    id: across_y
+    sketch: sketch_0
+    axis_p1:
+    - 0.0
+    - 0.0
+    axis_p2:
+    - 0.0
+    - 1.0
+  - type: sketch_mirror
+    id: across_x
+    id_suffix: mirror_x
+    sketch: sketch_0
+    axis_p1:
+    - 0.0
+    - 0.0
+    axis_p2:
+    - 1.0
+    - 0.0

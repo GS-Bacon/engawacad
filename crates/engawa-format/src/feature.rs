@@ -611,12 +611,15 @@ pub enum Feature {
     /// matches SketchOffset's exact same exclusion). Mirrored duplicates are appended to the
     /// profile (originals are preserved, not modified).
     ///
-    /// Derived element id is `"{elem_id}_mirror"` for each mirrored element. The mirror axis
+    /// Derived element id is `"{elem_id}_{id_suffix}"` (default suffix `mirror`). The mirror axis
     /// is defined by two distinct points `axis_p1` / `axis_p2`. `selection` is the element IDs
     /// to mirror; empty = all elements (matches SketchOffset convention).
     #[serde(rename = "sketch_mirror")]
     SketchMirror {
         id: String,
+        /// Suffix of generated element IDs. Use a distinct suffix when mirroring a source again.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id_suffix: Option<String>,
         /// Reference to CreateSketch.id
         sketch: String,
         /// Mirror axis: first point
@@ -2034,6 +2037,7 @@ mod tests {
     fn t_sketch_mirror_roundtrip() {
         let f = Feature::SketchMirror {
             id: "mirror1".to_string(),
+            id_suffix: None,
             sketch: "sketch_0".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [0.0, 1.0],
@@ -2079,6 +2083,7 @@ mod tests {
     fn t_sketch_mirror_selection_present() {
         let f = Feature::SketchMirror {
             id: "mirror2".to_string(),
+            id_suffix: None,
             sketch: "sketch_0".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [1.0, 0.0],
@@ -2102,6 +2107,7 @@ mod tests {
     fn t_sketch_mirror_suppressed_true_serialized() {
         let f = Feature::SketchMirror {
             id: "mirror3".to_string(),
+            id_suffix: None,
             sketch: "sketch_0".to_string(),
             axis_p1: [0.0, 0.0],
             axis_p2: [1.0, 0.0],
