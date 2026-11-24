@@ -59,26 +59,41 @@
       "model": "laguna-s-2.1-free",
       "status": "qualified",
       "evaluation": {
-        "suite_version": "2",
-        "passed": 5,
-        "total": 5,
+        "suite_version": "3",
+        "passed": 4,
+        "total": 4,
         "passed_classes": [
           "bounded-rust-bugfix",
           "multi-crate-feature",
           "diagnose-regression",
-          "skill-compliance",
-          "supervisor-resume"
+          "skill-compliance"
         ],
-        "tested_at": "2026-08-14T13:19:58.720Z",
-        "duration_ms": 405524
+        "tested_at": "2026-08-16T03:44:24.298Z",
+        "duration_ms": 836295,
+        "consultations_used": 0,
+        "tasks_completed_after_consultation": 0,
+        "operating_mode": "autonomous"
       },
       "supported_task_class": "general",
+      "task_profile": {
+        "max_scope": "medium",
+        "max_primary_touchpoints": 6,
+        "allowed_classes": [
+          "bugfix",
+          "focused-test",
+          "multi-crate",
+          "diagnose"
+        ],
+        "ambiguity": "bounded",
+        "required_negative_tests": true,
+        "starting_context": "standard"
+      },
       "free_tier": {
         "status": "active",
         "input_cost": 0,
         "output_cost": 0,
         "toolcall": true,
-        "checked_at": "2026-08-14T13:05:59.968Z",
+        "checked_at": "2026-08-16T03:22:57.746Z",
         "expiry": null,
         "expiry_known": false
       },
@@ -89,6 +104,31 @@
         "last_success_at": "2026-08-15T02:00:16.189Z",
         "last_failure_at": null
       },
+      "last_evaluated_at": "2026-08-16T03:44:24.298Z"
+    },
+    "opencode/hy3-free": {
+      "identity": "opencode/hy3-free",
+      "harness": "opencode",
+      "provider": "opencode",
+      "model": "hy3-free",
+      "status": "qualified",
+      "evaluation": {
+        "suite_version": "3",
+        "passed": 4,
+        "total": 4,
+        "passed_classes": [
+          "bounded-rust-bugfix",
+          "multi-crate-feature",
+          "diagnose-regression",
+          "skill-compliance"
+        ],
+        "tested_at": "2026-08-16T03:44:24.298Z",
+        "duration_ms": 229823,
+        "consultations_used": 0,
+        "tasks_completed_after_consultation": 0,
+        "operating_mode": "autonomous"
+      },
+      "supported_task_class": "general",
       "task_profile": {
         "max_scope": "medium",
         "max_primary_touchpoints": 6,
@@ -102,35 +142,12 @@
         "required_negative_tests": true,
         "starting_context": "standard"
       },
-      "last_evaluated_at": "2026-08-14T13:19:58.720Z"
-    },
-    "opencode/hy3-free": {
-      "identity": "opencode/hy3-free",
-      "harness": "opencode",
-      "provider": "opencode",
-      "model": "hy3-free",
-      "status": "qualified",
-      "evaluation": {
-        "suite_version": "2",
-        "passed": 5,
-        "total": 5,
-        "passed_classes": [
-          "bounded-rust-bugfix",
-          "multi-crate-feature",
-          "diagnose-regression",
-          "skill-compliance",
-          "supervisor-resume"
-        ],
-        "tested_at": "2026-08-14T13:19:58.720Z",
-        "duration_ms": 232143
-      },
-      "supported_task_class": "general",
       "free_tier": {
         "status": "active",
         "input_cost": 0,
         "output_cost": 0,
         "toolcall": true,
-        "checked_at": "2026-08-14T13:05:59.968Z",
+        "checked_at": "2026-08-16T03:22:57.746Z",
         "expiry": null,
         "expiry_known": false
       },
@@ -141,20 +158,7 @@
         "last_success_at": null,
         "last_failure_at": "2026-08-14T03:05:06.890Z"
       },
-      "task_profile": {
-        "max_scope": "medium",
-        "max_primary_touchpoints": 6,
-        "allowed_classes": [
-          "bugfix",
-          "focused-test",
-          "multi-crate",
-          "diagnose"
-        ],
-        "ambiguity": "bounded",
-        "required_negative_tests": true,
-        "starting_context": "standard"
-      },
-      "last_evaluated_at": "2026-08-14T13:19:58.720Z"
+      "last_evaluated_at": "2026-08-16T03:44:24.298Z"
     },
     "opencode/nemotron-3-ultra-free": {
       "identity": "opencode/nemotron-3-ultra-free",
@@ -205,5 +209,5 @@
       "last_evaluated_at": "2026-08-14T11:40:25.416Z"
     }
   },
-  "suite_version": "2"
+  "suite_version": "3"
 }
