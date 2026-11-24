@@ -137,11 +137,11 @@ mod tests {
 
     #[test]
     fn test_t02_constants_are_small_positive() {
-        assert!(LENGTH_TOLERANCE > 0.0 && LENGTH_TOLERANCE < 1e-3);
-        assert!(ANGLE_TOLERANCE > 0.0 && ANGLE_TOLERANCE < 1e-3);
-        assert!(RELATIVE_TOLERANCE > 0.0 && RELATIVE_TOLERANCE < 1e-3);
-        assert!(EPS_AXIS_RATIO > 0.0 && EPS_AXIS_RATIO < 1e-3);
-        assert!(EPS_DISCRIMINANT > 0.0 && EPS_DISCRIMINANT < 1e-3);
+        const { assert!(LENGTH_TOLERANCE > 0.0 && LENGTH_TOLERANCE < 1e-3) };
+        const { assert!(ANGLE_TOLERANCE > 0.0 && ANGLE_TOLERANCE < 1e-3) };
+        const { assert!(RELATIVE_TOLERANCE > 0.0 && RELATIVE_TOLERANCE < 1e-3) };
+        const { assert!(EPS_AXIS_RATIO > 0.0 && EPS_AXIS_RATIO < 1e-3) };
+        const { assert!(EPS_DISCRIMINANT > 0.0 && EPS_DISCRIMINANT < 1e-3) };
     }
 
     // --- T03: Helper boundary (<= tol → true, just above → false) ---
@@ -272,9 +272,9 @@ mod tests {
 
     #[test]
     fn t10_unwrap_periodic_uv_single_element() {
-        let mut u = vec![3.14];
+        let mut u = vec![3.0];
         unwrap_periodic_uv(&mut u);
-        assert!((u[0] - 3.14).abs() < 1e-12);
+        assert!((u[0] - 3.0).abs() < 1e-12);
     }
 
     #[test]

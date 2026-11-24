@@ -392,7 +392,11 @@ pub fn build_bodies_from_features(
                     .into_iter()
                     .flat_map(|poly| poly.into_iter().map(|p| (p[0], p[1])))
                     .collect();
-                let tool = make_extrusion(&plane, &profile_uv, *depth, gen)?;
+                // A selected face exposes its outward normal.  ExtrudeCut must send the
+                // tool into the target body, i.e. in the opposite direction.  Extruding
+                // along the outward normal only creates a coincident/outside tool and can
+                // leave the target unchanged while still reporting a successful cut.
+                let tool = make_extrusion(&plane, &profile_uv, -*depth, gen)?;
 
                 let t_solid = built
                     .get(target)

@@ -245,7 +245,7 @@ mod tests {
 
         match &s.faces[0].surface {
             Surface::Sphere { center, radius } => {
-                assert!((center - &Point::origin()).norm() < eps);
+                assert!((center - Point::origin()).norm() < eps);
                 assert!((radius - 5.0).abs() < eps);
             }
             _ => panic!("face should be Sphere surface"),
@@ -258,7 +258,7 @@ mod tests {
                 normal,
                 radius,
             } => {
-                assert!((center - &Point::origin()).norm() < eps);
+                assert!((center - Point::origin()).norm() < eps);
                 assert!(
                     (*normal + Vec3::y()).norm() < eps,
                     "seam normal should be -Y"

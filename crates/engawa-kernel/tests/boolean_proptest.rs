@@ -44,12 +44,11 @@ proptest! {
         let mut tool = make_cuboid(tool_w, tool_h, tool_d, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-        match result {
-            Ok(solid) => prop_assert!(
+        if let Ok(solid) = result {
+            prop_assert!(
                 solid.validate_manifold().is_ok(),
                 "degenerate B-rep: {:?}", solid.validate_manifold()
-            ),
-            Err(_) => {} // clean rejection is acceptable
+            );
         }
     }
 }
@@ -124,13 +123,12 @@ fn t02_degen_minimum_tool_size_ok_or_err() {
     let mut tool = make_cuboid(1.0, 1.0, 1.0, "cuboid", &mut gen).unwrap();
     tool.translate(Vec3::new(0.0, 0.0, 0.0));
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-    match result {
-        Ok(solid) => assert!(
+    if let Ok(solid) = result {
+        assert!(
             solid.validate_manifold().is_ok(),
             "degenerate B-rep with min tool: {:?}",
             solid.validate_manifold()
-        ),
-        Err(_) => {} // clean rejection is acceptable
+        );
     }
 }
 
@@ -213,12 +211,11 @@ proptest! {
         let mut tool = make_cuboid(9.9, 8.0, 10.0, "cuboid", &mut gen).unwrap();
         tool.translate(Vec3::new(x_offset, 0.0, 0.0));
         let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-        match result {
-            Ok(solid) => prop_assert!(
+        if let Ok(solid) = result {
+            prop_assert!(
                 solid.validate_manifold().is_ok(),
                 "large tool produced degenerate manifold: {:?}", solid.validate_manifold()
-            ),
-            Err(_) => {} // clean rejection is acceptable
+            );
         }
     }
 }
@@ -272,8 +269,8 @@ fn t03_boundary_seed_determinism() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t03_repeated_determinism_100_runs() {
-    let mut results: Vec<(usize, usize, usize, Vec<u64>, Vec<[f64; 3]>, Vec<u32>)> =
-        Vec::with_capacity(100);
+    type Snapshot = (usize, usize, usize, Vec<u64>, Vec<[f64; 3]>, Vec<u32>);
+    let mut results: Vec<Snapshot> = Vec::with_capacity(100);
 
     for _ in 0..100 {
         let mut gen = IdGenerator::new(99);

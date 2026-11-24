@@ -47,6 +47,10 @@ fn web() -> ExitCode {
 
     let npm_steps: &[(&str, &[&str])] = &[
         ("Installing web dependencies", &["npm", "ci"]),
+        (
+            "Auditing web dependencies",
+            &["npm", "audit", "--audit-level=low"],
+        ),
         ("TypeScript type check", &["npx", "tsc", "--noEmit"]),
         ("Running vitest", &["npx", "vitest", "run"]),
         (
@@ -806,7 +810,15 @@ fn ci() -> ExitCode {
         ),
         (
             "Running clippy",
-            &["cargo", "clippy", "--workspace", "--", "-D", "warnings"],
+            &[
+                "cargo",
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ],
         ),
         ("Running tests", &["cargo", "test", "--workspace"]),
         ("Building", &["cargo", "build", "--workspace"]),
@@ -939,6 +951,21 @@ fn ci() -> ExitCode {
         .expect("failed to execute bun test");
     if !bun_status.success() {
         eprintln!("FAILED: 3ailoop bun tests");
+        return ExitCode::FAILURE;
+    }
+
+    // The Codex-native 3ailoop lives under .agents and has its own complete test
+    // suite. Running from the skill directory lets Bun discover every test file,
+    // including newly added regressions, without maintaining a brittle file list.
+    println!("\n=== Running Codex-native 3ailoop bun tests ===");
+    let codex_loop_dir = workspace_root().join(".agents/skills/3ailoop");
+    let codex_bun_status = Command::new(&bun)
+        .arg("test")
+        .current_dir(&codex_loop_dir)
+        .status()
+        .expect("failed to execute Codex-native 3ailoop bun tests");
+    if !codex_bun_status.success() {
+        eprintln!("FAILED: Codex-native 3ailoop bun tests");
         return ExitCode::FAILURE;
     }
 
@@ -1442,7 +1469,8 @@ export type ErrorResponse = { error: string, };
             stage: Stage::Two,
             video: PathBuf::from("/p.webm"),
         };
-        let fg_slow = build_tile_filtergraph(&[tile.clone()], 4, 480, 360, 30, true, None);
+        let fg_slow =
+            build_tile_filtergraph(std::slice::from_ref(&tile), 4, 480, 360, 30, true, None);
         let fg_normal = build_tile_filtergraph(&[tile], 4, 480, 360, 30, false, None);
         assert!(
             fg_slow.contains("setpts=2.0*PTS"),

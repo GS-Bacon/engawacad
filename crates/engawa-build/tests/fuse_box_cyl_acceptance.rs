@@ -134,7 +134,7 @@ fn t03_euler_poincare() {
         .map(|face| face.inner_loops.len() as i64)
         .sum();
     let lhs = v - e + f - h;
-    let rhs = 2 * (s - 0); // genus = 0
+    let rhs = 2 * s; // genus = 0
     assert_eq!(
         lhs, rhs,
         "V-E+F-H should equal 2(S-G): got V={v} E={e} F={f} H={h} S={s} => {lhs} vs {rhs}"

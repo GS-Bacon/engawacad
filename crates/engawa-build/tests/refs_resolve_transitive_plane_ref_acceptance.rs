@@ -5,6 +5,7 @@
 //! 既存 #266/#267 テストと隣接させて実装している。本ファイルでは:
 //! - 成功パス決定性 (success-path determinism, B-6 cross-cut F02) を byte-equal で検証
 //! - transitive plane_ref check のスコープ最小再現 (B-6 cross-cut F01: 1+ #[test] 確保)
+//!
 //! の 2 件を残し、slug-matched extractor が `total_added`/`determinism` を拾えるようにする。
 
 use engawa_build::FeatureCrud;

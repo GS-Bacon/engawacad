@@ -1,32 +1,14 @@
-//! Issue #218: ModelFace Sketch を ExtrudeCut で押出カット (plumbing 検証)
+//! ModelFace Sketch を ExtrudeCut で押出カットする回帰テスト。
 //!
 //! # スコープ
 //!
-//! 本 Issue #218 は **ExtrudeCut + Face EntityRef 経路の plumbing 検証** にスコープを縮小しています。
-//!
-//! ## 実カットについて
-//!
-//! **実カット (穴あき形状の物理的生成) は follow-up Issue #220 で対応します。**
-//!
-//! 現状、kernel 側の boolean Cut に `MultipleOuterShellsResult` 制限
-//! (`crates/engawa-kernel/src/booleans/assemble.rs:374`) があり、
-//! partial-pit cavity の shell 分類が未対応であるため、
-//! depth 反転による実カット化は本 Issue 単独では実現できません。
-//!
-//! ## アクティブ contract (本 Issue で保証する)
+//! ## Contract
 //!
 //! - `bodies.len() == 1` (extrude_cut が target を正しく consume)
 //! - `feature_id == "extrude_cut_1"` (boolean 結果が正しい id で register される)
-//! - `validate_manifold()` 成功 (#215 t04 と同じ gate で half-edge / loop / shell 一貫性が保たれる)
+//! - 選択面の法線と逆方向へ実カットされ、指定 depth に穴底が生成される
+//! - `validate_manifold()` と `euler_poincare() == 0`
 //! - 決定性 (同じ入力 + IdGenerator(0) seed → vertex/edge/face ID と座標が bit-equal)
-//!
-//! ## #220 で解除される pinned-broken (本 Issue では暫定 pin)
-//!
-//! 現状の boolean Cut は `validate_manifold()` を pass するが `euler_poincare() == 1`
-//! (manifold = 0 ではない) になる。これは boolean がトポロジー上の余剰要素を残す現
-//! 実装に起因し、`#215` の `t04_plane_ref_entity_extrude_cut` でも同じ値が観測される。
-//! #220 で boolean 修正後に `euler_poincare() == 0` まで強化する想定で、本 Issue では
-//! T02_topology に暫定 pin として残し `#[ignore = "blocked by #220"]` で休眠させている。
 //!
 //! # 関連ファイル
 //!
@@ -72,9 +54,7 @@ fn t01_stl_three_run_determinism() {
 
 /// T02_plumbing: active main contract from the file header — `bodies.len() == 1`,
 /// `feature_id == "extrude_cut_1"`, `validate_manifold()` (same gate as #215 t04).
-/// `euler_poincare() == 0` is NOT asserted here because the current boolean Cut path
-/// produces `euler == 1` even on the proven-manifold #215 t04 fixture; that strengthening
-/// is deferred to T02_topology_pinned_until_220 (ignored) and ultimately to #220.
+/// The following topology test additionally verifies the Euler–Poincaré invariant.
 #[test]
 fn t02_plumbing_manifold_contract() {
     let yaml = include_str!("../../../examples/sketch_extrudecut_hole.engawa");
@@ -144,15 +124,9 @@ fn t02_plumbing_manifold_contract() {
     }
 }
 
-/// T02_topology: pinned current state of the degenerate cut (z range, face count,
-/// euler_poincare). The values pinned here describe **broken** topology — the boolean
-/// Cut produces euler_poincare = 1 (a manifold has 0). Real hole drilling + a manifold
-/// result is delivered by #220; when that lands, this test changes to assert
-/// `euler_poincare == 0` and the `#[ignore]` comes off (note: `validate_manifold` is
-/// already covered by T02_plumbing today).
+/// T02_topology: the blind cavity remains a valid manifold.
 #[test]
-#[ignore = "blocked by #220: degenerate boolean Cut produces non-manifold result"]
-fn t02_topology_pinned_until_220() {
+fn t02_topology_manifold() {
     let yaml = include_str!("../../../examples/sketch_extrudecut_hole.engawa");
     let doc = Document::from_yaml(yaml).expect("YAML parse failed");
 
@@ -160,21 +134,12 @@ fn t02_topology_pinned_until_220() {
     let bodies = build_assembly(&doc, Path::new("examples"), &mut gen).expect("build failed");
     let result = &bodies[0];
 
-    // z range and the target-vs-tool discrimination are now covered by T02_plumbing.
-    // This test only pins the broken euler_poincare value until #220 ships the fix.
-    assert_eq!(
-        result.solid.euler_poincare(),
-        1,
-        "pinned-broken value; #220 will deliver 0"
-    );
+    result.solid.validate_manifold().expect("manifold cavity");
+    assert_eq!(result.solid.euler_poincare(), 0);
 }
 
-/// T03: カット方向の検証（縮退化）
-///
-/// **Blocked by #220** — without the kernel boolean fix the tool extrudes outward and no hole
-/// is drilled, so there is no z=0.5 bottom-of-hole vertex to assert. Re-enable when #220 ships.
+/// T03: depth=5 cuts inward from z=5 and creates a hole bottom at z=0.
 #[test]
-#[ignore = "blocked by #220: real hole drilling requires kernel boolean fix"]
 fn t03_hole_bottom_vertex_at_inner_depth() {
     let yaml = include_str!("../../../examples/sketch_extrudecut_hole.engawa");
     let doc = Document::from_yaml(yaml).expect("YAML parse failed");
@@ -184,8 +149,6 @@ fn t03_hole_bottom_vertex_at_inner_depth() {
 
     let result = &bodies[0];
 
-    // Since no actual cut occurs (tool extends outward), there is no hole bottom at z=0.5.
-    // The result is essentially the original cuboid with z range [-5, 5] (10×10×10).
     let (z_min, z_max) = result
         .solid
         .vertices
@@ -194,25 +157,29 @@ fn t03_hole_bottom_vertex_at_inner_depth() {
             (lo.min(v.point.z), hi.max(v.point.z))
         });
 
-    // Verify the z range matches the original cuboid (no cut occurred)
     assert!(
         (z_min - (-5.0)).abs() < 1e-9,
-        "z_min = {}, expected -5 (no cut occurred)",
+        "z_min = {}, expected target bottom -5",
         z_min
     );
     assert!(
         (z_max - 5.0).abs() < 1e-9,
-        "z_max = {}, expected 5 (no cut occurred)",
+        "z_max = {}, expected target top 5",
         z_max
     );
+    assert!(
+        result.solid.vertices.iter().any(|v| {
+            (v.point.x + 2.0).abs() < 1e-9 && v.point.y.abs() < 1e-9 && v.point.z.abs() < 1e-9
+        }),
+        "expected a profile corner on the hole bottom at z=0"
+    );
+    result.solid.validate_manifold().expect("manifold cavity");
+    assert_eq!(result.solid.euler_poincare(), 0);
 }
 
 /// T04: cuboid resize regression — 20x20x8 で同 EntityRef 解決の上 hole が drilled される
 ///
-/// **Blocked by #220** — same degenerate-cut issue as T02/T03; resize-naming-stability check
-/// is only meaningful once a real cut is produced. Re-enable when #220 ships.
 #[test]
-#[ignore = "blocked by #220: real hole drilling requires kernel boolean fix"]
 fn t04_resize_cuboid_same_entityref_hole_still_drilled() {
     // Same feature list but cuboid is 20x20x8 (top face at z = dz/2 = 4.0)
     let yaml = r#"
@@ -277,7 +244,6 @@ root_component:
     let result = &bodies[0];
 
     // Cuboid(dx=20, dy=20, dz=8) centered at origin has z range [-4.0, 4.0].
-    // Since no actual cut occurs, z range remains [-4.0, 4.0].
     let (z_min, z_max) = result
         .solid
         .vertices
@@ -288,17 +254,24 @@ root_component:
 
     assert!(
         (z_min - (-4.0)).abs() < 1e-9,
-        "z_min = {}, expected -4.0 (resized cuboid bottom, no cut)",
+        "z_min = {}, expected resized cuboid bottom -4.0",
         z_min
     );
     assert!(
         (z_max - 4.0).abs() < 1e-9,
-        "z_max = {}, expected 4.0 (resized cuboid top, no cut)",
+        "z_max = {}, expected resized cuboid top 4.0",
         z_max
     );
-
-    // Since no actual cut occurs, there is no hole bottom at z=2.0.
-    // The result is essentially the original cuboid.
+    assert!(
+        result
+            .solid
+            .vertices
+            .iter()
+            .any(|v| (v.point.z - 2.0).abs() < 1e-9),
+        "expected hole-bottom vertices at z=2.0"
+    );
+    result.solid.validate_manifold().expect("manifold cavity");
+    assert_eq!(result.solid.euler_poincare(), 0);
 }
 
 /// T05_degen_zero_depth: depth=0 で InvalidParameter { kind: "depth" }
@@ -587,11 +560,7 @@ root_component:
 
 /// T10_very_small_depth: depth=1e-6 (極小値) → build 成功 / bodies.len() == 1
 ///
-/// **Blocked by #220** — boundary-numeric check is only meaningful once cut behavior is correct.
-/// With the current degenerate cut, asserting only `bodies.len()==1` masks broken topology
-/// (Codex r2 F02). Re-enable with `validate_manifold()` + `euler_poincare()==0` when #220 ships.
 #[test]
-#[ignore = "blocked by #220: cut behavior unreliable; needs manifold contract"]
 fn t10_very_small_depth() {
     let yaml = r#"
 schema_version: 1
@@ -655,6 +624,11 @@ root_component:
     );
     let bodies = result.unwrap();
     assert_eq!(bodies.len(), 1, "bodies.len() == 1");
+    bodies[0]
+        .solid
+        .validate_manifold()
+        .expect("small-depth cut remains manifold");
+    assert_eq!(bodies[0].solid.euler_poincare(), 0);
 }
 
 /// T11_two_run_topology_determinism: full B-rep determinism. Serializes the entire

@@ -57,8 +57,9 @@ cargo xtask acceptance --record
 - ✅ Phase 5: アセンブリと部品参照
 - ✅ Phase 6: 面ピック + 押出/押出カット
 - ✅ Phase 7: スケッチ描画（正準平面）
-- ⏳ Phase 8: モデル面上のスケッチ
-- ⏳ Phase 9: STEP export (低優先度)
+- ✅ Phase 8: モデル面上のスケッチ
+- ✅ Phase 9: 履歴編集 + 変数 + CLI 拡張 + 品質基盤入口
+- 🚧 Phase 10: スケッチ基本曲線拡張
 
 ## Project Structure
 

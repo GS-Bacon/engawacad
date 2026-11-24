@@ -58,7 +58,7 @@ root_component:
 
     // Byte-equal check: construct expected Document with suppressed: true
     let mut expected_doc: engawa_format::Document =
-        serde_yaml::from_str(&initial_yaml).expect("failed to parse initial");
+        serde_yaml::from_str(initial_yaml).expect("failed to parse initial");
     expected_doc.root_component.features[0] = engawa_format::Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,
@@ -172,7 +172,7 @@ root_component:
     // Byte-equal check: construct expected Document with suppressed: false
     // (which serializes without the suppressed line)
     let mut expected_doc: engawa_format::Document =
-        serde_yaml::from_str(&initial_yaml).expect("failed to parse initial");
+        serde_yaml::from_str(initial_yaml).expect("failed to parse initial");
     expected_doc.root_component.features[0] = engawa_format::Feature::CreateBox {
         id: "box_1".to_string(),
         width: 10.0,

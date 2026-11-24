@@ -497,7 +497,7 @@ mod tests {
         for entry in std::fs::read_dir(&examples_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().map_or(true, |e| e != "engawa") {
+            if path.extension().is_none_or(|e| e != "engawa") {
                 continue;
             }
 
@@ -702,7 +702,7 @@ mod tests {
         for entry in std::fs::read_dir(&examples_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().map_or(true, |e| e != "engawa") {
+            if path.extension().is_none_or(|e| e != "engawa") {
                 continue;
             }
             let content = std::fs::read_to_string(&path).unwrap();

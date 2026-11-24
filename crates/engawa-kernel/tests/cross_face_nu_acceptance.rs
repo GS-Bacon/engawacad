@@ -20,7 +20,6 @@ use engawa_kernel::brep::topology::{IdGenerator, Solid};
 use engawa_kernel::geometry::Point;
 use engawa_kernel::primitives::{make_cuboid, make_cylinder};
 use engawa_kernel::tessellation::{tessellate_solid, tessellate_solid_with, TessellationOptions};
-use serde_yaml;
 
 /// Build box∩cyl intersect: box(10³) ∩ cylinder(r=2, h=15, origin=(0,0,-7.5)).
 fn build_intersect_box_cyl() -> Solid {

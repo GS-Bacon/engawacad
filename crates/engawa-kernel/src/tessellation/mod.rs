@@ -2274,7 +2274,7 @@ mod tests {
             indices: vec![0, 1, 2],
             face_ids: vec!["f".to_string()],
         };
-        let single = merge_meshes(&[m1.clone()]);
+        let single = merge_meshes(std::slice::from_ref(&m1));
         assert_eq!(single.positions, m1.positions);
         assert_eq!(single.normals, m1.normals);
         assert_eq!(single.indices, m1.indices);
@@ -2885,7 +2885,6 @@ mod tests {
     #[test]
     fn test_adjacent_face_idx_sphere_cap() {
         use crate::booleans::{boolean, BooleanOp};
-        use crate::geometry::Vec3;
 
         let mut gen = IdGenerator::new(0);
         let cyl = make_cylinder(3.0, 20.0, Point::origin(), &mut gen).unwrap();

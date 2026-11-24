@@ -212,13 +212,14 @@ async fn s03_extrude_creates_two_bodies() {
     assert!(ids.contains(&"extrude_0"), "extrude_0 must exist: {ids:?}");
 }
 
-/// S04: sketch at offset=5.0, extrude_cut depth=5.0 (== face distance) → 422.
+/// S04: sketch on the +X face, extrude_cut depth=5.0 → a valid blind pocket.
 ///
-/// This tests the scenario from #105: boundary condition where the cut depth
-/// equals the offset distance, creating a degenerate (coplanar) result.
-/// The UI-actual pattern (offset=0, depth≈face_dist) is covered by S04b instead.
+/// `simple_box` spans x∈[-5,5].  The YZ sketch at offset=5 lies on its +X
+/// face, so an inward depth of 5 ends at x=0, not at the far face (x=-5).
+/// Besides the HTTP status, verify that the returned mesh contains the pocket
+/// bottom and is structurally valid so a no-op cut cannot satisfy this test.
 #[tokio::test]
-async fn s04_degen_extrudecut_depth_boundary() {
+async fn s04_extrudecut_blind_pocket_depth_5() {
     let (_dir, path) = temp_copy("simple_box.engawa");
 
     // simple_box: 10x20x30, centered at origin → z ∈ [-15, 15]
@@ -228,21 +229,70 @@ async fn s04_degen_extrudecut_depth_boundary() {
     let (sketch_status, sketch_body) = send_post_feature(app1, sketch_json).await;
     assert_eq!(sketch_status, StatusCode::OK, "sketch POST: {sketch_body}");
 
-    // ExtrudeCut with depth=5.0 (equals offset — boundary: tool just reaches the far face)
+    // ExtrudeCut inward from x=5 to x=0, leaving 5 units of material to x=-5.
     let cut_json =
         r#"{"type":"extrude_cut","id":"cut_0","sketch":"sketch_0","depth":5.0,"target":"box_1"}"#;
     let app2 = make_app(path);
     let (cut_status, cut_body) = send_post_feature(app2, cut_json).await;
     assert_eq!(
         cut_status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "boundary-depth extrude_cut must return 422: status={cut_status}, body={cut_body}"
+        StatusCode::OK,
+        "depth=5 extrude_cut must create a blind pocket: status={cut_status}, body={cut_body}"
+    );
+
+    let bodies: Vec<BodyMesh> = serde_json::from_str(&cut_body).unwrap();
+    let cut = bodies
+        .iter()
+        .find(|body| body.feature_id == "cut_0")
+        .expect("cut_0 result body must exist");
+    let mesh = &cut.mesh;
+
+    assert!(!mesh.positions.is_empty(), "cut mesh must contain vertices");
+    assert!(!mesh.indices.is_empty(), "cut mesh must contain triangles");
+    assert_eq!(
+        mesh.indices.len() % 3,
+        0,
+        "triangle index buffer must be divisible by three"
+    );
+    assert_eq!(
+        mesh.face_ids.len(),
+        mesh.triangle_count(),
+        "every triangle must have a face id"
+    );
+    assert!(
+        mesh.indices
+            .iter()
+            .all(|&index| (index as usize) < mesh.positions.len()),
+        "all triangle indices must address an existing vertex"
+    );
+    assert!(
+        mesh.positions
+            .iter()
+            .flatten()
+            .chain(mesh.normals.iter().flatten())
+            .all(|value| value.is_finite()),
+        "cut mesh positions and normals must be finite"
+    );
+
+    let pocket_bottom_vertices = mesh
+        .positions
+        .iter()
+        .filter(|position| {
+            position[0].abs() <= 1.0e-9
+                && position[1].abs() <= 2.0 + 1.0e-9
+                && position[2].abs() <= 2.0 + 1.0e-9
+        })
+        .count();
+    assert!(
+        pocket_bottom_vertices >= 4,
+        "depth=5 pocket must have a bottom at x=0 inside the 4x4 profile; positions={:?}",
+        mesh.positions
     );
 }
 
-/// S04b: sketch at offset=5.0, extrude_cut depth=4.9 (< face distance) → 200 (just inside boundary).
+/// S04b: sketch on the +X face, extrude_cut depth=4.9 → 200.
 ///
-/// Complements S04: depth slightly less than offset avoids the degenerate coplanar case.
+/// Complements S04 with a pocket bottom at x=0.1.
 #[tokio::test]
 async fn s04b_extrudecut_depth_just_inside_boundary() {
     let (_dir, path) = temp_copy("simple_box.engawa");
@@ -259,7 +309,7 @@ async fn s04b_extrudecut_depth_just_inside_boundary() {
     assert_eq!(
         cut_status,
         StatusCode::OK,
-        "depth=4.9 (< offset=5.0) extrude_cut must succeed: status={cut_status}, body={cut_body}"
+        "depth=4.9 extrude_cut must succeed: status={cut_status}, body={cut_body}"
     );
 }
 

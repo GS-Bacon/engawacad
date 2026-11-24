@@ -1627,6 +1627,8 @@ pub fn partition_faces(
             continue;
         };
         let t_surface = &tf.surface;
+        let overlap_is_interior =
+            !overlap_touches_boundary(&pair.overlap_poly_2d, &target_polygons_2d[pair.target_face]);
 
         // (a) Overlap polygon — must be CCW in target 2D; sutherland_hodgman_clip preserves
         // subject orientation so this is guaranteed when target_polygons_2d is CCW.
@@ -1658,7 +1660,46 @@ pub fn partition_faces(
             });
         }
 
-        // (b) Remainder strips — walk each edge of the overlap polygon; clip the
+        // A coplanar tool cap fully inside the target face creates a hole.  Keep the
+        // target face as one ring fragment so its outer boundary remains connected to
+        // the target side faces and its inner boundary connects to the tool walls.
+        // Splitting this case into strips leaves T-junctions on the outer boundary and
+        // produces multiple disconnected positive-volume shells during assembly.
+        if overlap_is_interior {
+            let inner_poly_3d: Vec<Point> = overlap
+                .iter()
+                .rev()
+                .map(|(u, v)| tp.unproject_3d(*u, *v))
+                .collect();
+            let n_outer = target_polygons_3d[pair.target_face].len();
+            let n_inner = inner_poly_3d.len();
+            let tool_name = tool.faces[pair.tool_face]
+                .name
+                .clone()
+                .ok_or_else(|| format!("tool face {} missing name", pair.tool_face))?;
+            target_fragments.push(FaceFragment {
+                source_face_index: pair.target_face,
+                polygon_3d: target_polygons_3d[pair.target_face].clone(),
+                inner_polygons_3d: vec![inner_poly_3d],
+                surface: t_surface.clone(),
+                parent_name: tname.clone(),
+                traversal_index: 1,
+                is_tool_side: false,
+                boundary_partners: vec![None; n_outer],
+                boundary_curves: vec![None; n_outer],
+                boundary_t_ranges: vec![[0.0, 1.0]; n_outer],
+                boundary_pcurves_a: vec![None; n_outer],
+                boundary_pcurves_b: vec![None; n_outer],
+                inner_boundary_partners: vec![vec![Some(tool_name); n_inner]],
+                inner_boundary_curves: vec![vec![None; n_inner]],
+                inner_boundary_t_ranges: vec![vec![[0.0, 1.0]; n_inner]],
+                inner_boundary_pcurves_a: vec![vec![None; n_inner]],
+                inner_boundary_pcurves_b: vec![vec![None; n_inner]],
+            });
+            continue;
+        }
+
+        // (b) Boundary-crossing remainder strips — walk each edge of the overlap polygon; clip the
         // ever-shrinking "remaining" polygon OUTSIDE that edge to extract a strip.
         let n_overlap = overlap.len();
         let mut remaining = target_polygons_2d[pair.target_face].clone();
@@ -1703,6 +1744,13 @@ pub fn partition_faces(
     }
 
     Ok((target_fragments, tool_fragments))
+}
+
+fn overlap_touches_boundary(overlap: &[(f64, f64)], outer_loop: &[(f64, f64)]) -> bool {
+    let eps = LENGTH_TOLERANCE * 10.0;
+    overlap
+        .iter()
+        .any(|&point| point_on_polygon_boundary(point, outer_loop, eps))
 }
 
 /// Euclidean distance between two 2D points.
@@ -2518,18 +2566,17 @@ mod tests {
     fn ensure_names(solid: &mut Solid, feature_id: &str) {
         for (i, v) in solid.vertices.iter_mut().enumerate() {
             if v.name.is_none() {
-                v.name =
-                    EntityRef::try_named(feature_id, EntityKind::Vertex, &format!("v{i}")).ok();
+                v.name = EntityRef::try_named(feature_id, EntityKind::Vertex, format!("v{i}")).ok();
             }
         }
         for (i, e) in solid.edges.iter_mut().enumerate() {
             if e.name.is_none() {
-                e.name = EntityRef::try_named(feature_id, EntityKind::Edge, &format!("e{i}")).ok();
+                e.name = EntityRef::try_named(feature_id, EntityKind::Edge, format!("e{i}")).ok();
             }
         }
         for (i, f) in solid.faces.iter_mut().enumerate() {
             if f.name.is_none() {
-                f.name = EntityRef::try_named(feature_id, EntityKind::Face, &format!("f{i}")).ok();
+                f.name = EntityRef::try_named(feature_id, EntityKind::Face, format!("f{i}")).ok();
             }
         }
     }

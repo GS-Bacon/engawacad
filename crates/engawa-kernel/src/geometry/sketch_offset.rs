@@ -285,7 +285,8 @@ mod tests {
             from: [0.0, 0.0],
             to: [10.0, 0.0],
         };
-        let out = apply_sketch_offset(&[line.clone()], &["l1".to_string()], 1.0).unwrap();
+        let out =
+            apply_sketch_offset(std::slice::from_ref(&line), &["l1".to_string()], 1.0).unwrap();
         match &out[0] {
             SketchElement::Line { from, to, .. } => {
                 assert!((from[0] - 0.0).abs() < LENGTH_TOLERANCE);
@@ -305,7 +306,8 @@ mod tests {
             center: [0.0, 0.0],
             radius: 5.0,
         };
-        let out = apply_sketch_offset(&[circle.clone()], &["c1".to_string()], 2.0).unwrap();
+        let out =
+            apply_sketch_offset(std::slice::from_ref(&circle), &["c1".to_string()], 2.0).unwrap();
         match &out[0] {
             SketchElement::Circle { radius, .. } => {
                 assert!((*radius - 7.0).abs() < LENGTH_TOLERANCE);
@@ -324,7 +326,8 @@ mod tests {
             start_angle: 0.0,
             end_angle: PI / 2.0,
         };
-        let out = apply_sketch_offset(&[arc.clone()], &["a1".to_string()], -1.0).unwrap();
+        let out =
+            apply_sketch_offset(std::slice::from_ref(&arc), &["a1".to_string()], -1.0).unwrap();
         match &out[0] {
             SketchElement::Arc {
                 radius,
@@ -348,7 +351,8 @@ mod tests {
             from: [0.0, 0.0],
             to: [10.0, 0.0],
         };
-        let out = apply_sketch_offset(&[line.clone()], &["l1".to_string()], 1e-10).unwrap();
+        let out =
+            apply_sketch_offset(std::slice::from_ref(&line), &["l1".to_string()], 1e-10).unwrap();
         match &out[0] {
             SketchElement::Line { from, to, .. } => {
                 assert_eq!(from, &[0.0, 0.0]);
@@ -366,8 +370,12 @@ mod tests {
             from: [0.0, 0.0],
             to: [10.0, 0.0],
         };
-        let out =
-            apply_sketch_offset(&[line.clone()], &["l1".to_string()], LENGTH_TOLERANCE).unwrap();
+        let out = apply_sketch_offset(
+            std::slice::from_ref(&line),
+            &["l1".to_string()],
+            LENGTH_TOLERANCE,
+        )
+        .unwrap();
         match &out[0] {
             SketchElement::Line { from, to, .. } => {
                 assert_eq!(from, &[0.0, 0.0]);
@@ -554,7 +562,8 @@ mod tests {
             from: [0.0, 0.0],
             to: [10.0, 0.0],
         };
-        let out = apply_sketch_offset(&[line.clone()], &["l1".to_string()], -1.0).unwrap();
+        let out =
+            apply_sketch_offset(std::slice::from_ref(&line), &["l1".to_string()], -1.0).unwrap();
         match &out[0] {
             SketchElement::Line { from, to, .. } => {
                 assert!((from[0] - 0.0).abs() < LENGTH_TOLERANCE);
@@ -574,7 +583,8 @@ mod tests {
             from: [0.0, 0.0],
             to: [10.0, 10.0],
         };
-        let out = apply_sketch_offset(&[line.clone()], &["l1".to_string()], 1.0).unwrap();
+        let out =
+            apply_sketch_offset(std::slice::from_ref(&line), &["l1".to_string()], 1.0).unwrap();
         match &out[0] {
             SketchElement::Line { from, to: _, .. } => {
                 // Direction (1,1), perpendicular (-1,1) normalized ≈ (-0.707, 0.707)

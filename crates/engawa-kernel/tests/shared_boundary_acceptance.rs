@@ -269,6 +269,7 @@ fn assert_shared_boundary(solid: &Solid, label: &str) -> usize {
 ///   - 箱の上下 2 面に inner loop (穴) が生成され、穴の境界は **円**
 ///   - cylinder lateral face (箱内部 5mm 分) の上下境界も同じ円
 ///   - → 上下それぞれで「箱の穴境界」と「cylinder 側面境界」が cross-face で円を共有
+///
 /// (`box(10³) - sphere(r=3, origin)` は sphere が完全内包で void shell となり、Cut の
 /// cross-face 円境界を持たないため fixture として不適切。Codex review #144-F02 参照)
 fn make_box_cut_cyl_through() -> Solid {
@@ -399,7 +400,7 @@ fn t07_repeat_determinism_100_runs() {
 
     for i in 0..RUNS {
         let solid = make_box_cut_cyl_through();
-        let mesh = tessellate_solid(&solid).expect(&format!("tessellate run {i}"));
+        let mesh = tessellate_solid(&solid).unwrap_or_else(|_| panic!("tessellate run {i}"));
 
         assert_eq!(
             mesh.positions, mesh_ref.positions,

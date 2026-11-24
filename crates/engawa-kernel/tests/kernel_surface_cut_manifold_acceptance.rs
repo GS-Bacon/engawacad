@@ -93,13 +93,12 @@ fn t02_boundary_large_offset_manifold() {
     tool.translate(Vec3::new(5.3, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-    match result {
-        Ok(solid) => assert!(
+    if let Ok(solid) = result {
+        assert!(
             solid.validate_manifold().is_ok(),
             "large offset manifold invalid: {:?}",
             solid.validate_manifold()
-        ),
-        Err(_) => {} // clean rejection is acceptable
+        );
     }
 }
 

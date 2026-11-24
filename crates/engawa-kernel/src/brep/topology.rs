@@ -444,15 +444,21 @@ impl Solid {
             .collect()
     }
 
-    /// Compute Euler-Poincaré characteristic: V - E + F - 2*S + 2*H should equal 0.
-    /// For this simplified version, H (through-holes) = 0 (inner_loops are trim curves, not genus).
-    /// Valid for closed manifold: V - E + F = 2(S - H) where S = shells.len(), H = 0.
+    /// Compute the loop-aware Euler-Poincaré residual for a closed manifold.
+    ///
+    /// With `L` total face loops and `S` shells, `V - E + 2F - L - 2S`
+    /// is zero. An inner trimming loop therefore contributes correctly without
+    /// being mistaken for a separate shell or a solid through-hole.
     pub fn euler_poincare(&self) -> i64 {
         let v = self.vertices.len() as i64;
         let e = self.edges.len() as i64;
         let f = self.faces.len() as i64;
+        let l = self.loops.len() as i64;
         let s = self.shells.len() as i64;
-        v - e + f - 2 * s
+        // Each face owns one outer loop; additional loops are holes and must be
+        // included in the Euler-Poincare relation.  The previous V-E+F-2S form
+        // incorrectly reported one unit of error for every face hole.
+        v - e + 2 * f - l - 2 * s
     }
 
     /// Translate all geometry in-place by the given offset.

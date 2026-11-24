@@ -1,7 +1,7 @@
 schema_version: 1
 version: "0.1.0"
 root_component:
-  name: "ExtrudeCut + Face EntityRef Tangent-Cut Plumbing Demo (Phase 8 #218; real hole drilling deferred to #220)"
+  name: "ExtrudeCut + Face EntityRef Blind Cavity Demo"
   features:
     # Base cuboid centered at origin: dx=10, dy=10, dz=10 → top face at z=5
     # Matches the size used by #215 face_entity_ref_planeref::t04 (a fixture proven to
@@ -37,12 +37,8 @@ root_component:
         feature_id: box_1
         kind: face
         role: f_z_pos
-    # ExtrudeCut depth=5: under current implementation the tool extrudes outward along
-    # +face_normal (no dispatcher inversion yet) → tool z range [5, 10], cuboid z range
-    # [-5, 5]. The boolean Cut treats this as a tangent cut: the result is a manifold
-    # solid (validate_manifold passes, euler_poincare = 0). Real hole drilling (tool
-    # extruded inward) is tracked in #220 — at that point this example will use a partial
-    # depth and the cut result will have an actual cavity.
+    # ExtrudeCut follows the selected face inward.  depth=5 therefore creates a blind
+    # cavity from z=5 down to z=0 while preserving a manifold solid.
     - type: extrude_cut
       id: extrude_cut_1
       sketch: sketch_1

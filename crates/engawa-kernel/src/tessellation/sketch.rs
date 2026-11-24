@@ -988,7 +988,7 @@ mod tests {
             rotation: 0.0,
         };
         let pts = tessellate_sketch_element(&ellipse, 0).unwrap();
-        assert!(pts.len() >= 1);
+        assert!(!pts.is_empty());
     }
 
     /// F21: base_segments=0 でも conic は最低 2 点生成 (base_segments.max(1) * 2)。

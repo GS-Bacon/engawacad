@@ -397,6 +397,6 @@ mod tests {
 
     #[test]
     fn test_apex_tolerance_is_smaller_than_length_tolerance() {
-        assert!(APEX_TOLERANCE < super::super::math::LENGTH_TOLERANCE);
+        const { assert!(APEX_TOLERANCE < super::super::math::LENGTH_TOLERANCE) };
     }
 }

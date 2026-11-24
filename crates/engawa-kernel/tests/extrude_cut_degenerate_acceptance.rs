@@ -131,12 +131,11 @@ fn t01_cut_tool_face_at_len_eps_from_target_face() {
     tool.translate(Vec3::new(3.0 - len_eps, 0.0, 0.0));
 
     let result = boolean(&target, &tool, BooleanOp::Cut, &mut gen);
-    match result {
-        Ok(solid) => assert!(
+    if let Ok(solid) = result {
+        assert!(
             solid.validate_manifold().is_ok(),
             "result must be manifold (no overlapping coplanar faces)"
-        ),
-        Err(_) => {} // Clear rejection is acceptable for degenerate geometry
+        );
     }
 }
 

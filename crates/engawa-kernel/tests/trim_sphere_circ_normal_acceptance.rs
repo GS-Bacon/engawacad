@@ -65,6 +65,7 @@ fn t01_determinism_axis_z() {
 
 /// T02: 既存の boolean_cut_sphere_dimple を改修後も
 ///   - naked_edge カウントが 0 である
+///
 /// ことを確認する (回帰テスト)。
 #[test]
 fn t02_watertight_axis_z() {

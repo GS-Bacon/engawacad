@@ -77,7 +77,7 @@ depth: 300.0
 
     // Byte-equal check: Parse input as Document, then replace the edited feature in-place.
     let mut expected_doc: engawa_format::Document =
-        serde_yaml::from_str(&initial_yaml).expect("failed to parse initial");
+        serde_yaml::from_str(initial_yaml).expect("failed to parse initial");
     expected_doc.root_component.features[0] = engawa_format::Feature::CreateBox {
         suppressed: false,
         id: "box_1".to_string(),

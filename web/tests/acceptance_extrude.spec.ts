@@ -5,8 +5,8 @@
  * 実行: cargo xtask acceptance  (Playwright API テスト、ブラウザ不要)
  *
  * simple_box.engawa: width=10, height=20, depth=30, 原点中心 z∈[-15,15]
- * XY 平面スケッチ → z 正方向に Extrude / box_1 へ ExtrudeCut
- * face距離 = 15.0 (XY 平面 z=0 から top face z=+15 まで)
+ * XY 平面スケッチ → z 正方向に Extrude、z 負方向に box_1 へ ExtrudeCut
+ * ExtrudeCut の境界距離 = 15.0 (XY 平面 z=0 から bottom face z=-15 まで)
  *
  * 各テストは独立して実行可能（累積状態に依存しない絶対アサート）。
  * RUN プレフィックスで ID を一意化するため再実行および --workers 1（デフォルト）に対応。
@@ -223,11 +223,10 @@ test("T07_extrude_cut_near_boundary depth=14.999", async ({ request }) => {
   expect(text).toContain(`"feature_id":"${cut}"`);
 });
 
-// T08: ExtrudeCut depth=face距離=15.0 — 境界値 (#111 回帰)
-// depth == face_dist は UI が EPSILON_GUARD=1e-6 で回避する退化ケース。
-// カーネルは "multiple positive-volume shells" エラーで 422 を返す。
-// これが #111 の修正結果：無言退化 B-rep → 適切な 422 エラー。
-test("T08_degen_extrude_cut_at_boundary depth=15.0 (#111 regression)", async ({
+// T08: ExtrudeCut depth=bottom face距離=15.0 — 境界貫通 (#111 回帰)
+// canonical XY (z=0) から内向き(-Z)へカットし、ツール端は box の
+// bottom face z=-15 に到達する。これは退化ではなく、底面へ開口する有効な境界貫通カット。
+test("T08_extrude_cut_through_bottom_boundary depth=15.0 (#111 regression)", async ({
   request,
 }) => {
   const box = `${RUN}_box_t08`;
@@ -244,9 +243,41 @@ test("T08_degen_extrude_cut_at_boundary depth=15.0 (#111 regression)", async ({
     depth: 15.0,
     target: box,
   });
-  // 退化ケース: ツール上面がボックス上面と完全一致 → カーネルが 422 を返す
-  expect(status).toBe(422);
-  expect(text).toContain('"error"');
+  expect(status).toBe(200);
+  expect(text).not.toContain('"error"');
+  expect(hasMeshVertices(text)).toBeTruthy();
+  expect(text).toContain(`"feature_id":"${cut}"`);
+
+  const bodies = JSON.parse(text) as Array<{
+    feature_id: string;
+    mesh: {
+      positions: number[][];
+      normals: number[][];
+      indices: number[];
+      face_ids: string[];
+    };
+  }>;
+  const result = bodies.find((body) => body.feature_id === cut);
+  expect(result, "cut result body must exist").toBeDefined();
+
+  const mesh = result!.mesh;
+  expect(mesh.indices.length).toBeGreaterThan(0);
+  expect(mesh.indices.length % 3).toBe(0);
+  expect(mesh.face_ids.length).toBe(mesh.indices.length / 3);
+  expect(mesh.indices.every((index) => index < mesh.positions.length)).toBeTruthy();
+  expect(
+    [...mesh.positions.flat(), ...mesh.normals.flat()].every(Number.isFinite),
+  ).toBeTruthy();
+
+  // 元の box の z=-15 頂点は x=±5, y=±10 のみ。プロファイル内の
+  // z=-15 頂点は、止まり穴/no-op ではなく底面まで貫通したことの証拠。
+  const bottomOpeningVertices = mesh.positions.filter(
+    ([x, y, z]) =>
+      Math.abs(z + 15.0) <= 1.0e-9 &&
+      Math.abs(x) <= 2.0 + 1.0e-9 &&
+      Math.abs(y) <= 4.0 + 1.0e-9,
+  );
+  expect(bottomOpeningVertices.length).toBeGreaterThanOrEqual(4);
 });
 
 // T09: ExtrudeCut depth=face距離+0.1=15.1 — 境界超え

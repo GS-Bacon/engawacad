@@ -55,34 +55,39 @@ fn classify_fragment_against_solid(
     len_eps: f64,
 ) -> Result<FragmentLabel, String> {
     // Coplanar detection: only Plane × Plane
-    if let Surface::Plane {
-        normal: frag_normal,
-        origin: frag_origin,
-        ..
-    } = &frag.surface
-    {
-        for face in &other.faces {
-            if let Surface::Plane {
-                normal: other_normal,
-                origin: other_origin,
-                ..
-            } = &face.surface
-            {
-                if frag_normal.dot(other_normal).abs() > 1.0 - len_eps {
-                    let dist = (frag_origin - other_origin).dot(other_normal).abs();
-                    if dist <= len_eps {
-                        let other_loop_verts = get_loop_vertex_points(other, face.outer_loop);
-                        if polygons_have_2d_overlap(
-                            &frag.polygon_3d,
-                            &other_loop_verts,
-                            other_normal,
-                            len_eps,
-                        ) {
-                            let dot = frag_normal.dot(other_normal);
-                            if dot > 0.0 {
-                                return Ok(FragmentLabel::SharedSameDirection);
-                            } else {
-                                return Ok(FragmentLabel::SharedOppositeDirection);
+    // Ring fragments contain both shared (the hole boundary) and non-shared area.
+    // Treating the whole outer polygon as coplanar overlap discards the ring during
+    // Cut assembly, so classify rings by an interior point in their material region.
+    if frag.inner_polygons_3d.is_empty() {
+        if let Surface::Plane {
+            normal: frag_normal,
+            origin: frag_origin,
+            ..
+        } = &frag.surface
+        {
+            for face in &other.faces {
+                if let Surface::Plane {
+                    normal: other_normal,
+                    origin: other_origin,
+                    ..
+                } = &face.surface
+                {
+                    if frag_normal.dot(other_normal).abs() > 1.0 - len_eps {
+                        let dist = (frag_origin - other_origin).dot(other_normal).abs();
+                        if dist <= len_eps {
+                            let other_loop_verts = get_loop_vertex_points(other, face.outer_loop);
+                            if polygons_have_2d_overlap(
+                                &frag.polygon_3d,
+                                &other_loop_verts,
+                                other_normal,
+                                len_eps,
+                            ) {
+                                let dot = frag_normal.dot(other_normal);
+                                if dot > 0.0 {
+                                    return Ok(FragmentLabel::SharedSameDirection);
+                                } else {
+                                    return Ok(FragmentLabel::SharedOppositeDirection);
+                                }
                             }
                         }
                     }
@@ -474,15 +479,6 @@ impl Clone for FaceFragment {
 mod tests {
     use super::*;
     use crate::geometry::surface::Surface;
-
-    fn plane_z(z: f64) -> Surface {
-        Surface::Plane {
-            origin: Point::new(0.0, 0.0, z),
-            normal: Vec3::z(),
-            u_axis: Vec3::x(),
-            v_axis: Vec3::y(),
-        }
-    }
 
     fn make_test_frag(
         polygon_3d: Vec<Point>,

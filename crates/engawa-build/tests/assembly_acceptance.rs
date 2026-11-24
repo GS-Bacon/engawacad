@@ -314,9 +314,8 @@ fn t08_stdlib_root_not_set_error() {
     let result = build_assembly(&doc, dir.path(), &mut gen);
 
     // Restore env
-    match old {
-        Some(v) => std::env::set_var("ENGAWA_STDLIB_PATH", v),
-        None => {}
+    if let Some(v) = old {
+        std::env::set_var("ENGAWA_STDLIB_PATH", v);
     }
 
     match result {

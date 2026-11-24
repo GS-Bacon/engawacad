@@ -2011,14 +2011,9 @@ fn a1_build_manifold_euler() {
     solid.validate_manifold().expect("A1: manifold validation");
 
     assert_eq!(solid.shells.len(), 1, "A1: expected 1 shell (genus-0)");
-    // euler_poincare = V-E+F-2S = 1 for A1: cylinder lat face uses a seam edge
-    // (self-adjacent periodic face), which adds 1 edge without adding V or F.
-    // This is valid per B-rep seam-edge convention.
-    assert_eq!(
-        solid.euler_poincare(),
-        1,
-        "A1: Euler-Poincaré with 1 seam edge on cylinder lat = 1"
-    );
+    // The inner loop on the top face is included in the full Euler-Poincaré
+    // relation, so the manifold result evaluates to zero.
+    assert_eq!(solid.euler_poincare(), 0, "A1: Euler-Poincaré invariant");
 }
 
 #[test]

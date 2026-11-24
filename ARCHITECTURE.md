@@ -7,16 +7,20 @@ EngawaCAD は Feature-based parametric CAD システム。ユーザーの操作�
 ## Layer Structure
 
 ```
-┌─────────────────────┐
-│     engawa-cli       │  CLI / UI 層
-├─────────────────────┤
-│    engawa-viewer     │  可視化層（テッセレーション結果を描画）
-├─────────────────────┤
-│    engawa-format     │  永続化層（YAML <-> Document/Feature/Component）
-├─────────────────────┤
-│    engawa-kernel     │  コア層（B-rep, geometry, primitives, tessellation）
-└─────────────────────┘
+web (Three.js) ─HTTP─→ engawa-api ─┐
+                                      ├─→ engawa-build ─┬─→ engawa-kernel
+engawa-cli ─────────────────┘                  └─→ engawa-format
+     └── export / entry ────────→ engawa-build
+engawa-kernel ── EntityRef / schema types ─→ engawa-format
 ```
+
+- `engawa-format`: YAML と `Document` / `Feature` / `Component` の永続化契約
+- `engawa-kernel`: B-rep、幾何、プリミティブ、Boolean、テッセレーション
+- `engawa-build`: Feature 列をカーネル操作に変換し、形状を再生成する層
+- `engawa-api`: 形状と履歴編集をWebフロントへ公開するHTTP層
+- `web`: Three.jsによる現行のビューアと対話編集UI
+- `engawa-cli`: export / view / entry 操作のエントリポイント
+- `engawa-viewer`: 将来のネイティブ可視化層用の薄いクレート
 
 ## Key Design Decisions
 
@@ -58,5 +62,10 @@ EngawaCAD は Feature-based parametric CAD システム。ユーザーの操作�
 ## Data Flow
 
 ```
-.engawa file → Document → Feature列 → Kernel (B-rep Solid) → Tessellation → TriangleMesh → Viewer
+.engawa file → Document → engawa-build → Kernel (B-rep Solid)
+                                              ↓
+                                      Tessellation
+                                              ↓
+                                  API → TriangleMesh → Web Viewer
+                                   └→ 履歴編集 → .engawa file
 ```

@@ -32,7 +32,7 @@ fn t34_intersect_surfaces_loop_geometry() {
 
     for (i, il) in loops.iter().enumerate() {
         let Curve::Circle {
-            center,
+            center: _,
             normal,
             radius,
         } = &il.curve_3d

@@ -153,7 +153,7 @@ engawa view examples/simple_box.engawa   # ローカルサーバを起動して�
 - トポロジカル命名（ADR-005）によりモデル再生成後も面参照が安定する
 
 **状態**: 完了 (2026-06-17、Cycle #18)。子 Issue #214/#215/#216/#217/#218 + 親 #206 すべて closed。  
-ExtrudeCut の **実カット (穴あき形状)** は kernel boolean `MultipleOuterShellsResult` 制限のため #218 では plumbing 検証のみで receipt。実カットは follow-up [#220](https://github.com/GS-Bacon/engawacad/issues/220) で対応する。
+ExtrudeCut の **実カット (止まり穴)** と、内周を持つ面のmanifold / Euler–Poincaré検証まで実装済み。
 
 ---
 
