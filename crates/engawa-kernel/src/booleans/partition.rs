@@ -1381,7 +1381,6 @@ pub fn partition_faces(
             .clone()
             .ok_or_else(|| format!("tool face {} missing name", fi))?;
 
-        if matches!(surface, Surface::Cylinder { .. }) {}
         if segments.is_empty() {
             tool_fragments.push(FaceFragment {
                 source_face_index: fi,
@@ -1927,10 +1926,7 @@ fn angle_near(a: Vec3, b: Vec3) -> bool {
         return false;
     }
     let sin_angle = cross.norm() / (a_norm * b_norm);
-    if sin_angle < LENGTH_TOLERANCE {
-        return true;
-    }
-    false
+    sin_angle < LENGTH_TOLERANCE
 }
 
 fn get_all_face_polygons(solid: &crate::brep::topology::Solid) -> Vec<Vec<Point>> {

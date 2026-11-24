@@ -106,7 +106,7 @@ fn offset_element(elem: &SketchElement, distance: f64) -> Result<SketchElement, 
             start_angle,
             end_angle,
         } => offset_arc(id, center, *radius, *start_angle, *end_angle, distance),
-        SketchElement::Ellipse { id: _, .. } | SketchElement::Conic { id: _, .. } => {
+        SketchElement::Ellipse { .. } | SketchElement::Conic { .. } => {
             Err(KernelError::UnsupportedFeature {
                 kind: "sketch_offset_of_ellipse_or_conic",
             })
