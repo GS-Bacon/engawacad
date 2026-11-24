@@ -113,7 +113,7 @@ Phase 10 (スケッチ基本曲線拡張 + スケッチ編集) の設計基盤�
 | Pattern | `SketchPattern` | `sketch_ref`, `kind: PatternKind` (`Rect` / `Polar`), `count_u`, `count_v`, `spacing` |
 
 ID 安定性:
-- Mirror は任意の `id_suffix` を保存し、複製に `{元要素ID}_{id_suffix}` を割り当てる。省略時は従来通り `mirror` を使うため、既存文書内の `c1_mirror` 参照は再読込後も同じ複製を指す。同じ元要素を再度ミラーするときは別の接尾辞を指定する。既存 ID と衝突した場合は `mirror_duplicate_id` を返す。
+- Mirror は省略可能な `id_suffix`（空でない ASCII 英数字・`_`・`-` の列）を保存し、複製に `{元要素ID}_{id_suffix}` を割り当てる。省略時は従来通り `mirror` を使うため、既存文書内の `c1_mirror` 参照は再読込後も同じ複製を指す。同じ元要素を再度ミラーするときは別の接尾辞を指定する。既存 ID と衝突した場合は `mirror_duplicate_id` を返す。
 - 編集後も既存 element ID は **保持** する
 - 分割される場合 (例: Trim で element a が 2 つに分かれる) は `{a}_split_{n}` 派生 ID を決定的に割り当てる
 - これは ADR-005 Topological Naming の「編集後も意味的に同一であれば同 ID を保つ」原則と整合

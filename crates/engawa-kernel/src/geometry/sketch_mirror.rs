@@ -11,6 +11,7 @@
 //! # Errors
 //! - `InvalidParameter { kind: "sketch_mirror_axis_degenerate" }` — axis_p1 == axis_p2 within
 //!   `LENGTH_TOLERANCE`, or either axis point contains NaN/Inf
+//! - `InvalidParameter { kind: "sketch_mirror_id_suffix" }` — invalid identifier segment
 //! - `InvalidParameter { kind: "sketch_mirror_unknown_element_id" }` — selection id not in profile
 //! - `UnsupportedFeature { kind: "sketch_mirror_of_ellipse_or_conic" }` — Ellipse/Conic in selection
 //! - `DegenerateSketchElement { reason: "mirror_axis_coincident" }` — element lies on the axis
@@ -50,6 +51,11 @@ pub fn apply_sketch_mirror_with_suffix(
     selection: &[String],
     suffix: &str,
 ) -> Result<Vec<SketchElement>, KernelError> {
+    engawa_format::feature::validate_identifier_segment(suffix).map_err(|_| {
+        KernelError::InvalidParameter {
+            kind: "sketch_mirror_id_suffix",
+        }
+    })?;
     if !is_finite_point(&axis_p1) || !is_finite_point(&axis_p2) {
         return Err(KernelError::InvalidParameter {
             kind: "sketch_mirror_axis_degenerate",

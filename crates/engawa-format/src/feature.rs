@@ -109,8 +109,8 @@ impl EntityRef {
             EntityRef::Named {
                 feature_id, role, ..
             } => {
-                validate_identifier(feature_id, "feature_id")?;
-                validate_identifier(role, "role")?;
+                validate_identifier_segment(feature_id)?;
+                validate_identifier_segment(role)?;
                 Ok(())
             }
             EntityRef::Derived {
@@ -119,8 +119,8 @@ impl EntityRef {
                 if from.is_empty() {
                     return Err(FormatError::EmptyProvenance { op: op.clone() });
                 }
-                validate_identifier(op, "op")?;
-                validate_identifier(selector, "selector")?;
+                validate_identifier_segment(op)?;
+                validate_identifier_segment(selector)?;
                 for child in from {
                     child.validate()?;
                 }
@@ -131,7 +131,7 @@ impl EntityRef {
 }
 
 /// Validate that a string segment contains only `[A-Za-z0-9_-]` and is non-empty.
-fn validate_identifier(value: &str, field: &'static str) -> Result<(), FormatError> {
+pub fn validate_identifier_segment(value: &str) -> Result<(), FormatError> {
     if value.is_empty() {
         return Err(FormatError::InvalidName {
             value: value.to_string(),
@@ -147,7 +147,6 @@ fn validate_identifier(value: &str, field: &'static str) -> Result<(), FormatErr
             reason: "only alphanumeric, underscore, and hyphen characters allowed",
         });
     }
-    let _ = field;
     Ok(())
 }
 

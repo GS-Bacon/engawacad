@@ -327,6 +327,12 @@ fn validate_component(component: &Component, component_name: &str) -> Result<(),
             crate::feature::Feature::CreateSketch { variables, .. } => {
                 validate_variables(variables, "sketch", id)?;
             }
+            crate::feature::Feature::SketchMirror {
+                id_suffix: Some(suffix),
+                ..
+            } => {
+                crate::feature::validate_identifier_segment(suffix)?;
+            }
             _ => {}
         }
     }

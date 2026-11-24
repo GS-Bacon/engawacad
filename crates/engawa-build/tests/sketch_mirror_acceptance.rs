@@ -705,3 +705,35 @@ fn saved_followup_mirror_resolves_the_same_copy() {
         }
     }
 }
+
+#[test]
+fn explicit_mirror_suffix_is_a_valid_identifier_segment() {
+    let sample = include_str!("../../../examples/sketch_mirror_chain.engawa");
+    for suffix in ["", "x/y", "a b", "軸", "X_2-z"] {
+        let mut doc = Document::from_yaml(sample).unwrap();
+        let feature = doc.root_component.features.last_mut().unwrap();
+        let Feature::SketchMirror { id_suffix, .. } = feature else {
+            panic!("expected mirror")
+        };
+        *id_suffix = Some(suffix.into());
+        let built = build_bodies_from_features(
+            &doc.root_component.features,
+            &doc.root_component.ref_planes,
+            &mut IdGenerator::new(0),
+        );
+        if suffix == "X_2-z" {
+            doc.validate().unwrap();
+            built.unwrap();
+        } else {
+            assert!(
+                matches!(doc.validate(), Err(engawa_format::FormatError::InvalidName { value, .. }) if value == suffix)
+            );
+            assert!(matches!(
+                built,
+                Err(KernelError::InvalidParameter {
+                    kind: "sketch_mirror_id_suffix"
+                })
+            ));
+        }
+    }
+}
