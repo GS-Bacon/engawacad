@@ -23,6 +23,7 @@
 //     --result features/N-SLUG/review-final.yaml \
 //     [--test-summary features/N-SLUG/test-summary.json]
 
+import { workingTreeDiff } from "./working-tree-diff.ts";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { resolveGlmModel, buildAnthropicModelEnv } from "./zai-model.ts";
 
@@ -334,12 +335,7 @@ async function main() {
   if (persona === "final") {
     // 最終レビュー: git diff + test summary を渡す
     const baseBranch = await detectBaseBranch();
-    const diffProc = Bun.spawn(["git", "diff", `${baseBranch}...HEAD`], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const diffText = await new Response(diffProc.stdout).text();
-    await diffProc.exited;
+    const diffText = workingTreeDiff(baseBranch);
 
     let issueCtx = "";
     try {

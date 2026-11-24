@@ -21,6 +21,7 @@
 //   phase < 11 or null → warn-only (常に exit 0)
 //   Phase 11 品質基盤で cargo-llvm-cov を本格導入する前提の暫定 gate。
 
+import { workingTreeDiff } from "./working-tree-diff.ts";
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 
@@ -41,7 +42,7 @@ export interface CoverageResult {
 
 export interface CheckOpts {
   base: string;
-  head: string;
+  head: string | null;
   threshold: number; // percent (integer or float)
   phase: number | null;
   lcovPath: string;
@@ -55,7 +56,7 @@ export interface RunResult {
 }
 
 export interface CheckDeps {
-  runGit: (args: string[]) => RunResult;
+  readDiff: (base: string, head: string | null) => RunResult;
   runCargo: (args: string[]) => RunResult;
   readLcov: (path: string) => string | null;
   writeStdout: (s: string) => void;
@@ -251,7 +252,7 @@ export async function runCheck(opts: CheckOpts, deps: CheckDeps): Promise<number
   }
 
   // 3. git diff で変更行を取得 (crates/**/*.rs に限定)
-  const diffRes = deps.runGit(["diff", "--unified=0", `${opts.base}...${opts.head}`]);
+  const diffRes = deps.readDiff(opts.base, opts.head);
   if (diffRes.status !== 0) {
     deps.writeStderr(`ERROR: git diff failed: ${diffRes.stderr.trim()}\n`);
     return 2;
@@ -318,15 +319,23 @@ export function detectDefaultBranch(cwd?: string): string | null {
   if (r.status !== 0) return null;
   const raw = (r.stdout ?? "").trim();
   if (!raw) return null;
-  return raw.startsWith("origin/") ? raw.slice("origin/".length) : raw;
+  return raw;
 }
 
 // ---------- CLI wrapper (production deps) ----------
 
 function realDeps(): CheckDeps {
   return {
-    runGit: (args) => {
-      const r = spawnSync("git", args, { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
+    readDiff: (base, head) => {
+      const args = ["--unified=0", "--", "crates/**/*.rs"];
+      if (head === null) {
+        try {
+          return { status: 0, stdout: workingTreeDiff(base, args), stderr: "" };
+        } catch (error) {
+          return { status: 1, stdout: "", stderr: String(error) };
+        }
+      }
+      const r = spawnSync("git", ["diff", `${base}...${head}`, ...args], { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
       return { status: r.status ?? -1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
     },
     runCargo: (args) => {
@@ -352,7 +361,7 @@ function realDeps(): CheckDeps {
 
 async function mainCli(argv: string[]): Promise<number> {
   let base: string | null = null;
-  let head = "HEAD";
+  let head: string | null = null;
   let threshold = 70;
   let phase: number | null = null;
   let lcovPath = "target/llvm-cov/lcov.info";

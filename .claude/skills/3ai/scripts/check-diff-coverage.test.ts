@@ -15,7 +15,7 @@ import {
 // ---------- Helpers ----------
 
 interface MockOverrides {
-  runGit?: (args: string[]) => RunResult;
+  readDiff?: (base: string, head: string | null) => RunResult;
   runCargo?: (args: string[]) => RunResult;
   readLcov?: (path: string) => string | null;
 }
@@ -28,7 +28,7 @@ function makeDeps(overrides: MockOverrides = {}): {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const deps: CheckDeps = {
-    runGit: overrides.runGit ?? (() => ({ status: 0, stdout: "", stderr: "" })),
+    readDiff: overrides.readDiff ?? (() => ({ status: 0, stdout: "", stderr: "" })),
     runCargo:
       overrides.runCargo ??
       ((args) => {
@@ -318,7 +318,7 @@ describe("runCheck (integration with mocked deps)", () => {
   test("T04_diff_coverage_pass: 10 lines, 8/10 hit, phase=11, threshold=70 → exit 0", async () => {
     const file = "crates/foo/src/lib.rs";
     const { deps, stdout, stderr } = makeDeps({
-      runGit: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
       readLcov: () => makeLcovOutput(file, 11, 10, 8),
     });
     const rc = await runCheck(baseOpts({ phase: 11, threshold: 70 }), deps);
@@ -333,7 +333,7 @@ describe("runCheck (integration with mocked deps)", () => {
   test("T05_diff_coverage_fail: 10 lines, 6/10 hit, phase=11, threshold=70 → exit 1", async () => {
     const file = "crates/foo/src/lib.rs";
     const { deps, stdout, stderr } = makeDeps({
-      runGit: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
       readLcov: () => makeLcovOutput(file, 11, 10, 6),
     });
     const rc = await runCheck(baseOpts({ phase: 11, threshold: 70 }), deps);
@@ -366,7 +366,7 @@ describe("runCheck (integration with mocked deps)", () => {
   test("T_bonus_phase10_below_threshold: 5/10 hit + phase=10 → exit 0 (warn only)", async () => {
     const file = "crates/foo/src/lib.rs";
     const { deps, stdout, stderr } = makeDeps({
-      runGit: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
       readLcov: () => makeLcovOutput(file, 11, 10, 5),
     });
     const rc = await runCheck(baseOpts({ phase: 10, threshold: 70 }), deps);
@@ -380,7 +380,7 @@ describe("runCheck (integration with mocked deps)", () => {
   test("T_bonus_phase_null_below_threshold: phase 未指定 → warn only", async () => {
     const file = "crates/foo/src/lib.rs";
     const { deps, stdout, stderr } = makeDeps({
-      runGit: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
       readLcov: () => makeLcovOutput(file, 11, 10, 5),
     });
     const rc = await runCheck(baseOpts({ phase: null, threshold: 70 }), deps);
@@ -390,7 +390,7 @@ describe("runCheck (integration with mocked deps)", () => {
 
   test("T_bonus_no_diff: 空 diff → exit 0 + 'no changed lines to cover'", async () => {
     const { deps, stdout } = makeDeps({
-      runGit: () => ({ status: 0, stdout: "", stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: "", stderr: "" }),
       readLcov: () => "SF:/x.rs\nend_of_record\n",
     });
     const rc = await runCheck(baseOpts({ phase: 11 }), deps);
@@ -438,7 +438,7 @@ describe("runCheck (integration with mocked deps)", () => {
       "+line3",
     ].join("\n");
     const { deps, stdout } = makeDeps({
-      runGit: () => ({ status: 0, stdout: diff, stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: diff, stderr: "" }),
       readLcov: () => "",
     });
     const rc = await runCheck(baseOpts({ phase: 11 }), deps);
@@ -451,7 +451,7 @@ describe("runCheck (integration with mocked deps)", () => {
     let readCount = 0;
     const file = "crates/foo/src/lib.rs";
     const { deps, stdout } = makeDeps({
-      runGit: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
+      readDiff: () => ({ status: 0, stdout: makeDiffOutput(file, 11, 10), stderr: "" }),
       runCargo: (args) => {
         if (args[0] === "llvm-cov" && args[1] === "--version") {
           return { status: 0, stdout: "cargo-llvm-cov 0.5.0\n", stderr: "" };
@@ -479,7 +479,7 @@ describe("runCheck (integration with mocked deps)", () => {
 
   test("git diff 失敗 → exit 2", async () => {
     const { deps, stderr } = makeDeps({
-      runGit: () => ({ status: 128, stdout: "", stderr: "fatal: bad revision\n" }),
+      readDiff: () => ({ status: 128, stdout: "", stderr: "fatal: bad revision\n" }),
       readLcov: () => "",
     });
     const rc = await runCheck(baseOpts({ phase: 11 }), deps);

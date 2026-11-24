@@ -3,6 +3,7 @@
 // 使い方: bun check-spec-divergence.ts --plan-file <path> --feature-dir <dir>
 // 出力は stdout に整形テキスト。Claude が読んで期待値乖離を判定する。
 
+import { workingTreeDiff } from "./working-tree-diff.ts";
 import { readFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { resolve, dirname } from "path";
@@ -66,17 +67,9 @@ function detectBaseBranch(repoRoot: string): string {
 }
 
 function getChangedRustFiles(repoRoot: string): string[] {
-  try {
-    const base = detectBaseBranch(repoRoot);
-    const out = execSync(`git diff ${base}..HEAD --name-only -- 'crates/**/*.rs'`, {
-      cwd: repoRoot,
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-    return out ? out.split("\n").map((p) => resolve(repoRoot, p)) : [];
-  } catch {
-    return [];
-  }
+  const base = detectBaseBranch(repoRoot);
+  return workingTreeDiff(base, ["--name-only", "-z", "--", "crates/**/*.rs"], repoRoot)
+    .split("\0").filter(Boolean).map((path) => resolve(repoRoot, path));
 }
 
 function extractTestFunctions(filePath: string, tIds: string[]): Array<{ path: string; line: number; snippet: string }> {
@@ -158,7 +151,7 @@ function main() {
 
   console.log("=== implementation: 変更されたテスト関数 ===");
   if (changedFiles.length === 0) {
-    console.log("(git diff main..HEAD で変更された .rs ファイルなし — ブランチが main と同じか、crates/ 外の変更のみ)");
+    console.log("(作業ツリーと分岐点の差分に crates/ 配下の .rs ファイルなし)");
   } else if (allFunctions.length === 0) {
     console.log(`変更ファイル: ${changedFiles.map((f) => f.replace(repoRoot + "/", "")).join(", ")}`);
     console.log("(T ID にマッチするテスト関数が見つかりません)");

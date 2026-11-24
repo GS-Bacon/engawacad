@@ -2,6 +2,7 @@
 // detect-deliverable.ts — issue の deliverable を "docs" または "code" で判定
 // 判定順: 1. --diff-base (final モード) 2. --plan (design モード) 3. ラベル fallback
 
+import { workingTreeDiff } from "./working-tree-diff.ts";
 import type { Deliverable } from "./types.ts";
 
 export async function detectDeliverable(
@@ -10,14 +11,7 @@ export async function detectDeliverable(
 ): Promise<Deliverable> {
   // 1. diff-base (authoritative for final mode)
   if (opts.diffBase) {
-    const proc = Bun.spawn(
-      ["git", "diff", "--name-only", `${opts.diffBase}...HEAD`],
-      { stdout: "pipe", stderr: "pipe" }
-    );
-    const changed = (await new Response(proc.stdout).text()).trim();
-    await proc.exited;
-    if (!changed) return "docs";
-    const lines = changed.split("\n").filter(Boolean);
+    const lines = workingTreeDiff(opts.diffBase, ["--name-only", "-z"]).split("\0").filter(Boolean);
     if (lines.some((l) => !/^docs\//.test(l) && !l.endsWith(".md"))) return "code";
     return "docs";
   }

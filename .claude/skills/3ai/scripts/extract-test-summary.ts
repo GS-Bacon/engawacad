@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // extract-test-summary.ts — CI ログからテスト結果を構造化 JSON に変換
 
+import { workingTreeDiff } from "./working-tree-diff.ts";
 import { writeFileSync } from "fs";
 
 interface TestEntry {
@@ -55,24 +56,17 @@ export async function extractTestSummary(
   // added_in_round via git diff
   const addedInRound: TestEntry[] = [];
   if (baseBranch) {
-    try {
-      const proc = Bun.spawn(
-        ["git", "diff", `${baseBranch}...HEAD`, "--", "*.rs"],
-        { stdout: "pipe", stderr: "pipe" }
-      );
-      const diff = await new Response(proc.stdout).text();
-      await proc.exited;
-      for (const m of diff.matchAll(/^\+\s*(?:async\s+)?fn\s+((?:test_|t\d+_)[A-Za-z0-9_]+)/gm)) {
-        const name = m[1];
-        let kind = "other";
-        if (/determin|repeat|twice|idempotent/.test(name)) kind = "determinism";
-        else if (/degen|zero_|empty_|boundary/.test(name)) kind = "degenerate";
-        else if (/max|min|inf|nan|overflow|extreme/.test(name)) kind = "boundary";
-        else if (/golden|roundtrip|yaml|serialize/.test(name)) kind = "golden";
-        else if (/edge|case/.test(name)) kind = "edge_case";
-        addedInRound.push({ name, kind });
-      }
-    } catch {}
+    const diff = workingTreeDiff(baseBranch, ["--", "*.rs"]);
+    for (const m of diff.matchAll(/^\+\s*(?:async\s+)?fn\s+((?:test_|t\d+_)[A-Za-z0-9_]+)/gm)) {
+      const name = m[1];
+      let kind = "other";
+      if (/determin|repeat|twice|idempotent/.test(name)) kind = "determinism";
+      else if (/degen|zero_|empty_|boundary/.test(name)) kind = "degenerate";
+      else if (/max|min|inf|nan|overflow|extreme/.test(name)) kind = "boundary";
+      else if (/golden|roundtrip|yaml|serialize/.test(name)) kind = "golden";
+      else if (/edge|case/.test(name)) kind = "edge_case";
+      addedInRound.push({ name, kind });
+    }
   }
 
   const KINDS = ["determinism", "degenerate", "boundary", "golden", "edge_case"];
@@ -111,7 +105,7 @@ if (import.meta.main) {
       stdout: "pipe",
       stderr: "pipe",
     });
-    base = (await new Response(proc.stdout).text()).trim().replace("refs/remotes/origin/", "");
+    base = (await new Response(proc.stdout).text()).trim().replace("refs/remotes/", "");
     await proc.exited;
   }
 
